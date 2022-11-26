@@ -1,13 +1,12 @@
 import time
 import pytest
+import torch
 import numpy as np
 from util import rand_genome
 from genetics import (
     Signal,
-    get_cell_params,
-    simulate_protein_work,
-    assert_config,
     get_proteome,
+    Genetics,
 )
 
 TOLERANCE = 1e-3
@@ -45,7 +44,7 @@ def test_cell_time_step():
     c0_c = 1.3
     c0_d = 1.4
     c0_f = 1.5
-    C0 = np.array([[c0_f, 0.0, c0_a, c0_b, c0_c, c0_d, 0.0, 0.0]])
+    C0 = torch.tensor([[c0_f, 0.0, c0_a, c0_b, c0_c, c0_d, 0.0, 0.0]])
 
     # by hand with:
     # def f(x: float) -> float:
@@ -56,11 +55,13 @@ def test_cell_time_step():
     c1_c = 0.0565  # f(c0_c * 0.4) * 0.4 + f(c0_b * 0.2) * 0.3
     c1_d = 0.3587  # f(c0_f * 0.1) * 0.3 + f(c0_d * 0.6) * 0.8
 
-    A, B = get_cell_params(cells=[cell])
+    genetics = Genetics()
+
+    A, B = genetics.get_cell_params(cells=[cell])
     assert A.shape == (1, 8, 4)
     assert B.shape == (1, 8, 4)
 
-    C1 = simulate_protein_work(C=C0, A=A, B=B)
+    C1 = genetics.simulate_protein_work(C=C0, A=A, B=B)
     assert C1.shape == (1, 8)
     assert C1[0, 0] == pytest.approx(c1_f, abs=TOLERANCE)
     assert C1[0, 1] == 0.0
@@ -86,14 +87,15 @@ def test_performance():
     td = time.time() - t0
     assert td - t0 < 0.05, "get_proteome performance degraded a lot"
 
+    genetics = Genetics()
     t0 = time.time()
-    A, B = get_cell_params(cells=cells)
+    A, B = genetics.get_cell_params(cells=cells)
     td = time.time() - t0
-    assert td < 0.01, "get_cell_params performance degraded a lot"
+    assert td < 0.03, "get_cell_params performance degraded a lot"
 
-    C = np.random.random((len(cells), len(Signal)))
+    C = torch.randn(len(cells), len(Signal))
 
     t0 = time.time()
-    _ = simulate_protein_work(C=C, A=A, B=B)
+    _ = genetics.simulate_protein_work(C=C, A=A, B=B)
     td = time.time() - t0
     assert td < 0.01, "get_cell_params performance degraded a lot"

@@ -1,6 +1,5 @@
 from enum import IntEnum
 import torch
-import numpy as np
 from util import (
     ALL_NTS,
     CODON_SIZE,
@@ -113,56 +112,63 @@ def get_proteome(
     return [translate_seq(d) for d in cds]
 
 
-def get_cell_params(
-    cells: list[list[dict[tuple[str, Signal, bool], float]]]
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Generate matrices A and B from cell proteomes
-
-    Returns tuple (A, B) with matrices both of shape (c, s, p) where
-    s is the number of signals, p is the number of proteins, and c is
-    the number of cells.
-
-    21.11.22 getting cell params for 1000 proteomes each of genome
-    size (1000, 5000) took 0.01s
-    """
-    max_n_prots = max(len(d) for d in cells)
-    n_cells = len(cells)
-    n_sigs = len(Signal)
-    a = np.zeros((n_cells, n_sigs, max_n_prots))
-    b = np.zeros((n_cells, n_sigs, max_n_prots))
-    for cell_i, cell in enumerate(cells):
-        for prot_i, protein in enumerate(cell):
-            for (_, sig, inc), weight in protein.items():
-                sig_i = sig.value
-                if inc:
-                    a[cell_i, sig_i, prot_i] = weight
-                else:
-                    b[cell_i, sig_i, prot_i] = weight
-    return (a, b)
+CellType = list[dict[tuple[str, Signal, bool], float]]
 
 
-def simulate_protein_work(C: np.ndarray, A: np.ndarray, B: np.ndarray) -> np.ndarray:
-    """
-    Calculate molecules/signals created/activated by proteins after 1 timestep.
-    Returns additional concentrations in shape `(c, s)`.
+class Genetics:
+    def __init__(self):
+        pass
 
-    - `C` initial concentrations shape `(c, s)`
-    - `A` parameters for A `(c, s, p)`
-    - `B` parameters for B `(c, s, p)`
+    def get_cell_params(
+        self, cells: list[CellType]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Generate matrices A and B from cell proteomes
 
-    Proteins' activation function is `B * (1 - exp(-(C * A) ** 3))`.
-    There are s signals, p proteins, c cells. The way how signals are
-    integrated by multiplying with A we basically assume signals all
-    activate and/or competitively inhibit the protein's domain.
+        Returns tuple (A, B) with matrices both of shape (c, s, p) where
+        s is the number of signals, p is the number of proteins, and c is
+        the number of cells.
 
-    21.11.22 simulating protein work for 1000 cells each
-    of genome size (1000, 5000) took 0.00s excluding other functions.
-    """
-    # matrix (c x p)
-    x = np.einsum("ij,ijk->ik", C, A)
-    y = 1 - np.exp(-(x ** 3))
+        21.11.22 getting cell params for 1000 proteomes each of genome
+        size (1000, 5000) took 0.01s
+        """
+        max_n_prots = max(len(d) for d in cells)
+        n_cells = len(cells)
+        n_sigs = len(Signal)
+        a = torch.zeros(n_cells, n_sigs, max_n_prots)
+        b = torch.zeros(n_cells, n_sigs, max_n_prots)
+        for cell_i, cell in enumerate(cells):
+            for prot_i, protein in enumerate(cell):
+                for (_, sig, inc), weight in protein.items():
+                    sig_i = sig.value
+                    if inc:
+                        a[cell_i, sig_i, prot_i] = weight
+                    else:
+                        b[cell_i, sig_i, prot_i] = weight
+        return (a, b)
 
-    # matrix (c x m)
-    return np.einsum("ij,ikj->ik", y, B)
+    def simulate_protein_work(
+        self, C: torch.Tensor, A: torch.Tensor, B: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Calculate molecules/signals created/activated by proteins after 1 timestep.
+        Returns additional concentrations in shape `(c, s)`.
 
+        - `C` initial concentrations shape `(c, s)`
+        - `A` parameters for A `(c, s, p)`
+        - `B` parameters for B `(c, s, p)`
+
+        Proteins' activation function is `B * (1 - exp(-(C * A) ** 3))`.
+        There are s signals, p proteins, c cells. The way how signals are
+        integrated by multiplying with A we basically assume signals all
+        activate and/or competitively inhibit the protein's domain.
+
+        21.11.22 simulating protein work for 1000 cells each
+        of genome size (1000, 5000) took 0.00s excluding other functions.
+        """
+        # matrix (c x p)
+        x = torch.einsum("ij,ijk->ik", C, A)
+        y = 1 - torch.exp(-(x ** 3))
+
+        # matrix (c x m)
+        return torch.einsum("ij,ikj->ik", y, B)
