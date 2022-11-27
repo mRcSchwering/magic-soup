@@ -1,7 +1,6 @@
 from typing import TypeVar, Optional
 from itertools import product
 import random
-import re
 import numpy as np
 
 
@@ -77,45 +76,6 @@ def reverse_complement(seq: str) -> str:
         .replace("C", "G")
         .replace("-", "C")
     )
-
-
-def get_coding_regions(seq: str) -> list[str]:
-    """
-    Get all possible coding regions in nucleotide sequence
-
-    Assuming coding region can start at any start codon and
-    is stopped with the first stop codon encountered in same
-    frame.
-
-    Ribosomes will stall without stop codon. So, a coding region
-    without a stop codon is not considerd.
-    (https://pubmed.ncbi.nlm.nih.gov/27934701/)
-    
-    22.11.22 takes 2.7s on 1000 coding regions from genomes
-    of size (1000, 5000).
-    """
-    start_codons = ("TTG", "GTG", "ATG")
-    stop_codons = ("TGA", "TAG", "TAA")
-
-    pat = ".{1," + str(CODON_SIZE) + "}"
-    res = []
-    for frame_i in range(CODON_SIZE):
-        codons = re.findall(pat, seq[frame_i:])
-
-        starts = []
-        for codon in start_codons:
-            starts.extend(indices(codons, codon))
-
-        stops = []
-        for codon in stop_codons:
-            stops.extend(indices(codons, codon))
-
-        for start in sorted(starts):
-            opts = [d for d in stops if d > start]
-            if len(opts) > 0:
-                res.append("".join(codons[start : min(opts) + 1]))
-
-    return res
 
 
 def _subst(seq: str, idx: int) -> str:

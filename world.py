@@ -1,4 +1,6 @@
 from typing import Optional
+from itertools import product
+import random
 import torch
 
 
@@ -34,21 +36,46 @@ class World:
         self.degrad = degrad
         self.device = device
         self.dtype = dtype
-        self._init_map(map_init=map_init)
-        self._init_conv(kernel=kernel)
+        self.map = self._init_map(map_init=map_init)
+        self._conv = self._init_conv(kernel=kernel)
+        self.cell_map = self._init_cell_map()
 
-    def _init_map(self, map_init: Optional[str] = None):
+    def position_cells(self, n_cells: int) -> list[tuple[int, int]]:
+        """
+        Randomly place `n_cells` on `world.cell_map` and return
+        their positions.
+        """
+        perms = product(range(self.size), range(self.size))
+        positions = list(random.sample(list(perms), k=n_cells))
+        for pos in positions:
+            self.cell_map[pos] = True
+        return positions
+
+    def _init_cell_map(self) -> torch.Tensor:
+        return torch.zeros(self.size, self.size, device=self.device, dtype=torch.bool)
+
+    def _init_map(self, map_init: Optional[str] = None) -> torch.Tensor:
         if map_init is None or map_init == "zeros":
-            self.map = torch.zeros(
-                self.layers, 1, self.size, self.size, device=self.device, dtype=self.dtype
+            return torch.zeros(
+                self.layers,
+                1,
+                self.size,
+                self.size,
+                device=self.device,
+                dtype=self.dtype,
             )
-        elif map_init == "randn":
-            self.map = torch.zeros(
-                self.layers, 1, self.size, self.size, device=self.device, dtype=self.dtype
-            )
-        
+        if map_init == "randn":
+            return torch.randn(
+                self.layers,
+                1,
+                self.size,
+                self.size,
+                device=self.device,
+                dtype=self.dtype,
+            ).abs()
+        raise ValueError(f"Didnt recognize map_init={map_init}")
 
-    def _init_conv(self, kernel: Optional[torch.Tensor] = None):
+    def _init_conv(self, kernel: Optional[torch.Tensor] = None) -> torch.Tensor:
         if kernel is None:
             # fmt: off
             kernel = torch.tensor([[[
@@ -58,7 +85,7 @@ class World:
             ]]])
             # fmt: on
 
-        self._conv = torch.nn.Conv2d(
+        conv = torch.nn.Conv2d(
             in_channels=1,
             out_channels=1,
             kernel_size=3,
@@ -68,7 +95,8 @@ class World:
             dtype=self.dtype,
             device=self.device,
         )
-        self._conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
+        conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
+        return conv
 
     @torch.no_grad()
     def diffuse(self):
