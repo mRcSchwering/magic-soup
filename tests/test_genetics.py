@@ -1,7 +1,7 @@
 import time
 import pytest
 from util import rand_genome
-from genetics import Genetics
+from genetics import Genetics, DOMAINS
 
 
 # (genome, cds)
@@ -44,18 +44,17 @@ DATA = [
 
 @pytest.mark.parametrize("seq, exp", DATA)
 def test_get_coding_regions(seq, exp):
-    genetics = Genetics()
+    genetics = Genetics(domain_map={})
     res = genetics.get_coding_regions(seq="".join(seq.replace("\n", "").split()))
     assert len(res) == len(exp)
     assert set(res) == set(exp)
 
 
 def test_performance():
-    genetics = Genetics()
+    genetics = Genetics(domain_map=DOMAINS)
     gs = [rand_genome((1000, 5000)) for _ in range(100)]
 
-    # TODO: improve transcription and translation performance
     t0 = time.time()
-    _ = [genetics.get_proteome(g=d) for d in gs]
+    _ = [genetics.get_proteome(seq=d) for d in gs]
     td = time.time() - t0
     assert td < 0.4, "get_proteome performance degraded a lot"

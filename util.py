@@ -47,20 +47,18 @@ def rand_genome(len_range=(100, 500)) -> str:
     return "".join(random.choices(ALL_NTS, k=k))
 
 
-def weight_map_fact(
-    n_nts: int, mu: float, sd: float, is_positive=False
-) -> dict[str, float]:
+def weight_map_fact(n_nts: int, mu: float, sd: float, do_abs=False) -> dict[str, float]:
     """
     Generate codon-to-weight mapping from Gauss samples
     
     - `n_nts` number of nucleotides which will encode weight
     - `mu` mu of the Gauss distribution sampled
     - `sd` sigma of the Gauss distribution sampled
-    - `is_positive` whether to only return positive weights
+    - `do_abs` whether take the abs and only return positive weights
     """
     codons = variants("N" * n_nts)
     c2w = {d: random.gauss(mu=mu, sigma=sd) for d in codons}
-    if is_positive:
+    if do_abs:
         c2w = {k: abs(v) for k, v in c2w.items()}
     return c2w
 

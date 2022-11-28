@@ -87,11 +87,12 @@ class Cells:
             for prot_i, protein in enumerate(cell):
                 for dom, (a, b) in protein.items():
                     # TODO: check whether it needs world concentration instead
-                    idx = self.cell_info_map[dom.info]
-                    if a is not None:
-                        A[cell_i, idx, prot_i] = a
-                    if b is not None:
-                        B[cell_i, idx, prot_i] = b
+                    if dom.info:
+                        idx = self.cell_info_map[dom.info]
+                        if a is not None:
+                            A[cell_i, idx, prot_i] = a
+                        if b is not None:
+                            B[cell_i, idx, prot_i] = b
         return (A, B)
 
     def simulate_protein_work(

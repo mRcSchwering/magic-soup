@@ -1,7 +1,7 @@
 import time
 import torch
 from util import rand_genome
-from genetics import Genetics, MOLECULES, ACTIONS
+from genetics import Genetics, MOLECULES, ACTIONS, DOMAINS
 from world import World
 from cells import Cells
 
@@ -40,7 +40,7 @@ def time_step(cells: Cells, world: World):
 
 
 if __name__ == "__main__":
-    genetics = Genetics()
+    genetics = Genetics(domain_map=DOMAINS)
     world = World(size=128, layers=4)
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     positions = world.position_cells(n_cells=len(gs))
 
     t0 = time.time()
-    prtms = [genetics.get_proteome(g=d) for d in gs]
+    prtms = [genetics.get_proteome(seq=d) for d in gs]
     print(f"get proteome 1000x: {time.time() - t0:.2f}s")
 
     cells.add_cells(proteomes=prtms, positions=positions)
@@ -80,13 +80,13 @@ if __name__ == "__main__":
 
     #############
 
-    genetics = Genetics()
+    genetics = Genetics(domain_map=DOMAINS)
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)
     world = World(size=128, layers=len(MOLECULES), map_init="randn")
 
     # get initial cell params
     init_gs = [rand_genome() for _ in range(10)]
-    init_pts = [genetics.get_proteome(g=d) for d in init_gs]
+    init_pts = [genetics.get_proteome(seq=d) for d in init_gs]
     init_positions = world.position_cells(n_cells=len(init_pts))
     cells.add_cells(proteomes=init_pts, positions=init_positions)
 

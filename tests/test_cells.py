@@ -13,6 +13,7 @@ from genetics import (
     ME,
     MOLECULES,
     ACTIONS,
+    DOMAINS,
 )
 from cells import Cells
 
@@ -84,12 +85,11 @@ def test_cell_time_step():
 
 
 def test_performance():
-    genetics = Genetics()
+    genetics = Genetics(domain_map=DOMAINS)
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)
     gs = [rand_genome((1000, 5000)) for _ in range(100)]
-    prtms = [genetics.get_proteome(g=d) for d in gs]
+    prtms = [genetics.get_proteome(seq=d) for d in gs]
 
-    # TODO: improve get cell params performance
     t0 = time.time()
     A, B = cells.get_cell_params(cells=prtms)
     td = time.time() - t0
