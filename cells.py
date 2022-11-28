@@ -1,5 +1,5 @@
-from enum import IntEnum
 import torch
+from genetics import Domain
 
 
 class Cells:
@@ -33,7 +33,7 @@ class Cells:
 
     def add_cells(
         self,
-        proteomes: list[list[dict[tuple[str, IntEnum, bool], float]]],
+        proteomes: list[list[dict[Domain, float]]],
         positions: list[tuple[int, int]],
     ):
         if len(positions) != len(proteomes):
@@ -59,7 +59,7 @@ class Cells:
         self.cell_signals = self.cell_signals * self.cell_signal_degrad
 
     def get_cell_params(
-        self, cells: list[list[dict[tuple[str, IntEnum, bool], float]]]
+        self, cells: list[list[dict[Domain, float]]]
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Generate matrices A and B from cell proteomes
@@ -76,9 +76,9 @@ class Cells:
         B = torch.zeros(n_cells, self.n_signals, self.max_proteins)
         for cell_i, cell in enumerate(cells):
             for prot_i, protein in enumerate(cell):
-                for (_, sig, inc), weight in protein.items():
-                    sig_i = sig.value
-                    if inc:
+                for dom, weight in protein.items():
+                    sig_i = dom.sig.value
+                    if dom.is_incomming:
                         A[cell_i, sig_i, prot_i] = weight
                     else:
                         B[cell_i, sig_i, prot_i] = weight

@@ -2,7 +2,7 @@ import time
 import pytest
 import torch
 from util import rand_genome
-from genetics import MessengerReceptor, MessengerSynthesis, WorldSignal, Genetics
+from genetics import ReceptorDomain, SynthesisDomain, Messenger, Cytokine, Genetics
 from cells import Cells
 
 TOLERANCE = 1e-3
@@ -12,24 +12,24 @@ def test_cell_time_step():
     # fmt: off
     cell = [
         {
-            ("RcF", WorldSignal.F, True): 0.1,
-            ("OutA", MessengerSynthesis.MA, False): 0.8,
-            ("OutB", MessengerSynthesis.MB, False): 0.5,
-            ("OutD", MessengerSynthesis.MD, False): 0.3,
+            ReceptorDomain(Cytokine.F): 0.1,
+            SynthesisDomain(Messenger.MA): 0.8,
+            SynthesisDomain(Messenger.MB): 0.5,
+            SynthesisDomain(Messenger.MD): 0.3,
         },
         {
-            ("InC", MessengerReceptor.MC, True): 0.4,
-            ("OutB", MessengerSynthesis.MB, False): 0.9,
-            ("OutC", MessengerSynthesis.MC, False): 0.4,
+            ReceptorDomain(Messenger.MC): 0.4,
+            SynthesisDomain(Messenger.MB): 0.9,
+            SynthesisDomain(Messenger.MC): 0.4,
         },
         {
-            ("InB", MessengerReceptor.MB, True): 0.2,
-            ("OutC", MessengerSynthesis.MC, False): 0.3
+            ReceptorDomain(Messenger.MB): 0.2,
+            SynthesisDomain(Messenger.MC): 0.3
         },
         {
-            ("InD", MessengerReceptor.MD, True): 0.6,
-            ("OutA", MessengerSynthesis.MA, False): 0.7,
-            ("OutD", MessengerSynthesis.MD, False): 0.8,
+            ReceptorDomain(Messenger.MD): 0.6,
+            SynthesisDomain(Messenger.MA): 0.7,
+            SynthesisDomain(Messenger.MD): 0.8,
         },
     ]
     # fmt: on

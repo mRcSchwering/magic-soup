@@ -75,7 +75,7 @@ class World:
             ).abs()
         raise ValueError(f"Didnt recognize map_init={map_init}")
 
-    def _init_conv(self, kernel: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def _init_conv(self, kernel: Optional[torch.Tensor] = None) -> torch.nn.Conv2d:
         if kernel is None:
             # fmt: off
             kernel = torch.tensor([[[

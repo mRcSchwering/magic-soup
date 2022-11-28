@@ -8,18 +8,12 @@ from util import (
 )
 
 
-class CellMigration(IntEnum):
-    """Domain that promotes cell migration if protein is active"""
-
+class Action(IntEnum):
     CM = 0  # cell migration
 
 
-class ReceptorDomain:
-    """Domain that activates protein if a molecule is present"""
-
-
-class MessengerReceptor(IntEnum):
-    """Domain that activates protein if a messenger is present"""
+class Messenger(IntEnum):
+    """Signals/molecules that live in cell"""
 
     MA = 1  # messenger A
     MB = 2  # messenger B
@@ -27,21 +21,46 @@ class MessengerReceptor(IntEnum):
     MD = 4  # messenger D
 
 
-class MessengerSynthesis(IntEnum):
-    """Domain that synthesizes a messenger if protein is active"""
-
-    MA = 1  # messenger A
-    MB = 2  # messenger B
-    MC = 3  # messenger C
-    MD = 4  # messenger D
-
-
-class WorldSignal(IntEnum):
+class Cytokine(IntEnum):
     """Signals/molecules that live on world map"""
 
     F = 5  # food
     CK = 6  # cytokine K
     CL = 7  # cytokine L
+
+
+class Domain:
+    """Baseclass for domains"""
+
+    is_incomming: bool = False
+    weight_map: dict[str, float] = {}
+
+    def __init__(self, sig: IntEnum):
+        self.sig = sig
+
+
+# TODO: adjustable weight maps
+
+
+class ActionDomain(Domain):
+    """Domain that causes the cell to do some action if protein is active"""
+
+    is_incomming = False
+    weight_map = weight_map_fact(n_nts=6, mu=0, sd=1.3, is_positive=True)
+
+
+class ReceptorDomain(Domain):
+    """Domain that activates protein if a molecule is present"""
+
+    is_incomming = True
+    weight_map = weight_map_fact(n_nts=6, mu=0, sd=1.3, is_positive=False)
+
+
+class SynthesisDomain(Domain):
+    """Domain that synthesizes molecule if protein is active"""
+
+    is_incomming = False
+    weight_map = weight_map_fact(n_nts=6, mu=0, sd=1.3, is_positive=True)
 
 
 class Genetics:
@@ -57,21 +76,21 @@ class Genetics:
 
     # domains: (name, signal, is_incomming)
     # fmt: off
-    domains: dict[tuple[str, IntEnum, bool], list[str]] = {
-        ("RcF", WorldSignal.F, True): variants("CTNTNN") + variants("CANANN"),
-        ("RcK", WorldSignal.CK, True): variants("CGNCNN") + variants("CGNANN"),
-        ("RcL", WorldSignal.CL, True): variants("AANCNN") + variants("ATNCNN"),
-        ("ExK", WorldSignal.CK, False): variants("ACNANN") + variants("ACNTNN"),
-        ("ExL", WorldSignal.CL, False): variants("TCNCNN") + variants("TANCNN"),
-        ("Mig", CellMigration.CM, False): variants("GGNCNN") + variants("GTNCNN"),
-        ("InA", MessengerReceptor.MA, True): variants("CANGNN") + variants("CANCNN"),
-        ("InB", MessengerReceptor.MB, True): variants("CANTNN") + variants("CCNTNN"),
-        ("InC", MessengerReceptor.MC, True): variants("CGNGNN") + variants("CGNTNN"),
-        ("InD", MessengerReceptor.MD, True): variants("TTNGNN") + variants("TGNGNN"),
-        ("OutA", MessengerSynthesis.MA, False): variants("TGNTNN") + variants("TANTNN"),
-        ("OutB", MessengerSynthesis.MB, False): variants("GGNANN") + variants("GGNTNN"),
-        ("OutC", MessengerSynthesis.MC, False): variants("CTNANN") + variants("CTNGNN"),
-        ("OutD", MessengerSynthesis.MD, False): variants("TTNTNN") + variants("TTNANN"),
+    domains: dict[Domain, list[str]] = {
+        ReceptorDomain(Cytokine.F): variants("CTNTNN") + variants("CANANN"),
+        ReceptorDomain(Cytokine.CK): variants("CGNCNN") + variants("CGNANN"),
+        ReceptorDomain(Cytokine.CL): variants("AANCNN") + variants("ATNCNN"),
+        SynthesisDomain(Cytokine.CK): variants("ACNANN") + variants("ACNTNN"),
+        SynthesisDomain(Cytokine.CL): variants("TCNCNN") + variants("TANCNN"),
+        ActionDomain(Action.CM): variants("GGNCNN") + variants("GTNCNN"),
+        ReceptorDomain(Messenger.MA): variants("CANGNN") + variants("CANCNN"),
+        ReceptorDomain(Messenger.MB): variants("CANTNN") + variants("CCNTNN"),
+        ReceptorDomain(Messenger.MC): variants("CGNGNN") + variants("CGNTNN"),
+        ReceptorDomain(Messenger.MD): variants("TTNGNN") + variants("TGNGNN"),
+        SynthesisDomain(Messenger.MA): variants("TGNTNN") + variants("TANTNN"),
+        SynthesisDomain(Messenger.MB): variants("GGNANN") + variants("GGNTNN"),
+        SynthesisDomain(Messenger.MC): variants("CTNANN") + variants("CTNGNN"),
+        SynthesisDomain(Messenger.MD): variants("TTNTNN") + variants("TTNANN"),
     }
     # fmt: on
     domain_size = 6  # with each 3 Ns in 2 codons ^= 3% chance of randomly appearing
@@ -144,7 +163,7 @@ class Genetics:
             k = i % CODON_SIZE
         return cdss
 
-    def get_proteome(self, g: str) -> list[dict[tuple[str, IntEnum, bool], float]]:
+    def get_proteome(self, g: str) -> list[dict[Domain, float]]:
         """
         Get all possible proteins encoded by a nucleotide sequence.
         Proteins are represented as dicts with domain labels and correspondig
@@ -156,7 +175,7 @@ class Genetics:
         cds = list(set(self.get_coding_regions(g) + self.get_coding_regions(gbwd)))
         return [self.translate_seq(d) for d in cds]
 
-    def translate_seq(self, seq: str) -> dict[tuple[str, IntEnum, bool], float]:
+    def translate_seq(self, seq: str) -> dict[Domain, float]:
         """
         Translate nucleotide sequence into dict that represents a protein
         with domains and corresponding weights.
@@ -165,12 +184,11 @@ class Genetics:
         """
         i = 0
         j = self.domain_size
-        res = {}
+        res: dict[Domain, float] = {}
         while j + self.weight_size <= len(seq):
             dom = self.seq_2_dom.get(seq[i:j])
             if dom is not None:
-                range_map = self.codon_2_range1 if dom[-1] else self.codon_2_range0
-                res[dom] = range_map[seq[j : j + self.weight_size]]
+                res[dom] = dom.weight_map[seq[j : j + self.weight_size]]
                 i += self.weight_size + self.domain_size
                 j += self.weight_size + self.domain_size
             else:

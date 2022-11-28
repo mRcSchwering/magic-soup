@@ -1,19 +1,21 @@
 import time
 import torch
 from util import rand_genome
-from genetics import Genetics, CellSignal, WorldSignal
+from genetics import Genetics, Cytokine, Messenger, Action
 from world import World
 from cells import Cells
 
 
 def time_step(cells: Cells, world: World):
     # get C0 from cell and map molecule concentrations
-    C0 = torch.zeros(len(cells.positions), len(CellSignal) + len(WorldSignal))
+    C0 = torch.zeros(len(cells.positions), len(Cytokine) + len(Messenger) + len(Action))
     for cell_i, pos in enumerate(cells.positions):
-        for idx, wsig in enumerate(WorldSignal):
+        for idx, wsig in enumerate(Cytokine):
             C0[cell_i, wsig.value] = world.map[idx, 0, pos[0], pos[1]]
-        for idx, csig in enumerate(CellSignal):
+        for idx, csig in enumerate(Messenger):
             C0[cell_i, csig.value] = cells.cell_signals[cell_i, idx]
+        for idx, asig in enumerate(Action):
+            C0[cell_i, asig.value] = cells.cell_signals[cell_i, idx]
 
     # integrate signals
     res = cells.simulate_protein_work(C=C0, A=cells.A, B=cells.B)
@@ -25,16 +27,20 @@ def time_step(cells: Cells, world: World):
 
     # add cell's produces molecules to map and cell
     for cell_i, pos in enumerate(cells.positions):
-        for idx, wsig in enumerate(WorldSignal):
+        for idx, wsig in enumerate(Cytokine):
             world.map[idx, 0, pos[0], pos[1]] += res[0, wsig.value]
-        for idx, csig in enumerate(CellSignal):
+        for idx, csig in enumerate(Messenger):
             cells.cell_signals[cell_i, idx] += res[cell_i, csig.value]
+        for idx, asig in enumerate(Action):
+            cells.cell_signals[cell_i, idx] += res[cell_i, asig.value]
 
 
 if __name__ == "__main__":
     genetics = Genetics()
     world = World(size=128, layers=4)
-    cells = Cells(n_cell_signals=len(CellSignal), n_world_signals=len(WorldSignal))
+    cells = Cells(
+        n_cell_signals=len(Messenger) + len(Action), n_world_signals=len(Cytokine)
+    )
 
     gs = [rand_genome((1000, 5000)) for _ in range(1000)]
     positions = world.position_cells(n_cells=len(gs))
@@ -49,7 +55,7 @@ if __name__ == "__main__":
     A, B = cells.get_cell_params(cells=prtms)
     print(f"get cell params for 1000 cells: {time.time() - t0:.2f}s")
 
-    C = torch.randn(len(prtms), len(CellSignal) + len(WorldSignal))
+    C = torch.randn(len(prtms), len(Cytokine) + len(Messenger) + len(Action))
 
     t0 = time.time()
     res = cells.simulate_protein_work(C=C, A=A, B=B)
@@ -74,11 +80,11 @@ if __name__ == "__main__":
 
     genetics = Genetics()
     cells = Cells(
-        n_cell_signals=len(CellSignal),
-        n_world_signals=len(WorldSignal),
+        n_cell_signals=len(Messenger) + len(Action),
+        n_world_signals=len(Cytokine),
         max_proteins=10_000,
     )
-    world = World(size=128, layers=len(WorldSignal), map_init="randn")
+    world = World(size=128, layers=len(Cytokine), map_init="randn")
 
     # get initial cell params
     init_gs = [rand_genome() for _ in range(10)]
