@@ -12,9 +12,9 @@ ALL_CODONS = tuple(set("".join(d) for d in product(ALL_NTS, ALL_NTS, ALL_NTS)))
 Tv = TypeVar("Tv")
 
 
-def indices(lst: list[Tv], element: Tv) -> list[Tv]:
+def indices(lst: list[Tv], element: Tv) -> list[int]:
     """Get all indices of element in list"""
-    result = []
+    result: list[int] = []
     offset = -1
     while True:
         try:

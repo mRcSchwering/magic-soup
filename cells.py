@@ -1,5 +1,6 @@
+from typing import Optional
 import torch
-from genetics import Domain
+from genetics import Domain, Information
 
 
 class Cells:
@@ -7,33 +8,40 @@ class Cells:
 
     def __init__(
         self,
-        n_cell_signals: int,
-        n_world_signals: int,
+        molecules: list[Information],
+        actions: list[Information],
         dtype=torch.float,
         device="cpu",
         max_proteins=1000,
         cell_signal_degrad=0.8,
     ):
-        self.n_cell_signals = n_cell_signals
-        self.n_world_signals = n_world_signals
-        self.n_signals = n_cell_signals + n_world_signals
+        self.molecules = molecules
+        self.actions = actions
         self.max_proteins = max_proteins
         self.cell_signal_degrad = cell_signal_degrad
         self.dtype = dtype
         self.device = device
+        self.n_molecules = len(molecules)
+        self.n_actions = len(actions)
+        self.n_infos = self.n_molecules * 2 + self.n_actions
+        self.n_cell_infos = self.n_molecules + self.n_actions
+
+        self.cell_info_map = {d: i for i, d in enumerate(molecules + actions)}
+        self.world_info_map = {
+            d: i + self.n_cell_infos for i, d in enumerate(molecules)
+        }
+
         self.genomes: list[str] = []
         self.positions: list[tuple[int, int]] = []
-        self.cell_signals = torch.zeros(0, n_cell_signals, dtype=dtype, device=device)
-        self.A = torch.zeros(
-            0, self.n_signals, max_proteins, dtype=dtype, device=device,
+        self.cell_signals = torch.zeros(
+            0, self.n_cell_infos, dtype=dtype, device=device
         )
-        self.B = torch.zeros(
-            0, self.n_signals, max_proteins, dtype=dtype, device=device,
-        )
+        self.A = torch.zeros(0, self.n_infos, max_proteins, dtype=dtype, device=device,)
+        self.B = torch.zeros(0, self.n_infos, max_proteins, dtype=dtype, device=device,)
 
     def add_cells(
         self,
-        proteomes: list[list[dict[Domain, float]]],
+        proteomes: list[list[dict[Domain, tuple[Optional[float], Optional[float]]]]],
         positions: list[tuple[int, int]],
     ):
         if len(positions) != len(proteomes):
@@ -51,7 +59,7 @@ class Cells:
     def _get_cell_signals(self, n_cells: int) -> torch.Tensor:
         # TODO: get parent concentrations (for duplication events only)
         new = torch.randn(
-            n_cells, self.n_cell_signals, dtype=self.dtype, device=self.device
+            n_cells, self.n_cell_infos, dtype=self.dtype, device=self.device
         ).abs()
         return torch.concat([self.cell_signals, new], dim=0)
 
@@ -59,7 +67,7 @@ class Cells:
         self.cell_signals = self.cell_signals * self.cell_signal_degrad
 
     def get_cell_params(
-        self, cells: list[list[dict[Domain, float]]]
+        self, cells: list[list[dict[Domain, tuple[Optional[float], Optional[float]]]]]
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Generate matrices A and B from cell proteomes
@@ -72,16 +80,18 @@ class Cells:
         size (1000, 5000) took 0.01s
         """
         n_cells = len(cells)
-        A = torch.zeros(n_cells, self.n_signals, self.max_proteins)
-        B = torch.zeros(n_cells, self.n_signals, self.max_proteins)
+        # TODO: device, dtype
+        A = torch.zeros(n_cells, self.n_infos, self.max_proteins)
+        B = torch.zeros(n_cells, self.n_infos, self.max_proteins)
         for cell_i, cell in enumerate(cells):
             for prot_i, protein in enumerate(cell):
-                for dom, weight in protein.items():
-                    sig_i = dom.sig.value
-                    if dom.is_incomming:
-                        A[cell_i, sig_i, prot_i] = weight
-                    else:
-                        B[cell_i, sig_i, prot_i] = weight
+                for dom, (a, b) in protein.items():
+                    # TODO: check whether it needs world concentration instead
+                    idx = self.cell_info_map[dom.info]
+                    if a is not None:
+                        A[cell_i, idx, prot_i] = a
+                    if b is not None:
+                        B[cell_i, idx, prot_i] = b
         return (A, B)
 
     def simulate_protein_work(
