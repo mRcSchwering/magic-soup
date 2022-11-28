@@ -73,7 +73,11 @@ if __name__ == "__main__":
     #############
 
     genetics = Genetics()
-    cells = Cells(n_cell_signals=len(CellSignal), n_world_signals=len(WorldSignal))
+    cells = Cells(
+        n_cell_signals=len(CellSignal),
+        n_world_signals=len(WorldSignal),
+        max_proteins=10_000,
+    )
     world = World(size=128, layers=len(WorldSignal), map_init="randn")
 
     # get initial cell params
@@ -86,3 +90,4 @@ if __name__ == "__main__":
     for _ in range(1000):
         time_step(world=world, cells=cells)
     print(f"time_step 1000x: {time.time() - t0:.2f}s")
+

@@ -8,10 +8,28 @@ from util import (
 )
 
 
-class CellSignal(IntEnum):
-    """Signals/molecules that live in cell"""
+class CellMigration(IntEnum):
+    """Domain that promotes cell migration if protein is active"""
 
     CM = 0  # cell migration
+
+
+class ReceptorDomain:
+    """Domain that activates protein if a molecule is present"""
+
+
+class MessengerReceptor(IntEnum):
+    """Domain that activates protein if a messenger is present"""
+
+    MA = 1  # messenger A
+    MB = 2  # messenger B
+    MC = 3  # messenger C
+    MD = 4  # messenger D
+
+
+class MessengerSynthesis(IntEnum):
+    """Domain that synthesizes a messenger if protein is active"""
+
     MA = 1  # messenger A
     MB = 2  # messenger B
     MC = 3  # messenger C
@@ -38,22 +56,24 @@ class Genetics:
     # - explicit memory/switch (transduction pathways could already become switches)
 
     # domains: (name, signal, is_incomming)
+    # fmt: off
     domains: dict[tuple[str, IntEnum, bool], list[str]] = {
         ("RcF", WorldSignal.F, True): variants("CTNTNN") + variants("CANANN"),
         ("RcK", WorldSignal.CK, True): variants("CGNCNN") + variants("CGNANN"),
         ("RcL", WorldSignal.CL, True): variants("AANCNN") + variants("ATNCNN"),
         ("ExK", WorldSignal.CK, False): variants("ACNANN") + variants("ACNTNN"),
         ("ExL", WorldSignal.CL, False): variants("TCNCNN") + variants("TANCNN"),
-        ("Mig", CellSignal.CM, False): variants("GGNCNN") + variants("GTNCNN"),
-        ("InA", CellSignal.MA, True): variants("CANGNN") + variants("CANCNN"),
-        ("InB", CellSignal.MB, True): variants("CANTNN") + variants("CCNTNN"),
-        ("InC", CellSignal.MC, True): variants("CGNGNN") + variants("CGNTNN"),
-        ("InD", CellSignal.MD, True): variants("TTNGNN") + variants("TGNGNN"),
-        ("OutA", CellSignal.MA, False): variants("TGNTNN") + variants("TANTNN"),
-        ("OutB", CellSignal.MB, False): variants("GGNANN") + variants("GGNTNN"),
-        ("OutC", CellSignal.MC, False): variants("CTNANN") + variants("CTNGNN"),
-        ("OutD", CellSignal.MD, False): variants("TTNTNN") + variants("TTNANN"),
+        ("Mig", CellMigration.CM, False): variants("GGNCNN") + variants("GTNCNN"),
+        ("InA", MessengerReceptor.MA, True): variants("CANGNN") + variants("CANCNN"),
+        ("InB", MessengerReceptor.MB, True): variants("CANTNN") + variants("CCNTNN"),
+        ("InC", MessengerReceptor.MC, True): variants("CGNGNN") + variants("CGNTNN"),
+        ("InD", MessengerReceptor.MD, True): variants("TTNGNN") + variants("TGNGNN"),
+        ("OutA", MessengerSynthesis.MA, False): variants("TGNTNN") + variants("TANTNN"),
+        ("OutB", MessengerSynthesis.MB, False): variants("GGNANN") + variants("GGNTNN"),
+        ("OutC", MessengerSynthesis.MC, False): variants("CTNANN") + variants("CTNGNN"),
+        ("OutD", MessengerSynthesis.MD, False): variants("TTNTNN") + variants("TTNANN"),
     }
+    # fmt: on
     domain_size = 6  # with each 3 Ns in 2 codons ^= 3% chance of randomly appearing
     weight_size = 6  # 50% chance domain itself is mutated vs weight is mutated
     start_codons = ("TTG", "GTG", "ATG")
@@ -82,11 +102,12 @@ class Genetics:
             raise ValueError(
                 f"Not all domains are of length domain_size={self.domain_size}"
             )
-        act_nts = set(d for d in self.seq_2_dom)
-        if not act_nts <= ALL_NTS:
+        exp_nts = set(ALL_NTS)
+        wrng_dom_nts = [d for d in self.seq_2_dom if set(d) - exp_nts]
+        if len(wrng_dom_nts) > 0:
             raise ValueError(
-                "Some domains include unknown nucleotides: "
-                + ", ".join(act_nts - ALL_NTS)
+                f"Some domains include unknown nucleotides: {', '.join(wrng_dom_nts)}. "
+                f"Known nucleotides are: {', '.join(exp_nts)}."
             )
 
     def get_coding_regions(self, seq: str) -> list[str]:
