@@ -15,13 +15,21 @@ class Information:
     Gets its concrete meaning together with domain.
     """
 
+    is_molecule = False
+    is_action = False
+
     def __init__(self, name: str, energy: float):
         self.name = name
         self.energy = energy
 
 
+# TODO: signals as static classes?
+
+
 class Molecule(Information):
     """Representing a molecule"""
+
+    is_molecule = True
 
 
 MA = Molecule("A", 5)  # molceule A
@@ -36,6 +44,8 @@ MOLECULES: list[Information] = [MA, MB, MC, MD, ME, MF]
 
 class Action(Information):
     """Representing an action"""
+
+    is_action = True
 
 
 CM = Action("CM", 2)  # cell migration
@@ -55,41 +65,62 @@ class Domain:
     def __init__(
         self,
         info: Optional[Information] = None,
-        sigma_a: Optional[float] = None,
-        sigma_b: Optional[float] = None,
         is_transmembrane=False,
+        is_action=False,
+        is_incomming=False,
     ):
         self.info = info
-        self.energy = info.energy if info else None
+        self.energy = info.energy if info else 0.0
         self.is_transmembrane = is_transmembrane
-        self.a_weight_map: dict[str, float] = {}
-        self.b_weight_map: dict[str, float] = {}
-        if sigma_a is not None:
-            self.a_weight_map = weight_map_fact(n_nts=6, mu=0, sd=sigma_a)
-        if sigma_b is not None:
-            self.b_weight_map = weight_map_fact(n_nts=6, mu=0, sd=sigma_b, do_abs=True)
+        self.is_action = is_action
+        self.is_incomming = is_incomming
 
 
-# TODO: adjustable weight maps
+class DomainFact:
+    def __init__(
+        self,
+        info: Optional[Information] = None,
+        is_transmembrane=False,
+        is_action=False,
+        is_incomming=False,
+    ):
+        self.info = info
+        self.energy = info.energy if info else 0.0
+        self.is_transmembrane = is_transmembrane
+        self.is_action = is_action
+        self.is_incomming = is_incomming
+
+    def __call__(self) -> Domain:
+        return Domain(
+            info=self.info,
+            is_transmembrane=self.is_transmembrane,
+            is_action=self.is_action,
+            is_incomming=self.is_incomming,
+        )
 
 
-class ActionDomain(Domain):
+class ActionDomainFact(DomainFact):
     """Domain that causes the cell to do some action if protein is active"""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_action = True
 
-class ReceptorDomain(Domain):
+
+class ReceptorDomainFact(DomainFact):
     """Domain that activates protein if a molecule is present. Cytoplasmic receptor by default."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.energy = 0
+        self.is_incomming = True
 
 
-class SynthesisDomain(Domain):
+class SynthesisDomainFact(DomainFact):
     """Domain that synthesizes molecule from abundant monomers if protein is active"""
 
 
-class DecompositionDomain(Domain):
+class DecompositionDomainFact(DomainFact):
     """Domain that decomposes molecule into monomers if protein is active"""
 
     def __init__(self, *args, **kwargs):
@@ -97,7 +128,7 @@ class DecompositionDomain(Domain):
         self.energy = self.energy * -1
 
 
-class TransmembraneDomain(Domain):
+class TransmembraneDomainFact(DomainFact):
     """Creates transmembrane protein. Receptors become transmembrane receptors."""
 
     def __init__(self, *args, **kwargs):
@@ -106,7 +137,7 @@ class TransmembraneDomain(Domain):
         self.is_transmembrane = True
 
 
-class ImporterDomain(Domain):
+class ImporterDomainFact(DomainFact):
     """
     Domain that imports molecules from outside the cell if protein is active.
     Receptor domains on this protein become transmembrane receptors.
@@ -118,7 +149,7 @@ class ImporterDomain(Domain):
         self.is_transmembrane = True
 
 
-class ExporterDomain(Domain):
+class ExporterDomainFact(DomainFact):
     """
     Domain that exports molecules from inside the cell if protein is active.
     Receptor domains on this protein become transmembrane receptors.
@@ -127,45 +158,44 @@ class ExporterDomain(Domain):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.energy = 0
-        self.is_transmembrane = True
 
 
-DOMAINS: dict[Domain, list[str]] = {
-    ActionDomain(CM, sigma_b=1.3): variants("GGNCNN"),
-    ActionDomain(CR, sigma_b=1.3): variants("GTNCNN"),
-    ActionDomain(DR, sigma_b=1.3): variants("CANANN"),
-    ActionDomain(TP, sigma_b=1.3): variants("CGNANN"),
-    ReceptorDomain(MA, sigma_a=1.3): variants("CTNTNN"),
-    ReceptorDomain(MB, sigma_a=1.3): variants("CGNCNN"),
-    ReceptorDomain(MC, sigma_a=1.3): variants("AANCNN"),
-    ReceptorDomain(MD, sigma_a=1.3): variants("CANGNN"),
-    ReceptorDomain(ME, sigma_a=1.3): variants("CANTNN"),
-    ReceptorDomain(MF, sigma_a=1.3): variants("CGNGNN"),
-    SynthesisDomain(MA, sigma_b=1.3): variants("ATNCNN"),
-    SynthesisDomain(MB, sigma_b=1.3): variants("ACNANN"),
-    SynthesisDomain(MC, sigma_b=1.3): variants("TCNCNN"),
-    SynthesisDomain(MD, sigma_b=1.3): variants("TGNTNN"),
-    SynthesisDomain(ME, sigma_b=1.3): variants("GGNANN"),
-    SynthesisDomain(MF, sigma_b=1.3): variants("CTNANN"),
-    DecompositionDomain(MA, sigma_b=1.3): variants("CANCNN"),
-    DecompositionDomain(MB, sigma_b=1.3): variants("CCNTNN"),
-    DecompositionDomain(MC, sigma_b=1.3): variants("CGNTNN"),
-    DecompositionDomain(MD, sigma_b=1.3): variants("ACNTNN"),
-    DecompositionDomain(ME, sigma_b=1.3): variants("TANCNN"),
-    DecompositionDomain(MF, sigma_b=1.3): variants("TANTNN"),
-    ImporterDomain(MA, sigma_b=1.3): variants("GGNTNN"),
-    ImporterDomain(MB, sigma_b=1.3): variants("CTNGNN"),
-    ImporterDomain(MC, sigma_b=1.3): variants("AGNTNN"),
-    ImporterDomain(MD, sigma_b=1.3): variants("GCNTNN"),
-    ImporterDomain(ME, sigma_b=1.3): variants("TTNCNN"),
-    ImporterDomain(MF, sigma_b=1.3): variants("GANTNN"),
-    ExporterDomain(MA, sigma_b=1.3): variants("GGNGNN"),
-    ExporterDomain(MB, sigma_b=1.3): variants("CTNCNN"),
-    ExporterDomain(MC, sigma_b=1.3): variants("AGNANN"),
-    ExporterDomain(MD, sigma_b=1.3): variants("GCNGNN"),
-    ExporterDomain(ME, sigma_b=1.3): variants("TTNANN"),
-    ExporterDomain(MF, sigma_b=1.3): variants("GANCNN"),
-    TransmembraneDomain(): variants("AANANN"),
+DOMAINS: dict[DomainFact, list[str]] = {
+    ActionDomainFact(CM): variants("GGNCNN"),
+    ActionDomainFact(CR): variants("GTNCNN"),
+    ActionDomainFact(DR): variants("CANANN"),
+    ActionDomainFact(TP): variants("CGNANN"),
+    ReceptorDomainFact(MA): variants("CTNTNN"),
+    ReceptorDomainFact(MB): variants("CGNCNN"),
+    ReceptorDomainFact(MC): variants("AANCNN"),
+    ReceptorDomainFact(MD): variants("CANGNN"),
+    ReceptorDomainFact(ME): variants("CANTNN"),
+    ReceptorDomainFact(MF): variants("CGNGNN"),
+    SynthesisDomainFact(MA): variants("ATNCNN"),
+    SynthesisDomainFact(MB): variants("ACNANN"),
+    SynthesisDomainFact(MC): variants("TCNCNN"),
+    SynthesisDomainFact(MD): variants("TGNTNN"),
+    SynthesisDomainFact(ME): variants("GGNANN"),
+    SynthesisDomainFact(MF): variants("CTNANN"),
+    DecompositionDomainFact(MA): variants("CANCNN"),
+    DecompositionDomainFact(MB): variants("CCNTNN"),
+    DecompositionDomainFact(MC): variants("CGNTNN"),
+    DecompositionDomainFact(MD): variants("ACNTNN"),
+    DecompositionDomainFact(ME): variants("TANCNN"),
+    DecompositionDomainFact(MF): variants("TANTNN"),
+    ImporterDomainFact(MA): variants("GGNTNN"),
+    ImporterDomainFact(MB): variants("CTNGNN"),
+    ImporterDomainFact(MC): variants("AGNTNN"),
+    ImporterDomainFact(MD): variants("GCNTNN"),
+    ImporterDomainFact(ME): variants("TTNCNN"),
+    ImporterDomainFact(MF): variants("GANTNN"),
+    ExporterDomainFact(MA): variants("GGNGNN"),
+    ExporterDomainFact(MB): variants("CTNCNN"),
+    ExporterDomainFact(MC): variants("AGNANN"),
+    ExporterDomainFact(MD): variants("GCNGNN"),
+    ExporterDomainFact(ME): variants("TTNANN"),
+    ExporterDomainFact(MF): variants("GANCNN"),
+    TransmembraneDomainFact(): variants("AANANN"),
 }
 
 
@@ -173,10 +203,7 @@ class Protein:
     """Container class for a protein"""
 
     def __init__(
-        self,
-        domains: dict[Domain, tuple[Optional[float], Optional[float]]],
-        is_transmembrane: bool,
-        energy: float,
+        self, domains: dict[Domain, float], is_transmembrane: bool, energy: float,
     ):
         self.domains = domains
         self.is_transmembrane = is_transmembrane
@@ -188,12 +215,16 @@ class Genetics:
 
     def __init__(
         self,
-        domain_map: dict[Domain, list[str]],
+        domain_map: dict[DomainFact, list[str]],
         n_dom_def_nts=6,
         n_dom_act_nts=6,
         n_prot_act_nts=6,
         start_codons=("TTG", "GTG", "ATG"),
         stop_codons=("TGA", "TAG", "TAA"),
+        weights_a_mu=0.0,
+        weight_a_sd=1.3,
+        weights_b_mu=0.0,
+        weight_b_sd=1.3,
     ):
         self.domain_map = domain_map
         self.n_dom_def_nts = n_dom_def_nts
@@ -202,6 +233,12 @@ class Genetics:
         self.start_codons = start_codons
         self.stop_codons = stop_codons
         self.seq_2_dom = {d: k for k, v in self.domain_map.items() for d in v}
+
+        self.weight_map_a = weight_map_fact(n_nts=6, mu=weights_a_mu, sd=weight_a_sd)
+        self.weight_map_b = weight_map_fact(
+            n_nts=6, mu=weights_b_mu, sd=weight_b_sd, do_abs=True
+        )
+
         self._validate_init()
 
     def get_coding_regions(self, seq: str) -> list[str]:
@@ -247,7 +284,6 @@ class Genetics:
         cds = [d for d in cds if len(d) < min_n]
         return [self.translate_seq(d) for d in cds]
 
-    # TODO: add protein constant, needs protein class
     def translate_seq(self, seq: str) -> Protein:
         """
         Translate nucleotide sequence into dict that represents a protein
@@ -259,15 +295,18 @@ class Genetics:
         is_transm = False
         energy = 0.0
         while j + self.n_dom_act_nts <= len(seq):
-            dom = self.seq_2_dom.get(seq[i:j])
-            if dom is not None:
+            domfact = self.seq_2_dom.get(seq[i:j])
+            if domfact is not None:
+                dom = domfact()
                 if dom.energy is not None:
                     energy += dom.energy
                 if dom.is_transmembrane:
                     is_transm = True
-                a = dom.a_weight_map.get(seq[j : j + self.n_dom_act_nts])
-                b = dom.b_weight_map.get(seq[j : j + self.n_dom_act_nts])
-                doms[dom] = (a, b)
+                if dom.is_incomming:
+                    w = self.weight_map_a[seq[j : j + self.n_dom_act_nts]]
+                else:
+                    w = self.weight_map_b[seq[j : j + self.n_dom_act_nts]]
+                doms[dom] = w
                 i += self.n_dom_act_nts + self.n_dom_def_nts
                 j += self.n_dom_act_nts + self.n_dom_def_nts
             else:
@@ -325,12 +364,12 @@ class Genetics:
                 f"Known nucleotides are: {', '.join(exp_nts)}."
             )
 
-        for dom in self.domain_map:
-            na = [len(d) for d in dom.a_weight_map]
-            nb = [len(d) for d in dom.b_weight_map]
-            n_nts = set(na + nb)
-            if len(n_nts) > 0 and n_nts != {self.n_dom_act_nts}:
+        for name, wmap in [
+            ("weight_map_a", self.weight_map_a),
+            ("weight_map_b", self.weight_map_b),
+        ]:
+            if set(len(d) for d in wmap) != {self.n_dom_act_nts}:
                 raise ValueError(
-                    f"Found weight map with wrong nucleotide lengths in domain: {dom}. "
-                    f"All weight should be encoded with n_dom_act_nts={self.n_dom_act_nts} nucleatoides."
+                    f"Found wrong nucleotide lengths in {name}. "
+                    f"All weights should be encoded with n_dom_act_nts={self.n_dom_act_nts} nucleatoides."
                 )

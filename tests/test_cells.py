@@ -4,8 +4,8 @@ import torch
 from util import rand_genome
 from genetics import (
     Genetics,
-    ReceptorDomain,
-    SynthesisDomain,
+    ReceptorDomainFact,
+    SynthesisDomainFact,
     Protein,
     MA,
     MB,
@@ -25,24 +25,24 @@ def test_cell_signal_integration():
     # fmt: off
     domains = [
         {
-            ReceptorDomain(MA): (0.1, None),
-            SynthesisDomain(MB): (None, 0.8),
-            SynthesisDomain(MC): (None, 0.5),
-            SynthesisDomain(ME): (None, 0.3),
+            ReceptorDomainFact(MA)(): 0.1,
+            SynthesisDomainFact(MB)(): 0.8,
+            SynthesisDomainFact(MC)(): 0.5,
+            SynthesisDomainFact(ME)(): 0.3,
         },
         {
-            ReceptorDomain(MD): (0.4, None),
-            SynthesisDomain(MC): (None, 0.9),
-            SynthesisDomain(MD): (None, 0.4),
+            ReceptorDomainFact(MD)(): 0.4,
+            SynthesisDomainFact(MC)(): 0.9,
+            SynthesisDomainFact(MD)(): 0.4,
         },
         {
-            ReceptorDomain(MC): (0.2, None),
-            SynthesisDomain(MD): (None, 0.3)
+            ReceptorDomainFact(MC)(): 0.2,
+            SynthesisDomainFact(MD)(): 0.3
         },
         {
-            ReceptorDomain(ME): (0.6, None),
-            SynthesisDomain(MB): (None, 0.7),
-            SynthesisDomain(ME): (None, 0.8),
+            ReceptorDomainFact(ME)(): 0.6,
+            SynthesisDomainFact(MB)(): 0.7,
+            SynthesisDomainFact(ME)(): 0.8,
         },
     ]
     # fmt: on

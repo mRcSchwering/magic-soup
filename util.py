@@ -1,6 +1,7 @@
 from typing import TypeVar, Optional
 from itertools import product
 import random
+import torch
 import numpy as np
 
 
@@ -103,3 +104,7 @@ def simulate_point_mutation(seq: str, p=1e-3, sub2indel=0.5) -> Optional[str]:
             tmp = _indel(seq=tmp, idx=idx)
     return tmp
 
+
+def trunc(tens: torch.Tensor, n_decs: int) -> torch.Tensor:
+    """Round values of a tensor to `n_decs` decimals"""
+    return torch.round(tens * 10 ** n_decs) / (10 ** n_decs)

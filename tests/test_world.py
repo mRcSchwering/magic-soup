@@ -4,7 +4,7 @@ from world import World
 
 
 def test_performance():
-    world = World(size=128, n_molecules=4, map_init="randn")
+    world = World(size=128, n_molecules=4, mol_map_init="randn")
 
     t0 = time.time()
     for _ in range(100):
