@@ -192,3 +192,11 @@ class Cells:
     def __len__(self) -> int:
         return len(self.genomes)
 
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(n_molecules=%r,n_actions=%r)" % (
+            clsname,
+            self.n_molecules,
+            self.n_actions,
+        )
+

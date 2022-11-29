@@ -80,6 +80,12 @@ class World:
             ]]])
             # fmt: on
 
+        if kernel.shape != (1, 1, 3, 3):
+            raise ValueError(
+                "Molecule diffusion kernel must have shape (1, 1, 3, 3). "
+                f"The one supplied has shape {kernel.shape}"
+            )
+
         conv = torch.nn.Conv2d(
             in_channels=1,
             out_channels=1,
@@ -91,3 +97,7 @@ class World:
         )
         conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
         return conv
+
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(size=%r,n_molecules=%r)" % (clsname, self.size, self.n_molecules)

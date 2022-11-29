@@ -22,6 +22,10 @@ class Information:
         self.name = name
         self.energy = energy
 
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(name=%r,energy=%r)" % (clsname, self.name, self.energy)
+
 
 # TODO: signals as static classes?
 
@@ -75,6 +79,10 @@ class Domain:
         self.is_action = is_action
         self.is_incomming = is_incomming
 
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(info=%r,is_incomming=%r)" % (clsname, self.info, self.is_incomming)
+
 
 class DomainFact:
     def __init__(
@@ -97,6 +105,10 @@ class DomainFact:
             is_action=self.is_action,
             is_incomming=self.is_incomming,
         )
+
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(info=%r,is_incomming=%r)" % (clsname, self.info, self.is_incomming)
 
 
 class ActionDomainFact(DomainFact):
@@ -209,6 +221,15 @@ class Protein:
         self.is_transmembrane = is_transmembrane
         self.energy = energy
 
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(is_transmembrane=%r,energy=%r,n_domains=%s)" % (
+            clsname,
+            self.is_transmembrane,
+            self.energy,
+            len(self.domains),
+        )
+
 
 class Genetics:
     """Defines possible protein domains and how they are encoded on the genome."""
@@ -218,7 +239,6 @@ class Genetics:
         domain_map: dict[DomainFact, list[str]],
         n_dom_def_nts=6,
         n_dom_act_nts=6,
-        n_prot_act_nts=6,
         start_codons=("TTG", "GTG", "ATG"),
         stop_codons=("TGA", "TAG", "TAA"),
         weights_a_mu=0.0,
@@ -229,7 +249,6 @@ class Genetics:
         self.domain_map = domain_map
         self.n_dom_def_nts = n_dom_def_nts
         self.n_dom_act_nts = n_dom_act_nts
-        self.n_prot_act_nts = n_prot_act_nts
         self.start_codons = start_codons
         self.stop_codons = stop_codons
         self.seq_2_dom = {d: k for k, v in self.domain_map.items() for d in v}
@@ -327,12 +346,6 @@ class Genetics:
                 f"Now it is n_dom_def_nts={self.n_dom_def_nts}"
             )
 
-        if self.n_prot_act_nts % CODON_SIZE != 0:
-            raise ValueError(
-                f"The number of nucleotides encoding protein activation regions should be a multiple of CODON_SIZE={CODON_SIZE}. "
-                f"Now it is n_prot_act_nts={self.n_prot_act_nts}"
-            )
-
         if any(len(d) != CODON_SIZE for d in self.start_codons):
             raise ValueError(
                 f"Not all start codons are of length CODON_SIZE={CODON_SIZE}"
@@ -373,3 +386,17 @@ class Genetics:
                     f"Found wrong nucleotide lengths in {name}. "
                     f"All weights should be encoded with n_dom_act_nts={self.n_dom_act_nts} nucleatoides."
                 )
+
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return (
+            "%s(n_dom_def_nts=%r,n_dom_act_nts=%r,n_start_codons=%s,n_stop_codons=%r)"
+            % (
+                clsname,
+                self.n_dom_def_nts,
+                self.n_dom_act_nts,
+                len(self.start_codons),
+                len(self.stop_codons),
+            )
+        )
+
