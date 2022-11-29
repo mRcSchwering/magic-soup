@@ -20,21 +20,33 @@ class Information:
         self.energy = energy
 
 
-MA = Information("A", 5)  # molceule A
-MB = Information("B", 4)  # molceule B
-MC = Information("C", 3)  # molceule C
-MD = Information("D", 3)  # molceule D
-ME = Information("E", 2)  # molceule E
-MF = Information("F", 1)  # molceule F
+class Molecule(Information):
+    """Representing a molecule"""
 
-MOLECULES = [MA, MB, MC, MD, ME, MF]
 
-CM = Information("CM", -2)  # cell migration
-CR = Information("CR", -4)  # cell replication
-DR = Information("DR", -1)  # DNA repair
-TP = Information("TP", -1)  # transposon
+MA = Molecule("A", 5)  # molceule A
+MB = Molecule("B", 4)  # molceule B
+MC = Molecule("C", 3)  # molceule C
+MD = Molecule("D", 3)  # molceule D
+ME = Molecule("E", 2)  # molceule E
+MF = Molecule("F", 1)  # molceule F
 
-ACTIONS = [CM, CR, DR, TP]
+MOLECULES: list[Information] = [MA, MB, MC, MD, ME, MF]
+
+
+class Action(Information):
+    """Representing an action"""
+
+
+CM = Action("CM", -2)  # cell migration
+CR = Action("CR", -4)  # cell replication
+DR = Action("DR", -1)  # DNA repair
+TP = Action("TP", -1)  # transposon
+
+KL = Action("KL", -2)  # kill neighbouring cell
+AT = Action("AT", 0)  # undergo apoptosis
+
+ACTIONS: list[Information] = [CM, CR, DR, TP]
 
 
 class Domain:
@@ -45,9 +57,11 @@ class Domain:
         info: Optional[Information] = None,
         sigma_a: Optional[float] = None,
         sigma_b: Optional[float] = None,
+        is_transmembrane=False,
     ):
         self.info = info
         self.energy = info.energy if info else None
+        self.is_transmembrane = is_transmembrane
         self.a_weight_map: dict[str, float] = {}
         self.b_weight_map: dict[str, float] = {}
         if sigma_a is not None:
@@ -89,6 +103,7 @@ class TransmembraneDomain(Domain):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.energy = 0
+        self.is_transmembrane = True
 
 
 class ImporterDomain(Domain):
@@ -100,6 +115,7 @@ class ImporterDomain(Domain):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.energy = 0
+        self.is_transmembrane = True
 
 
 class ExporterDomain(Domain):
@@ -111,6 +127,7 @@ class ExporterDomain(Domain):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.energy = 0
+        self.is_transmembrane = True
 
 
 DOMAINS: dict[Domain, list[str]] = {
@@ -150,6 +167,20 @@ DOMAINS: dict[Domain, list[str]] = {
     ExporterDomain(MF, sigma_b=1.3): variants("GANCNN"),
     TransmembraneDomain(): variants("AANANN"),
 }
+
+
+class Protein:
+    """Container class for a protein"""
+
+    def __init__(
+        self,
+        domains: dict[Domain, tuple[Optional[float], Optional[float]]],
+        is_transmembrane: bool,
+        energy: float,
+    ):
+        self.domains = domains
+        self.is_transmembrane = is_transmembrane
+        self.energy = energy
 
 
 class Genetics:
@@ -204,9 +235,7 @@ class Genetics:
             k = i % CODON_SIZE
         return cdss
 
-    def get_proteome(
-        self, seq: str
-    ) -> list[dict[Domain, tuple[Optional[float], Optional[float]]]]:
+    def get_proteome(self, seq: str) -> list[Protein]:
         """
         Get all possible proteins encoded by a nucleotide sequence.
         Proteins are represented as dicts with domain labels and correspondig
@@ -219,28 +248,32 @@ class Genetics:
         return [self.translate_seq(d) for d in cds]
 
     # TODO: add protein constant, needs protein class
-    def translate_seq(
-        self, seq: str
-    ) -> dict[Domain, tuple[Optional[float], Optional[float]]]:
+    def translate_seq(self, seq: str) -> Protein:
         """
         Translate nucleotide sequence into dict that represents a protein
         with domains and corresponding activation weights.
         """
         i = 0
         j = self.n_dom_def_nts
-        res: dict[Domain, tuple[Optional[float], Optional[float]]] = {}
+        doms = {}
+        is_transm = False
+        energy = 0.0
         while j + self.n_dom_act_nts <= len(seq):
             dom = self.seq_2_dom.get(seq[i:j])
             if dom is not None:
+                if dom.energy is not None:
+                    energy += dom.energy
+                if dom.is_transmembrane:
+                    is_transm = True
                 a = dom.a_weight_map.get(seq[j : j + self.n_dom_act_nts])
                 b = dom.b_weight_map.get(seq[j : j + self.n_dom_act_nts])
-                res[dom] = (a, b)
+                doms[dom] = (a, b)
                 i += self.n_dom_act_nts + self.n_dom_def_nts
                 j += self.n_dom_act_nts + self.n_dom_def_nts
             else:
                 i += CODON_SIZE
                 j += CODON_SIZE
-        return res
+        return Protein(domains=doms, is_transmembrane=is_transm, energy=energy)
 
     def _validate_init(self):
         if self.n_dom_act_nts % CODON_SIZE != 0:

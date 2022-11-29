@@ -6,6 +6,7 @@ from genetics import (
     Genetics,
     ReceptorDomain,
     SynthesisDomain,
+    Protein,
     MA,
     MB,
     MC,
@@ -22,7 +23,7 @@ TOLERANCE = 1e-3
 
 def test_cell_time_step():
     # fmt: off
-    cell = [
+    domains = [
         {
             ReceptorDomain(MA): (0.1, None),
             SynthesisDomain(MB): (None, 0.8),
@@ -46,6 +47,7 @@ def test_cell_time_step():
     ]
     # fmt: on
 
+    prtm = [Protein(domains=d, is_transmembrane=False, energy=0) for d in domains]
     dim1 = len(MOLECULES) * 2
 
     # initial concentrations
@@ -65,9 +67,9 @@ def test_cell_time_step():
     c1_d = 0.0565  # f(c0_d * 0.4) * 0.4 + f(c0_c * 0.2) * 0.3
     c1_e = 0.3587  # f(c0_a * 0.1) * 0.3 + f(c0_e * 0.6) * 0.8
 
-    cells = Cells(molecules=MOLECULES, actions=[], max_proteins=4)
+    cells = Cells(molecules=MOLECULES, actions=[], n_max_proteins=4)
 
-    A, B = cells.get_cell_params(cells=[cell])
+    A, B = cells.get_cell_params(cells=[prtm])
 
     assert A.shape == (1, dim1, 4)
     assert B.shape == (1, dim1, 4)

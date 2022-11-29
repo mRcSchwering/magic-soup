@@ -8,16 +8,17 @@ from cells import Cells
 
 def time_step(cells: Cells, world: World):
     # get C0 from cell and map molecule concentrations
+    # TODO: probably wrong by now
     C0 = torch.zeros(len(cells.positions), cells.n_infos)
     for cell_i, pos in enumerate(cells.positions):
         for widx, mol in enumerate(MOLECULES):
-            intern_idx = cells.cell_info_map[mol]
-            extern_idx = cells.world_info_map[mol]
-            C0[cell_i, intern_idx] = cells.cell_signals[cell_i, intern_idx]
+            intern_idx = cells.info_2_cell_mol_idx[mol]
+            extern_idx = cells.info_2_world_mol_idx[mol]
+            C0[cell_i, intern_idx] = cells.molecule_map[cell_i, widx]
             C0[cell_i, extern_idx] = world.map[widx, 0, pos[0], pos[1]]
-        for act in ACTIONS:
-            idx = cells.cell_info_map[act]
-            C0[cell_i, idx] = cells.cell_signals[cell_i, idx]
+        for aidx, act in enumerate(ACTIONS):
+            idx = cells.info_2_cell_act_idx[act]
+            C0[cell_i, idx] = cells.action_map[cell_i, aidx]
 
     # integrate signals
     res = cells.simulate_protein_work(C=C0, A=cells.A, B=cells.B)
@@ -25,18 +26,19 @@ def time_step(cells: Cells, world: World):
     # degrade cell and map
     world.diffuse()
     world.degrade()
-    cells.degrade_signals()
+    cells.degrade_molecules()
 
     # add cell's produces molecules to map and cell
+    # TODO: probably wrong by now
     for cell_i, pos in enumerate(cells.positions):
         for widx, mol in enumerate(MOLECULES):
-            intern_idx = cells.cell_info_map[mol]
-            extern_idx = cells.world_info_map[mol]
+            intern_idx = cells.info_2_cell_mol_idx[mol]
+            extern_idx = cells.info_2_world_mol_idx[mol]
             world.map[widx, 0, pos[0], pos[1]] += res[0, extern_idx]
-            cells.cell_signals[cell_i, intern_idx] += res[cell_i, intern_idx]
-        for act in ACTIONS:
-            idx = cells.cell_info_map[act]
-            cells.cell_signals[cell_i, idx] += res[cell_i, idx]
+            cells.molecule_map[cell_i, widx] += res[cell_i, intern_idx]
+        for aidx, act in enumerate(ACTIONS):
+            idx = cells.info_2_cell_act_idx[act]
+            cells.action_map[cell_i, aidx] += res[cell_i, idx]
 
 
 if __name__ == "__main__":
