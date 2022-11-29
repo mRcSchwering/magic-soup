@@ -21,7 +21,7 @@ def time_step(cells: Cells, world: World):
             C0[cell_i, idx] = cells.action_map[cell_i, aidx]
 
     # integrate signals
-    res = cells.simulate_protein_work(C=C0, A=cells.A, B=cells.B)
+    res = cells.simulate_protein_work(X=C0, A=cells.A, B=cells.B, Z=cells.Z)
 
     # degrade cell and map
     world.diffuse()
@@ -56,13 +56,13 @@ if __name__ == "__main__":
     cells.add_cells(proteomes=prtms, positions=positions)
 
     t0 = time.time()
-    A, B = cells.get_cell_params(cells=prtms)
+    A, B, Z = cells.get_cell_params(proteomes=prtms)
     print(f"get cell params for 1000 cells: {time.time() - t0:.2f}s")
 
     C = torch.randn(len(prtms), cells.n_infos)
 
     t0 = time.time()
-    res = cells.simulate_protein_work(C=C, A=A, B=B)
+    res = cells.simulate_protein_work(X=C, A=A, B=B, Z=Z)
     print(f"simulate_protein_work for 1000 cells: {time.time() - t0:.2f}s")
 
     world.map = torch.randn(4, 1, 128, 128)

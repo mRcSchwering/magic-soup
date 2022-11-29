@@ -2,6 +2,9 @@ import torch
 from genetics import Information, Molecule, Protein, ReceptorDomain
 
 
+# TODO: torch sparse matrices?
+
+
 class Cells:
     """State of all cells in simulation"""
 
@@ -47,6 +50,7 @@ class Cells:
         self.action_map = torch.zeros(0, self.n_actions, **kwargs)
         self.A = torch.zeros(0, self.n_infos, n_max_proteins, **kwargs)
         self.B = torch.zeros(0, self.n_infos, n_max_proteins, **kwargs)
+        self.Z = torch.zeros(0, self.n_max_proteins, **kwargs)
 
     def add_cells(
         self, proteomes: list[list[Protein]], positions: list[tuple[int, int]],
@@ -60,9 +64,10 @@ class Cells:
 
         n = len(positions)
         self.positions.extend(positions)
-        A, B = self.get_cell_params(cells=proteomes)
+        A, B, Z = self.get_cell_params(proteomes=proteomes)
         self.A = torch.concat([self.A, A], dim=0)
         self.B = torch.concat([self.B, B], dim=0)
+        self.Z = torch.concat([self.Z, Z], dim=0)
 
         # TODO: get parent concentrations (for duplication events only)
         kwargs = {"dtype": self.dtype, "device": self.device}
@@ -74,27 +79,31 @@ class Cells:
     def degrade_molecules(self):
         self.molecule_map = self.molecule_map * self.cell_mol_degrad
 
-    # TODO: need C, Z, X
     def get_cell_params(
-        self, cells: list[list[Protein]]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        self, proteomes: list[list[Protein]]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Generate matrices A and B from cell proteomes
+        Generate tensors A, B, Z from cell proteomes
 
-        Returns tuple (A, B) with matrices both of shape (c, s, p) where
-        s is the number of signals, p is the number of proteins, and c is
-        the number of cells.
+        Returns tuple (A, B, Z):
 
-        21.11.22 getting cell params for 1000 proteomes each of genome
-        size (1000, 5000) took 0.01s
+        - `A` parameters defining how incomming signals map to proteins, `(c, s, p)`
+        - `B` parameters defining how much proteins can produce output signals, `(c, s, p)`
+        - `Z` binary matrix which protein can produce output at all, `(p,)`
+        
+        where `s` is the number of signals, `p` is the number of proteins,
+        and `c` is the number of cells.
         """
-        n_cells = len(cells)
-        kwagrs = {"dtype": self.dtype, "device": self.device}
-        A = torch.zeros(n_cells, self.n_infos, self.n_max_proteins, **kwagrs)
-        B = torch.zeros(n_cells, self.n_infos, self.n_max_proteins, **kwagrs)
-        # TODO: where did I need B ones?!
-        for cell_i, cell in enumerate(cells):
+        n = len(proteomes)
+        kwargs = {"dtype": self.dtype, "device": self.device}
+        A = torch.zeros(n, self.n_infos, self.n_max_proteins, **kwargs)
+        B = torch.zeros(n, self.n_infos, self.n_max_proteins, **kwargs)
+        Z = torch.zeros(n, self.n_max_proteins, **kwargs)
+
+        for cell_i, cell in enumerate(proteomes):
             for prot_i, protein in enumerate(cell):
+                # TODO: > 0 energy proteins are only relevant if transporer in it
+                Z[cell_i, prot_i] = float(protein.energy <= 0)
                 for dom, (a, b) in protein.domains.items():
                     if dom.info is not None:
                         if isinstance(dom.info, Molecule):
@@ -110,31 +119,35 @@ class Cells:
                             A[cell_i, idx, prot_i] = a
                         if b is not None:
                             B[cell_i, idx, prot_i] = b
-        return (A, B)
+        return (A, B, Z)
 
     def simulate_protein_work(
-        self, C: torch.Tensor, A: torch.Tensor, B: torch.Tensor
+        self, X: torch.Tensor, A: torch.Tensor, B: torch.Tensor, Z: torch.Tensor
     ) -> torch.Tensor:
         """
-        Calculate molecules/signals created/activated by proteins after 1 timestep.
-        Returns additional concentrations in shape `(c, s)`.
+        Calculate new information (molecules/actions) created by proteins after 1 timestep.
+        Returns neew informations in shape `(c, s)` with `s` signals(=information), `p` proteins, `c` cells.
 
-        - `C` initial concentrations shape `(c, s)`
-        - `A` parameters for A `(c, s, p)`
-        - `B` parameters for B `(c, s, p)`
+        - `X` initial incomming information, `(c, s)`
+        - `A` parameters defining how incomming information maps to proteins, `(c, s, p)`
+        - `B` parameters defining how much proteins can produce output information, `(c, s, p)`
+        - `Z` binary matrix which protein can produce output at all, `(c, p)`
 
-        Proteins' activation function is `B * (1 - exp(-(C * A) ** 3))`.
-        There are s signals, p proteins, c cells. The way how signals are
-        integrated by multiplying with A we basically assume signals all
-        activate and/or competitively inhibit the protein's domain.
-
-        21.11.22 simulating protein work for 1000 cells each
-        of genome size (1000, 5000) took 0.00s excluding other functions.
+        Proteins' output is defined by:
+        
+            `(1 - exp(-(X * A) ** 3)) * (B * Z)`
+        
+        # TODO: implications of this calculation
         """
-        # matrix (c x p)
-        x = torch.einsum("ij,ijk->ik", C, A)
-        y = 1 - torch.exp(-(x ** 3))
+        # protein activity, matrix (c x p)
+        X_1 = torch.einsum("ij,ijk->ik", X, A)
+        X_2 = 1 - torch.exp(-(X_1 ** 3))
 
-        # matrix (c x m)
-        return torch.einsum("ij,ikj->ik", y, B)
+        # protein output potentials, matrix (c x s)
+        B_1 = torch.einsum("ijk,ik->ijk", B, Z)
+
+        # protein output, matrix (c x s)
+        X_3 = torch.einsum("ij,ikj->ik", X_2, B_1)
+
+        return X_3
 

@@ -38,12 +38,12 @@ class Action(Information):
     """Representing an action"""
 
 
-CM = Action("CM", -2)  # cell migration
-CR = Action("CR", -4)  # cell replication
-DR = Action("DR", -1)  # DNA repair
-TP = Action("TP", -1)  # transposon
+CM = Action("CM", 2)  # cell migration
+CR = Action("CR", 4)  # cell replication
+DR = Action("DR", 1)  # DNA repair
+TP = Action("TP", 1)  # transposon
 
-KL = Action("KL", -2)  # kill neighbouring cell
+KL = Action("KL", 2)  # kill neighbouring cell
 AT = Action("AT", 0)  # undergo apoptosis
 
 ACTIONS: list[Information] = [CM, CR, DR, TP]

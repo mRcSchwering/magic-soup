@@ -57,4 +57,4 @@ def test_performance():
     t0 = time.time()
     _ = [genetics.get_proteome(seq=d) for d in gs]
     td = time.time() - t0
-    assert td < 0.4, "get_proteome performance degraded a lot"
+    assert td < 0.4, "Used to take 0.19"
