@@ -67,7 +67,7 @@ def test_cell_signal_integration():
     x1_d = 0.0565  # f(x0_d * 0.4) * 0.4 + f(x0_c * 0.2) * 0.3
     x1_e = 0.3587  # f(x0_a * 0.1) * 0.3 + f(x0_e * 0.6) * 0.8
 
-    cells = Cells(molecules=MOLECULES, actions=[], n_max_proteins=4)
+    cells = Cells(molecules=MOLECULES, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
     A, B, Z = cells.get_cell_params(proteomes=[prtm])
 

@@ -7,25 +7,25 @@ from cells import Cells
 
 
 def time_step(cells: Cells, world: World):
-    # get C0 from cell and map molecule concentrations
+    # get X0 from cell and map molecule concentrations
     # TODO: probably wrong by now
-    C0 = torch.zeros(len(cells.positions), cells.n_infos)
+    X0 = torch.zeros(len(cells.positions), cells.n_infos)
     for cell_i, pos in enumerate(cells.positions):
         for widx, mol in enumerate(MOLECULES):
             intern_idx = cells.info_2_cell_mol_idx[mol]
             extern_idx = cells.info_2_world_mol_idx[mol]
-            C0[cell_i, intern_idx] = cells.molecule_map[cell_i, widx]
-            C0[cell_i, extern_idx] = world.map[widx, 0, pos[0], pos[1]]
+            X0[cell_i, intern_idx] = cells.molecule_map[cell_i, widx]
+            X0[cell_i, extern_idx] = world.molecule_map[widx, 0, pos[0], pos[1]]
         for aidx, act in enumerate(ACTIONS):
             idx = cells.info_2_cell_act_idx[act]
-            C0[cell_i, idx] = cells.action_map[cell_i, aidx]
+            X0[cell_i, idx] = cells.action_map[cell_i, aidx]
 
     # integrate signals
-    res = cells.simulate_protein_work(X=C0, A=cells.A, B=cells.B, Z=cells.Z)
+    res = cells.simulate_protein_work(X=X0, A=cells.A, B=cells.B, Z=cells.Z)
 
     # degrade cell and map
-    world.diffuse()
-    world.degrade()
+    world.diffuse_molecules()
+    world.degrade_molecules()
     cells.degrade_molecules()
 
     # add cell's produces molecules to map and cell
@@ -34,7 +34,7 @@ def time_step(cells: Cells, world: World):
         for widx, mol in enumerate(MOLECULES):
             intern_idx = cells.info_2_cell_mol_idx[mol]
             extern_idx = cells.info_2_world_mol_idx[mol]
-            world.map[widx, 0, pos[0], pos[1]] += res[0, extern_idx]
+            world.molecule_map[widx, 0, pos[0], pos[1]] += res[0, extern_idx]
             cells.molecule_map[cell_i, widx] += res[cell_i, intern_idx]
         for aidx, act in enumerate(ACTIONS):
             idx = cells.info_2_cell_act_idx[act]
@@ -43,7 +43,7 @@ def time_step(cells: Cells, world: World):
 
 if __name__ == "__main__":
     genetics = Genetics(domain_map=DOMAINS)
-    world = World(size=128, layers=4)
+    world = World(size=128, n_molecules=4)
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)
 
     gs = [rand_genome((1000, 5000)) for _ in range(1000)]
@@ -65,11 +65,11 @@ if __name__ == "__main__":
     res = cells.simulate_protein_work(X=C, A=A, B=B, Z=Z)
     print(f"simulate_protein_work for 1000 cells: {time.time() - t0:.2f}s")
 
-    world.map = torch.randn(4, 1, 128, 128)
+    world.molecule_map = torch.randn(4, 1, 128, 128)
     t0 = time.time()
     for _ in range(1000):
-        world.diffuse()
-        world.degrade()
+        world.diffuse_molecules()
+        world.degrade_molecules()
     print(f"128x128 world 1000 time steps: {time.time() - t0:.2f}s")
 
     t0 = time.time()
@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
     genetics = Genetics(domain_map=DOMAINS)
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)
-    world = World(size=128, layers=len(MOLECULES), map_init="randn")
+    world = World(size=128, n_molecules=len(MOLECULES), map_init="randn")
 
     # get initial cell params
     init_gs = [rand_genome() for _ in range(10)]

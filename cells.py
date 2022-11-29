@@ -15,12 +15,14 @@ class Cells:
         dtype=torch.float,
         device="cpu",
         n_max_proteins=1000,
-        cell_mol_degrad=0.9,
+        mol_degrad=0.9,
+        trunc_n_decs=4,
     ):
         self.n_max_proteins = n_max_proteins
-        self.cell_mol_degrad = cell_mol_degrad
+        self.mol_degrad = mol_degrad
         self.dtype = dtype
         self.device = device
+        self.trunc_n_decs = trunc_n_decs
 
         self.molecules = molecules
         self.actions = actions
@@ -77,7 +79,7 @@ class Cells:
         self.action_map = torch.concat([self.action_map, action_map], dim=0)
 
     def degrade_molecules(self):
-        self.molecule_map = self.molecule_map * self.cell_mol_degrad
+        self.molecule_map = self.truncate(self.molecule_map * self.mol_degrad)
 
     def get_cell_params(
         self, proteomes: list[list[Protein]]
@@ -149,5 +151,7 @@ class Cells:
         # protein output, matrix (c x s)
         X_3 = torch.einsum("ij,ikj->ik", X_2, B_1)
 
-        return X_3
+        return self.truncate(X_3)
 
+    def truncate(self, tens: torch.Tensor) -> torch.Tensor:
+        return torch.round(tens * 10 ** self.trunc_n_decs) / (10 ** self.trunc_n_decs)
