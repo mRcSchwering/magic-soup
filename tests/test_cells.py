@@ -252,6 +252,24 @@ def test_molecule_deconstruction_with_small_concentration():
         assert X1[0, i] == 0.0
 
 
+def test_proteins_cannot_produce_negative_concentrations():
+    genetics = Genetics(domain_map=DOMAINS)
+    cells = Cells(molecules=MOLECULES, actions=ACTIONS)
+    gs = [rand_genome((1000, 5000)) for _ in range(100)]
+    prtms = [genetics.get_proteome(seq=d) for d in gs]
+    world = World(n_molecules=len(MOLECULES))
+    pos = world.add_cells(n_cells=len(prtms))
+
+    cells.add_cells(genomes=gs, proteomes=prtms, positions=pos)
+    A, B, Z = cells.get_cell_params(proteomes=prtms)
+    X = torch.randn(len(prtms), len(ACTIONS) + 2 * len(MOLECULES))
+
+    for _ in range(10):
+        Xd = cells.simulate_protein_work(X=X, A=A, B=B, Z=Z)
+        X = X + Xd
+        assert not torch.any(X < 0)
+
+
 def test_performance():
     genetics = Genetics(domain_map=DOMAINS)
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)

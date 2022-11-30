@@ -162,11 +162,31 @@ class Cells:
         X_1 = torch.einsum("ij,ijk->ik", X, A)
         X_2 = torch.clamp(1 - torch.exp(-(X_1 ** 3)), min=0, max=1)
 
-        # protein output potentials, matrix (c x s)
+        # protein output potentials, matrix (c x s x p)
         B_1 = torch.einsum("ijk,ik->ijk", B, Z)
 
         # protein output, matrix (c x s)
         X_3 = torch.einsum("ij,ikj->ik", X_2, B_1)
+
+        X_d = X + X_3
+
+        # correct for negative net X
+        if torch.any(X_d < 0):
+            # TODO: performance...
+            print("need to correct", X_d.shape)
+            X_d_mask = torch.where(X_d < 0.0, 1.0, 0.0)
+            B_1_mask = torch.einsum(
+                "ijk,ij->ijk", torch.where(B_1 < 0.0, 1.0, 0.0), X_d_mask
+            )
+            B_1_d = torch.where(B_1_mask > 0, B_1, 0.0)
+
+            B_wrng_vals = torch.einsum(
+                "ij,ijk->ijk", torch.where(X_d < 0.0, X_d, 0.0), 1.0 / B_1_d
+            )
+            B_excess = torch.nan_to_num(B_wrng_vals, nan=0.0, posinf=0.0, neginf=0.0)
+            Z_1_adj = (torch.ones(B_excess.shape) - B_excess).min(dim=1).values
+            B_1_adj = torch.einsum("ijk,ik->ijk", B_1, Z_1_adj)
+            X_3 = torch.einsum("ij,ikj->ik", X_2, B_1_adj)
 
         return trunc(tens=X_3, n_decs=self.trunc_n_decs)
 
