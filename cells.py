@@ -115,7 +115,7 @@ class Cells:
                     continue
 
                 Z[cell_i, prot_i] = 1.0
-                for dom, w in protein.domains.items():
+                for dom in protein.domains:
                     if dom.info is not None:
                         if dom.info.is_molecule:
                             idx = self.molecules.index(dom.info)
@@ -127,9 +127,9 @@ class Cells:
                             idx = self.actions.index(dom.info)
                             offset = self.in_act_pad
                         if dom.is_receptor:
-                            A[cell_i, idx + offset, prot_i] = w
+                            A[cell_i, idx + offset, prot_i] = dom.weight
                         else:
-                            B[cell_i, idx + offset, prot_i] = w
+                            B[cell_i, idx + offset, prot_i] = dom.weight
         return (A, B, Z)
 
     def simulate_protein_work(

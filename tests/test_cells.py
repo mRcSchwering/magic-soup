@@ -24,26 +24,26 @@ TOLERANCE = 1e-4
 def test_cell_signal_integration():
     # fmt: off
     domains = [
-        {
-            ReceptorDomainFact(MA)(0.1): 0.1,
-            SynthesisDomainFact(MB)(0.8): 0.8,
-            SynthesisDomainFact(MC)(0.5): 0.5,
-            SynthesisDomainFact(ME)(0.3): 0.3,
-        },
-        {
-            ReceptorDomainFact(MD)(0.4): 0.4,
-            SynthesisDomainFact(MC)(0.9): 0.9,
-            SynthesisDomainFact(MD)(0.4): 0.4,
-        },
-        {
-            ReceptorDomainFact(MC)(0.2): 0.2,
-            SynthesisDomainFact(MD)(0.3): 0.3
-        },
-        {
-            ReceptorDomainFact(ME)(0.6): 0.6,
-            SynthesisDomainFact(MB)(0.7): 0.7,
-            SynthesisDomainFact(ME)(0.8): 0.8,
-        },
+        [
+            ReceptorDomainFact(MA)(0.1),
+            SynthesisDomainFact(MB)(0.8),
+            SynthesisDomainFact(MC)(0.5),
+            SynthesisDomainFact(ME)(0.3),
+        ],
+        [
+            ReceptorDomainFact(MD)(0.4),
+            SynthesisDomainFact(MC)(0.9),
+            SynthesisDomainFact(MD)(0.4),
+        ],
+        [
+            ReceptorDomainFact(MC)(0.2),
+            SynthesisDomainFact(MD)(0.3)
+        ],
+        [
+            ReceptorDomainFact(ME)(0.6),
+            SynthesisDomainFact(MB)(0.7),
+            SynthesisDomainFact(ME)(0.8),
+        ],
     ]
     # fmt: on
 
@@ -90,26 +90,26 @@ def test_cell_signal_integration():
 def test_switching_off_proteins_by_energy():
     # fmt: off
     domains = [
-        {
-            ReceptorDomainFact(MA)(0.1): 0.1,
-            SynthesisDomainFact(MB)(0.8): 0.8,
-            SynthesisDomainFact(MC)(0.5): 0.5,
-            SynthesisDomainFact(ME)(0.3): 0.3,
-        },
-        {
-            ReceptorDomainFact(MD)(0.4): 0.4,
-            SynthesisDomainFact(MC)(0.9): 0.9,
-            SynthesisDomainFact(MD)(0.4): 0.4,
-        },
-        {
-            ReceptorDomainFact(MC)(0.2): 0.2,
-            SynthesisDomainFact(MD)(0.3): 0.3
-        },
-        {
-            ReceptorDomainFact(ME)(0.6): 0.6,
-            SynthesisDomainFact(MB)(0.7): 0.7,
-            SynthesisDomainFact(ME)(0.8): 0.8,
-        },
+        [
+            ReceptorDomainFact(MA)(0.1),
+            SynthesisDomainFact(MB)(0.8),
+            SynthesisDomainFact(MC)(0.5),
+            SynthesisDomainFact(ME)(0.3),
+        ],
+        [
+            ReceptorDomainFact(MD)(0.4),
+            SynthesisDomainFact(MC)(0.9),
+            SynthesisDomainFact(MD)(0.4),
+        ],
+        [
+            ReceptorDomainFact(MC)(0.2),
+            SynthesisDomainFact(MD)(0.3)
+        ],
+        [
+            ReceptorDomainFact(ME)(0.6),
+            SynthesisDomainFact(MB)(0.7),
+            SynthesisDomainFact(ME)(0.8),
+        ],
     ]
     # fmt: on
 
