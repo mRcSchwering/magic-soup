@@ -52,7 +52,7 @@ def test_cell_signal_integration():
     ]
     # fmt: on
 
-    prtm = [Protein(domains=d, energy=0) for d in proteins]
+    prtm = [Protein(domains=d) for d in proteins]
     dim1 = len(molecules) * 2
 
     # initial concentrations
@@ -74,8 +74,7 @@ def test_cell_signal_integration():
 
     cells = Cells(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
-    A, B = cells.get_cell_params(proteomes=[prtm])
-    Z = cells.get_protein_activities(proteomes=[prtm], X=X0)
+    A, B, Z = cells.get_cell_params(proteomes=[prtm])
 
     assert A.shape == (1, dim1, 4)
     assert B.shape == (1, dim1, 4)
@@ -127,7 +126,7 @@ def test_switching_off_proteins_by_energy():
     ]
     # fmt: on
 
-    prtm = [Protein(domains=d, energy=0) for d in proteins]
+    prtm = [Protein(domains=d) for d in proteins]
     dim1 = len(molecules) * 2
 
     # initial concentrations
@@ -149,13 +148,7 @@ def test_switching_off_proteins_by_energy():
 
     cells = Cells(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
-    A, B = cells.get_cell_params(proteomes=[prtm])
-    Z = cells.get_protein_activities(proteomes=[prtm], X=X0)
-
-    assert A.shape == (1, dim1, 4)
-    assert B.shape == (1, dim1, 4)
-    assert Z.shape == (1, 4)
-
+    A, B, Z = cells.get_cell_params(proteomes=[prtm])
     X1 = cells.simulate_protein_work(X=X0, A=A, B=B, Z=Z)
 
     assert X1.shape == (1, dim1)
@@ -168,6 +161,97 @@ def test_switching_off_proteins_by_energy():
         assert X1[0, i] == 0.0
 
 
+def test_molecule_deconstruction_with_abundant_concentration():
+    # molecule B gets deconstructed while C is being synthesized
+    ma = Molecule("MA", 0)
+    mb = Molecule("MB", 1)
+    mc = Molecule("MC", 1)
+    molecules = [ma, mb, mc]
+
+    # fmt: off
+    proteins = [
+        [
+            ReceptorDomainFact(ma)(0.9),
+            SynthesisDomainFact(mb)(-0.5),
+            SynthesisDomainFact(mc)(0.5),
+        ]
+    ]
+    # fmt: on
+    prtm = [Protein(domains=d) for d in proteins]
+    dim1 = len(molecules) * 2
+
+    # initial concentrations
+    X0 = torch.zeros(1, dim1)
+    X0[0, 0] = 2.5  # x0_a
+    X0[0, 1] = 2.1  # x0_b
+    X0[0, 2] = 1.2  # x0_c
+
+    # by hand with:
+    # def f(x: float) -> float:
+    #    return (1 - math.exp(-(x ** 3)))
+    x1_a = 0.0  # no edge points to a
+    x1_b = -0.4999  # f(x0_a * 0.9) * -0.5
+    x1_c = 0.4999  # f(x0_a * 0.9) * 0.5
+
+    cells = Cells(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
+
+    A, B, Z = cells.get_cell_params(proteomes=[prtm])
+    X1 = cells.simulate_protein_work(X=X0, A=A, B=B, Z=Z)
+
+    assert X1.shape == (1, dim1)
+    assert X1[0, 0] == pytest.approx(x1_a, abs=TOLERANCE)
+    assert X1[0, 1] == pytest.approx(x1_b, abs=TOLERANCE)
+    assert X1[0, 2] == pytest.approx(x1_c, abs=TOLERANCE)
+    for i in range(3, dim1):
+        assert X1[0, i] == 0.0
+
+
+def test_molecule_deconstruction_with_small_concentration():
+    # molecule B gets deconstructed while C is being synthesized
+    ma = Molecule("MA", 0)
+    mb = Molecule("MB", 1)
+    mc = Molecule("MC", 1)
+    molecules = [ma, mb, mc]
+
+    # fmt: off
+    proteins = [
+        [
+            ReceptorDomainFact(ma)(0.9),
+            SynthesisDomainFact(mb)(-0.5),
+            SynthesisDomainFact(mc)(0.5),
+        ]
+    ]
+    # fmt: on
+    prtm = [Protein(domains=d) for d in proteins]
+    dim1 = len(molecules) * 2
+
+    # initial concentrations
+    X0 = torch.zeros(1, dim1)
+    X0[0, 0] = 2.5  # x0_a
+    X0[0, 1] = 0.2  # x0_b (only little left)
+    X0[0, 2] = 1.2  # x0_c
+
+    # by hand with:
+    # def f(x: float) -> float:
+    #    return (1 - math.exp(-(x ** 3)))
+    # protein activity would be f(x0_a * 0.9) * 0.5 = 0.4999
+    x1_a = 0.0  # no edge points to a
+    x1_b = -0.2000  # but it can only get 0.2 X0_b
+    x1_c = 0.2000  # and thus only creates 0.2 X0_b
+
+    cells = Cells(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
+
+    A, B, Z = cells.get_cell_params(proteomes=[prtm])
+    X1 = cells.simulate_protein_work(X=X0, A=A, B=B, Z=Z)
+
+    assert X1.shape == (1, dim1)
+    assert X1[0, 0] == pytest.approx(x1_a, abs=TOLERANCE)
+    assert X1[0, 1] == pytest.approx(x1_b, abs=TOLERANCE)
+    assert X1[0, 2] == pytest.approx(x1_c, abs=TOLERANCE)
+    for i in range(3, dim1):
+        assert X1[0, i] == 0.0
+
+
 def test_performance():
     genetics = Genetics(domain_map=DOMAINS)
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)
@@ -176,14 +260,10 @@ def test_performance():
     world = World(n_molecules=len(MOLECULES))
     pos = world.add_cells(n_cells=len(prtms))
 
-    cells.add_cells(
-        genomes=gs, proteomes=prtms, positions=pos, world_mol_map=world.molecule_map
-    )
-    X0 = cells.get_signals(world_mol_map=world.molecule_map)
+    cells.add_cells(genomes=gs, proteomes=prtms, positions=pos)
 
     t0 = time.time()
-    A, B = cells.get_cell_params(proteomes=prtms)
-    Z = cells.get_protein_activities(proteomes=prtms, X=X0)
+    A, B, Z = cells.get_cell_params(proteomes=prtms)
     td = time.time() - t0
     assert td < 0.1, "Used to take 0.043"
 

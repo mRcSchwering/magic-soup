@@ -53,7 +53,6 @@ class Cells:
         genomes: list[str],
         proteomes: list[list[Protein]],
         positions: list[tuple[int, int]],
-        world_mol_map: torch.Tensor,
     ):
         if not len(positions) == len(proteomes) == len(genomes):
             raise ValueError(
@@ -72,9 +71,7 @@ class Cells:
 
         self.genomes.extend(genomes)
         self.positions.extend(positions)
-        X = self.get_signals(world_mol_map=world_mol_map)
-        A, B = self.get_cell_params(proteomes=proteomes)
-        Z = self.get_protein_activities(proteomes=proteomes, X=X)
+        A, B, Z = self.get_cell_params(proteomes=proteomes)
         self.A = torch.concat([self.A, A], dim=0)
         self.B = torch.concat([self.B, B], dim=0)
         self.Z = torch.concat([self.Z, Z], dim=0)
@@ -86,7 +83,7 @@ class Cells:
 
     def get_cell_params(
         self, proteomes: list[list[Protein]]
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Generate tensors A, B, Y, Z from cell proteomes
 
@@ -111,10 +108,12 @@ class Cells:
         n = len(proteomes)
         A = self._get_A(n_cells=n)
         B = self._get_B(n_cells=n)
-
+        Z = self._get_Z(n_cells=len(proteomes))
         for cell_i, cell in enumerate(proteomes):
             for prot_i, protein in enumerate(cell):
+                net_energy = 0.0
                 for dom in protein.domains:
+                    net_energy += dom.energy
                     if dom.info.is_molecule:
                         idx = self.molecules.index(dom.info)
                         if dom.is_transmembrane:
@@ -128,31 +127,9 @@ class Cells:
                         A[cell_i, idx + offset, prot_i] = dom.weight
                     else:
                         B[cell_i, idx + offset, prot_i] = dom.weight
-        return (A, B)
-
-    def get_protein_activities(
-        self, proteomes: list[list[Protein]], X: torch.Tensor
-    ) -> torch.Tensor:
-        Z = self._get_Z(n_cells=len(proteomes))
-
-        for cell_i, cell in enumerate(proteomes):
-            for prot_i, protein in enumerate(cell):
-                net_energy = 0.0
-                min_x = 1.0
-                for dom in protein.domains:
-                    if dom.is_synthesis and dom.energy < 0:
-                        idx = self.molecules.index(dom.info)
-                        if dom.is_transmembrane:
-                            offset = self.ex_mol_pad
-                        else:
-                            offset = self.in_mol_pad
-                        min_x = min(X[cell_i, idx + offset].item(), min_x)
-                    else:
-                        net_energy += dom.energy
                 if net_energy <= 0:
-                    Z[cell_i, prot_i] = min_x
-
-        return torch.clamp(Z, min=0.0, max=1.0)
+                    Z[cell_i, prot_i] = 1.0
+        return (A, B, Z)
 
     def simulate_protein_work(
         self, X: torch.Tensor, A: torch.Tensor, B: torch.Tensor, Z: torch.Tensor,

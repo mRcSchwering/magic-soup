@@ -185,13 +185,12 @@ DOMAINS: dict[DomainFact, list[str]] = {
 class Protein:
     """Container class for a protein"""
 
-    def __init__(self, domains: list[Domain], energy: float):
+    def __init__(self, domains: list[Domain]):
         self.domains = domains
-        self.energy = energy
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(energy=%r,n_domains=%s)" % (clsname, self.energy, len(self.domains))
+        return "%s(n_domains=%s)" % (clsname, len(self.domains))
 
 
 class Genetics:
@@ -275,20 +274,17 @@ class Genetics:
         i = 0
         j = self.n_dom_def_nts
         doms = []
-        energy = 0.0
         while j + self.n_dom_wgt_nts <= len(seq):
             domfact = self.seq_2_dom.get(seq[i:j])
             if domfact is not None:
                 dom = domfact(self.nts_2_weight[seq[j : j + self.n_dom_wgt_nts]])
-                if dom.energy is not None:
-                    energy += dom.energy
                 doms.append(dom)
                 i += self.n_dom_wgt_nts + self.n_dom_def_nts
                 j += self.n_dom_wgt_nts + self.n_dom_def_nts
             else:
                 i += CODON_SIZE
                 j += CODON_SIZE
-        return Protein(domains=doms, energy=energy)
+        return Protein(domains=doms)
 
     def _validate_init(self):
         if self.n_dom_wgt_nts % CODON_SIZE != 0:
