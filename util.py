@@ -48,20 +48,28 @@ def rand_genome(len_range=(100, 500)) -> str:
     return "".join(random.choices(ALL_NTS, k=k))
 
 
-def weight_map_fact(n_nts: int, mu: float, sd: float, do_abs=False) -> dict[str, float]:
+def weight_map_fact(n_nts: int, min_w: float, max_w: float) -> dict[str, float]:
     """
-    Generate codon-to-weight mapping from Gauss samples
+    Generate codon-to-weight mapping with uniformly distributed weights
     
     - `n_nts` number of nucleotides which will encode weight
-    - `mu` mu of the Gauss distribution sampled
-    - `sd` sigma of the Gauss distribution sampled
-    - `do_abs` whether take the abs and only return positive weights
+    - `min_w` minimum weight
+    - `max_w` maximum weight
     """
     codons = variants("N" * n_nts)
-    c2w = {d: random.gauss(mu=mu, sigma=sd) for d in codons}
-    if do_abs:
-        c2w = {k: abs(v) for k, v in c2w.items()}
-    return c2w
+    return {d: random.uniform(min_w, max_w) for d in codons}
+
+
+def bool_map_fact(n_nts: int, p: float = 0.5) -> dict[str, bool]:
+    """
+    Generate weighted codon-to-bool mapping 
+    
+    - `n_nts` number of nucleotides which will encode weight
+    - `p` chance of `True`
+    """
+    codons = variants("N" * n_nts)
+    bls = random.choices((True, False), weights=(p, 1 - p), k=len(codons))
+    return {d: b for d, b in zip(codons, bls)}
 
 
 def reverse_complement(seq: str) -> str:

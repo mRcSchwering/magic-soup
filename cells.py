@@ -3,7 +3,8 @@ from util import trunc
 from genetics import Information, Protein
 
 
-# TODO: move A, B, X, Z stuff to Incubator class
+# TODO: world and cells together in class
+#       ABC stuff in mechanistics class
 
 
 class Cells:
@@ -77,11 +78,13 @@ class Cells:
             tens=self.molecule_map * self.mol_degrad, n_decs=self.trunc_n_decs
         )
 
+    # TODO: Z, Y change and must be updated every step
+
     def get_cell_params(
         self, proteomes: list[list[Protein]]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Generate tensors A, B, Z from cell proteomes
+        Generate tensors A, B, Y, Z from cell proteomes
 
         Returns tuple (A, B, Z):
 
@@ -91,6 +94,15 @@ class Cells:
         
         where `s` is the number of signals, `p` is the number of proteins,
         and `c` is the number of cells.
+
+        B (c, s): 1 for every (cell_i, signal_i) that got a weight
+                  additionally for DeconstructionDomain concentration -x_i of the
+                  molecule i that is mentioned in domain
+        But: There can be 2 or more proteins that both have a DeconstructionDomain
+             so I need to wait for all proteins to go through and then assign
+        Ich muss das in B machen
+        Transporter should be -x_i (xt) for external and x_i (xt) for internal and
+        vice versa
         """
         n = len(proteomes)
         A = self._get_A(n_cells=n)
@@ -99,27 +111,29 @@ class Cells:
 
         for cell_i, cell in enumerate(proteomes):
             for prot_i, protein in enumerate(cell):
-                # TODO: > 0 energy proteins are only relevant if transporer in it
-                Z[cell_i, prot_i] = float(protein.energy <= 0)
+                if protein.energy > 0:
+                    continue
+
+                Z[cell_i, prot_i] = 1.0
                 for dom, w in protein.domains.items():
                     if dom.info is not None:
                         if dom.info.is_molecule:
                             idx = self.molecules.index(dom.info)
-                            if protein.is_transmembrane and dom.is_incomming:
+                            if dom.is_transmembrane and dom.is_receptor:
                                 offset = self.ex_mol_pad
                             else:
                                 offset = self.in_mol_pad
                         else:
                             idx = self.actions.index(dom.info)
                             offset = self.in_act_pad
-                        if dom.is_incomming:
+                        if dom.is_receptor:
                             A[cell_i, idx + offset, prot_i] = w
                         else:
                             B[cell_i, idx + offset, prot_i] = w
         return (A, B, Z)
 
     def simulate_protein_work(
-        self, X: torch.Tensor, A: torch.Tensor, B: torch.Tensor, Z: torch.Tensor
+        self, X: torch.Tensor, A: torch.Tensor, B: torch.Tensor, Z: torch.Tensor,
     ) -> torch.Tensor:
         """
         Calculate new information (molecules/actions) created by proteins after 1 timestep.
@@ -132,7 +146,11 @@ class Cells:
 
         Proteins' output is defined by:
         
-            `(1 - exp(-(X * A) ** 3)) * (B * Z)`
+        ```
+            f(X, A, B, Z) = sig(X * A) * (B * Z)
+            sig(x) = max(1, min(0, e(x)))
+            e(x) = 1 - exp(-x ** 3)
+        ```
 
         In `X (c, s)` signals are ordered in a specific way to reduce computation.
         First, are all molecule concentrations in order. Second, all action intensities in order.
@@ -143,9 +161,10 @@ class Cells:
         
         # TODO: implications of this calculation
         """
+
         # protein activity, matrix (c x p)
         X_1 = torch.einsum("ij,ijk->ik", X, A)
-        X_2 = 1 - torch.exp(-(X_1 ** 3))
+        X_2 = torch.clamp(1 - torch.exp(-(X_1 ** 3)), min=0, max=1)
 
         # protein output potentials, matrix (c x s)
         B_1 = torch.einsum("ijk,ik->ijk", B, Z)

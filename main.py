@@ -40,10 +40,10 @@ if __name__ == "__main__":
     A, B, Z = cells.get_cell_params(proteomes=prtms)
     print(f"get cell params for 1000 cells: {time.time() - t0:.2f}s")
 
-    C = torch.randn(len(prtms), cells.n_infos)
+    X = torch.randn(len(prtms), cells.n_infos)
 
     t0 = time.time()
-    res = cells.simulate_protein_work(X=C, A=A, B=B, Z=Z)
+    res = cells.simulate_protein_work(X=X, A=A, B=B, Z=Z)
     print(f"simulate_protein_work for 1000 cells: {time.time() - t0:.2f}s")
 
     world.molecule_map = torch.randn(4, 1, 128, 128)
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     cells.add_cells(genomes=init_gs, proteomes=init_pts, positions=init_positions)
 
     t0 = time.time()
-    for _ in range(1000):
+    for i in range(1000):
         time_step(world=world, cells=cells)
     print(f"time_step 1000x: {time.time() - t0:.2f}s")
 

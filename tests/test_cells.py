@@ -25,29 +25,29 @@ def test_cell_signal_integration():
     # fmt: off
     domains = [
         {
-            ReceptorDomainFact(MA)(): 0.1,
-            SynthesisDomainFact(MB)(): 0.8,
-            SynthesisDomainFact(MC)(): 0.5,
-            SynthesisDomainFact(ME)(): 0.3,
+            ReceptorDomainFact(MA)(0.1): 0.1,
+            SynthesisDomainFact(MB)(0.8): 0.8,
+            SynthesisDomainFact(MC)(0.5): 0.5,
+            SynthesisDomainFact(ME)(0.3): 0.3,
         },
         {
-            ReceptorDomainFact(MD)(): 0.4,
-            SynthesisDomainFact(MC)(): 0.9,
-            SynthesisDomainFact(MD)(): 0.4,
+            ReceptorDomainFact(MD)(0.4): 0.4,
+            SynthesisDomainFact(MC)(0.9): 0.9,
+            SynthesisDomainFact(MD)(0.4): 0.4,
         },
         {
-            ReceptorDomainFact(MC)(): 0.2,
-            SynthesisDomainFact(MD)(): 0.3
+            ReceptorDomainFact(MC)(0.2): 0.2,
+            SynthesisDomainFact(MD)(0.3): 0.3
         },
         {
-            ReceptorDomainFact(ME)(): 0.6,
-            SynthesisDomainFact(MB)(): 0.7,
-            SynthesisDomainFact(ME)(): 0.8,
+            ReceptorDomainFact(ME)(0.6): 0.6,
+            SynthesisDomainFact(MB)(0.7): 0.7,
+            SynthesisDomainFact(ME)(0.8): 0.8,
         },
     ]
     # fmt: on
 
-    prtm = [Protein(domains=d, is_transmembrane=False, energy=0) for d in domains]
+    prtm = [Protein(domains=d, energy=0) for d in domains]
     dim1 = len(MOLECULES) * 2
 
     # initial concentrations
@@ -86,10 +86,47 @@ def test_cell_signal_integration():
     for i in range(5, dim1):
         assert X1[0, i] == 0.0
 
+
+def test_switching_off_proteins_by_energy():
+    # fmt: off
+    domains = [
+        {
+            ReceptorDomainFact(MA)(0.1): 0.1,
+            SynthesisDomainFact(MB)(0.8): 0.8,
+            SynthesisDomainFact(MC)(0.5): 0.5,
+            SynthesisDomainFact(ME)(0.3): 0.3,
+        },
+        {
+            ReceptorDomainFact(MD)(0.4): 0.4,
+            SynthesisDomainFact(MC)(0.9): 0.9,
+            SynthesisDomainFact(MD)(0.4): 0.4,
+        },
+        {
+            ReceptorDomainFact(MC)(0.2): 0.2,
+            SynthesisDomainFact(MD)(0.3): 0.3
+        },
+        {
+            ReceptorDomainFact(ME)(0.6): 0.6,
+            SynthesisDomainFact(MB)(0.7): 0.7,
+            SynthesisDomainFact(ME)(0.8): 0.8,
+        },
+    ]
+    # fmt: on
+
+    prtm = [Protein(domains=d, energy=0) for d in domains]
+    dim1 = len(MOLECULES) * 2
+
     # switch protein 0, 1 off
     prtm[0].energy = 1  # energetically not preferred
     prtm[1].energy = 1  # energetically not preferred
-    A, B, Z = cells.get_cell_params(proteomes=[prtm])
+
+    # initial concentrations
+    X0 = torch.zeros(1, dim1)
+    X0[0, 0] = 1.5  # x0_a
+    X0[0, 1] = 1.1  # x0_b
+    X0[0, 2] = 1.2  # x0_c
+    X0[0, 3] = 1.3  # x0_d
+    X0[0, 4] = 1.4  # x0_e
 
     # by hand with:
     # def f(x: float) -> float:
@@ -99,6 +136,10 @@ def test_cell_signal_integration():
     x1_c = 0.0  # no edges to c left
     x1_d = 0.0041  # f(x0_c * 0.2) * 0.3
     x1_e = 0.3577  # f(x0_e * 0.6) * 0.8
+
+    cells = Cells(molecules=MOLECULES, actions=[], n_max_proteins=4, trunc_n_decs=5)
+
+    A, B, Z = cells.get_cell_params(proteomes=[prtm])
 
     assert A.shape == (1, dim1, 4)
     assert B.shape == (1, dim1, 4)
