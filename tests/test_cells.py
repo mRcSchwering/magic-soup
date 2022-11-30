@@ -4,51 +4,56 @@ import torch
 from util import rand_genome
 from genetics import (
     Genetics,
+    Molecule,
     ReceptorDomainFact,
     SynthesisDomainFact,
     Protein,
-    MA,
-    MB,
-    MC,
-    MD,
-    ME,
     MOLECULES,
     ACTIONS,
     DOMAINS,
 )
+from world import World
 from cells import Cells
 
 TOLERANCE = 1e-4
 
 
 def test_cell_signal_integration():
+    # molecules have all 0 energy, so all proteins can work
+    ma = Molecule("MA", 0)
+    mb = Molecule("MB", 0)
+    mc = Molecule("MC", 0)
+    md = Molecule("MD", 0)
+    me = Molecule("ME", 0)
+    molecules = [ma, mb, mc, md, me]
+
     # fmt: off
-    domains = [
+    proteins = [
         [
-            ReceptorDomainFact(MA)(0.1),
-            SynthesisDomainFact(MB)(0.8),
-            SynthesisDomainFact(MC)(0.5),
-            SynthesisDomainFact(ME)(0.3),
+            ReceptorDomainFact(ma)(0.1),
+            SynthesisDomainFact(mb)(0.8),
+            SynthesisDomainFact(mc)(0.5),
+            SynthesisDomainFact(me)(0.3),
         ],
         [
-            ReceptorDomainFact(MD)(0.4),
-            SynthesisDomainFact(MC)(0.9),
-            SynthesisDomainFact(MD)(0.4),
+            ReceptorDomainFact(md)(0.4),
+            SynthesisDomainFact(mc)(0.9),
+            SynthesisDomainFact(md)(0.4),
         ],
         [
-            ReceptorDomainFact(MC)(0.2),
-            SynthesisDomainFact(MD)(0.3)
+            ReceptorDomainFact(mc)(0.2),
+            SynthesisDomainFact(md)(0.3)
         ],
         [
-            ReceptorDomainFact(ME)(0.6),
-            SynthesisDomainFact(MB)(0.7),
-            SynthesisDomainFact(ME)(0.8),
+            ReceptorDomainFact(me)(0.6),
+            SynthesisDomainFact(mb)(0.7),
+            SynthesisDomainFact(me)(0.8),
         ],
     ]
     # fmt: on
 
-    prtm = [Protein(domains=d, energy=0) for d in domains]
-    dim1 = len(MOLECULES) * 2
+    prtm = [Protein(domains=d, energy=0) for d in proteins]
+    dim1 = len(molecules) * 2
 
     # initial concentrations
     X0 = torch.zeros(1, dim1)
@@ -67,9 +72,10 @@ def test_cell_signal_integration():
     x1_d = 0.0565  # f(x0_d * 0.4) * 0.4 + f(x0_c * 0.2) * 0.3
     x1_e = 0.3587  # f(x0_a * 0.1) * 0.3 + f(x0_e * 0.6) * 0.8
 
-    cells = Cells(molecules=MOLECULES, actions=[], n_max_proteins=4, trunc_n_decs=5)
+    cells = Cells(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
-    A, B, Z = cells.get_cell_params(proteomes=[prtm])
+    A, B = cells.get_cell_params(proteomes=[prtm])
+    Z = cells.get_protein_activities(proteomes=[prtm], X=X0)
 
     assert A.shape == (1, dim1, 4)
     assert B.shape == (1, dim1, 4)
@@ -88,37 +94,41 @@ def test_cell_signal_integration():
 
 
 def test_switching_off_proteins_by_energy():
+    # molecule E needs energy, so proteins 0 and 3 dont work
+    ma = Molecule("MA", 0)
+    mb = Molecule("MB", 0)
+    mc = Molecule("MC", 0)
+    md = Molecule("MD", 0)
+    me = Molecule("ME", 1)
+    molecules = [ma, mb, mc, md, me]
+
     # fmt: off
-    domains = [
+    proteins = [
         [
-            ReceptorDomainFact(MA)(0.1),
-            SynthesisDomainFact(MB)(0.8),
-            SynthesisDomainFact(MC)(0.5),
-            SynthesisDomainFact(ME)(0.3),
+            ReceptorDomainFact(ma)(0.1),
+            SynthesisDomainFact(mb)(0.8),
+            SynthesisDomainFact(mc)(0.5),
+            SynthesisDomainFact(me)(0.3),
         ],
         [
-            ReceptorDomainFact(MD)(0.4),
-            SynthesisDomainFact(MC)(0.9),
-            SynthesisDomainFact(MD)(0.4),
+            ReceptorDomainFact(md)(0.4),
+            SynthesisDomainFact(mc)(0.9),
+            SynthesisDomainFact(md)(0.4),
         ],
         [
-            ReceptorDomainFact(MC)(0.2),
-            SynthesisDomainFact(MD)(0.3)
+            ReceptorDomainFact(mc)(0.2),
+            SynthesisDomainFact(md)(0.3)
         ],
         [
-            ReceptorDomainFact(ME)(0.6),
-            SynthesisDomainFact(MB)(0.7),
-            SynthesisDomainFact(ME)(0.8),
+            ReceptorDomainFact(me)(0.6),
+            SynthesisDomainFact(mb)(0.7),
+            SynthesisDomainFact(me)(0.8),
         ],
     ]
     # fmt: on
 
-    prtm = [Protein(domains=d, energy=0) for d in domains]
-    dim1 = len(MOLECULES) * 2
-
-    # switch protein 0, 1 off
-    prtm[0].energy = 1  # energetically not preferred
-    prtm[1].energy = 1  # energetically not preferred
+    prtm = [Protein(domains=d, energy=0) for d in proteins]
+    dim1 = len(molecules) * 2
 
     # initial concentrations
     X0 = torch.zeros(1, dim1)
@@ -132,14 +142,15 @@ def test_switching_off_proteins_by_energy():
     # def f(x: float) -> float:
     #    return (1 - math.exp(-(x ** 3)))
     x1_a = 0.0  # no edge points to a
-    x1_b = 0.3130  # f(x0_e * 0.6) * 0.7
-    x1_c = 0.0  # no edges to c left
-    x1_d = 0.0041  # f(x0_c * 0.2) * 0.3
-    x1_e = 0.3577  # f(x0_e * 0.6) * 0.8
+    x1_b = 0.0  # no edges to b left
+    x1_c = 0.1180  # f(x0_d * 0.4) * 0.9
+    x1_d = 0.0565  # f(x0_d * 0.4) * 0.4 + f(x0_c * 0.2) * 0.3
+    x1_e = 0.0  # no edges to e left
 
-    cells = Cells(molecules=MOLECULES, actions=[], n_max_proteins=4, trunc_n_decs=5)
+    cells = Cells(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
-    A, B, Z = cells.get_cell_params(proteomes=[prtm])
+    A, B = cells.get_cell_params(proteomes=[prtm])
+    Z = cells.get_protein_activities(proteomes=[prtm], X=X0)
 
     assert A.shape == (1, dim1, 4)
     assert B.shape == (1, dim1, 4)
@@ -162,9 +173,17 @@ def test_performance():
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)
     gs = [rand_genome((1000, 5000)) for _ in range(100)]
     prtms = [genetics.get_proteome(seq=d) for d in gs]
+    world = World(n_molecules=len(MOLECULES))
+    pos = world.add_cells(n_cells=len(prtms))
+
+    cells.add_cells(
+        genomes=gs, proteomes=prtms, positions=pos, world_mol_map=world.molecule_map
+    )
+    X0 = cells.get_signals(world_mol_map=world.molecule_map)
 
     t0 = time.time()
-    A, B, Z = cells.get_cell_params(proteomes=prtms)
+    A, B = cells.get_cell_params(proteomes=prtms)
+    Z = cells.get_protein_activities(proteomes=prtms, X=X0)
     td = time.time() - t0
     assert td < 0.1, "Used to take 0.043"
 

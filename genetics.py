@@ -111,6 +111,7 @@ class DomainFact:
             info=self.info,
             weight=weight,
             is_transmembrane=is_transmembrane,
+            is_energy_neutral=self.is_energy_neutral,
             is_action=self.is_action,
             is_receptor=self.is_receptor,
             is_synthesis=self.is_synthesis,

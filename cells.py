@@ -35,6 +35,9 @@ class Cells:
         self.in_mol_pad = 0
         self.in_act_pad = self.in_mol_pad + self.n_molecules
         self.ex_mol_pad = self.in_act_pad + self.n_actions
+        self.mol_idxs = list(range(self.in_mol_pad, self.in_act_pad)) + list(
+            range(self.ex_mol_pad, self.n_infos + 1)
+        )
 
         self.genomes: list[str] = []
         self.positions: list[tuple[int, int]] = []
@@ -50,6 +53,7 @@ class Cells:
         genomes: list[str],
         proteomes: list[list[Protein]],
         positions: list[tuple[int, int]],
+        world_mol_map: torch.Tensor,
     ):
         if not len(positions) == len(proteomes) == len(genomes):
             raise ValueError(
@@ -57,14 +61,7 @@ class Cells:
                 "They both represent proteomes, positions of the same list of cells respectively. "
                 f"Now, proteomes has {len(proteomes)}, positions {len(positions)}, genomes {len(genomes)} elements."
             )
-
         n = len(positions)
-        self.genomes.extend(genomes)
-        self.positions.extend(positions)
-        A, B, Z = self.get_cell_params(proteomes=proteomes)
-        self.A = torch.concat([self.A, A], dim=0)
-        self.B = torch.concat([self.B, B], dim=0)
-        self.Z = torch.concat([self.Z, Z], dim=0)
 
         # TODO: get parent actions, molecules (for duplication events only)
         #       replication action should be set to 0 first
@@ -73,16 +70,23 @@ class Cells:
         self.molecule_map = torch.concat([self.molecule_map, molecule_map], dim=0)
         self.action_map = torch.concat([self.action_map, action_map], dim=0)
 
+        self.genomes.extend(genomes)
+        self.positions.extend(positions)
+        X = self.get_signals(world_mol_map=world_mol_map)
+        A, B = self.get_cell_params(proteomes=proteomes)
+        Z = self.get_protein_activities(proteomes=proteomes, X=X)
+        self.A = torch.concat([self.A, A], dim=0)
+        self.B = torch.concat([self.B, B], dim=0)
+        self.Z = torch.concat([self.Z, Z], dim=0)
+
     def degrade_molecules(self):
         self.molecule_map = trunc(
             tens=self.molecule_map * self.mol_degrad, n_decs=self.trunc_n_decs
         )
 
-    # TODO: Z, Y change and must be updated every step
-
     def get_cell_params(
         self, proteomes: list[list[Protein]]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Generate tensors A, B, Y, Z from cell proteomes
 
@@ -107,37 +111,55 @@ class Cells:
         n = len(proteomes)
         A = self._get_A(n_cells=n)
         B = self._get_B(n_cells=n)
-        Z = self._get_Z(n_cells=n)
 
         for cell_i, cell in enumerate(proteomes):
             for prot_i, protein in enumerate(cell):
-                if protein.energy > 0:
-                    continue
-
-                Z[cell_i, prot_i] = 1.0
                 for dom in protein.domains:
-                    if dom.info is not None:
-                        if dom.info.is_molecule:
-                            idx = self.molecules.index(dom.info)
-                            if dom.is_transmembrane and dom.is_receptor:
-                                offset = self.ex_mol_pad
-                            else:
-                                offset = self.in_mol_pad
+                    if dom.info.is_molecule:
+                        idx = self.molecules.index(dom.info)
+                        if dom.is_transmembrane:
+                            offset = self.ex_mol_pad
                         else:
-                            idx = self.actions.index(dom.info)
-                            offset = self.in_act_pad
-                        if dom.is_receptor:
-                            A[cell_i, idx + offset, prot_i] = dom.weight
+                            offset = self.in_mol_pad
+                    else:
+                        idx = self.actions.index(dom.info)
+                        offset = self.in_act_pad
+                    if dom.is_receptor:
+                        A[cell_i, idx + offset, prot_i] = dom.weight
+                    else:
+                        B[cell_i, idx + offset, prot_i] = dom.weight
+        return (A, B)
+
+    def get_protein_activities(
+        self, proteomes: list[list[Protein]], X: torch.Tensor
+    ) -> torch.Tensor:
+        Z = self._get_Z(n_cells=len(proteomes))
+
+        for cell_i, cell in enumerate(proteomes):
+            for prot_i, protein in enumerate(cell):
+                net_energy = 0.0
+                min_x = 1.0
+                for dom in protein.domains:
+                    if dom.is_synthesis and dom.energy < 0:
+                        idx = self.molecules.index(dom.info)
+                        if dom.is_transmembrane:
+                            offset = self.ex_mol_pad
                         else:
-                            B[cell_i, idx + offset, prot_i] = dom.weight
-        return (A, B, Z)
+                            offset = self.in_mol_pad
+                        min_x = min(X[cell_i, idx + offset].item(), min_x)
+                    else:
+                        net_energy += dom.energy
+                if net_energy <= 0:
+                    Z[cell_i, prot_i] = min_x
+
+        return torch.clamp(Z, min=0.0, max=1.0)
 
     def simulate_protein_work(
         self, X: torch.Tensor, A: torch.Tensor, B: torch.Tensor, Z: torch.Tensor,
     ) -> torch.Tensor:
         """
         Calculate new information (molecules/actions) created by proteins after 1 timestep.
-        Returns neew informations in shape `(c, s)` with `s` signals(=information), `p` proteins, `c` cells.
+        Returns new informations in shape `(c, s)` with `s` signals(=information), `p` proteins, `c` cells.
 
         - `X` initial incomming information, `(c, s)`
         - `A` parameters defining how incomming information maps to proteins, `(c, s, p)`
@@ -158,10 +180,7 @@ class Cells:
         outside the cell. So, with 3 molecules and 2 actions, cytoplasmic molecules are in idxs
         0 to 2, cell actions in 3 to 4, extracellular molecules in 5 to 7. These signals `s` are
         ordered the same way in `A`, `B` and the return tensor.
-        
-        # TODO: implications of this calculation
         """
-
         # protein activity, matrix (c x p)
         X_1 = torch.einsum("ij,ijk->ik", X, A)
         X_2 = torch.clamp(1 - torch.exp(-(X_1 ** 3)), min=0, max=1)

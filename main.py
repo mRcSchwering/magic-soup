@@ -6,11 +6,12 @@ from world import World
 from cells import Cells
 
 
-def time_step(cells: Cells, world: World):
+def time_step(cells: Cells, world: World, proteomes):
     # get X0 from cell and map molecule concentrations
     X0 = cells.get_signals(world_mol_map=world.molecule_map)
 
     # integrate signals
+    cells.get_protein_activities(proteomes=proteomes, X=X0)
     res = cells.simulate_protein_work(X=X0, A=cells.A, B=cells.B, Z=cells.Z)
 
     # degrade cell and map
@@ -24,7 +25,7 @@ def time_step(cells: Cells, world: World):
 
 if __name__ == "__main__":
     genetics = Genetics(domain_map=DOMAINS)
-    world = World(size=128, n_molecules=4)
+    world = World(size=128, n_molecules=len(MOLECULES))
     cells = Cells(molecules=MOLECULES, actions=ACTIONS)
 
     gs = [rand_genome((1000, 5000)) for _ in range(1000)]
@@ -34,19 +35,25 @@ if __name__ == "__main__":
     prtms = [genetics.get_proteome(seq=d) for d in gs]
     print(f"get proteome 1000x: {time.time() - t0:.2f}s")
 
-    cells.add_cells(genomes=gs, proteomes=prtms, positions=positions)
-
-    t0 = time.time()
-    A, B, Z = cells.get_cell_params(proteomes=prtms)
-    print(f"get cell params for 1000 cells: {time.time() - t0:.2f}s")
+    cells.add_cells(
+        genomes=gs,
+        proteomes=prtms,
+        positions=positions,
+        world_mol_map=world.molecule_map,
+    )
 
     X = torch.randn(len(prtms), cells.n_infos)
+
+    t0 = time.time()
+    A, B = cells.get_cell_params(proteomes=prtms)
+    Z = cells.get_protein_activities(proteomes=prtms, X=X)
+    print(f"get cell params for 1000 cells: {time.time() - t0:.2f}s")
 
     t0 = time.time()
     res = cells.simulate_protein_work(X=X, A=A, B=B, Z=Z)
     print(f"simulate_protein_work for 1000 cells: {time.time() - t0:.2f}s")
 
-    world.molecule_map = torch.randn(4, 1, 128, 128)
+    world.molecule_map = torch.randn(len(MOLECULES), 1, 128, 128)
     t0 = time.time()
     for _ in range(1000):
         world.diffuse_molecules()
@@ -71,10 +78,15 @@ if __name__ == "__main__":
     init_gs = [rand_genome() for _ in range(10)]
     init_pts = [genetics.get_proteome(seq=d) for d in init_gs]
     init_positions = world.add_cells(n_cells=len(init_pts))
-    cells.add_cells(genomes=init_gs, proteomes=init_pts, positions=init_positions)
+    cells.add_cells(
+        genomes=init_gs,
+        proteomes=init_pts,
+        positions=init_positions,
+        world_mol_map=world.molecule_map,
+    )
 
     t0 = time.time()
     for i in range(1000):
-        time_step(world=world, cells=cells)
+        time_step(world=world, cells=cells, proteomes=init_pts)
     print(f"time_step 1000x: {time.time() - t0:.2f}s")
 
