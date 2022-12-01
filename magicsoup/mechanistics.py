@@ -7,16 +7,36 @@ class Mechanistics:
     """
     Defines how all proteins of all cells integrate signals
     of their respective environments.
+
+    - `molecules` list of all possible molecules that can be encoutered
+    - `actions` list of all possible actions that can be encountered
+    - `n_max_proteins` how many proteins any single cell is expected to have at maximum at any point during the simulation
+    - `trunc_n_decs` by how many decimals to truncate values after each computation
+    - `dtype` pytorch dtype to use for tensors (see pytorch docs)
+    - `device` pytorch device to use for tensors (e.g. `cpu` or `gpu`, see pytorch docs)
+
+    It is faster to setup a large tensor (filled mostly with `0.0`) than to readjust the size of the tensor
+    during every round (according to how many proteins the largest cell has at the moment). Better set
+    `n_max_proteins` a bit higher than expected. The simulation would raise an exception and stop
+    if a cell at some point would have more proteins than `n_max_proteins`.
+
+    Reducing `trunc_n_decs` has 2 effects. It speeds up calculations but also makes them less accurate.
+    Another side effect is that certain values become zero more quickly. This could be a desired effect.
+    E.g. the degradation of molecules would asymptotically approach 0. With `trunc_n_decs=4` any concentration
+    at `0.0001` will become `0.0000` after the next time step.
+
+    For `dtype` and `device` see pytorch's documentation. You can speed up computation by moving calculations
+    to a GPU. If available you can use `dtype=torch.float16` which can speed up computations further.
     """
 
     def __init__(
         self,
         molecules: list[Signal],
         actions: list[Signal],
-        dtype=torch.float,
-        device="cpu",
         n_max_proteins=1000,
         trunc_n_decs=4,
+        dtype=torch.float,
+        device="cpu",
     ):
         self.n_max_proteins = n_max_proteins
         self.trunc_n_decs = trunc_n_decs
@@ -82,7 +102,7 @@ class Mechanistics:
         Calculate new signals (molecules/actions) created by all proteins of all cells
         after 1 timestep. Returns the change in signals in shape `(c, s)`.
 
-        - `X` initial tensor signals, `(c, s)`
+        - `X` initial signals tensor, `(c, s)`
         - `A` parameters defining how incomming signals map to proteins, `(c, s, p)`
         - `B` parameters defining how much proteins can produce output signals, `(c, s, p)`
         - `Z` binary matrix defining which protein can produce output at all, `(c, p)`
@@ -140,6 +160,8 @@ class Mechanistics:
 
         return trunc(tens=X_delta, n_decs=self.trunc_n_decs)
 
+    # TODO: instead of world map: ordered list of signals (same order as cells)
+    #       no need for positions then (just like cell_mol and cell_act)
     def get_signals(
         self,
         cell_positions: list[tuple[int, int]],
@@ -147,6 +169,19 @@ class Mechanistics:
         cell_mol_map: torch.Tensor,
         world_mol_map: torch.Tensor,
     ) -> torch.Tensor:
+        """
+        Create signals tensor for all cells from all sources of signals
+
+        - `cell_positions` ordered list of positions for each cell
+        - `cell_act_map` ordered matrix of action signals internal to cells
+        - `cell_mol_map` ordered matrix of molecule signals internal to cells
+        - `world_mol_map` ordered matrix of molecule signals on the world map
+          at the positions where respective cells currently are
+
+        This method relies on the ordering of cells and signals to reduce computation.
+        If cells or signals are somehow shuffled this method will silently return
+        wrong results.
+        """
         X = self._tensor(len(cell_positions), self.n_signals)
         for cell_i, (x, y) in enumerate(cell_positions):
             for mol_i in range(len(self.molecules)):
@@ -164,6 +199,20 @@ class Mechanistics:
         cell_mol_map: torch.Tensor,
         world_mol_map: torch.Tensor,
     ):
+        """
+        Update all sources of signals for all cells with signals tensor `X`
+
+        - `X` new signals tensor of shape `(c, s)` (`c` cells, `s` signals)
+        - `cell_positions` ordered list of positions for each cell
+        - `cell_act_map` ordered matrix of action signals internal to cells
+        - `cell_mol_map` ordered matrix of molecule signals internal to cells
+        - `world_mol_map` ordered matrix of molecule signals on the world map
+          at the positions where respective cells currently are
+
+        This method relies on the ordering of cells and signals to reduce computation.
+        If cells or signals are somehow shuffled this method will silently return
+        wrong results.
+        """
         for cell_i, (x, y) in enumerate(cell_positions):
             for mol_i in range(len(self.molecules)):
                 cell_mol_map[cell_i, mol_i] = X[cell_i, mol_i + self.in_mol_pad]
