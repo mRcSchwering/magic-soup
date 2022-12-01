@@ -1,7 +1,8 @@
 import time
 import pytest
 from util import rand_genome
-from genetics import Genetics, DOMAINS
+from magicsoup.genetics import Genetics
+from magicsoup.examples.default import DOMAINS
 
 
 # (genome, cds)
