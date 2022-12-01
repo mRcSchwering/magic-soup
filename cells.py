@@ -168,27 +168,29 @@ class Cells:
         # protein output, matrix (c x s)
         X_3 = torch.einsum("ij,ikj->ik", X_2, B_1)
 
+        # which signals will be negative (c, s)
         X_d = X + X_3
+        X_mask = torch.where(X_d < 0, 1.0, 0.0)
 
-        # correct for negative net X
-        if torch.any(X_d < 0):
-            # TODO: performance...
-            print("need to correct", X_d.shape)
-            X_d_mask = torch.where(X_d < 0.0, 1.0, 0.0)
-            B_1_mask = torch.einsum(
-                "ijk,ij->ijk", torch.where(B_1 < 0.0, 1.0, 0.0), X_d_mask
-            )
-            B_1_d = torch.where(B_1_mask > 0, B_1, 0.0)
+        # which values in B could be responsible (c, s, p)
+        B_mask = torch.where(B_1 < 0.0, 1.0, 0.0)
 
-            B_wrng_vals = torch.einsum(
-                "ij,ijk->ijk", torch.where(X_d < 0.0, X_d, 0.0), 1.0 / B_1_d
-            )
-            B_excess = torch.nan_to_num(B_wrng_vals, nan=0.0, posinf=0.0, neginf=0.0)
-            Z_1_adj = (torch.ones(B_excess.shape) - B_excess).min(dim=1).values
-            B_1_adj = torch.einsum("ijk,ik->ijk", B_1, Z_1_adj)
-            X_3 = torch.einsum("ij,ikj->ik", X_2, B_1_adj)
+        # which proteins need to be down-regulated (c, p)
+        BX_mask = torch.einsum("ijk,ij->ijk", B_mask, X_mask)
+        Z_mask = BX_mask.max(dim=1).values
 
-        return trunc(tens=X_3, n_decs=self.trunc_n_decs)
+        # what are the correction factors (c,)
+        correct = torch.where(X_mask > 0.0, -X / X_3, 1.0).min(dim=1).values
+
+        # correction matrix for B (c, p)
+        Z_adj = torch.einsum("ij,i->ij", Z_mask, correct)
+        Z_adj = torch.where(Z_adj == 0.0, 1.0, Z_adj)
+
+        # new protein output, matrix (c x s)
+        B_adj = torch.einsum("ijk,ik->ijk", B_1, Z_adj)
+        X_4 = torch.einsum("ij,ikj->ik", X_2, B_adj)
+
+        return trunc(tens=X_4, n_decs=self.trunc_n_decs)
 
     def get_signals(self, world_mol_map: torch.Tensor) -> torch.Tensor:
         X = self._get_X(n_cells=len(self))
