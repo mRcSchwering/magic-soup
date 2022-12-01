@@ -1,5 +1,6 @@
 from typing import TypeVar, Optional
 from itertools import product
+import string
 import random
 import torch
 import numpy as np
@@ -11,6 +12,21 @@ ALL_CODONS = tuple(set("".join(d) for d in product(ALL_NTS, ALL_NTS, ALL_NTS)))
 
 
 Tv = TypeVar("Tv")
+
+
+def randstr(n: int = 12) -> str:
+    """
+    Generate random string of length `n`
+    
+    With `n=12` and the string consisting of 62 different characters,
+    there's a 50% chance of encountering one collision after 5e10 draws.
+    (birthday paradox)
+    """
+    return "".join(
+        random.choices(
+            string.ascii_uppercase + string.ascii_lowercase + string.digits, k=n
+        )
+    )
 
 
 def indices(lst: list[Tv], element: Tv) -> list[int]:

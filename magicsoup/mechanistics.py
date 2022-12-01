@@ -160,22 +160,20 @@ class Mechanistics:
 
         return trunc(tens=X_delta, n_decs=self.trunc_n_decs)
 
-    # TODO: instead of world map: ordered list of signals (same order as cells)
-    #       no need for positions then (just like cell_mol and cell_act)
     def get_signals(
         self,
         cell_positions: list[tuple[int, int]],
-        cell_act_map: torch.Tensor,
-        cell_mol_map: torch.Tensor,
-        world_mol_map: torch.Tensor,
+        cell_act: torch.Tensor,
+        cell_mol: torch.Tensor,
+        mol_map: torch.Tensor,
     ) -> torch.Tensor:
         """
         Create signals tensor for all cells from all sources of signals
 
         - `cell_positions` ordered list of positions for each cell
-        - `cell_act_map` ordered matrix of action signals internal to cells
-        - `cell_mol_map` ordered matrix of molecule signals internal to cells
-        - `world_mol_map` ordered matrix of molecule signals on the world map
+        - `cell_act` ordered matrix of action signals internal to cells
+        - `cell_mol` ordered matrix of molecule signals internal to cells
+        - `mol_map` ordered matrix of molecule signals on the world map
           at the positions where respective cells currently are
 
         This method relies on the ordering of cells and signals to reduce computation.
@@ -185,28 +183,28 @@ class Mechanistics:
         X = self._tensor(len(cell_positions), self.n_signals)
         for cell_i, (x, y) in enumerate(cell_positions):
             for mol_i in range(len(self.molecules)):
-                X[cell_i, mol_i + self.in_mol_pad] = cell_mol_map[cell_i, mol_i]
-                X[cell_i, mol_i + self.ex_mol_pad] = world_mol_map[mol_i, 0, x, y]
+                X[cell_i, mol_i + self.in_mol_pad] = cell_mol[cell_i, mol_i]
+                X[cell_i, mol_i + self.ex_mol_pad] = mol_map[mol_i, x, y]
             for act_i in range(len(self.actions)):
-                X[cell_i, act_i + self.in_act_pad] = cell_act_map[cell_i, act_i]
+                X[cell_i, act_i + self.in_act_pad] = cell_act[cell_i, act_i]
         return X
 
     def update_signal_maps(
         self,
         X: torch.Tensor,
         cell_positions: list[tuple[int, int]],
-        cell_act_map: torch.Tensor,
-        cell_mol_map: torch.Tensor,
-        world_mol_map: torch.Tensor,
+        cell_act: torch.Tensor,
+        cell_mol: torch.Tensor,
+        mol_map: torch.Tensor,
     ):
         """
         Update all sources of signals for all cells with signals tensor `X`
 
         - `X` new signals tensor of shape `(c, s)` (`c` cells, `s` signals)
         - `cell_positions` ordered list of positions for each cell
-        - `cell_act_map` ordered matrix of action signals internal to cells
-        - `cell_mol_map` ordered matrix of molecule signals internal to cells
-        - `world_mol_map` ordered matrix of molecule signals on the world map
+        - `cell_act` ordered matrix of action signals internal to cells
+        - `cell_mol` ordered matrix of molecule signals internal to cells
+        - `mol_map` ordered matrix of molecule signals on the world map
           at the positions where respective cells currently are
 
         This method relies on the ordering of cells and signals to reduce computation.
@@ -215,10 +213,10 @@ class Mechanistics:
         """
         for cell_i, (x, y) in enumerate(cell_positions):
             for mol_i in range(len(self.molecules)):
-                cell_mol_map[cell_i, mol_i] = X[cell_i, mol_i + self.in_mol_pad]
-                world_mol_map[mol_i, 0, x, y] = X[cell_i, mol_i + self.ex_mol_pad]
+                cell_mol[cell_i, mol_i] = X[cell_i, mol_i + self.in_mol_pad]
+                mol_map[mol_i, x, y] = X[cell_i, mol_i + self.ex_mol_pad]
             for act_i in range(len(self.actions)):
-                cell_act_map[cell_i, act_i] = X[cell_i, act_i + self.in_act_pad]
+                cell_act[cell_i, act_i] = X[cell_i, act_i + self.in_act_pad]
 
     def _tensor(self, *args) -> torch.Tensor:
         return torch.zeros(*args, **self.torch_kwargs)
