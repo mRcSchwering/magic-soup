@@ -3,6 +3,9 @@ import torch
 from world import World
 
 
+TOLERANCE = 1e-4
+
+
 def test_performance():
     world = World(size=128, n_molecules=4, mol_map_init="randn")
 
@@ -30,28 +33,23 @@ def test_diffuse():
         [0.0, 0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 0.0, 0.0],
     ]
-    kernel = [
-        [0.1, 0.0, 0.1],
-        [0.1, 0.4, 0.1],
-        [0.1, 0.0, 0.1],
-    ]
     exp0 = [
         [0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.0, 0.1, 0.0, 0.1, 0.0],
-        [0.0, 0.1, 0.4, 0.1, 0.0],
-        [0.0, 0.1, 0.0, 0.1, 0.0],
+        [0.0, 0.1, 0.1, 0.1, 0.0],
+        [0.0, 0.1, 0.2, 0.1, 0.0],
+        [0.0, 0.1, 0.1, 0.1, 0.0],
         [0.0, 0.0, 0.0, 0.0, 0.0],
     ]
     exp1 = [
-        [0.4, 0.1, 0.0, 0.0, 0.1],
-        [0.0, 0.1, 0.1, 0.0, 0.2],
-        [0.0, 0.0, 0.2, 0.4, 0.2],
-        [0.0, 0.0, 0.2, 0.4, 0.2],
-        [0.0, 0.1, 0.1, 0.0, 0.2]
+        [0.2, 0.1, 0.0, 0.0, 0.1],
+        [0.1, 0.1, 0.1, 0.1, 0.2],
+        [0.0, 0.0, 0.2, 0.3, 0.2],
+        [0.0, 0.0, 0.2, 0.3, 0.2],
+        [0.1, 0.1, 0.1, 0.1, 0.2]
     ]
     # fmt: on
 
-    world = World(size=5, n_molecules=2, mol_diff_kernel=torch.tensor([[kernel]]))
+    world = World(size=5, n_molecules=2, mol_diff_rate=0.5)
     world.molecule_map = torch.tensor([[layer0], [layer1]])
 
     world.diffuse_molecules()

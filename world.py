@@ -1,7 +1,9 @@
-from typing import Optional
 import random
 from util import trunc
 import torch
+
+
+# TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
 
 
 class World:
@@ -17,7 +19,7 @@ class World:
         mol_degrad=0.9,
         device="cpu",
         dtype=torch.float,
-        mol_diff_kernel: Optional[torch.Tensor] = None,
+        mol_diff_rate=1.0,
         mol_map_init="randn",
         trunc_n_decs=4,
     ):
@@ -29,7 +31,7 @@ class World:
 
         self.molecule_map = self._get_molecule_map(mol_map_init=mol_map_init)
         self.cell_map = self._get_cell_map()
-        self.conv113 = self._get_conv(kernel=mol_diff_kernel)
+        self.conv113 = self._get_conv(mol_diff_rate=mol_diff_rate)
 
     def add_cells(self, n_cells: int) -> list[tuple[int, int]]:
         """
@@ -70,21 +72,28 @@ class World:
             return torch.randn(*args, **self.torch_kwargs).abs()
         raise ValueError(f"Didnt recognize mol_map_init={mol_map_init}")
 
-    def _get_conv(self, kernel: Optional[torch.Tensor] = None) -> torch.nn.Conv2d:
-        if kernel is None:
-            # fmt: off
-            kernel = torch.tensor([[[
-                [0.1, 0.1, 0.1],
-                [0.1, 0.2, 0.1],
-                [0.1, 0.1, 0.1],
-            ]]])
-            # fmt: on
-
-        if kernel.shape != (1, 1, 3, 3):
+    def _get_conv(self, mol_diff_rate: float) -> torch.nn.Conv2d:
+        if not 0.0 <= mol_diff_rate <= 1.0:
             raise ValueError(
-                "Molecule diffusion kernel must have shape (1, 1, 3, 3). "
-                f"The one supplied has shape {kernel.shape}"
+                "Diffusion rate must be between 0 and 1. "
+                f"Now it's mol_diff_rate={mol_diff_rate}"
             )
+
+        if mol_diff_rate == 0.0:
+            a = 0.0
+            b = 1.0
+        else:
+            d = 1 / mol_diff_rate
+            a = 1 / (d + 8)
+            b = d * a
+
+        # fmt: off
+        kernel = torch.tensor([[[
+            [a, a, a],
+            [a, b, a],
+            [a, a, a],
+        ]]])
+        # fmt: on
 
         conv = torch.nn.Conv2d(
             in_channels=1,

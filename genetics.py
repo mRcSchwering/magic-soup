@@ -160,7 +160,7 @@ class SynthesisDomainFact(DomainFact):
 
 
 # TODO: transporter domain: energy from concentration gradients
-
+# TODO: calculate equilibrium constant from energy
 
 DOMAINS: dict[DomainFact, list[str]] = {
     ActionDomainFact(CM): variants("GGNCNN") + variants("AGNTNN"),
