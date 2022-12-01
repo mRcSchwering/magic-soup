@@ -6,6 +6,7 @@ from .util import trunc, randstr
 
 
 # TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
+# TODO: use Nernst equation in Z matrix
 
 
 class Cell:
@@ -91,7 +92,7 @@ class World:
         self.ex_mol_pad = self.in_act_pad + self.n_actions
 
         self.molecule_map = self._get_molecule_map(mol_map_init=mol_map_init)
-        self.cell_map = self._tensor(self.map_size, self.map_size)
+        self.cell_map = torch.zeros(map_size, map_size, device=device, dtype=torch.bool)
         self.conv113 = self._get_conv(mol_diff_rate=mol_diff_rate)
 
         self.cell_molecules = self._tensor(0, self.n_molecules)
@@ -144,7 +145,7 @@ class World:
         # TODO: also doublecheck this
         xs = [d[0] for d in pxls]
         ys = [d[1] for d in pxls]
-        cell_molecules = self.molecule_map[:, xs, ys]
+        cell_molecules = self.molecule_map[:, xs, ys].T
 
         cell_actions = self._tensor(n_cells, self.n_actions)
         cell_survival = self._tensor(n_cells)
@@ -176,7 +177,7 @@ class World:
         """
         Create signals tensor for all cells from all sources of signals
         """
-        X = self._tensor(len(self.cell_map), self.n_signals)
+        X = self._tensor(len(self.cells), self.n_signals)
         for cell_i, (x, y) in enumerate(self.cell_positions):
             for mol_i in range(len(self.molecules)):
                 X[cell_i, mol_i + self.in_mol_pad] = self.cell_molecules[cell_i, mol_i]
