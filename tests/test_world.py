@@ -1,13 +1,14 @@
 import time
 import torch
 from magicsoup.world import World
+from magicsoup.examples.default import MOLECULES
 
 
 TOLERANCE = 1e-4
 
 
 def test_performance():
-    world = World(map_size=128, n_molecules=4, mol_map_init="randn")
+    world = World(molecules=MOLECULES, actions=[], map_size=128, mol_map_init="randn")
 
     t0 = time.time()
     for _ in range(100):
@@ -49,7 +50,7 @@ def test_diffuse():
     ]
     # fmt: on
 
-    world = World(map_size=5, n_molecules=2, mol_diff_rate=0.5)
+    world = World(map_size=5, molecules=MOLECULES[:2], actions=[], mol_diff_rate=0.5)
     world.molecule_map = torch.tensor([layer0, layer1])
 
     world.diffuse_molecules()
@@ -70,7 +71,7 @@ def test_degrade():
     ]
     # fmt: on
 
-    world = World(map_size=5, n_molecules=2, mol_degrad=0.8)
+    world = World(map_size=5, molecules=MOLECULES[:2], actions=[], mol_degrad=0.8)
     world.molecule_map[0] = torch.tensor([layer0])
 
     world.degrade_molecules()

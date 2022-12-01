@@ -10,7 +10,7 @@ from magicsoup.genetics import (
     Genetics,
 )
 from magicsoup.examples.default import DOMAINS, MOLECULES, ACTIONS
-from magicsoup.mechanistics import Mechanistics
+from magicsoup.world import World
 
 TOLERANCE = 1e-4
 
@@ -69,17 +69,15 @@ def test_cell_signal_integration():
     x1_d = 0.0565  # f(x0_d * 0.4) * 0.4 + f(x0_c * 0.2) * 0.3
     x1_e = 0.3587  # f(x0_a * 0.1) * 0.3 + f(x0_e * 0.6) * 0.8
 
-    mecha = Mechanistics(
-        molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5
-    )
+    world = World(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
-    A, B, Z = mecha.get_cell_params(proteomes=[prtm])
+    A, B, Z = world.get_cell_params(proteomes=[prtm])
 
     assert A.shape == (1, dim1, 4)
     assert B.shape == (1, dim1, 4)
     assert Z.shape == (1, 4)
 
-    X1 = mecha.integrate_signals(X=X0, A=A, B=B, Z=Z)
+    X1 = world.integrate_signals(X=X0, A=A, B=B, Z=Z)
 
     assert X1.shape == (1, dim1)
     assert X1[0, 0] == pytest.approx(x1_a, abs=TOLERANCE)
@@ -145,12 +143,10 @@ def test_switching_off_proteins_by_energy():
     x1_d = 0.0565  # f(x0_d * 0.4) * 0.4 + f(x0_c * 0.2) * 0.3
     x1_e = 0.0  # no edges to e left
 
-    mecha = Mechanistics(
-        molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5
-    )
+    world = World(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
-    A, B, Z = mecha.get_cell_params(proteomes=[prtm])
-    X1 = mecha.integrate_signals(X=X0, A=A, B=B, Z=Z)
+    A, B, Z = world.get_cell_params(proteomes=[prtm])
+    X1 = world.integrate_signals(X=X0, A=A, B=B, Z=Z)
 
     assert X1.shape == (1, dim1)
     assert X1[0, 0] == pytest.approx(x1_a, abs=TOLERANCE)
@@ -194,12 +190,10 @@ def test_molecule_deconstruction_with_abundant_concentration():
     x1_b = -0.4999  # f(x0_a * 0.9) * -0.5
     x1_c = 0.4999  # f(x0_a * 0.9) * 0.5
 
-    mecha = Mechanistics(
-        molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5
-    )
+    world = World(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
-    A, B, Z = mecha.get_cell_params(proteomes=[prtm])
-    X1 = mecha.integrate_signals(X=X0, A=A, B=B, Z=Z)
+    A, B, Z = world.get_cell_params(proteomes=[prtm])
+    X1 = world.integrate_signals(X=X0, A=A, B=B, Z=Z)
 
     assert X1.shape == (1, dim1)
     assert X1[0, 0] == pytest.approx(x1_a, abs=TOLERANCE)
@@ -242,12 +236,10 @@ def test_molecule_deconstruction_with_small_concentration():
     x1_b = -0.2000  # but it can only get 0.2 X0_b
     x1_c = 0.2000  # and thus only creates 0.2 X0_b
 
-    mecha = Mechanistics(
-        molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5
-    )
+    world = World(molecules=molecules, actions=[], n_max_proteins=4, trunc_n_decs=5)
 
-    A, B, Z = mecha.get_cell_params(proteomes=[prtm])
-    X1 = mecha.integrate_signals(X=X0, A=A, B=B, Z=Z)
+    A, B, Z = world.get_cell_params(proteomes=[prtm])
+    X1 = world.integrate_signals(X=X0, A=A, B=B, Z=Z)
 
     assert X1.shape == (1, dim1)
     assert X1[0, 0] == pytest.approx(x1_a, abs=TOLERANCE)
@@ -336,12 +328,10 @@ def test_molecule_deconstruction_with_small_concentration_multiple_proteins_and_
     x1_1_c = -0.1000  # -0.5543 * 0.1804
     x1_1_d = -0.2467  # f(x0_1_d * 0.6) * -0.3
 
-    mecha = Mechanistics(
-        molecules=molecules, actions=[], n_max_proteins=3, trunc_n_decs=5
-    )
+    world = World(molecules=molecules, actions=[], n_max_proteins=3, trunc_n_decs=5)
 
-    A, B, Z = mecha.get_cell_params(proteomes=[prtm_c1, prtm_c2])
-    X1 = mecha.integrate_signals(X=X0, A=A, B=B, Z=Z)
+    A, B, Z = world.get_cell_params(proteomes=[prtm_c1, prtm_c2])
+    X1 = world.integrate_signals(X=X0, A=A, B=B, Z=Z)
 
     assert X1.shape == (2, dim1)
     assert X1[0, 0] == pytest.approx(x1_0_a, abs=TOLERANCE)
@@ -359,34 +349,34 @@ def test_molecule_deconstruction_with_small_concentration_multiple_proteins_and_
 
 def test_proteins_cannot_produce_negative_concentrations():
     genetics = Genetics(domain_map=DOMAINS)
-    mecha = Mechanistics(molecules=MOLECULES, actions=ACTIONS)
+    world = World(molecules=MOLECULES, actions=ACTIONS)
     gs = [rand_genome((1000, 5000)) for _ in range(100)]
     prtms = [genetics.get_proteome(seq=d) for d in gs]
 
-    A, B, Z = mecha.get_cell_params(proteomes=prtms)
+    A, B, Z = world.get_cell_params(proteomes=prtms)
     X = torch.randn(len(prtms), len(ACTIONS) + 2 * len(MOLECULES)).abs()
 
     for _ in range(10):
-        Xd = mecha.integrate_signals(X=X, A=A, B=B, Z=Z)
+        Xd = world.integrate_signals(X=X, A=A, B=B, Z=Z)
         X = X + Xd
         assert not torch.any(X < 0)
 
 
 def test_performance():
     genetics = Genetics(domain_map=DOMAINS)
-    mecha = Mechanistics(molecules=MOLECULES, actions=ACTIONS)
+    world = World(molecules=MOLECULES, actions=ACTIONS)
     gs = [rand_genome((1000, 5000)) for _ in range(100)]
     prtms = [genetics.get_proteome(seq=d) for d in gs]
 
     t0 = time.time()
-    A, B, Z = mecha.get_cell_params(proteomes=prtms)
+    A, B, Z = world.get_cell_params(proteomes=prtms)
     td = time.time() - t0
     assert td < 0.1, "Used to take 0.043"
 
     C = torch.randn(len(prtms), len(ACTIONS) + 2 * len(MOLECULES))
 
     t0 = time.time()
-    _ = mecha.integrate_signals(X=C, A=A, B=B, Z=Z)
+    _ = world.integrate_signals(X=C, A=A, B=B, Z=Z)
     td = time.time() - t0
     assert td < 0.01, "Used to take 0.003"
 

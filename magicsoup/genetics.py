@@ -1,4 +1,4 @@
-from util import (
+from .util import (
     ALL_NTS,
     CODON_SIZE,
     reverse_complement,

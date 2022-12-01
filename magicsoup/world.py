@@ -2,7 +2,7 @@ from typing import Optional
 import random
 import torch
 from .genetics import Signal, Protein
-from util import trunc, randstr
+from .util import trunc, randstr
 
 
 # TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
