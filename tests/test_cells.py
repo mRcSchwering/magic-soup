@@ -1,14 +1,13 @@
 import time
 import pytest
 import torch
-from util import rand_genome, variants
+from util import rand_genome
 from genetics import (
     Genetics,
     Molecule,
     ReceptorDomainFact,
     SynthesisDomainFact,
     Protein,
-    Domain,
     MOLECULES,
     ACTIONS,
     DOMAINS,

@@ -8,7 +8,7 @@ from util import (
 )
 
 
-class Information:
+class Signal:
     """
     General piece of information that can be handled by a domain.
     Could be a molecule, or some action done by a cell.
@@ -30,8 +30,8 @@ class Information:
 # TODO: signals as static classes?
 
 
-class Molecule(Information):
-    """Representing a molecule"""
+class Molecule(Signal):
+    """Representing a molecule. A domain would be specific to this molecule."""
 
     is_molecule = True
 
@@ -43,11 +43,11 @@ MD = Molecule("D", 3)  # molceule D
 ME = Molecule("E", 2)  # molceule E
 MF = Molecule("F", 1)  # molceule F
 
-MOLECULES: list[Information] = [MA, MB, MC, MD, ME, MF]
+MOLECULES: list[Signal] = [MA, MB, MC, MD, ME, MF]
 
 
-class Action(Information):
-    """Representing an action"""
+class Action(Signal):
+    """Representing an action. A domain would trigger this action."""
 
     is_action = True
 
@@ -58,7 +58,7 @@ DR = Action("DR", 1)  # DNA repair
 TP = Action("TP", 1)  # transposon
 
 
-ACTIONS: list[Information] = [CM, CR, DR, TP]
+ACTIONS: list[Signal] = [CM, CR, DR, TP]
 
 
 class Domain:
@@ -66,7 +66,7 @@ class Domain:
 
     def __init__(
         self,
-        info: Information,
+        signal: Signal,
         weight: float,
         is_transmembrane: bool,
         is_energy_neutral=False,
@@ -74,7 +74,7 @@ class Domain:
         is_receptor=False,
         is_synthesis=False,
     ):
-        self.info = info
+        self.signal = signal
         self.weight = weight
         self.is_transmembrane = is_transmembrane
         self.is_energy_neutral = is_energy_neutral
@@ -82,7 +82,7 @@ class Domain:
         self.is_receptor = is_receptor
         self.is_synthesis = is_synthesis
 
-        self.energy = info.energy
+        self.energy = signal.energy
 
         if is_synthesis and weight < 0:
             self.energy = self.energy * -1.0
@@ -92,7 +92,7 @@ class Domain:
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(info=%r,is_receptor=%r)" % (clsname, self.info, self.is_receptor)
+        return "%s(signal=%r,is_receptor=%r)" % (clsname, self.signal, self.is_receptor)
 
 
 class DomainFact:
@@ -103,12 +103,12 @@ class DomainFact:
     is_receptor = False
     is_synthesis = False
 
-    def __init__(self, info: Information):
-        self.info = info
+    def __init__(self, signal: Signal):
+        self.signal = signal
 
     def __call__(self, weight: float, is_transmembrane: bool = False) -> Domain:
         return Domain(
-            info=self.info,
+            signal=self.signal,
             weight=weight,
             is_transmembrane=is_transmembrane,
             is_energy_neutral=self.is_energy_neutral,
@@ -119,7 +119,7 @@ class DomainFact:
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(info=%r,is_receptor=%r)" % (clsname, self.info, self.is_receptor)
+        return "%s(signal=%r,is_receptor=%r)" % (clsname, self.signal, self.is_receptor)
 
 
 # TODO: rather have action domains instead of "fake" molecules?

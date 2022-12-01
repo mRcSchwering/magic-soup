@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     cells.add_cells(genomes=gs, proteomes=prtms, positions=positions)
 
-    X = torch.randn(len(prtms), cells.n_infos)
+    X = torch.randn(len(prtms), cells.n_signals)
 
     t0 = time.time()
     A, B, Z = cells.get_cell_params(proteomes=prtms)

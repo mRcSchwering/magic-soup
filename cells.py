@@ -1,6 +1,6 @@
 import torch
 from util import trunc
-from genetics import Information, Protein
+from genetics import Signal, Protein
 
 
 # TODO: world and cells together in class
@@ -12,8 +12,8 @@ class Cells:
 
     def __init__(
         self,
-        molecules: list[Information],
-        actions: list[Information],
+        molecules: list[Signal],
+        actions: list[Signal],
         dtype=torch.float,
         device="cpu",
         n_max_proteins=1000,
@@ -29,14 +29,14 @@ class Cells:
         self.actions = actions
         self.n_molecules = len(molecules)
         self.n_actions = len(actions)
-        self.n_infos = self.n_molecules * 2 + self.n_actions
+        self.n_signals = self.n_molecules * 2 + self.n_actions
 
         # internal molecules, internal actions, external molecules
         self.in_mol_pad = 0
         self.in_act_pad = self.in_mol_pad + self.n_molecules
         self.ex_mol_pad = self.in_act_pad + self.n_actions
         self.mol_idxs = list(range(self.in_mol_pad, self.in_act_pad)) + list(
-            range(self.ex_mol_pad, self.n_infos + 1)
+            range(self.ex_mol_pad, self.n_signals + 1)
         )
 
         self.genomes: list[str] = []
@@ -114,14 +114,14 @@ class Cells:
                 net_energy = 0.0
                 for dom in protein.domains:
                     net_energy += dom.energy
-                    if dom.info.is_molecule:
-                        idx = self.molecules.index(dom.info)
+                    if dom.signal.is_molecule:
+                        idx = self.molecules.index(dom.signal)
                         if dom.is_transmembrane:
                             offset = self.ex_mol_pad
                         else:
                             offset = self.in_mol_pad
                     else:
-                        idx = self.actions.index(dom.info)
+                        idx = self.actions.index(dom.signal)
                         offset = self.in_act_pad
                     if dom.is_receptor:
                         A[cell_i, idx + offset, prot_i] = dom.weight
@@ -135,12 +135,12 @@ class Cells:
         self, X: torch.Tensor, A: torch.Tensor, B: torch.Tensor, Z: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Calculate new information (molecules/actions) created by proteins after 1 timestep.
-        Returns new informations in shape `(c, s)` with `s` signals(=information), `p` proteins, `c` cells.
+        Calculate new signals (molecules/actions) created by proteins after 1 timestep.
+        Returns new signals in shape `(c, s)` with `s` signals, `p` proteins, `c` cells.
 
-        - `X` initial incomming information, `(c, s)`
-        - `A` parameters defining how incomming information maps to proteins, `(c, s, p)`
-        - `B` parameters defining how much proteins can produce output information, `(c, s, p)`
+        - `X` initial incomming signals, `(c, s)`
+        - `A` parameters defining how incomming signals map to proteins, `(c, s, p)`
+        - `B` parameters defining how much proteins can produce output signals, `(c, s, p)`
         - `Z` binary matrix which protein can produce output at all, `(c, p)`
 
         Proteins' output is defined by:
@@ -212,16 +212,16 @@ class Cells:
 
     def _get_A(self, n_cells: int) -> torch.Tensor:
         return torch.zeros(
-            n_cells, self.n_infos, self.n_max_proteins, **self.torch_kwargs
+            n_cells, self.n_signals, self.n_max_proteins, **self.torch_kwargs
         )
 
     def _get_B(self, n_cells: int) -> torch.Tensor:
         return torch.zeros(
-            n_cells, self.n_infos, self.n_max_proteins, **self.torch_kwargs
+            n_cells, self.n_signals, self.n_max_proteins, **self.torch_kwargs
         )
 
     def _get_X(self, n_cells: int) -> torch.Tensor:
-        return torch.zeros(n_cells, self.n_infos, **self.torch_kwargs)
+        return torch.zeros(n_cells, self.n_signals, **self.torch_kwargs)
 
     def _get_Z(self, n_cells: int) -> torch.Tensor:
         return torch.zeros(n_cells, self.n_max_proteins, **self.torch_kwargs)
