@@ -226,6 +226,9 @@ class Protein:
         return "%s(domains=%r)" % (clsname, self.domains)
 
 
+# TODO: need reasonable way to not generate random genome, but a genome with certain requirements
+
+
 class Genetics:
     """
     Defines possible protein domains and how they are encoded on the genome.
