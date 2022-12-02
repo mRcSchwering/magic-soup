@@ -317,7 +317,7 @@ class Genetics:
         """
         bwd = reverse_complement(seq)
         cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
-        cds = [d for d in cds if len(d) < self.min_n_dom_bps]
+        cds = [d for d in cds if len(d) > self.min_n_dom_bps]
         return [self.translate_seq(d) for d in cds]
 
     def translate_seq(self, seq: str) -> Protein:
