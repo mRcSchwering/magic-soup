@@ -9,6 +9,5 @@
 # Carbonyl (Western) Branch:
 # CFeSP methyltransferase (2.1.1.X): methyl-FH4 + Ni-ACS -> FH4 + methyl-Ni-ACS
 # CO dehydrogenase / acetyl-CoA synthetase: CO2 + HS-CoA + methyl-Ni-ACS -> Ni-ACS + acetyl-CoA
-
-# CO-methylating acetyl-CoA synthase (2.3.1.169): acetyl-CoA
+# (skipped Co step)
 
