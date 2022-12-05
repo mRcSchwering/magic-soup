@@ -1,4 +1,3 @@
-import time
 import pytest
 import torch
 
@@ -25,7 +24,7 @@ def f(
     Pkm = torch.einsum("cps,cp->cps", Zi, K)
 
     # protein maximum velocities
-    Pvm = torch.einsum("cps,cp->cp", Zi, V)
+    Pvm = Zi.max(dim=2).values * V
 
     # protein velocities (c, p)
     Nom = torch.pow(Ps, Ni).prod(2)
@@ -101,8 +100,8 @@ def test_simple_mm_kinetic():
     assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
 
 
-def test_simple_mm_kinetic_with_proportions():
-    # 2 cells, 3 max proteins
+def test_mm_kinetic_with_proportions():
+    # 1 cell, 3 max proteins
     # cell 0: P0: a -> 2b, P1: 2c -> d
 
     # fmt: off
@@ -136,6 +135,55 @@ def test_simple_mm_kinetic_with_proportions():
     dx_c0_a = -dx_c0_b / 2
     dx_c0_d = mm(x=X0[0, 2], v=V[0, 1], k=K[0, 1], n=2)
     dx_c0_c = -2 * dx_c0_d
+
+    # test
+    Xd = f(X=X0, K=K, V=V, Z=Z)
+
+    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
+    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
+    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
+    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+
+
+def test_mm_kinetic_with_multiple_substrates():
+    # 1 cell, 3 max proteins
+    # cell 0: P0: a,b -> c, P1: b,d -> a2,c
+
+    # fmt: off
+
+    # concentrations (c, s)
+    X0 = torch.tensor([
+        [1.1, 2.1, 2.9, 0.8],
+    ])
+
+    # reactions (c, p, s)
+    Z = torch.tensor([
+        [   [-1.0, -1.0, 1.0, 0.0],
+            [2.0, -1.0, 1.0, -1.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+    ])
+
+    # proteins (c, p)
+    K = torch.tensor([
+        [1.2, 0.9, 0.5],
+    ])
+    V = torch.tensor([
+        [2.1, 1.1, 0.8],
+    ])
+    # fmt: on
+
+    def mm(x1, x2, k, v):
+        return v * x1 * x2 / ((k + x1) * (k + x2))
+
+    # expected outcome
+    v0 = mm(x1=X0[0, 0], x2=X0[0, 1], v=V[0, 0], k=K[0, 0])
+    v1 = mm(x1=X0[0, 1], x2=X0[0, 3], v=V[0, 1], k=K[0, 1])
+    print(f"activation v0={v0:.2f}")
+    print(f"activation v1={v1:.2f}")
+    dx_c0_a = 2 * v1 - v0
+    dx_c0_b = -v0 - v1
+    dx_c0_c = v0 + v1
+    dx_c0_d = -v1
 
     # test
     Xd = f(X=X0, K=K, V=V, Z=Z)
