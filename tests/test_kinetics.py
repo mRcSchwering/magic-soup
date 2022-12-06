@@ -24,14 +24,15 @@ def f(
     """
     # inhibitors
     Mi = torch.where(I < 0.0, 1.0, 0.0)  # mask (c, p, s)
-    Ki = torch.where(I < 0.0, -I, 0.0)  # affinities (c, p, s)
     Xi = torch.einsum("cps,cs->cps", Mi, X)  # concentrations (c, p, s)
+    Ki = torch.where(I < 0.0, K, 0.0)
+    # Ki = torch.where(I < 0.0, -I, 0.0)  # affinities (c, p, s)
     Vi = torch.nan_to_num(Xi / (Ki + Xi), 0.0).sum(dim=2).clamp(0, 1)  # activity (c, p)
 
     # substrates
     Ms = torch.where(Z < 0.0, 1.0, 0.0)  # mask (c, p s)
-    Ns = torch.where(Z < 0.0, -Z, 0.0)  # proportions (c, p, s)
     Xs = torch.einsum("cps,cs->cps", Ms, X)  # concentrations (c, p, s)
+    Ns = torch.where(Z < 0.0, -Z, 0.0)  # proportions (c, p, s)
     # Ks = torch.einsum("cps,cp->cps", Ms, K)  # affinities (c, p, s)
 
     # velocities
@@ -71,10 +72,10 @@ def test_mm_kinetic_with_inhibitor():
 
     # affinities (c, p, s)
     K = torch.tensor([
-        [   [1.2, 3.1, 0.0, 0.0],
-            [0.2, 0.0, 0.0, 0.0],
-            [0.2, 0.0, 0.0, 0.0] ],
-        [   [2.1, 1.3, 0.0, 0.0],
+        [   [1.2, 3.1, 0.7, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0] ],
+        [   [2.1, 1.3, 1.0, 0.6],
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0] ],
     ])
@@ -87,10 +88,10 @@ def test_mm_kinetic_with_inhibitor():
 
     # inhibitors (c, p, s)
     I = torch.tensor([
-        [   [0.0, 0.0, -0.7, 0.0],
+        [   [0.0, 0.0, -1.0, 0.0],
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]   ],
-        [   [0.0, 0.0, -1.0, -0.6],
+        [   [0.0, 0.0, -1.0, -1.0],
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
@@ -103,7 +104,7 @@ def test_mm_kinetic_with_inhibitor():
         return v * x / (kx + x) * max(0, 1 - i1 / (ki1 + i1) - i2 / (ki2 + i2))
 
     # expected outcome
-    dx_c0_b = mmi(x=X0[0, 0], v=V[0, 0], kx=K[0, 0, 0], i=X0[0, 2], ki=-I[0, 0, 2])
+    dx_c0_b = mmi(x=X0[0, 0], v=V[0, 0], kx=K[0, 0, 0], i=X0[0, 2], ki=K[0, 0, 2])
     dx_c0_a = -dx_c0_b
     dx_c0_c = 0.0
     dx_c0_d = 0.0
@@ -113,9 +114,9 @@ def test_mm_kinetic_with_inhibitor():
         v=V[1, 0],
         kx=K[1, 0, 0],
         i1=X0[1, 2],
-        ki1=-I[1, 0, 2],
+        ki1=K[1, 0, 2],
         i2=X0[1, 3],
-        ki2=-I[1, 0, 3],
+        ki2=K[1, 0, 3],
     )
     dx_c1_a = -dx_c1_b
     dx_c1_c = 0.0
