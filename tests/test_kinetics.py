@@ -6,64 +6,60 @@ TOLERANCE = 1e-4
 # TODO: masked tensor (pytorch.org/docs/stable/masked.html)
 
 
-# TODO: rethink K (c, p, s) vs (c, p)
-#       what if 2 domains both a -> b?
-#       same for inhibitors?
-#       what if 2 i inhibitor domains?
-
-
 def f(
-    X: torch.Tensor, K: torch.Tensor, V: torch.Tensor, Z: torch.Tensor, I: torch.Tensor
+    X: torch.Tensor, K: torch.Tensor, V: torch.Tensor, Z: torch.Tensor, A: torch.Tensor
 ) -> torch.Tensor:
     """
-    - `X` signal concentrations (c, s)
-    - `K` affinities (c, p, s)
-    - `V` velocities (c, p)
-    - `Z` reactions (c, p, s)
-    - `I` inhibitors (c, p, s)
+    - `X` signal concentrations (c, s) >= 0.0 for signal/molecules concentrations
+    - `K` affinities (c, p, s) >= 0.0 for protein substrate affinities
+    - `V` velocities (c, p) >= 0.0 for maximum protein velocities
+    - `Z` reactions (c, p, s) > 0.0 is being created, < 0.0 is being used up
+    - `A` allosteric centers (c, p, s) 1.0 for activation -1.0 for inhibition
     """
     # inhibitors
-    Mi = torch.where(I < 0.0, 1.0, 0.0)  # mask (c, p, s)
-    Xi = torch.einsum("cps,cs->cps", Mi, X)  # concentrations (c, p, s)
-    Ki = torch.where(I < 0.0, K, 0.0)
-    # Ki = torch.where(I < 0.0, -I, 0.0)  # affinities (c, p, s)
-    Vi = torch.nan_to_num(Xi / (Ki + Xi), 0.0).sum(dim=2).clamp(0, 1)  # activity (c, p)
+    inh_M = torch.where(A < 0.0, 1.0, 0.0)  # (c, p, s)
+    inh_X = torch.einsum("cps,cs->cps", inh_M, X)  # (c, p, s)
+    inh_V = torch.nansum(inh_X / (K + inh_X), dim=2).clamp(0, 1)  # (c, p)
+
+    # activators
+    act_M = torch.where(A > 0.0, 1.0, 0.0)  # (c, p, s)
+    act_X = torch.einsum("cps,cs->cps", act_M, X)  # (c, p, s)
+    act_V = torch.nansum(act_X / (K + act_X), dim=2).clamp(0, 1)  # (c, p)
+    act_V_adj = torch.where(act_M.sum(dim=2) > 0, act_V, 1.0)  # (c, p)
 
     # substrates
-    Ms = torch.where(Z < 0.0, 1.0, 0.0)  # mask (c, p s)
-    Xs = torch.einsum("cps,cs->cps", Ms, X)  # concentrations (c, p, s)
-    Ns = torch.where(Z < 0.0, -Z, 0.0)  # proportions (c, p, s)
-    # Ks = torch.einsum("cps,cp->cps", Ms, K)  # affinities (c, p, s)
+    sub_M = torch.where(Z < 0.0, 1.0, 0.0)  # (c, p s)
+    sub_X = torch.einsum("cps,cs->cps", sub_M, X)  # (c, p, s)
+    Ns = torch.where(Z < 0.0, -Z, 0.0)  # (c, p, s)
 
-    # velocities
-    Vmax = Ms.max(dim=2).values * V  # max velocities (c, p)
-    XXs = torch.pow(Xs, Ns).prod(2)  # concentration interactions
-    KKs = torch.pow(K + Xs, Ns).prod(2)  # affinity interactions
-    Pv = Vmax * XXs / KKs * (1 - Vi)  # velocities (c, p)
+    # proteins
+    prot_V_max = sub_M.max(dim=2).values * V  # (c, p)
+    prot_act = torch.pow(sub_X, Ns).prod(2) / torch.pow(K + sub_X, Ns).prod(2)  # (c, p)
+    prot_V = prot_V_max * prot_act * (1 - inh_V) * act_V_adj  # (c, p)
 
     # concentration deltas (c, s)
-    Xd = torch.einsum("cps,cp->cs", Z, Pv)
+    Xd = torch.einsum("cps,cp->cs", Z, prot_V)
 
     return Xd
 
 
-def test_mm_kinetic_with_inhibitor():
+def test_mm_kinetic_with_allosteric_action():
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
-    # cell 0: P0: a -> b, inhibitor=c
+    # cell 0: P0: a -> b, inhibitor=c, P1: c -> d, activator=a
     # cell 1: P0: a -> b, inhibitor=c,d
 
     # fmt: off
 
     # concentrations (c, s)
     X0 = torch.tensor([
-        [1.1, 2.5, 0.9, 0.0],
+        [1.1, 2.5, 0.9, 1.0],
         [2.3, 1.6, 3.0, 0.9],
     ])
 
     # reactions (c, p, s)
     Z = torch.tensor([
         [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]   ],
         [   [-1.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0],
@@ -73,7 +69,7 @@ def test_mm_kinetic_with_inhibitor():
     # affinities (c, p, s)
     K = torch.tensor([
         [   [1.2, 3.1, 0.7, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.9, 1.2],
             [0.0, 0.0, 0.0, 0.0] ],
         [   [2.1, 1.3, 1.0, 0.6],
             [0.0, 0.0, 0.0, 0.0],
@@ -86,10 +82,10 @@ def test_mm_kinetic_with_inhibitor():
         [3.2, 0.0, 0.0],
     ])
 
-    # inhibitors (c, p, s)
-    I = torch.tensor([
+    # allosterics (c, p, s)
+    A = torch.tensor([
         [   [0.0, 0.0, -1.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]   ],
         [   [0.0, 0.0, -1.0, -1.0],
             [0.0, 0.0, 0.0, 0.0],
@@ -103,11 +99,16 @@ def test_mm_kinetic_with_inhibitor():
     def mm2i(x, kx, v, i1, ki1, i2, ki2):
         return v * x / (kx + x) * max(0, 1 - i1 / (ki1 + i1) - i2 / (ki2 + i2))
 
+    def mma(x, kx, v, a, ka):
+        return v * x / (kx + x) * a / (ka + a)
+
     # expected outcome
-    dx_c0_b = mmi(x=X0[0, 0], v=V[0, 0], kx=K[0, 0, 0], i=X0[0, 2], ki=K[0, 0, 2])
-    dx_c0_a = -dx_c0_b
-    dx_c0_c = 0.0
-    dx_c0_d = 0.0
+    v0_c0 = mmi(x=X0[0, 0], v=V[0, 0], kx=K[0, 0, 0], i=X0[0, 2], ki=K[0, 0, 2])
+    v1_c0 = mma(x=X0[0, 2], v=V[0, 1], kx=K[0, 1, 2], a=X0[0, 0], ka=K[0, 1, 0])
+    dx_c0_b = v0_c0
+    dx_c0_a = -v0_c0
+    dx_c0_c = -v1_c0
+    dx_c0_d = v1_c0
 
     dx_c1_b = mm2i(
         x=X0[1, 0],
@@ -123,7 +124,7 @@ def test_mm_kinetic_with_inhibitor():
     dx_c1_d = 0.0
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, I=I)
+    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -175,8 +176,8 @@ def test_simple_mm_kinetic():
         [1.1, 2.0, 0.0],
     ])
 
-    # inhibitors (c, p, s)
-    I = torch.zeros(2, 3, 4)
+    # allosterics (c, p, s)
+    A = torch.zeros(2, 3, 4)
     # fmt: on
 
     def mm(x, k, v):
@@ -195,7 +196,7 @@ def test_simple_mm_kinetic():
     dx_c1_d = dx_c1_d_1 + dx_c1_d_2
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, I=I)
+    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -247,8 +248,8 @@ def test_mm_kinetic_with_proportions():
         [1.9, 0.0, 0.0],
     ])
 
-    # inhibitors (c, p, s)
-    I = torch.zeros(2, 3, 4)
+    # allosterics (c, p, s)
+    A = torch.zeros(2, 3, 4)
     # fmt: on
 
     def mm(x, k, v, n):
@@ -267,7 +268,7 @@ def test_mm_kinetic_with_proportions():
     dx_c1_d = 0.0
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, I=I)
+    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -319,8 +320,8 @@ def test_mm_kinetic_with_multiple_substrates():
         [1.2, 0.0, 0.0],
     ])
 
-    # inhibitors (c, p, s)
-    I = torch.zeros(2, 3, 4)
+    # allosterics (c, p, s)
+    A = torch.zeros(2, 3, 4)
     # fmt: on
 
     def mm(x1, x2, k1, k2, v):
@@ -340,7 +341,7 @@ def test_mm_kinetic_with_multiple_substrates():
     dx_c1_d = -c1_v0
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, I=I)
+    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
