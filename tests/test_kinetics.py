@@ -63,13 +63,15 @@ def test_simple_mm_kinetic_with_inhibitor():
             [0.0, 0.0, 0.0]   ],
     ])
 
-    # proteins (c, p, s)
+    # affinities (c, p, s)
     K = torch.tensor([
-        [   [1.2, 1.2, 1.2] ], 
-        [   [0.5, 0.5, 0.5] ],
+        [   [1.2, 3.1, 0.0] ], 
+        [   [0.0, 0.0, 0.0] ],
     ])
+
+    # max velocities (c, p)
     V = torch.tensor([
-        [2.1, 1.0],
+        [2.1, 0.0],
     ])
 
     I = torch.tensor([
@@ -78,11 +80,11 @@ def test_simple_mm_kinetic_with_inhibitor():
     ])
     # fmt: on
 
-    def mm(x, k, v, i, ki):
-        return v * x / (k + x) * (1 - i / (ki + i))
+    def mm(x, kx, v, i, ki):
+        return v * x / (kx + x) * (1 - i / (ki + i))
 
     # expected outcome
-    dx_c0_b = mm(x=X0[0, 0], v=V[0, 0], k=K[0, 0, 0], i=X0[0, 2], ki=-I[0, 0, 2])
+    dx_c0_b = mm(x=X0[0, 0], v=V[0, 0], kx=K[0, 0, 0], i=X0[0, 2], ki=-I[0, 0, 2])
     dx_c0_a = -dx_c0_b
 
     # test
@@ -116,18 +118,20 @@ def test_simple_mm_kinetic():
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
 
-    # proteins (c, p, s)
+    # affinities (c, p, s)
     K = torch.tensor([
-        [   [1.2, 1.2, 1.2, 1.2],
-            [0.5, 0.5, 0.5, 0.5],
-            [1.9, 1.9, 1.9, 1.9] ],
-        [   [0.5, 0.5, 0.5, 0.5],
-            [1.2, 1.2, 1.2, 1.2],
-            [2.1, 2.1, 2.1, 2.1] ],
+        [   [1.2, 1.5, 0.0, 0.0],
+            [0.0, 0.5, 0.0, 3.5],
+            [0.0, 0.0, 0.0, 0.0] ],
+        [   [0.0, 0.0, 0.5, 1.5],
+            [1.2, 0.0, 0.0, 1.9],
+            [0.0, 0.0, 0.0, 0.0] ],
     ])
+
+    # max velocities (c, p)
     V = torch.tensor([
-        [2.1, 1.0, 3.0],
-        [1.1, 2.0, 2.2],
+        [2.1, 1.0, 0.0],
+        [1.1, 2.0, 0.0],
     ])
 
     I = torch.zeros(2, 3, 4)
@@ -139,10 +143,10 @@ def test_simple_mm_kinetic():
     # expected outcome
     dx_c0_b = mm(x=X0[0, 0], v=V[0, 0], k=K[0, 0, 0])
     dx_c0_a = -dx_c0_b
-    dx_c0_d = mm(x=X0[0, 1], v=V[0, 1], k=K[0, 1, 0])
+    dx_c0_d = mm(x=X0[0, 1], v=V[0, 1], k=K[0, 1, 1])
     dx_c0_b = dx_c0_b - dx_c0_d
 
-    dx_c1_d_1 = mm(x=X0[1, 2], v=V[1, 0], k=K[1, 0, 0])
+    dx_c1_d_1 = mm(x=X0[1, 2], v=V[1, 0], k=K[1, 0, 2])
     dx_c1_c = -dx_c1_d_1
     dx_c1_d_2 = mm(x=X0[1, 0], v=V[1, 1], k=K[1, 1, 0])
     dx_c1_a = -dx_c1_d_2
@@ -180,14 +184,16 @@ def test_mm_kinetic_with_proportions():
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
 
-    # proteins (c, p)
+    # affinities (c, p, s)
     K = torch.tensor([
-        [   [1.2, 1.2, 1.2, 1.2],
-            [0.9, 0.9, 0.9, 0.9],
-            [0.5, 0.5, 0.5, 0.5] ],
+        [   [1.2, 0.2, 0.0, 0.0],
+            [0.0, 0.0, 0.9, 1.2],
+            [0.0, 0.0, 0.0, 0.0] ],
     ])
+    
+    # max velocities (c, p)
     V = torch.tensor([
-        [2.1, 1.1, 0.8],
+        [2.1, 1.1, 0.0],
     ])
 
     I = torch.zeros(1, 3, 4)
@@ -199,7 +205,7 @@ def test_mm_kinetic_with_proportions():
     # expected outcome
     dx_c0_b = 2 * mm(x=X0[0, 0], v=V[0, 0], k=K[0, 0, 0], n=1)
     dx_c0_a = -dx_c0_b / 2
-    dx_c0_d = mm(x=X0[0, 2], v=V[0, 1], k=K[0, 1, 0], n=2)
+    dx_c0_d = mm(x=X0[0, 2], v=V[0, 1], k=K[0, 1, 2], n=2)
     dx_c0_c = -2 * dx_c0_d
 
     # test
@@ -229,27 +235,27 @@ def test_mm_kinetic_with_multiple_substrates():
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
 
-    # proteins (c, p)
+    # affinities (c, p, s)
     K = torch.tensor([
-        [   [1.2, 1.2, 1.2, 1.2],
-            [0.9, 0.9, 0.9, 0.9],
-            [0.5, 0.5, 0.5, 0.5] ],
+        [   [2.2, 1.2, 0.2, 0.0],
+            [0.8, 1.9, 0.4, 1.2],
+            [0.0, 0.0, 0.0, 0.0] ],
     ])
+
+    # max velocities (c, p)
     V = torch.tensor([
-        [2.1, 1.1, 0.8],
+        [2.1, 1.1, 0.0],
     ])
 
     I = torch.zeros(1, 3, 4)
     # fmt: on
 
-    def mm(x1, x2, k, v):
-        return v * x1 * x2 / ((k + x1) * (k + x2))
+    def mm(x1, x2, k1, k2, v):
+        return v * x1 * x2 / ((k1 + x1) * (k2 + x2))
 
     # expected outcome
-    v0 = mm(x1=X0[0, 0], x2=X0[0, 1], v=V[0, 0], k=K[0, 0, 0])
-    v1 = mm(x1=X0[0, 1], x2=X0[0, 3], v=V[0, 1], k=K[0, 1, 0])
-    print(f"activation v0={v0:.2f}")
-    print(f"activation v1={v1:.2f}")
+    v0 = mm(x1=X0[0, 0], k1=K[0, 0, 0], x2=X0[0, 1], k2=K[0, 0, 1], v=V[0, 0])
+    v1 = mm(x1=X0[0, 1], k1=K[0, 1, 1], x2=X0[0, 3], k2=K[0, 1, 3], v=V[0, 1])
     dx_c0_a = 2 * v1 - v0
     dx_c0_b = -v0 - v1
     dx_c0_c = v0 + v1
