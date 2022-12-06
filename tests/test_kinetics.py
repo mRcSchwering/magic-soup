@@ -10,18 +10,67 @@ def f(
     X: torch.Tensor, K: torch.Tensor, V: torch.Tensor, Z: torch.Tensor, A: torch.Tensor
 ) -> torch.Tensor:
     """
+    Calculate new signals (molecules/actions) created by all proteins of all cells
+    after 1 timestep. Returns the change in signals in shape `(c, s)`.
+    There are `c` cells, `p` proteins, `s` signals/molecules.
+
     - `X` signal concentrations (c, s) >= 0.0 for signal/molecules concentrations
     - `K` affinities (c, p, s) >= 0.0 for protein substrate affinities
     - `V` velocities (c, p) >= 0.0 for maximum protein velocities
     - `Z` reactions (c, p, s) > 0.0 is being created, < 0.0 is being used up
     - `A` allosteric centers (c, p, s) 1.0 for activation -1.0 for inhibition
+    
+    Everything is based on Michaelis Menten kinetics where protein velocity
+    depends on substrate concentration:
+
+    ```
+        v = Vmax * x / (Km + x)
+    ```
+
+    `Vmax` is the maximum velocity of the protein and `Km` the substrate affinity. Multiple
+    substrates create interaction terms such as:
+
+    ```
+        v = Vmax * x1 * / (Km1 + x1) * x2 / (Km2 + x2)
+    ```
+
+    Allosteric effectors work non-competitively such that they reduce or raise `Vmax` but
+    leave any `Km` unaffected. Effectors themself also use Michaelis Menten kinteics.
+    Here is substrate `x` with inhibitor `i`:
+    
+    ```
+        v = Vmax * x / (Kmx + x) * (1 - Vi)
+        Vi = i / (Kmi + i)
+    ```
+
+    Activating effectors effectively make the protein dependent on that activator:
+
+    ```
+        v = Vmax * x / (Kmx + x) * Va
+        Va = a / (Kma + a)
+    ```
+
+    Multiple effectors are summed up in `Vi` and `Va` and each is clamped to `[0;1]`
+    before being multiplied with `Vmax`.
+
+    ```
+        v = Vmax * x / (Km + x) * Va * (1 - Vi)
+        Va = Va1 + Va2 + ...
+        Vi = Vi1 + Vi2 + ...
+    ```
+
+    There's currently a chance that proteins in a cell can deconstruct more
+    of a molecule than available. This would lead to a negative concentration
+    in the resulting signals `X`. To avoid this, there is a correction heuristic
+    which will downregulate these proteins by so much, that the molecule will
+    only be reduced to 0.
 
     Limitations:
     - all based on Michaelis-Menten kinetics, no cooperativity
     - all allosteric centers act non-competitively (activating or inhibiting)
     - there are substrate-substrate interactions but no interactions among effectors
     - 1 protein can have multiple substrates and products but there is only 1 Km for each type of molecule
-    - there can only be 1 effector per molecule (e.g. not 2 different allosteric centers for the same tpye of molecule)
+    - there can only be 1 effector per molecule (e.g. not 2 different allosteric centers for the same tpye of molecule)    
     """
     # inhibitors
     inh_M = torch.where(A < 0.0, 1.0, 0.0)  # (c, p, s)
