@@ -15,6 +15,13 @@ def f(
     - `V` velocities (c, p) >= 0.0 for maximum protein velocities
     - `Z` reactions (c, p, s) > 0.0 is being created, < 0.0 is being used up
     - `A` allosteric centers (c, p, s) 1.0 for activation -1.0 for inhibition
+
+    Limitations:
+    - all based on Michaelis-Menten kinetics, no cooperativity
+    - all allosteric centers act non-competitively (activating or inhibiting)
+    - there are substrate-substrate interactions but no interactions among effectors
+    - 1 protein can have multiple substrates and products but there is only 1 Km for each type of molecule
+    - there can only be 1 effector per molecule (e.g. not 2 different allosteric centers for the same tpye of molecule)
     """
     # inhibitors
     inh_M = torch.where(A < 0.0, 1.0, 0.0)  # (c, p, s)
@@ -46,7 +53,7 @@ def f(
 def test_mm_kinetic_with_allosteric_action():
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
     # cell 0: P0: a -> b, inhibitor=c, P1: c -> d, activator=a
-    # cell 1: P0: a -> b, inhibitor=c,d
+    # cell 1: P0: a -> b, inhibitor=c,d, P1: c -> d, activator=a,b
 
     # fmt: off
 
@@ -62,7 +69,7 @@ def test_mm_kinetic_with_allosteric_action():
             [0.0, 0.0, -1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]   ],
         [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
 
@@ -72,14 +79,14 @@ def test_mm_kinetic_with_allosteric_action():
             [1.0, 0.0, 0.9, 1.2],
             [0.0, 0.0, 0.0, 0.0] ],
         [   [2.1, 1.3, 1.0, 0.6],
-            [0.0, 0.0, 0.0, 0.0],
+            [1.3, 0.8, 0.3, 1.1],
             [0.0, 0.0, 0.0, 0.0] ],
     ])
 
     # max velocities (c, p)
     V = torch.tensor([
-        [2.1, 0.0, 0.0],
-        [3.2, 0.0, 0.0],
+        [2.1, 2.0, 0.0],
+        [3.2, 2.5, 0.0],
     ])
 
     # allosterics (c, p, s)
@@ -88,7 +95,7 @@ def test_mm_kinetic_with_allosteric_action():
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]   ],
         [   [0.0, 0.0, -1.0, -1.0],
-            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
     # fmt: on
@@ -102,6 +109,9 @@ def test_mm_kinetic_with_allosteric_action():
     def mma(x, kx, v, a, ka):
         return v * x / (kx + x) * a / (ka + a)
 
+    def mm2a(x, kx, v, a1, ka1, a2, ka2):
+        return v * x / (kx + x) * min(1, a1 / (ka1 + a1) + a2 / (ka2 + a2))
+
     # expected outcome
     v0_c0 = mmi(x=X0[0, 0], v=V[0, 0], kx=K[0, 0, 0], i=X0[0, 2], ki=K[0, 0, 2])
     v1_c0 = mma(x=X0[0, 2], v=V[0, 1], kx=K[0, 1, 2], a=X0[0, 0], ka=K[0, 1, 0])
@@ -110,7 +120,7 @@ def test_mm_kinetic_with_allosteric_action():
     dx_c0_c = -v1_c0
     dx_c0_d = v1_c0
 
-    dx_c1_b = mm2i(
+    v0_c1 = mm2i(
         x=X0[1, 0],
         v=V[1, 0],
         kx=K[1, 0, 0],
@@ -119,9 +129,19 @@ def test_mm_kinetic_with_allosteric_action():
         i2=X0[1, 3],
         ki2=K[1, 0, 3],
     )
-    dx_c1_a = -dx_c1_b
-    dx_c1_c = 0.0
-    dx_c1_d = 0.0
+    v1_c1 = mm2a(
+        x=X0[1, 2],
+        v=V[1, 1],
+        kx=K[1, 1, 2],
+        a1=X0[1, 0],
+        ka1=K[1, 1, 0],
+        a2=X0[1, 1],
+        ka2=K[1, 1, 1],
+    )
+    dx_c1_a = -v0_c1
+    dx_c1_b = v0_c1
+    dx_c1_c = -v1_c1
+    dx_c1_d = v1_c1
 
     # test
     Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
