@@ -7,7 +7,7 @@ TOLERANCE = 1e-4
 
 
 def f(
-    X: torch.Tensor, K: torch.Tensor, V: torch.Tensor, Z: torch.Tensor, A: torch.Tensor
+    X: torch.Tensor, K: torch.Tensor, V: torch.Tensor, N: torch.Tensor, A: torch.Tensor
 ) -> torch.Tensor:
     """
     Calculate new signals (molecules/actions) created by all proteins of all cells
@@ -17,7 +17,7 @@ def f(
     - `X` signal concentrations (c, s) >= 0.0 for signal/molecules concentrations
     - `K` affinities (c, p, s) >= 0.0 for protein substrate affinities
     - `V` velocities (c, p) >= 0.0 for maximum protein velocities
-    - `Z` reactions (c, p, s) > 0.0 is being created, < 0.0 is being used up
+    - `N` reactions (c, p, s) > 0.0 is being created, < 0.0 is being used up
     - `A` allosteric centers (c, p, s) 1.0 for activation -1.0 for inhibition
     
     Everything is based on Michaelis Menten kinetics where protein velocity
@@ -84,22 +84,23 @@ def f(
     act_V_adj = torch.where(act_M.sum(dim=2) > 0, act_V, 1.0)  # (c, p)
 
     # substrates
-    sub_M = torch.where(Z < 0.0, 1.0, 0.0)  # (c, p s)
+    sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p s)
     sub_X = torch.einsum("cps,cs->cps", sub_M, X)  # (c, p, s)
-    Ns = torch.where(Z < 0.0, -Z, 0.0)  # (c, p, s)
+    sub_N = torch.where(N < 0.0, -N, 0.0)  # (c, p, s)
 
     # proteins
     prot_V_max = sub_M.max(dim=2).values * V  # (c, p)
-    prot_act = torch.pow(sub_X, Ns).prod(2) / torch.pow(K + sub_X, Ns).prod(2)  # (c, p)
-    prot_V = prot_V_max * prot_act * (1 - inh_V) * act_V_adj  # (c, p)
+    nom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
+    denom = torch.pow(K + sub_X, sub_N).prod(2)  # (c, p)
+    prot_V = prot_V_max * nom / denom * (1 - inh_V) * act_V_adj  # (c, p)
 
     # concentration deltas (c, s)
-    Xd = torch.einsum("cps,cp->cs", Z, prot_V)
+    Xd = torch.einsum("cps,cp->cs", N, prot_V)
 
     X1 = X + Xd
     if torch.any(X1 < 0):
         neg_conc = torch.where(X1 < 0, 1.0, 0.0)  # (c, s)
-        candidates = torch.where(Z < 0.0, 1.0, 0.0)  # (c, p, s)
+        candidates = torch.where(N < 0.0, 1.0, 0.0)  # (c, p, s)
 
         # which proteins need to be down-regulated (c, p)
         BX_mask = torch.einsum("cps,cs->cps", candidates, neg_conc)
@@ -113,7 +114,7 @@ def f(
         prot_V_adj = torch.where(prot_V_adj == 0.0, 1.0, prot_V_adj)
 
         # new concentration deltas (c, s)
-        Xd = torch.einsum("cps,cp->cs", Z, prot_V * prot_V_adj)
+        Xd = torch.einsum("cps,cp->cs", N, prot_V * prot_V_adj)
 
     return Xd
 
@@ -132,7 +133,7 @@ def test_simple_mm_kinetic():
     ])
 
     # reactions (c, p, s)
-    Z = torch.tensor([
+    N = torch.tensor([
         [   [-1.0, 1.0, 0.0, 0.0],
             [0.0, -1.0, 0.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]    ],
@@ -177,7 +178,7 @@ def test_simple_mm_kinetic():
     dx_c1_d = dx_c1_d_1 + dx_c1_d_2
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
+    Xd = f(X=X0, K=K, V=V, N=N, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -204,7 +205,7 @@ def test_mm_kinetic_with_proportions():
     ])
 
     # reactions (c, p, s)
-    Z = torch.tensor([
+    N = torch.tensor([
         [   [-1.0, 2.0, 0.0, 0.0],
             [0.0, 0.0, -2.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]    ],
@@ -249,7 +250,7 @@ def test_mm_kinetic_with_proportions():
     dx_c1_d = 0.0
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
+    Xd = f(X=X0, K=K, V=V, N=N, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -276,7 +277,7 @@ def test_mm_kinetic_with_multiple_substrates():
     ])
 
     # reactions (c, p, s)
-    Z = torch.tensor([
+    N = torch.tensor([
         [   [-1.0, -1.0, 1.0, 0.0],
             [2.0, -1.0, 1.0, -1.0],
             [0.0, 0.0, 0.0, 0.0]    ],
@@ -322,7 +323,7 @@ def test_mm_kinetic_with_multiple_substrates():
     dx_c1_d = -c1_v0
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
+    Xd = f(X=X0, K=K, V=V, N=N, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -349,7 +350,7 @@ def test_mm_kinetic_with_allosteric_action():
     ])
 
     # reactions (c, p, s)
-    Z = torch.tensor([
+    N = torch.tensor([
         [   [-1.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, -1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]   ],
@@ -429,7 +430,7 @@ def test_mm_kinetic_with_allosteric_action():
     dx_c1_d = v1_c1
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
+    Xd = f(X=X0, K=K, V=V, N=N, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -456,7 +457,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     ])
 
     # reactions (c, p, s)
-    Z = torch.tensor([
+    N = torch.tensor([
         [   [-1.0, 1.0, 0.0, 0.0],
             [0.0, -1.0, 0.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]    ],
@@ -512,7 +513,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     dx_c1_d = v0_c1
 
     # test
-    Xd = f(X=X0, K=K, V=V, Z=Z, A=A)
+    Xd = f(X=X0, K=K, V=V, N=N, A=A)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
