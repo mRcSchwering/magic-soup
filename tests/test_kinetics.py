@@ -3,8 +3,6 @@ import torch
 
 TOLERANCE = 1e-4
 
-# TODO: masked tensors? (pytorch.org/docs/stable/masked.html)
-
 
 def f(
     X: torch.Tensor,
@@ -95,8 +93,15 @@ def f(
     - 1 protein can have multiple substrates and products but there is only 1 Km for each type of molecule
     - there can only be 1 effector per molecule (e.g. not 2 different allosteric controls for the same type of molecule)
     """
-    # N muss adjiusted werden, und die correction am Ende muss auf dem adjusteten N laufen
-    # sollte die "equilibrium constant" sein
+    # TODO: refactor:
+    #       - it seems like some of the masks are unnecessary (e.g. if I know that in
+    #         N there is 0.0 in certain places, do I really need a mask like sub_M?)
+    #       - can I first do the nom / denom, then pow and prod afterwards?
+    #       - are there some things which I basically calculate 2 times? Can I avoid it?
+    #         or are there some intermediates which could be reused if I would calculate
+    #         them slightly different/in different order?
+    #       - does it help to use masked tensors? (pytorch.org/docs/stable/masked.html)
+    #       - better names, split into a few functions?
 
     # substrates
     sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p s)
@@ -161,6 +166,19 @@ def f(
         # new concentration deltas (c, s)
         Xd = torch.einsum("cps,cp->cs", N_adj, prot_V * prot_V_adj)
 
+        # TODO: can I already predict this before calculated Xd the first time?
+        #       maybe at the time when I know the intended protein velocities?
+
+    # TODO: correct for X1 Q -Ke changes
+    #       if the new concentration (x1) would have changed the direction
+    #       of the reaction (a -> b) -> (b -> a), I would have a constant
+    #       back and forth between the 2 reactions always overshooting the
+    #       actual equilibrium
+    #       It would be better in this case to arrive at Q = Ke, so that
+    #       the reaction stops with x1
+    #       could be a correction term (like X1 < 0) or better solution
+    #       that can be calculated ahead of time
+
     return Xd
 
 
@@ -206,7 +224,7 @@ def test_simple_mm_kinetic():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p, s)
+    # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
     # fmt: on
 
@@ -281,7 +299,7 @@ def test_mm_kinetic_with_proportions():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p, s)
+    # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
     # fmt: on
 
@@ -356,7 +374,7 @@ def test_mm_kinetic_with_multiple_substrates():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p, s)
+    # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
     # fmt: on
 
@@ -439,7 +457,7 @@ def test_mm_kinetic_with_allosteric_action():
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
 
-    # equilibrium constants (c, p, s)
+    # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
     # fmt: on
 
@@ -542,7 +560,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p, s)
+    # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
     # fmt: on
 
@@ -571,6 +589,87 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     dx_c1_b = 0.0
     dx_c1_c = -2 * v0_c1
     dx_c1_d = v0_c1
+
+    # test
+    Xd = f(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+
+    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
+    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
+    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
+    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+
+    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
+    assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
+    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
+    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+
+
+def test_reactions_are_turned_around():
+    # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
+    # cell 0: P0: a -> b (but b/a > Ke), P1: b -> d
+    # cell 1: P0: c -> d, P1: a -> d (but d/a > Ke)
+
+    # fmt: off
+
+    # concentrations (c, s)
+    X0 = torch.tensor([
+        [0.9, 2.1, 2.9, 0.8],
+        [1.0, 3.1, 2.1, 2.9],
+    ])
+
+    # reactions (c, p, s)
+    N = torch.tensor([
+        [   [-1.0, 1.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+        [   [0.0, 0.0, -1.0, 1.0],
+            [-1.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+    ])
+
+    # affinities (c, p, s)
+    Km = torch.tensor([
+        [   [1.2, 1.5, 0.0, 0.0],
+            [0.0, 0.5, 0.0, 3.5],
+            [0.0, 0.0, 0.0, 0.0] ],
+        [   [0.0, 0.0, 0.5, 1.5],
+            [1.2, 0.0, 0.0, 1.9],
+            [0.0, 0.0, 0.0, 0.0] ],
+    ])
+
+    # max velocities (c, p)
+    Vmax = torch.tensor([
+        [2.1, 1.0, 0.0],
+        [1.1, 2.0, 0.0],
+    ])
+
+    # allosterics (c, p, s)
+    A = torch.zeros(2, 3, 4)
+
+    # equilibrium constants (c, p)
+    Ke = torch.full((2, 3), 999.9)
+    Ke[0, 0] = 2.2 # b/a = 2.3, so b -> a
+    Ke[1, 1] = 2.8 # d/a = 2.9, so d -> a
+
+    # fmt: on
+
+    def mm(x, k, v):
+        return v * x / (k + x)
+
+    # expected outcome
+    v0_c0 = mm(x=X0[0, 1], v=Vmax[0, 0], k=Km[0, 0, 1])
+    v1_c0 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1])
+    dx_c0_a = v0_c0
+    dx_c0_b = -v0_c0 - v1_c0
+    dx_c0_c = 0.0
+    dx_c0_d = v1_c0
+
+    v0_c1 = mm(x=X0[1, 2], v=Vmax[1, 0], k=Km[1, 0, 2])
+    v1_c1 = mm(x=X0[1, 3], v=Vmax[1, 1], k=Km[1, 1, 3])
+    dx_c1_a = v1_c1
+    dx_c1_b = 0.0
+    dx_c1_c = -v0_c1
+    dx_c1_d = v0_c1 - v1_c1
 
     # test
     Xd = f(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
