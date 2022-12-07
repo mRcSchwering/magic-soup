@@ -73,6 +73,18 @@ def bool_map_fact(n_nts: int, p: float = 0.5) -> dict[str, bool]:
     return {d: b for d, b in zip(codons, bls)}
 
 
+def double_bool_map_fact(n_nts: int) -> dict[str, tuple[bool, bool]]:
+    """
+    Generate weighted codon-to-bool mapping 
+    
+    - `n_nts` number of nucleotides which will encode weight
+    """
+    codons = variants("N" * n_nts)
+    choices = [(True, True), (True, False), (False, True), (False, False)]
+    bls = random.choices(choices, k=len(codons))
+    return {d: b for d, b in zip(codons, bls)}
+
+
 def reverse_complement(seq: str) -> str:
     """Reverse-complement of a nucleotide sequence"""
     rvsd = seq[::-1]

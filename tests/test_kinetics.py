@@ -13,7 +13,7 @@ def f(
     A: torch.Tensor,
 ) -> torch.Tensor:
     """
-    Calculate new signals (molecules/actions) created by all proteins of all cells
+    Calculate new molecules constructed or deconstructed by all proteins of all cells
     after 1 timestep. Returns the change in signals in shape `(c, s)`.
     There are `c` cells, `p` proteins, `s` signals/molecules.
 
