@@ -20,6 +20,8 @@ def f(
     - `X` Signal/molecule concentrations (c, s). Must all be >= 0.0.
     - `Km` Domain affinities of all proteins for each signal (c, p, s). Must all be >= 0.0.
     - `Vmax` Maximum velocities of all proteins (c, p). Must all be >= 0.0.
+    - `Ke` Equilibrium constants of all proteins (c, p). If the current reaction quotient of a protein
+      exceeds its equilibrium constant, it will work in the other direction. Must all be >= 0.0.
     - `N` Reaction stoichiometry of all proteins for each signal (c, p, s). Numbers < 0.0 indicate this
       amount of this molecule is being used up by the protein. Numbers > 0.0 indicate this amount of this
       molecule is being created by the protein. 0.0 means this molecule is not part of the reaction of
@@ -68,17 +70,19 @@ def f(
         Vi = Vi1 + Vi2 + ...
     ```
 
-    Energies
-
-    ```
-        dG = dG0 + R * T * ln(Q)
-        Q = (y1 ** ny1 * ...) / (x1 ** nx1 * ...)
-    ```
+    Equilibrium constants `Ke` define whether the reaction of a protein (as defined in `N`)
+    can take place. If the reaction quotient (the combined concentrations of all products
+    devided by all substrates) is smaller than its `Ke` the reaction proceeds. If it is
+    greater than `Ke` the reverse reaction will take place (`N * -1.0` for this protein).
+    The idea is to link signal integration to energy conversion.
 
     ```
         -dG0 = R * T * ln(Ke)
         Ke = exp(-dG0 / R / T)
     ```
+
+    where `dG0` is the standard Gibb's free energy of this reaction, `R` is gas constant,
+    `T` is absolute temperature.
 
     There's currently a chance that proteins in a cell can deconstruct more
     of a molecule than available. This would lead to a negative concentration
