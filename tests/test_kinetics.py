@@ -230,6 +230,7 @@ def test_simple_mm_kinetic():
 
     # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
+
     # fmt: on
 
     def mm(x, k, v):
@@ -305,6 +306,7 @@ def test_mm_kinetic_with_proportions():
 
     # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
+
     # fmt: on
 
     def mm(x, k, v, n):
@@ -380,6 +382,7 @@ def test_mm_kinetic_with_multiple_substrates():
 
     # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
+
     # fmt: on
 
     def mm(x1, x2, k1, k2, v):
@@ -463,6 +466,7 @@ def test_mm_kinetic_with_allosteric_action():
 
     # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
+
     # fmt: on
 
     def mmi(x, kx, v, i, ki):
@@ -566,6 +570,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
 
     # equilibrium constants (c, p)
     Ke = torch.full((2, 3), 999.9)
+
     # fmt: on
 
     def mm(x, k, v, n=1):
