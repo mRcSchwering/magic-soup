@@ -27,3 +27,9 @@ if __name__ == "__main__":
         domain_facts=domains, molecules=MOLECULES, reactions=REACTIONS
     )
 
+    world = ms.World(molecules=MOLECULES)
+
+    g = rand_genome()
+    p = genetics.get_proteome(seq=g)
+
+    Km, Vmax, Ke, N, A = world.get_cell_params(proteomes=[p])

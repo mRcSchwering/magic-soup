@@ -52,6 +52,7 @@ class Genetics:
         self.bool_map = bool_map_fact(n_region_codons * CODON_SIZE)
 
         for domain_fact in self.domain_facts:
+            domain_fact.region_size = n_region_codons * CODON_SIZE
             domain_fact.reaction_map = self.reaction_map
             domain_fact.molecule_map = self.molecule_map
             domain_fact.affinity_map = self.affinity_map
@@ -67,6 +68,22 @@ class Genetics:
         self.min_n_seq_nts = self.n_dom_def_nts + 2 * CODON_SIZE
 
         self._validate_init()
+
+    def get_proteome(self, seq: str) -> list[Protein]:
+        """
+        Get all possible proteins encoded by a nucleotide sequence.
+        Proteins are represented as dicts with domain labels and correspondig
+        weights.
+        
+        Proteins which could theoretically be translated, but from which we can
+        already tell by now that they would not be functional, will be sorted
+        out at this point.
+        """
+        bwd = reverse_complement(seq)
+        cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
+        cds = [d for d in cds if len(d) > self.min_n_seq_nts]
+        proteins = [self.translate_seq(d) for d in cds]
+        return [Protein(domains=d, label=f"P{i}") for i, d in enumerate(proteins)]
 
     def get_coding_regions(self, seq: str) -> list[str]:
         """
@@ -98,22 +115,6 @@ class Genetics:
             j += 1
             k = i % CODON_SIZE
         return cdss
-
-    def get_proteome(self, seq: str) -> list[Protein]:
-        """
-        Get all possible proteins encoded by a nucleotide sequence.
-        Proteins are represented as dicts with domain labels and correspondig
-        weights.
-        
-        Proteins which could theoretically be translated, but from which we can
-        already tell by now that they would not be functional, will be sorted
-        out at this point.
-        """
-        bwd = reverse_complement(seq)
-        cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
-        cds = [d for d in cds if len(d) > self.min_n_seq_nts]
-        proteins = [self.translate_seq(d) for d in cds]
-        return [Protein(domains=d, label=f"P{i}") for i, d in enumerate(proteins)]
 
     def translate_seq(self, seq: str) -> list[Domain]:
         """
