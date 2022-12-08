@@ -7,6 +7,8 @@ from .util import (
     bool_map_fact,
 )
 
+# TODO: summary() to see likelyhoods of different domains appearing
+
 
 class Genetics:
     """
@@ -38,12 +40,15 @@ class Genetics:
 
         self.seq_2_dom = {d: k for k, v in self.domain_map.items() for d in v}
         self.n_dom_type_def_nts = len(next(iter(self.seq_2_dom)))
-        self.n_dom_detail_def_nts = 3 * CODON_SIZE
+        self.n_dom_detail_def_nts = 4 * CODON_SIZE
         self.n_dom_def_nts = self.n_dom_type_def_nts + self.n_dom_detail_def_nts
+        self.min_n_seq_nts = self.n_dom_def_nts + 2 * CODON_SIZE
+
+        # brauch ich die hier? (muss nur wissen wie lang die domäne ist)
         self.codon_2_vmax = weight_map_fact(CODON_SIZE, *vmax_range)
         self.codon_2_km = weight_map_fact(CODON_SIZE, *km_range)
         self.codon_2_inhibit = bool_map_fact(CODON_SIZE)
-        self.min_n_seq_nts = self.n_dom_def_nts + 2 * CODON_SIZE
+        self.codon_2_orient = bool_map_fact(CODON_SIZE)
 
     def get_coding_regions(self, seq: str) -> list[str]:
         """
