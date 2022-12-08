@@ -1,12 +1,12 @@
 from typing import Optional
 import random
 import torch
-from .genetics import Signal, Protein
+from .proteins import Molecule, Protein
 from .util import trunc, randstr
 
 
 # TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
-# TODO: use Nernst equation in Z matrix
+# TODO: summary()
 
 
 class Cell:
@@ -20,7 +20,6 @@ class Cell:
         self.position: Optional[tuple[int, int]] = None
         self.n_survived_steps: Optional[int] = None
         self.molecules: Optional[torch.Tensor] = None
-        self.actions: Optional[torch.Tensor] = None
 
 
 class World:
@@ -62,8 +61,7 @@ class World:
 
     def __init__(
         self,
-        molecules: list[Signal],
-        actions: list[Signal],
+        molecules: list[Molecule],
         map_size=128,
         mol_degrad=0.9,
         mol_diff_rate=1.0,
@@ -76,27 +74,24 @@ class World:
         self.map_size = map_size
         self.n_max_proteins = n_max_proteins
         self.mol_degrad = mol_degrad
+        self.mol_diff_rate = mol_diff_rate
         self.trunc_n_decs = trunc_n_decs
         self.torch_kwargs = {"dtype": dtype, "device": device}
 
         self.molecules = molecules
-        self.actions = actions
         self.n_molecules = len(molecules)
-        self.n_actions = len(actions)
-        self.n_signals = 2 * self.n_molecules + self.n_actions
+        self.n_signals = 2 * self.n_molecules
 
         # ordering of signals:
-        # internal molecules, internal actions, external molecules
+        # internal molecules, external molecules
         self.in_mol_pad = 0
-        self.in_act_pad = self.in_mol_pad + self.n_molecules
-        self.ex_mol_pad = self.in_act_pad + self.n_actions
+        self.ex_mol_pad = self.n_molecules
 
         self.molecule_map = self._get_molecule_map(mol_map_init=mol_map_init)
         self.cell_map = torch.zeros(map_size, map_size, device=device, dtype=torch.bool)
         self.conv113 = self._get_conv(mol_diff_rate=mol_diff_rate)
 
         self.cell_molecules = self._tensor(0, self.n_molecules)
-        self.cell_actions = self._tensor(0, self.n_actions)
 
         self.cells: list[Cell] = []
         self.cell_survival = self._tensor(0)
@@ -118,7 +113,6 @@ class World:
         cell.position = self.cell_positions[idx]
         cell.n_survived_steps = int(self.cell_survival[idx].item())
         cell.molecules = self.cell_molecules[idx]
-        cell.actions = self.cell_actions[idx]
         return cell
 
     def add_cells(self, genomes: list[str]):
@@ -147,10 +141,8 @@ class World:
         ys = [d[1] for d in pxls]
         cell_molecules = self.molecule_map[:, xs, ys].T
 
-        cell_actions = self._tensor(n_cells, self.n_actions)
         cell_survival = self._tensor(n_cells)
         self.cell_molecules = torch.concat([self.cell_molecules, cell_molecules], dim=0)
-        self.cell_actions = torch.concat([self.cell_actions, cell_actions], dim=0)
         self.cell_survival = torch.concat([self.cell_survival, cell_survival], dim=0)
 
     @torch.no_grad()
@@ -182,8 +174,6 @@ class World:
             for mol_i in range(len(self.molecules)):
                 X[cell_i, mol_i + self.in_mol_pad] = self.cell_molecules[cell_i, mol_i]
                 X[cell_i, mol_i + self.ex_mol_pad] = self.molecule_map[mol_i, x, y]
-            for act_i in range(len(self.actions)):
-                X[cell_i, act_i + self.in_act_pad] = self.cell_actions[cell_i, act_i]
         return X
 
     def update_signals(self, X: torch.Tensor):
@@ -200,8 +190,6 @@ class World:
             for mol_i in range(len(self.molecules)):
                 self.cell_molecules[cell_i, mol_i] = X[cell_i, mol_i + self.in_mol_pad]
                 self.molecule_map[mol_i, x, y] = X[cell_i, mol_i + self.ex_mol_pad]
-            for act_i in range(len(self.actions)):
-                self.cell_actions[cell_i, act_i] = X[cell_i, act_i + self.in_act_pad]
 
     def get_cell_params(
         self, proteomes: list[list[Protein]]
@@ -227,15 +215,11 @@ class World:
                 net_energy = 0.0
                 for dom in protein.domains:
                     net_energy += dom.energy
-                    if dom.signal.is_molecule:
-                        idx = self.molecules.index(dom.signal)
-                        if dom.is_transmembrane:
-                            offset = self.ex_mol_pad
-                        else:
-                            offset = self.in_mol_pad
+                    idx = self.molecules.index(dom.signal)
+                    if dom.is_transmembrane:
+                        offset = self.ex_mol_pad
                     else:
-                        idx = self.actions.index(dom.signal)
-                        offset = self.in_act_pad
+                        offset = self.in_mol_pad
                     if dom.is_receptor:
                         A[cell_i, idx + offset, prot_i] = dom.weight
                     else:
@@ -244,69 +228,215 @@ class World:
                     Z[cell_i, prot_i] = 1.0
         return (A, B, Z)
 
+    def new_get_cell_params(self, proteomes: list[list[Protein]]):
+        # TODO: this...
+        n_doms = len(doms)
+        Km = torch.full((self.n_molecules, n_doms), torch.nan)
+        Vmax = torch.full((n_doms,), torch.nan)
+        N = torch.full((self.n_molecules, n_doms), torch.nan)
+        A = torch.zeros(self.n_molecules, n_doms)
+
+        for dom_i, dom in enumerate(doms):
+            if dom.is_receptor:
+                mol = dom.substrates[0]
+                offset = self.int_mol_pad if mol.is_intracellular else self.ext_mol_pad
+                mol_i = self.molecules.index(mol)
+                val = -1.0 if dom.is_inhibiting else 1.0
+                A[mol_i + offset, dom_i] = val
+                Km[mol_i + offset, dom_i] = dom.affinity
+            elif dom.is_transporter:
+                # TODO: rather generic
+                mol1 = dom.substrates[0]
+                mol_i = self.molecules.index(mol1)
+                offset1 = self.int_mol_pad
+                offset2 = self.ext_mol_pad
+                N[mol_i + offset1]
+
+        A = A.sum(dim=1).clamp(-1, 1)
+        Km = Km.nanmean(dim=1).nan_to_num(0.0)
+        Vmax = Vmax.nanmean(dim=0).nan_to_num(0.0)
+
     def integrate_signals(
-        self, X: torch.Tensor, A: torch.Tensor, B: torch.Tensor, Z: torch.Tensor,
+        self,
+        X: torch.Tensor,
+        Km: torch.Tensor,
+        Vmax: torch.Tensor,
+        Ke: torch.Tensor,
+        N: torch.Tensor,
+        A: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Calculate new signals (molecules/actions) created by all proteins of all cells
+        Calculate new molecules constructed or deconstructed by all proteins of all cells
         after 1 timestep. Returns the change in signals in shape `(c, s)`.
+        There are `c` cells, `p` proteins, `s` signals/molecules.
 
-        - `X` initial signals tensor, `(c, s)`
-        - `A` parameters defining how incomming signals map to proteins, `(c, s, p)`
-        - `B` parameters defining how much proteins can produce output signals, `(c, s, p)`
-        - `Z` binary matrix defining which protein can produce output at all, `(c, p)`
+        - `X` Signal/molecule concentrations (c, s). Must all be >= 0.0.
+        - `Km` Domain affinities of all proteins for each signal (c, p, s). Must all be >= 0.0.
+        - `Vmax` Maximum velocities of all proteins (c, p). Must all be >= 0.0.
+        - `Ke` Equilibrium constants of all proteins (c, p). If the current reaction quotient of a protein
+        exceeds its equilibrium constant, it will work in the other direction. Must all be >= 0.0.
+        - `N` Reaction stoichiometry of all proteins for each signal (c, p, s). Numbers < 0.0 indicate this
+        amount of this molecule is being used up by the protein. Numbers > 0.0 indicate this amount of this
+        molecule is being created by the protein. 0.0 means this molecule is not part of the reaction of
+        this protein.
+        - `A` allosteric control of all proteins for each signal (c, p, s). Must all be -1.0, 0.0, or 1.0.
+        1.0 means this molecule acts as an activating effector on this protein. -1.0 means this molecule
+        acts as an inhibiting effector on this protein. 0.0 means this molecule does not allosterically
+        effect the protein.
+        
+        Everything is based on Michaelis Menten kinetics where protein velocity
+        depends on substrate concentration:
 
-        where `s` signals, `p` proteins, `c` cells.
-        Proteins' output is defined by:
+        ```
+            v = Vmax * x / (Km + x)
+        ```
+
+        `Vmax` is the maximum velocity of the protein and `Km` the substrate affinity. Multiple
+        substrates create interaction terms such as:
+
+        ```
+            v = Vmax * x1 * / (Km1 + x1) * x2 / (Km2 + x2)
+        ```
+
+        Allosteric effectors work non-competitively such that they reduce or raise `Vmax` but
+        leave any `Km` unaffected. Effectors themself also use Michaelis Menten kinteics.
+        Here is substrate `x` with inhibitor `i`:
         
         ```
-            f(X, A, B, Z) = sig(X * A) * (B * Z)
-            
-            sig(x) = max(1, min(0, 1 - exp(-x ** 3)))
+            v = Vmax * x / (Kmx + x) * (1 - Vi)
+            Vi = i / (Kmi + i)
         ```
+
+        Activating effectors effectively make the protein dependent on that activator:
+
+        ```
+            v = Vmax * x / (Kmx + x) * Va
+            Va = a / (Kma + a)
+        ```
+
+        Multiple effectors are summed up in `Vi` and `Va` and each is clamped to `[0;1]`
+        before being multiplied with `Vmax`.
+
+        ```
+            v = Vmax * x / (Km + x) * Va * (1 - Vi)
+            Va = Va1 + Va2 + ...
+            Vi = Vi1 + Vi2 + ...
+        ```
+
+        Equilibrium constants `Ke` define whether the reaction of a protein (as defined in `N`)
+        can take place. If the reaction quotient (the combined concentrations of all products
+        devided by all substrates) is smaller than its `Ke` the reaction proceeds. If it is
+        greater than `Ke` the reverse reaction will take place (`N * -1.0` for this protein).
+        The idea is to link signal integration to energy conversion.
+
+        ```
+            -dG0 = R * T * ln(Ke)
+            Ke = exp(-dG0 / R / T)
+        ```
+
+        where `dG0` is the standard Gibb's free energy of this reaction, `R` is gas constant,
+        `T` is absolute temperature.
 
         There's currently a chance that proteins in a cell can deconstruct more
         of a molecule than available. This would lead to a negative concentration
         in the resulting signals `X`. To avoid this, there is a correction heuristic
         which will downregulate these proteins by so much, that the molecule will
         only be reduced to 0.
+
+        Limitations:
+        - all based on Michaelis-Menten kinetics, no cooperativity
+        - all allosteric control is non-competitive (activating or inhibiting)
+        - there are substrate-substrate interactions but no interactions among effectors
+        - 1 protein can have multiple substrates and products but there is only 1 Km for each type of molecule
+        - there can only be 1 effector per molecule (e.g. not 2 different allosteric controls for the same type of molecule)
         """
-        # protein activity, matrix (c x p)
-        P_act = torch.einsum("ij,ijk->ik", X, A)
-        P_act = torch.clamp(1 - torch.exp(-(P_act ** 3)), min=0, max=1)
+        # TODO: refactor:
+        #       - it seems like some of the masks are unnecessary (e.g. if I know that in
+        #         N there is 0.0 in certain places, do I really need a mask like sub_M?)
+        #       - can I first do the nom / denom, then pow and prod afterwards?
+        #       - are there some things which I basically calculate 2 times? Can I avoid it?
+        #         or are there some intermediates which could be reused if I would calculate
+        #         them slightly different/in different order?
+        #       - does it help to use masked tensors? (pytorch.org/docs/stable/masked.html)
+        #       - better names, split into a few functions?
 
-        # protein output potentials, matrix (c x s x p)
-        B_adj = torch.einsum("ijk,ik->ijk", B, Z)
+        # substrates
+        sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p s)
+        sub_X = torch.einsum("cps,cs->cps", sub_M, X)  # (c, p, s)
+        sub_N = torch.where(N < 0.0, -N, 0.0)  # (c, p, s)
 
-        # protein output, matrix (c x s)
-        X_delta = torch.einsum("ij,ikj->ik", P_act, B_adj)
+        # products
+        pro_M = torch.where(N > 0.0, 1.0, 0.0)  # (c, p s)
+        pro_X = torch.einsum("cps,cs->cps", pro_M, X)  # (c, p, s)
+        pro_N = torch.where(N > 0.0, N, 0.0)  # (c, p, s)
 
-        # check for possible negative concentrations
-        X_1 = X + X_delta
-        if torch.any(X_1 < 0):
+        # quotients
+        nom = torch.pow(pro_X, pro_N).prod(2)  # (c, p)
+        denom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
+        Q = nom / denom  # (c, p)
 
-            # which signals will be negative (c, s)
-            X_mask = torch.where(X_1 < 0, 1.0, 0.0)
+        # adjust direction
+        adj_N = torch.where(Q - Ke > 0.0, -1.0, 1.0)  # (c, p)
+        N_adj = torch.einsum("cps,cp->cps", N, adj_N)
 
-            # which values in B could be responsible (c, s, p)
-            B_mask = torch.where(B_adj < 0.0, 1.0, 0.0)
+        # inhibitors
+        inh_M = torch.where(A < 0.0, 1.0, 0.0)  # (c, p, s)
+        inh_X = torch.einsum("cps,cs->cps", inh_M, X)  # (c, p, s)
+        inh_V = torch.nansum(inh_X / (Km + inh_X), dim=2).clamp(0, 1)  # (c, p)
+
+        # activators
+        act_M = torch.where(A > 0.0, 1.0, 0.0)  # (c, p, s)
+        act_X = torch.einsum("cps,cs->cps", act_M, X)  # (c, p, s)
+        act_V = torch.nansum(act_X / (Km + act_X), dim=2).clamp(0, 1)  # (c, p)
+        act_V_adj = torch.where(act_M.sum(dim=2) > 0, act_V, 1.0)  # (c, p)
+
+        # substrates
+        sub_M = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p s)
+        sub_X = torch.einsum("cps,cs->cps", sub_M, X)  # (c, p, s)
+        sub_N = torch.where(N_adj < 0.0, -N_adj, 0.0)  # (c, p, s)
+
+        # proteins
+        prot_Vmax = sub_M.max(dim=2).values * Vmax  # (c, p)
+        nom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
+        denom = torch.pow(Km + sub_X, sub_N).prod(2)  # (c, p)
+        prot_V = prot_Vmax * nom / denom * (1 - inh_V) * act_V_adj  # (c, p)
+
+        # concentration deltas (c, s)
+        Xd = torch.einsum("cps,cp->cs", N_adj, prot_V)
+
+        X1 = X + Xd
+        if torch.any(X1 < 0):
+            neg_conc = torch.where(X1 < 0, 1.0, 0.0)  # (c, s)
+            candidates = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p, s)
 
             # which proteins need to be down-regulated (c, p)
-            BX_mask = torch.einsum("ijk,ij->ijk", B_mask, X_mask)
-            Z_mask = BX_mask.max(dim=1).values
+            BX_mask = torch.einsum("cps,cs->cps", candidates, neg_conc)
+            prot_M = BX_mask.max(dim=2).values
 
             # what are the correction factors (c,)
-            correct = torch.where(X_mask > 0.0, -X / X_delta, 1.0).min(dim=1).values
+            correct = torch.where(neg_conc > 0.0, -X / Xd, 1.0).min(dim=1).values
 
-            # correction matrix for B (c, p)
-            Z_adj = torch.einsum("ij,i->ij", Z_mask, correct)
-            Z_adj = torch.where(Z_adj == 0.0, 1.0, Z_adj)
+            # correction for protein velocities (c, p)
+            prot_V_adj = torch.einsum("cp,c->cp", prot_M, correct)
+            prot_V_adj = torch.where(prot_V_adj == 0.0, 1.0, prot_V_adj)
 
-            # new protein output, matrix (c x s)
-            B_adj = torch.einsum("ijk,ik->ijk", B_adj, Z_adj)
-            X_delta = torch.einsum("ij,ikj->ik", P_act, B_adj)
+            # new concentration deltas (c, s)
+            Xd = torch.einsum("cps,cp->cs", N_adj, prot_V * prot_V_adj)
 
-        return trunc(tens=X_delta, n_decs=self.trunc_n_decs)
+            # TODO: can I already predict this before calculated Xd the first time?
+            #       maybe at the time when I know the intended protein velocities?
+
+        # TODO: correct for X1 Q -Ke changes
+        #       if the new concentration (x1) would have changed the direction
+        #       of the reaction (a -> b) -> (b -> a), I would have a constant
+        #       back and forth between the 2 reactions always overshooting the
+        #       actual equilibrium
+        #       It would be better in this case to arrive at Q = Ke, so that
+        #       the reaction stops with x1
+        #       could be a correction term (like X1 < 0) or better solution
+        #       that can be calculated ahead of time
+
+        return Xd
 
     def _get_molecule_map(self, mol_map_init: str) -> torch.Tensor:
         args = [self.n_molecules, self.map_size, self.map_size]
@@ -356,38 +486,16 @@ class World:
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(map_size=%r,n_cells=%s,molecules=%r,actions=%r)" % (
-            clsname,
-            self.map_size,
-            len(self.cells),
-            self.molecules,
-            self.actions,
+        return (
+            "%s(molecules=%r,map_size=%r,mol_degrad=%r,mol_diff_rate=%r,n_max_proteins=%r,trunc_n_decs=%r,n_cells=%s)"
+            % (
+                clsname,
+                self.molecules,
+                self.map_size,
+                self.mol_degrad,
+                self.mol_diff_rate,
+                self.n_max_proteins,
+                self.trunc_n_decs,
+                len(self.cells),
+            )
         )
-
-    def new_get_params(self):
-        n_doms = len(doms)
-        Km = torch.full((self.n_molecules, n_doms), torch.nan)
-        Vmax = torch.full((n_doms,), torch.nan)
-        N = torch.full((self.n_molecules, n_doms), torch.nan)
-        A = torch.zeros(self.n_molecules, n_doms)
-
-        for dom_i, dom in enumerate(doms):
-            if dom.is_receptor:
-                mol = dom.substrates[0]
-                offset = self.int_mol_pad if mol.is_intracellular else self.ext_mol_pad
-                mol_i = self.molecules.index(mol)
-                val = -1.0 if dom.is_inhibiting else 1.0
-                A[mol_i + offset, dom_i] = val
-                Km[mol_i + offset, dom_i] = dom.affinity
-            elif dom.is_transporter:
-                # TODO: rather generic
-                mol1 = dom.substrates[0]
-                mol_i = self.molecules.index(mol1)
-                offset1 = self.int_mol_pad
-                offset2 = self.ext_mol_pad
-                N[mol_i + offset1]
-
-        A = A.sum(dim=1).clamp(-1, 1)
-        Km = Km.nanmean(dim=1).nan_to_num(0.0)
-        Vmax = Vmax.nanmean(dim=0).nan_to_num(0.0)
-
