@@ -2,7 +2,7 @@ from typing import Optional
 import random
 import torch
 from .proteins import Molecule, Protein
-from .util import trunc, randstr
+from .util import trunc, randstr, GAS_CONSTANT
 
 
 # TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
@@ -66,12 +66,15 @@ class World:
         mol_degrad=0.9,
         mol_diff_rate=1.0,
         mol_map_init="randn",
+        abs_temp=310.0,
         n_max_proteins=1000,
         trunc_n_decs=4,
         device="cpu",
         dtype=torch.float,
     ):
         self.map_size = map_size
+        self.abs_temp = abs_temp
+        self.rt = abs_temp * GAS_CONSTANT
         self.n_max_proteins = n_max_proteins
         self.mol_degrad = mol_degrad
         self.mol_diff_rate = mol_diff_rate
@@ -86,6 +89,7 @@ class World:
         # internal molecules, external molecules
         self.in_mol_pad = 0
         self.ex_mol_pad = self.n_molecules
+        self.mol_pad = {True: self.in_mol_pad, False: self.ex_mol_pad}
 
         self.molecule_map = self._get_molecule_map(mol_map_init=mol_map_init)
         self.cell_map = torch.zeros(map_size, map_size, device=device, dtype=torch.bool)
@@ -193,68 +197,104 @@ class World:
 
     def get_cell_params(
         self, proteomes: list[list[Protein]]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Generate tensors A, B, Z from cell proteomes
+        Generate cell-based parameter tensors from proteomes.
+        Returns `(Km, Vmax, Ke, N, A)`:
 
-        Returns tuple (A, B, Z):
-
-        - `A` parameters defining how incomming signals map to proteins, `(c, s, p)`
-        - `B` parameters defining how much proteins can produce output signals, `(c, s, p)`
-        - `Z` binary matrix defining which protein can produce output at all, `(c, p)`
-        
-        where `s` is the number of signals, `p` is the number of proteins,
-        and `c` is the number of cells.
+        - `X` Signal/molecule concentrations
+        - `Km` Domain affinities of all proteins for each signal
+        - `Vmax` Maximum velocities of all proteins
+        - `Ke` Equilibrium constants of all proteins. If the current reaction quotient of a protein
+        exceeds its equilibrium constant, it will work in the other direction
+        - `N` Reaction stoichiometry of all proteins for each signal. Numbers < 0.0 indicate this
+        amount of this molecule is being used up by the protein. Numbers > 0.0 indicate this amount of this
+        molecule is being created by the protein. 0.0 means this molecule is not part of the reaction of
+        this protein.
+        - `A` allosteric control of all proteins for each signal.
+        1.0 means this molecule acts as an activating effector on this protein. -1.0 means this molecule
+        acts as an inhibiting effector on this protein. 0.0 means this molecule does not allosterically
+        effect the protein.
         """
+        # TODO: create on CPU then send to GPU?
         n_cells = len(proteomes)
-        A = self._tensor(n_cells, self.n_signals, self.n_max_proteins)
-        B = self._tensor(n_cells, self.n_signals, self.n_max_proteins)
-        Z = self._tensor(n_cells, self.n_max_proteins)
+        Km = self._tensor(n_cells, self.n_max_proteins, self.n_signals)
+        Vmax = self._tensor(n_cells, self.n_max_proteins)
+        E = self._tensor(n_cells, self.n_max_proteins)
+        N = self._tensor(n_cells, self.n_max_proteins, self.n_signals)
+        A = self._tensor(n_cells, self.n_max_proteins, self.n_signals)
+
         for cell_i, cell in enumerate(proteomes):
             for prot_i, protein in enumerate(cell):
-                net_energy = 0.0
+                energy = 0.0
+                km: list[list[float]] = [[] for _ in range(self.n_signals)]
+                vmax: list[float] = []
+                a: list[int] = [0 for _ in range(self.n_signals)]
+                n: list[int] = [0 for _ in range(self.n_signals)]
+
                 for dom in protein.domains:
-                    net_energy += dom.energy
-                    idx = self.molecules.index(dom.signal)
-                    if dom.is_transmembrane:
-                        offset = self.ex_mol_pad
-                    else:
-                        offset = self.in_mol_pad
-                    if dom.is_receptor:
-                        A[cell_i, idx + offset, prot_i] = dom.weight
-                    else:
-                        B[cell_i, idx + offset, prot_i] = dom.weight
-                if net_energy <= 0:
-                    Z[cell_i, prot_i] = 1.0
-        return (A, B, Z)
+                    if dom.is_allosteric:
+                        mol = dom.substrates[0]
+                        mol_i = self._molidx(mol)
+                        km[mol_i].append(dom.affinity)
+                        a[mol_i] += -1 if dom.is_inhibiting else 1
 
-    def new_get_cell_params(self, proteomes: list[list[Protein]]):
-        # TODO: this...
-        n_doms = len(doms)
-        Km = torch.full((self.n_molecules, n_doms), torch.nan)
-        Vmax = torch.full((n_doms,), torch.nan)
-        N = torch.full((self.n_molecules, n_doms), torch.nan)
-        A = torch.zeros(self.n_molecules, n_doms)
+                    if dom.is_transporter:
+                        vmax.append(dom.velocity)
 
-        for dom_i, dom in enumerate(doms):
-            if dom.is_receptor:
-                mol = dom.substrates[0]
-                offset = self.int_mol_pad if mol.is_intracellular else self.ext_mol_pad
-                mol_i = self.molecules.index(mol)
-                val = -1.0 if dom.is_inhibiting else 1.0
-                A[mol_i + offset, dom_i] = val
-                Km[mol_i + offset, dom_i] = dom.affinity
-            elif dom.is_transporter:
-                # TODO: rather generic
-                mol1 = dom.substrates[0]
-                mol_i = self.molecules.index(mol1)
-                offset1 = self.int_mol_pad
-                offset2 = self.ext_mol_pad
-                N[mol_i + offset1]
+                        if dom.orientation:
+                            sub = dom.substrates[0]
+                            prod = dom.products[0]
+                        else:
+                            sub = dom.products[0]
+                            prod = dom.substrates[0]
 
-        A = A.sum(dim=1).clamp(-1, 1)
-        Km = Km.nanmean(dim=1).nan_to_num(0.0)
-        Vmax = Vmax.nanmean(dim=0).nan_to_num(0.0)
+                        mol_i = self._molidx(sub)
+                        km[mol_i].append(dom.affinity)
+                        n[mol_i] -= 1
+
+                        mol_i = self._molidx(prod)
+                        km[mol_i].append(1 / dom.affinity)
+                        n[mol_i] += 1
+
+                    if dom.is_catalytic:
+                        vmax.append(dom.velocity)
+
+                        if dom.orientation:
+                            energy += dom.energy
+                            subs = dom.substrates
+                            prods = dom.products
+                        else:
+                            energy -= dom.energy
+                            subs = dom.products
+                            prods = dom.substrates
+
+                        for mol in subs:
+                            mol_i = self._molidx(mol)
+                            km[mol_i].append(dom.affinity)
+                            n[mol_i] -= 1
+
+                        for mol in prods:
+                            mol_i = self._molidx(mol)
+                            km[mol_i].append(1 / dom.affinity)
+                            n[mol_i] += 1
+
+                E[cell_i, prot_i] = energy
+
+                if len(vmax) > 0:
+                    Vmax[cell_i, prot_i] = sum(vmax) / len(vmax)
+
+                for mol_i in range(self.n_signals):
+                    A[cell_i, prot_i, mol_i] = float(a[mol_i])
+                    N[cell_i, prot_i, mol_i] = float(n[mol_i])
+
+                    if len(km[mol_i]) > 0:
+                        Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
+
+        Ke = torch.exp(-E / self.rt)
+        A = A.clamp(-1.0, 1.0)
+
+        return (Km, Vmax, Ke, N, A)
 
     def integrate_signals(
         self,
@@ -484,14 +524,19 @@ class World:
     def _tensor(self, *args) -> torch.Tensor:
         return torch.zeros(*args, **self.torch_kwargs)
 
+    def _molidx(self, mol: Molecule) -> int:
+        pad = self.mol_pad[mol.is_intracellular]
+        return self.molecules.index(mol) + pad
+
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(molecules=%r,map_size=%r,mol_degrad=%r,mol_diff_rate=%r,n_max_proteins=%r,trunc_n_decs=%r,n_cells=%s)"
+            "%s(molecules=%r,map_size=%r,abs_temp=%r,mol_degrad=%r,mol_diff_rate=%r,n_max_proteins=%r,trunc_n_decs=%r,n_cells=%s)"
             % (
                 clsname,
                 self.molecules,
                 self.map_size,
+                self.abs_temp,
                 self.mol_degrad,
                 self.mol_diff_rate,
                 self.n_max_proteins,
