@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, TypeVar, Sequence
 from itertools import product
 import string
 import random
@@ -74,16 +74,19 @@ def bool_map_fact(n_nts: int, p: float = 0.5) -> dict[str, bool]:
     return {d: b for d, b in zip(codons, bls)}
 
 
-def double_bool_map_fact(n_nts: int) -> dict[str, tuple[bool, bool]]:
+_Tv = TypeVar("_Tv")
+
+
+def generic_map_fact(n_nts: int, choices: Sequence[_Tv]) -> dict[str, _Tv]:
     """
-    Generate weighted codon-to-bool mapping 
+    Generate mapping from nucleotide sequence to objects
     
-    - `n_nts` number of nucleotides which will encode weight
+    - `n_nts` number of nucleotides which will encode choice
+    - `choices` objects to be mapped to
     """
+    n = len(choices)
     codons = variants("N" * n_nts)
-    choices = [(True, True), (True, False), (False, True), (False, False)]
-    bls = random.choices(choices, k=len(codons))
-    return {d: b for d, b in zip(codons, bls)}
+    return {d: choices[i % n] for i, d in enumerate(codons)}
 
 
 def reverse_complement(seq: str) -> str:

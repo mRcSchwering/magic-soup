@@ -1,5 +1,12 @@
-from .proteins import Domain, DomainFact, Protein
-from .util import ALL_NTS, CODON_SIZE, reverse_complement
+from .proteins import Domain, DomainFact, Protein, Molecule
+from .util import (
+    ALL_NTS,
+    CODON_SIZE,
+    reverse_complement,
+    generic_map_fact,
+    bool_map_fact,
+    weight_map_fact,
+)
 
 # TODO: summary() to see likelyhoods of different domains appearing
 
@@ -20,24 +27,43 @@ class Genetics:
 
     def __init__(
         self,
-        domain_map: dict[DomainFact, list[str]],
+        domain_facts: dict[DomainFact, list[str]],
+        molecules: list[Molecule],
+        reactions: list[tuple[list[Molecule], list[Molecule]]],
         vmax_range: tuple[float, float] = (0.2, 5.0),
         km_range: tuple[float, float] = (0.1, 10.0),
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-        n_dom_codons=6,
+        n_region_codons=2,
     ):
-        self.domain_map = domain_map
+        self.domain_facts = domain_facts
+        self.molecules = molecules
+        self.reactions = reactions
         self.vmax_range = vmax_range
         self.km_range = km_range
         self.start_codons = start_codons
         self.stop_codons = stop_codons
-        self.n_dom_codons = n_dom_codons
+        self.n_region_codons = n_region_codons
 
-        self.seq_2_dom = {d: k for k, v in self.domain_map.items() for d in v}
-        self.n_dom_type_def_nts = len(next(iter(self.seq_2_dom)))
-        self.n_dom_def_nts = CODON_SIZE * n_dom_codons
-        self.n_dom_detail_def_nts = self.n_dom_def_nts - self.n_dom_type_def_nts
+        self.reaction_map = generic_map_fact(n_region_codons * CODON_SIZE, reactions)
+        self.molecule_map = generic_map_fact(n_region_codons * CODON_SIZE, molecules)
+        self.affinity_map = weight_map_fact(n_region_codons * CODON_SIZE, *km_range)
+        self.velocity_map = weight_map_fact(n_region_codons * CODON_SIZE, *vmax_range)
+        self.bool_map = bool_map_fact(n_region_codons * CODON_SIZE)
+
+        for domain_fact in self.domain_facts:
+            domain_fact.reaction_map = self.reaction_map
+            domain_fact.molecule_map = self.molecule_map
+            domain_fact.affinity_map = self.affinity_map
+            domain_fact.velocity_map = self.velocity_map
+            domain_fact.orientation_map = self.bool_map
+
+        self.domain_map = {d: k for k, v in self.domain_facts.items() for d in v}
+        max_n_regions = max(d.n_regions for d in domain_facts)
+
+        self.n_dom_type_def_nts = n_region_codons * CODON_SIZE
+        self.n_dom_detail_def_nts = max_n_regions * CODON_SIZE * n_region_codons
+        self.n_dom_def_nts = self.n_dom_type_def_nts + self.n_dom_detail_def_nts
         self.min_n_seq_nts = self.n_dom_def_nts + 2 * CODON_SIZE
 
         self._validate_init()
@@ -98,7 +124,7 @@ class Genetics:
         j = self.n_dom_type_def_nts
         doms: list[Domain] = []
         while j + self.n_dom_detail_def_nts <= len(seq):
-            domfact = self.seq_2_dom.get(seq[i:j])
+            domfact = self.domain_map.get(seq[i:j])
             if domfact is not None:
                 dom = domfact(seq[j : j + self.n_dom_detail_def_nts])
                 doms.append(dom)
@@ -111,19 +137,19 @@ class Genetics:
         return doms
 
     def _validate_init(self):
-        lens = set(len(dd) for d in self.domain_map.values() for dd in d)
-        if {self.n_dom_type_def_nts} != lens:
+        lens = set(len(d) for d in self.domain_map)
+        if len(lens) > 1:
             raise ValueError(
                 "Not all domain types are defined by the same amount of nucleotides. "
-                "All sequences in domain_map must be of equal lengths. "
+                "All sequences in domain_facts must be of equal lengths. "
                 f"Now there are multiple lengths: {', '.join(lens)}"
             )
 
-        if any(d % CODON_SIZE != 0 for d in lens):
+        region_nts = self.n_region_codons * CODON_SIZE
+        if {region_nts} != lens:
             raise ValueError(
-                "Domain types must be defined as codons. "
-                f"Lengths of all sequences in domain_map must be a multiple of CODON_SIZE={CODON_SIZE}. "
-                f"Now they have length {', '.join(lens)}"
+                f"Domain regions were defined to have n_region_codons={self.n_region_codons} codons ({region_nts} nucleotides). "
+                f"Currently sequences in domain_facts have {', '.join(lens)} nucleotides."
             )
 
         if any(len(d) != CODON_SIZE for d in self.start_codons):
@@ -136,34 +162,24 @@ class Genetics:
                 f"Not all stop codons are of length CODON_SIZE={CODON_SIZE}"
             )
 
-        dfnd_doms = set(dd for d in self.domain_map.values() for dd in d)
-        act_doms = set(self.seq_2_dom)
+        dfnd_doms = set(dd for d in self.domain_facts.values() for dd in d)
+        act_doms = set(self.domain_map)
         if act_doms != dfnd_doms:
             rdff = dfnd_doms - act_doms
             raise ValueError(
                 "Some sequences for domain definitions were defined multiple times. "
-                f"In domain_map {len(dfnd_doms)} sequences were defined. "
+                f"In domain_facts {len(dfnd_doms)} sequences were defined. "
                 f"But only {len(act_doms)} of them are unqiue. "
                 f"Following sequences are overlapping: {', '.join(rdff)}"
             )
 
         exp_nts = set(ALL_NTS)
-        wrng_dom_nts = set(d for d in self.seq_2_dom if set(d) - exp_nts)
+        wrng_dom_nts = set(d for d in self.domain_map if set(d) - exp_nts)
         if len(wrng_dom_nts) > 0:
             raise ValueError(
                 "Some domain type definitions include unknown nucleotides. "
-                f"These nucleotides were found in domain_map: {', '.join(wrng_dom_nts)}. "
+                f"These nucleotides were found in domain_facts: {', '.join(wrng_dom_nts)}. "
                 f"Known nucleotides are: {', '.join(exp_nts)}."
-            )
-
-        n_codons = min(d.n_codons for d in self.domain_map)
-        if self.n_dom_detail_def_nts < n_codons * CODON_SIZE:
-            raise ValueError(
-                f"The number of codons defining a domain is too small (n_dom_codons={self.n_dom_codons}). "
-                f"Currently, domains are defined as being {self.n_dom_codons} long ({self.n_dom_def_nts} nucleotides). "
-                f"The domain type definition alone is {self.n_dom_type_def_nts} nucleotides long. "
-                f"That leaves {self.n_dom_detail_def_nts} nucleotides to define domain details. "
-                f"However, some domains need at least {n_codons} codons ({n_codons * CODON_SIZE} nucleotides) for their details."
             )
 
     def __repr__(self) -> str:

@@ -63,8 +63,8 @@ class World:
         self,
         molecules: list[Molecule],
         map_size=128,
-        mol_degrad=0.9,
-        mol_diff_rate=1.0,
+        mol_degrad=0.99,
+        mol_diff_rate=1e-2,
         mol_map_init="randn",
         abs_temp=310.0,
         n_max_proteins=1000,
@@ -74,7 +74,6 @@ class World:
     ):
         self.map_size = map_size
         self.abs_temp = abs_temp
-        self.rt = abs_temp * GAS_CONSTANT
         self.n_max_proteins = n_max_proteins
         self.mol_degrad = mol_degrad
         self.mol_diff_rate = mol_diff_rate
@@ -89,7 +88,6 @@ class World:
         # internal molecules, external molecules
         self.in_mol_pad = 0
         self.ex_mol_pad = self.n_molecules
-        self.mol_pad = {True: self.in_mol_pad, False: self.ex_mol_pad}
 
         self.molecule_map = self._get_molecule_map(mol_map_init=mol_map_init)
         self.cell_map = torch.zeros(map_size, map_size, device=device, dtype=torch.bool)
@@ -261,20 +259,20 @@ class World:
                         vmax.append(dom.velocity)
 
                         if dom.orientation:
-                            energy += dom.energy
                             subs = dom.substrates
                             prods = dom.products
                         else:
-                            energy -= dom.energy
                             subs = dom.products
                             prods = dom.substrates
 
                         for mol in subs:
+                            energy -= mol.energy
                             mol_i = self._molidx(mol)
                             km[mol_i].append(dom.affinity)
                             n[mol_i] -= 1
 
                         for mol in prods:
+                            energy += mol.energy
                             mol_i = self._molidx(mol)
                             km[mol_i].append(1 / dom.affinity)
                             n[mol_i] += 1
@@ -291,7 +289,7 @@ class World:
                     if len(km[mol_i]) > 0:
                         Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
 
-        Ke = torch.exp(-E / self.rt)
+        Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
         A = A.clamp(-1.0, 1.0)
 
         return (Km, Vmax, Ke, N, A)
@@ -525,7 +523,7 @@ class World:
         return torch.zeros(*args, **self.torch_kwargs)
 
     def _molidx(self, mol: Molecule) -> int:
-        pad = self.mol_pad[mol.is_intracellular]
+        pad = self.in_mol_pad if mol.is_intracellular else self.ex_mol_pad
         return self.molecules.index(mol) + pad
 
     def __repr__(self) -> str:

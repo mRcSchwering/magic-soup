@@ -1,15 +1,5 @@
-from typing import Iterable, Optional
+from typing import Optional
 import abc
-from .util import CODON_SIZE
-
-
-def _validate_seq_lens(seqs: Iterable[str], name: str):
-    lens = set(len(d) for d in seqs)
-    if lens != {CODON_SIZE}:
-        raise ValueError(
-            f"All sequences used to map a nucleotide sequence to a value must have length CODON_SIZE={CODON_SIZE}. "
-            f"The following sequence lengths were found in {name}: {', '.join([str(d) for d in lens])}"
-        )
 
 
 class Molecule:
@@ -110,7 +100,6 @@ class Domain:
         products: list[Molecule],
         affinity: float,
         velocity: float,
-        energy: float,
         orientation: bool,
         label="D",
         is_catalytic=False,
@@ -122,7 +111,6 @@ class Domain:
         self.products = products
         self.affinity = affinity
         self.velocity = velocity
-        self.energy = energy
         self.orientation = orientation
         self.label = label
 
@@ -134,14 +122,13 @@ class Domain:
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,energy=%r,orientation=%r,label=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r)"
+            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,orientation=%r,label=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r)"
             % (
                 clsname,
                 self.substrates,
                 self.products,
                 self.affinity,
                 self.velocity,
-                self.energy,
                 self.orientation,
                 self.label,
                 self.is_catalytic,
@@ -166,7 +153,15 @@ class Domain:
 class DomainFact(abc.ABC):
     """Base class to create domain factory. Must implement __call__."""
 
-    n_codons: int
+    n_regions: int
+
+    def __init__(self):
+        self.region_size = 0
+        self.molecule_map: dict[str, Molecule] = {}
+        self.reaction_map: dict[str, tuple[list[Molecule], list[Molecule]]] = {}
+        self.affinity_map: dict[str, float] = {}
+        self.velocity_map: dict[str, float] = {}
+        self.orientation_map: dict[str, bool] = {}
 
     @abc.abstractmethod
     def __call__(self, seq: str) -> Domain:
@@ -188,53 +183,25 @@ class CatalyticFact(DomainFact):
     is not necessary to additionally define the reverse reaction.
     """
 
-    def __init__(
-        self,
-        reaction_map: dict[str, tuple[list[Molecule], list[Molecule]]],
-        affinity_map: dict[str, float],
-        velocity_map: dict[str, float],
-        orientation_map: dict[str, bool],
-    ):
-        energies: dict[str, float] = {}
-        for seq, (substrates, products) in reaction_map.items():
-            energy = 0.0
-            for sig in substrates:
-                energy -= sig.energy
-            for sig in products:
-                energy += sig.energy
-            energies[seq] = energy
-
-        self.energy_map = energies
-        self.reaction_map = reaction_map
-        self.affinity_map = affinity_map
-        self.velocity_map = velocity_map
-        self.orientation_map = orientation_map
-
-        _validate_seq_lens(reaction_map, "reaction_map")
-        _validate_seq_lens(affinity_map, "affinity_map")
-        _validate_seq_lens(velocity_map, "velocity_map")
-        _validate_seq_lens(orientation_map, "orientation_map")
-        self.n_codons = 4
+    n_regions = 4
 
     def __call__(self, seq: str) -> Domain:
-        subs, prods = self.reaction_map[seq[0:CODON_SIZE]]
-        energy = self.energy_map[seq[0:CODON_SIZE]]
-        aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
-        velo = self.velocity_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
-        orient = self.orientation_map[seq[CODON_SIZE * 3 : CODON_SIZE * 4]]
+        subs, prods = self.reaction_map[seq[0 : self.region_size]]
+        aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
+        velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
+        orient = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
         return Domain(
             substrates=[d.copy() for d in subs],
             products=[d.copy() for d in prods],
             affinity=aff,
             velocity=velo,
-            energy=energy,
             orientation=orient,
             is_catalytic=True,
         )
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(reactions=%r)" % (clsname, set(self.reaction_map.values()))
+        return "%s(n_regions=%r)" % (clsname, self.n_regions)
 
 
 class TransporterFact(DomainFact):
@@ -252,44 +219,26 @@ class TransporterFact(DomainFact):
     for each type of molecule.
     """
 
-    def __init__(
-        self,
-        molecule_map: dict[str, Molecule],
-        affinity_map: dict[str, float],
-        velocity_map: dict[str, float],
-        orientation_map: dict[str, bool],
-    ):
-
-        self.molecule_map = molecule_map
-        self.affinity_map = affinity_map
-        self.velocity_map = velocity_map
-        self.orientation_map = orientation_map
-
-        _validate_seq_lens(molecule_map, "molecule_map")
-        _validate_seq_lens(affinity_map, "affinity_map")
-        _validate_seq_lens(velocity_map, "velocity_map")
-        _validate_seq_lens(orientation_map, "orientation_map")
-        self.n_codons = 4
+    n_regions = 4
 
     def __call__(self, seq: str) -> Domain:
-        mol1 = self.molecule_map[seq[0:CODON_SIZE]].copy()
-        aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
-        velo = self.velocity_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
-        orient = self.orientation_map[seq[CODON_SIZE * 3 : CODON_SIZE * 4]]
+        mol1 = self.molecule_map[seq[0 : self.region_size]].copy()
+        aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
+        velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
+        orient = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
         mol2 = mol1.copy(is_intracellular=not mol1.is_intracellular)
         return Domain(
             substrates=[mol1],
             products=[mol2],
             affinity=aff,
             velocity=velo,
-            energy=0.0,
             orientation=orient,
             is_transporter=True,
         )
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(molecules=%r)" % (clsname, set(self.molecule_map.values()))
+        return "%s(n_regions=%r)" % (clsname, self.n_regions)
 
 
 class AllostericFact(DomainFact):
@@ -309,37 +258,25 @@ class AllostericFact(DomainFact):
     the effector molecule.
     """
 
-    def __init__(
-        self,
-        molecule_map: dict[str, Molecule],
-        affinity_map: dict[str, float],
-        orientation_map: dict[str, bool],
-        is_transmembrane=False,
-        is_inhibitor=False,
-    ):
+    n_regions = 3
 
-        self.molecule_map = molecule_map
-        self.affinity_map = affinity_map
-        self.orientation_map = orientation_map
+    def __init__(
+        self, is_transmembrane=False, is_inhibitor=False,
+    ):
+        super().__init__()
         self.is_transmembrane = is_transmembrane
         self.is_inhibitor = is_inhibitor
 
-        _validate_seq_lens(molecule_map, "molecule_map")
-        _validate_seq_lens(affinity_map, "affinity_map")
-        _validate_seq_lens(orientation_map, "orientation_map")
-        self.n_codons = 3
-
     def __call__(self, seq: str) -> Domain:
-        mol = self.molecule_map[seq[0:CODON_SIZE]].copy()
-        aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
-        orient = self.orientation_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
+        mol = self.molecule_map[seq[0 : self.region_size]].copy()
+        aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
+        orient = self.orientation_map[seq[self.region_size * 2 : self.region_size * 3]]
         mol.is_intracellular = not self.is_transmembrane
         return Domain(
             substrates=[mol],
             products=[],
             affinity=aff,
             velocity=0.0,
-            energy=0.0,
             orientation=orient,
             is_allosteric=True,
             is_inhibiting=self.is_inhibitor,
@@ -347,7 +284,15 @@ class AllostericFact(DomainFact):
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(molecules=%r)" % (clsname, set(self.molecule_map.values()))
+        return "%s(n_regions?%r,is_transmembrane=%r,is_inhibitor=%r)" % (
+            clsname,
+            self.n_regions,
+            self.is_transmembrane,
+            self.is_inhibitor,
+        )
+
+
+DOMAIN_FACTORIES = (CatalyticFact, TransporterFact, AllostericFact)
 
 
 class Protein:
@@ -368,3 +313,4 @@ class Protein:
 
     def __str__(self) -> str:
         return self.label
+
