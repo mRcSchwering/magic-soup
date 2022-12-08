@@ -1,11 +1,5 @@
 from .proteins import Domain, DomainFact, Protein
-from .util import (
-    ALL_NTS,
-    CODON_SIZE,
-    reverse_complement,
-    weight_map_fact,
-    bool_map_fact,
-)
+from .util import ALL_NTS, CODON_SIZE, reverse_complement
 
 # TODO: summary() to see likelyhoods of different domains appearing
 
@@ -31,24 +25,22 @@ class Genetics:
         km_range: tuple[float, float] = (0.1, 10.0),
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
+        n_dom_codons=6,
     ):
         self.domain_map = domain_map
         self.vmax_range = vmax_range
         self.km_range = km_range
         self.start_codons = start_codons
         self.stop_codons = stop_codons
+        self.n_dom_codons = n_dom_codons
 
         self.seq_2_dom = {d: k for k, v in self.domain_map.items() for d in v}
         self.n_dom_type_def_nts = len(next(iter(self.seq_2_dom)))
-        self.n_dom_detail_def_nts = 4 * CODON_SIZE
-        self.n_dom_def_nts = self.n_dom_type_def_nts + self.n_dom_detail_def_nts
+        self.n_dom_def_nts = CODON_SIZE * n_dom_codons
+        self.n_dom_detail_def_nts = self.n_dom_def_nts - self.n_dom_type_def_nts
         self.min_n_seq_nts = self.n_dom_def_nts + 2 * CODON_SIZE
 
-        # brauch ich die hier? (muss nur wissen wie lang die domäne ist)
-        self.codon_2_vmax = weight_map_fact(CODON_SIZE, *vmax_range)
-        self.codon_2_km = weight_map_fact(CODON_SIZE, *km_range)
-        self.codon_2_inhibit = bool_map_fact(CODON_SIZE)
-        self.codon_2_orient = bool_map_fact(CODON_SIZE)
+        self._validate_init()
 
     def get_coding_regions(self, seq: str) -> list[str]:
         """
@@ -95,7 +87,7 @@ class Genetics:
         cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
         cds = [d for d in cds if len(d) > self.min_n_seq_nts]
         proteins = [self.translate_seq(d) for d in cds]
-        return [Protein(domains=d, name=f"P{i}") for i, d in enumerate(proteins)]
+        return [Protein(domains=d, label=f"P{i}") for i, d in enumerate(proteins)]
 
     def translate_seq(self, seq: str) -> list[Domain]:
         """
@@ -162,6 +154,16 @@ class Genetics:
                 "Some domain type definitions include unknown nucleotides. "
                 f"These nucleotides were found in domain_map: {', '.join(wrng_dom_nts)}. "
                 f"Known nucleotides are: {', '.join(exp_nts)}."
+            )
+
+        n_codons = min(d.n_codons for d in self.domain_map)
+        if self.n_dom_detail_def_nts < n_codons * CODON_SIZE:
+            raise ValueError(
+                f"The number of codons defining a domain is too small (n_dom_codons={self.n_dom_codons}). "
+                f"Currently, domains are defined as being {self.n_dom_codons} long ({self.n_dom_def_nts} nucleotides). "
+                f"The domain type definition alone is {self.n_dom_type_def_nts} nucleotides long. "
+                f"That leaves {self.n_dom_detail_def_nts} nucleotides to define domain details. "
+                f"However, some domains need at least {n_codons} codons ({n_codons * CODON_SIZE} nucleotides) for their details."
             )
 
     def __repr__(self) -> str:

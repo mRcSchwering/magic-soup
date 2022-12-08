@@ -166,6 +166,8 @@ class Domain:
 class DomainFact(abc.ABC):
     """Base class to create domain factory. Must implement __call__."""
 
+    n_codons: int
+
     @abc.abstractmethod
     def __call__(self, seq: str) -> Domain:
         """Instantiate domain object from encoding nucleotide sequence"""
@@ -212,13 +214,14 @@ class CatalyticFact(DomainFact):
         _validate_seq_lens(affinity_map, "affinity_map")
         _validate_seq_lens(velocity_map, "velocity_map")
         _validate_seq_lens(orientation_map, "orientation_map")
+        self.n_codons = 4
 
     def __call__(self, seq: str) -> Domain:
         subs, prods = self.reaction_map[seq[0:CODON_SIZE]]
         energy = self.energy_map[seq[0:CODON_SIZE]]
         aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
         velo = self.velocity_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
-        orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
+        orient = self.orientation_map[seq[CODON_SIZE * 3 : CODON_SIZE * 4]]
         return Domain(
             substrates=[d.copy() for d in subs],
             products=[d.copy() for d in prods],
@@ -266,12 +269,13 @@ class TransporterFact(DomainFact):
         _validate_seq_lens(affinity_map, "affinity_map")
         _validate_seq_lens(velocity_map, "velocity_map")
         _validate_seq_lens(orientation_map, "orientation_map")
+        self.n_codons = 4
 
     def __call__(self, seq: str) -> Domain:
         mol1 = self.molecule_map[seq[0:CODON_SIZE]].copy()
         aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
         velo = self.velocity_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
-        orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
+        orient = self.orientation_map[seq[CODON_SIZE * 3 : CODON_SIZE * 4]]
         mol2 = mol1.copy(is_intracellular=not mol1.is_intracellular)
         return Domain(
             substrates=[mol1],
@@ -323,11 +327,12 @@ class AllostericFact(DomainFact):
         _validate_seq_lens(molecule_map, "molecule_map")
         _validate_seq_lens(affinity_map, "affinity_map")
         _validate_seq_lens(orientation_map, "orientation_map")
+        self.n_codons = 3
 
     def __call__(self, seq: str) -> Domain:
         mol = self.molecule_map[seq[0:CODON_SIZE]].copy()
         aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
-        orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
+        orient = self.orientation_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
         mol.is_intracellular = not self.is_transmembrane
         return Domain(
             substrates=[mol],
