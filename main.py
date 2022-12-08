@@ -1,13 +1,6 @@
 import time
-import torch
 import magicsoup as ms
-from magicsoup.util import (
-    rand_genome,
-    variants,
-    weight_map_fact,
-    bool_map_fact,
-    CODON_SIZE,
-)
+from magicsoup.util import variants
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 
 
@@ -29,7 +22,41 @@ if __name__ == "__main__":
 
     world = ms.World(molecules=MOLECULES)
 
-    g = rand_genome()
-    p = genetics.get_proteome(seq=g)
+    n_cells = 1000
+    n_steps = 10
 
-    Km, Vmax, Ke, N, A = world.get_cell_params(proteomes=[p])
+    t0 = time.time()
+    genomes = genetics.get_genomes(n=n_cells)
+    td = time.time() - t0
+    print(f"Generating {n_cells} genomes: {td:.2f}s")
+
+    t0 = time.time()
+    proteomes = genetics.get_proteomes(sequences=genomes)
+    td = time.time() - t0
+    print(f"Getting {n_cells} proteomes: {td:.2f}s")
+
+    t0 = time.time()
+    world.add_cells(genomes=genomes, proteomes=proteomes)
+    td = time.time() - t0
+    print(f"Adding {n_cells} cells: {td:.2f}s")
+
+    t0 = time.time()
+    world.integrate_signals()
+    print(f"Integrating signals: {td:.2f}s")
+
+    t0 = time.time()
+    world.degrade_molecules()
+    world.diffuse_molecules()
+    world.increment_cell_survival()
+    td = time.time() - t0
+    print(f"Degrade, diffuse, increment: {td:.2f}s")
+
+    t0 = time.time()
+    for _ in range(n_steps):
+        world.integrate_signals()
+        world.degrade_molecules()
+        world.diffuse_molecules()
+        world.increment_cell_survival()
+        td = time.time() - t0
+    print(f"Doing {n_steps} steps: {td:.2f}s")
+

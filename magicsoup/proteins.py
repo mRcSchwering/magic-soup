@@ -1,4 +1,3 @@
-from typing import Optional
 import abc
 
 
@@ -14,51 +13,34 @@ class Molecule:
       Molecule concentrations and energies involved in a reaction decide
       whether the reaction can occur. Catalytic domains in a protein can
       couple multiple reactions.
-    - `is_intracellular` A flag of whether this molecule exists outside
-      or inside the cell. This can be left on its default for the mere
-      definition of the molecule. It has a more technical purpose.
-      The simulation treats them as 2 different molecules
-      to make calculations simpler.
     
     Each type of molecule which is supposed to be unique should have a unique `name`.
     Molecule types are compared based on `name` and `energy`. And since `energy` levels
     of different molecules can very well be equal, the only real comparison attribute
     left is the name. Thus, every type of molecule should have a unique name.
-
-    Intra- and extracellular molecules should not have a different name. Their location
-    (inside or outside a cell) is handled by `is_intracellular`. If you print a molecule
-    it will be prefixed with `i-` for intracellular and `e-` for extracellular.
     """
 
-    def __init__(self, name: str, energy: float, is_intracellular=True):
+    def __init__(self, name: str, energy: float):
         self.name = name
         self.energy = energy
-        self.is_intracellular = is_intracellular
 
-    def copy(self, is_intracellular: Optional[bool] = False) -> "Molecule":
-        """Instatiate this type of molecule, optionally overriding attributes"""
-        intra = is_intracellular if is_intracellular is None else self.is_intracellular
-        return Molecule(name=self.name, energy=self.energy, is_intracellular=intra)
+    def copy(self) -> "Molecule":
+        """Instatiate this type of molecule again"""
+        return Molecule(name=self.name, energy=self.energy)
 
     def __hash__(self) -> int:
         clsname = type(self).__name__
-        return hash((clsname, self.name, self.energy, self.is_intracellular))
+        return hash((clsname, self.name, self.energy))
 
     def __eq__(self, other) -> bool:
         return hash(self) == hash(other)
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(name=%r,energy=%r,is_intracellular=%r)" % (
-            clsname,
-            self.name,
-            self.energy,
-            self.is_intracellular,
-        )
+        return "%s(name=%r,energy=%r)" % (clsname, self.name, self.energy)
 
     def __str__(self) -> str:
-        prefix = "i" if self.is_intracellular else "e"
-        return prefix + "-" + self.name
+        return self.name
 
 
 class Domain:
@@ -106,6 +88,7 @@ class Domain:
         is_transporter=False,
         is_allosteric=False,
         is_inhibiting=False,
+        is_transmembrane=False,
     ):
         self.substrates = substrates
         self.products = products
@@ -118,11 +101,12 @@ class Domain:
         self.is_transporter = is_transporter
         self.is_allosteric = is_allosteric
         self.is_inhibiting = is_inhibiting
+        self.is_transmembrane = is_transmembrane
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,orientation=%r,label=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r)"
+            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,orientation=%r,label=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r,is_transmembrane=%r)"
             % (
                 clsname,
                 self.substrates,
@@ -135,6 +119,7 @@ class Domain:
                 self.is_transporter,
                 self.is_allosteric,
                 self.is_inhibiting,
+                self.is_transmembrane,
             )
         )
 
@@ -222,14 +207,13 @@ class TransporterFact(DomainFact):
     n_regions = 4
 
     def __call__(self, seq: str) -> Domain:
-        mol1 = self.molecule_map[seq[0 : self.region_size]].copy()
+        mol = self.molecule_map[seq[0 : self.region_size]].copy()
         aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
         velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
         orient = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
-        mol2 = mol1.copy(is_intracellular=not mol1.is_intracellular)
         return Domain(
-            substrates=[mol1],
-            products=[mol2],
+            substrates=[mol],
+            products=[],
             affinity=aff,
             velocity=velo,
             orientation=orient,
@@ -271,7 +255,6 @@ class AllostericFact(DomainFact):
         mol = self.molecule_map[seq[0 : self.region_size]].copy()
         aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
         orient = self.orientation_map[seq[self.region_size * 2 : self.region_size * 3]]
-        mol.is_intracellular = not self.is_transmembrane
         return Domain(
             substrates=[mol],
             products=[],
@@ -280,6 +263,7 @@ class AllostericFact(DomainFact):
             orientation=orient,
             is_allosteric=True,
             is_inhibiting=self.is_inhibitor,
+            is_transmembrane=self.is_transmembrane,
         )
 
     def __repr__(self) -> str:

@@ -6,6 +6,7 @@ from .util import (
     generic_map_fact,
     bool_map_fact,
     weight_map_fact,
+    rand_genome,
 )
 
 # TODO: summary() to see likelyhoods of different domains appearing
@@ -34,6 +35,7 @@ class Genetics:
         km_range: tuple[float, float] = (0.1, 10.0),
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
+        init_genome_size_range: tuple[int, int] = (50, 100),
         n_region_codons=2,
     ):
         self.domain_facts = domain_facts
@@ -43,6 +45,7 @@ class Genetics:
         self.km_range = km_range
         self.start_codons = start_codons
         self.stop_codons = stop_codons
+        self.init_genome_size_range = init_genome_size_range
         self.n_region_codons = n_region_codons
 
         self.reaction_map = generic_map_fact(n_region_codons * CODON_SIZE, reactions)
@@ -69,21 +72,26 @@ class Genetics:
 
         self._validate_init()
 
+    def get_genomes(self, n: int) -> list[str]:
+        """Get n random genomes"""
+        return [rand_genome(len_range=self.init_genome_size_range) for _ in range(n)]
+
     def get_proteome(self, seq: str) -> list[Protein]:
         """
         Get all possible proteins encoded by a nucleotide sequence.
-        Proteins are represented as dicts with domain labels and correspondig
-        weights.
-        
-        Proteins which could theoretically be translated, but from which we can
-        already tell by now that they would not be functional, will be sorted
-        out at this point.
         """
         bwd = reverse_complement(seq)
         cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
         cds = [d for d in cds if len(d) > self.min_n_seq_nts]
         proteins = [self.translate_seq(d) for d in cds]
+        proteins = [d for d in proteins if len(d) > 0]
         return [Protein(domains=d, label=f"P{i}") for i, d in enumerate(proteins)]
+
+    def get_proteomes(self, sequences: list[str]) -> list[list[Protein]]:
+        """
+        For each nucleotide sequence get all possible proteins.
+        """
+        return [self.get_proteome(seq=d) for d in sequences]
 
     def get_coding_regions(self, seq: str) -> list[str]:
         """
