@@ -1,11 +1,6 @@
-from typing import Iterable
+from typing import Iterable, Optional
 import abc
 from .util import CODON_SIZE
-
-# TODO: currently multiple domains can reference the same
-#       molecule. And some domains change the molecule
-#       e.g. set is_intracellular
-#       I should either use a factory or a clone method
 
 
 def _validate_seq_lens(seqs: Iterable[str], name: str):
@@ -49,6 +44,11 @@ class Molecule:
         self.name = name
         self.energy = energy
         self.is_intracellular = is_intracellular
+
+    def copy(self, is_intracellular: Optional[bool] = False) -> "Molecule":
+        """Instatiate this type of molecule, optionally overriding attributes"""
+        intra = is_intracellular if is_intracellular is None else self.is_intracellular
+        return Molecule(name=self.name, energy=self.energy, is_intracellular=intra)
 
     def __hash__(self) -> int:
         clsname = type(self).__name__
@@ -96,6 +96,7 @@ class Domain:
       by the protein can occur from left to right, or right to left. Whether a domain's
       substrates will be part of the left or the right side of the equation, is decided
       by this bool.
+    - `label` a label to recognize it, has no effect
     - `is_catalytic` Flag to indicate that this is a catalytic domain.
     - `is_transporter` Flag to indicate that this is a transporter domain.
     - `is_allosteric` Flag to indicate that this is a allosteric domain.
@@ -111,6 +112,7 @@ class Domain:
         velocity: float,
         energy: float,
         orientation: bool,
+        label="D",
         is_catalytic=False,
         is_transporter=False,
         is_allosteric=False,
@@ -122,6 +124,7 @@ class Domain:
         self.velocity = velocity
         self.energy = energy
         self.orientation = orientation
+        self.label = label
 
         self.is_catalytic = is_catalytic
         self.is_transporter = is_transporter
@@ -131,7 +134,7 @@ class Domain:
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,energy=%r,orientation=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r)"
+            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,energy=%r,orientation=%r,label=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r)"
             % (
                 clsname,
                 self.substrates,
@@ -140,6 +143,7 @@ class Domain:
                 self.velocity,
                 self.energy,
                 self.orientation,
+                self.label,
                 self.is_catalytic,
                 self.is_transporter,
                 self.is_allosteric,
@@ -216,8 +220,8 @@ class CatalyticFact(DomainFact):
         velo = self.velocity_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
         orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
         return Domain(
-            substrates=subs,
-            products=prods,
+            substrates=[d.copy() for d in subs],
+            products=[d.copy() for d in prods],
             affinity=aff,
             velocity=velo,
             energy=energy,
@@ -264,15 +268,11 @@ class TransporterFact(DomainFact):
         _validate_seq_lens(orientation_map, "orientation_map")
 
     def __call__(self, seq: str) -> Domain:
-        mol1 = self.molecule_map[seq[0:CODON_SIZE]]
+        mol1 = self.molecule_map[seq[0:CODON_SIZE]].copy()
         aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
         velo = self.velocity_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
         orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
-        mol2 = Molecule(
-            name=mol1.name,
-            energy=mol1.energy,
-            is_intracellular=not mol1.is_intracellular,
-        )
+        mol2 = mol1.copy(is_intracellular=not mol1.is_intracellular)
         return Domain(
             substrates=[mol1],
             products=[mol2],
@@ -295,10 +295,9 @@ class AllostericFact(DomainFact):
 
     - `molecule_map` Map nucleotide sequences to effector molecules.
     - `affinity_map` Map nucleotide sequences to affinity values (Km in MM. kinetic)
-    - `inhibitor_map` Map nucleotide sequences to bools deciding whether the domain
-      will be inhibiting or not (=activating).
     - `is_transmembrane` whether this factory creates transmembrane receptors or not
       (=intracellular receptors)
+    - `is_inhibitor` whether the domain will be inhibiting or not (=activating)
 
     In case of a transmembrane receptor (`is_transmembrane=True`) the allosteric region
     reacts to the extracellular version of the effector molecule. In case of an intracellular
@@ -310,26 +309,24 @@ class AllostericFact(DomainFact):
         self,
         molecule_map: dict[str, Molecule],
         affinity_map: dict[str, float],
-        inhibitor_map: dict[str, bool],
         orientation_map: dict[str, bool],
         is_transmembrane=False,
+        is_inhibitor=False,
     ):
 
         self.molecule_map = molecule_map
         self.affinity_map = affinity_map
-        self.inhibitor_map = inhibitor_map
         self.orientation_map = orientation_map
         self.is_transmembrane = is_transmembrane
+        self.is_inhibitor = is_inhibitor
 
         _validate_seq_lens(molecule_map, "molecule_map")
         _validate_seq_lens(affinity_map, "affinity_map")
-        _validate_seq_lens(inhibitor_map, "inhibitor_map")
         _validate_seq_lens(orientation_map, "orientation_map")
 
     def __call__(self, seq: str) -> Domain:
-        mol = self.molecule_map[seq[0:CODON_SIZE]]
+        mol = self.molecule_map[seq[0:CODON_SIZE]].copy()
         aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
-        inhib = self.inhibitor_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
         orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
         mol.is_intracellular = not self.is_transmembrane
         return Domain(
@@ -340,7 +337,7 @@ class AllostericFact(DomainFact):
             energy=0.0,
             orientation=orient,
             is_allosteric=True,
-            is_inhibiting=inhib,
+            is_inhibiting=self.is_inhibitor,
         )
 
     def __repr__(self) -> str:
@@ -349,15 +346,20 @@ class AllostericFact(DomainFact):
 
 
 class Protein:
-    """Container class to carry domains of a protein"""
+    """
+    Container class to carry domains of a protein
+    
+    - `domains` all domains of the protein
+    - `label` a label, only to recognize it, has no effect
+    """
 
-    def __init__(self, domains: list[Domain], name=""):
-        self.name = name
+    def __init__(self, domains: list[Domain], label="P"):
         self.domains = domains
+        self.label = label
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(domains=%r,name=%r)" % (clsname, self.domains, self.name)
+        return "%s(domains=%r,label=%r)" % (clsname, self.domains, self.label)
 
     def __str__(self) -> str:
-        return self.name
+        return self.label
