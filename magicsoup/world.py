@@ -364,3 +364,30 @@ class World:
             self.actions,
         )
 
+    def new_get_params(self):
+        n_doms = len(doms)
+        Km = torch.full((self.n_molecules, n_doms), torch.nan)
+        Vmax = torch.full((n_doms,), torch.nan)
+        N = torch.full((self.n_molecules, n_doms), torch.nan)
+        A = torch.zeros(self.n_molecules, n_doms)
+
+        for dom_i, dom in enumerate(doms):
+            if dom.is_receptor:
+                mol = dom.substrates[0]
+                offset = self.int_mol_pad if mol.is_intracellular else self.ext_mol_pad
+                mol_i = self.molecules.index(mol)
+                val = -1.0 if dom.is_inhibiting else 1.0
+                A[mol_i + offset, dom_i] = val
+                Km[mol_i + offset, dom_i] = dom.affinity
+            elif dom.is_transporter:
+                # TODO: rather generic
+                mol1 = dom.substrates[0]
+                mol_i = self.molecules.index(mol1)
+                offset1 = self.int_mol_pad
+                offset2 = self.ext_mol_pad
+                N[mol_i + offset1]
+
+        A = A.sum(dim=1).clamp(-1, 1)
+        Km = Km.nanmean(dim=1).nan_to_num(0.0)
+        Vmax = Vmax.nanmean(dim=0).nan_to_num(0.0)
+

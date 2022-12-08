@@ -1,14 +1,50 @@
+from typing import Iterable
 import abc
-from magicsoup.util import (
-    weight_map_fact,
-    double_bool_map_fact,
-    reverse_complement,
-    CODON_SIZE,
-)
-import torch
+from .util import CODON_SIZE
+
+# TODO: currently multiple domains can reference the same
+#       molecule. And some domains change the molecule
+#       e.g. set is_intracellular
+#       I should either use a factory or a clone method
+
+
+def _validate_seq_lens(seqs: Iterable[str], name: str):
+    lens = set(len(d) for d in seqs)
+    if lens != {CODON_SIZE}:
+        raise ValueError(
+            f"All sequences used to map a nucleotide sequence to a value must have length CODON_SIZE={CODON_SIZE}. "
+            f"The following sequence lengths were found in {name}: {', '.join([str(d) for d in lens])}"
+        )
 
 
 class Molecule:
+    """
+    Represents a type of molecule which is part of the world, can diffuse,
+    degrade, and be converted into other molecules. In reactions it has
+    number attached which represents its concentration.
+
+    - `name` Name for recognition and uniqueness.
+    - `energy` In concept a standard free Gibb's energy.
+      This amount of energy is released is the molecule would be deconstructed.
+      Molecule concentrations and energies involved in a reaction decide
+      whether the reaction can occur. Catalytic domains in a protein can
+      couple multiple reactions.
+    - `is_intracellular` A flag of whether this molecule exists outside
+      or inside the cell. This can be left on its default for the mere
+      definition of the molecule. It has a more technical purpose.
+      The simulation treats them as 2 different molecules
+      to make calculations simpler.
+    
+    Each type of molecule which is supposed to be unique should have a unique `name`.
+    Molecule types are compared based on `name` and `energy`. And since `energy` levels
+    of different molecules can very well be equal, the only real comparison attribute
+    left is the name. Thus, every type of molecule should have a unique name.
+
+    Intra- and extracellular molecules should not have a different name. Their location
+    (inside or outside a cell) is handled by `is_intracellular`. If you print a molecule
+    it will be prefixed with `i-` for intracellular and `e-` for extracellular.
+    """
+
     def __init__(self, name: str, energy: float, is_intracellular=True):
         self.name = name
         self.energy = energy
@@ -36,15 +72,48 @@ class Molecule:
 
 
 class Domain:
+    """
+    Container that defines a domain. A protein can have multiple domains
+    which together define the function of that protein.
+
+    - `substrates` All molecules used by this domain. The concrete interpretation
+      depends on the type of domain. In a catalytic domain this would be the left
+      side of the chemical equation.
+    - `products` All molecules produced by this domain. The concrete interpretation
+      depends on the type of domain. In a catalytic domain this would be the right
+      side of the chemical equation.
+    - `affinity` The substrate affinity of this domain. Represents Km in Michaelis
+      Menten kinetics.
+    - `velocity` The reaction velocity of this domain. Represents Vmax in Michaelis
+      Menten kinetics. This is only relevant for certain types of domains.
+    - `energy` In concept a standard free Gibb's energy for the action performed by
+      this domain (e.g. the reaction catalyzed). Molecule concentrations and this
+      energy decide whether the reaction can take place and/or in which direction
+      it will go.
+    - `orientation` Bool which decides in which direction the domain will be coulpled.
+      This is relevant for proteins with multiple domains. Depending on molecule
+      concentrations and energies the overall reaction catalyzed and/or performed
+      by the protein can occur from left to right, or right to left. Whether a domain's
+      substrates will be part of the left or the right side of the equation, is decided
+      by this bool.
+    - `is_catalytic` Flag to indicate that this is a catalytic domain.
+    - `is_transporter` Flag to indicate that this is a transporter domain.
+    - `is_allosteric` Flag to indicate that this is a allosteric domain.
+    - `is_inhibiting` Flag to indicate that this is a inhibiting domain. This is only
+      relevant for allosteric domains.
+    """
+
     def __init__(
         self,
-        substrates: tuple[Molecule, ...],
-        products: tuple[Molecule, ...],
+        substrates: list[Molecule],
+        products: list[Molecule],
         affinity: float,
         velocity: float,
         energy: float,
+        orientation: bool,
+        is_catalytic=False,
         is_transporter=False,
-        is_receptor=False,
+        is_allosteric=False,
         is_inhibiting=False,
     ):
         self.substrates = substrates
@@ -52,23 +121,28 @@ class Domain:
         self.affinity = affinity
         self.velocity = velocity
         self.energy = energy
+        self.orientation = orientation
 
+        self.is_catalytic = is_catalytic
         self.is_transporter = is_transporter
-        self.is_receptor = is_receptor
+        self.is_allosteric = is_allosteric
         self.is_inhibiting = is_inhibiting
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,is_transporter=%r,is_receptor=%r,is_inhibiting=%r)"
+            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,energy=%r,orientation=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r)"
             % (
                 clsname,
                 self.substrates,
                 self.products,
                 self.affinity,
                 self.velocity,
+                self.energy,
+                self.orientation,
+                self.is_catalytic,
                 self.is_transporter,
-                self.is_receptor,
+                self.is_allosteric,
                 self.is_inhibiting,
             )
         )
@@ -78,23 +152,42 @@ class Domain:
         outs = ",".join(str(d) for d in self.products)
         if self.is_transporter:
             return f"TransporterDomain({ins}->{outs})"
-        if self.is_receptor:
+        if self.is_allosteric:
             return f"ReceptorDomain({ins})"
-        return f"EnzymeDomain({ins}->{outs})"
+        if self.is_catalytic:
+            return f"CatalyticDomain({ins}->{outs})"
+        return f"Domain({ins}->{outs})"
 
 
 class DomainFact(abc.ABC):
+    """Base class to create domain factory. Must implement __call__."""
+
     @abc.abstractmethod
     def __call__(self, seq: str) -> Domain:
+        """Instantiate domain object from encoding nucleotide sequence"""
         raise NotImplementedError("Implement __call__")
 
 
-class EnzymeFact(DomainFact):
+class CatalyticFact(DomainFact):
+    """
+    Factory for generating catalytic domains from nucleotide sequences.
+
+    - `reaction_map` Map nucleotide sequences to reactions. Reactions are defined
+      by a tuple of `(substrates, products)`.
+    - `affinity_map` Map nucleotide sequences to affinity values (Km in MM. kinetic)
+    - `velocity_map` Map nucleotide sequences to maximum velocity values (Vmax in MM. kinetic)
+
+    Depending on molecule concentrations and energies each reaction can take place
+    in both directions (substrates -> products or products -> substrates). Thus, it
+    is not necessary to additionally define the reverse reaction.
+    """
+
     def __init__(
         self,
-        reaction_map: dict[str, tuple[tuple[Molecule, ...], tuple[Molecule, ...]]],
+        reaction_map: dict[str, tuple[list[Molecule], list[Molecule]]],
         affinity_map: dict[str, float],
         velocity_map: dict[str, float],
+        orientation_map: dict[str, bool],
     ):
         energies: dict[str, float] = {}
         for seq, (substrates, products) in reaction_map.items():
@@ -109,17 +202,27 @@ class EnzymeFact(DomainFact):
         self.reaction_map = reaction_map
         self.affinity_map = affinity_map
         self.velocity_map = velocity_map
+        self.orientation_map = orientation_map
 
-        self.n_nts = len(next(iter(reaction_map)))
-        # TODO: validate lengths
+        _validate_seq_lens(reaction_map, "reaction_map")
+        _validate_seq_lens(affinity_map, "affinity_map")
+        _validate_seq_lens(velocity_map, "velocity_map")
+        _validate_seq_lens(orientation_map, "orientation_map")
 
     def __call__(self, seq: str) -> Domain:
-        subs, prods = self.reaction_map[seq[0 : self.n_nts]]
-        energy = self.energy_map[seq[0 : self.n_nts]]
-        aff = self.affinity_map[seq[self.n_nts : self.n_nts * 2]]
-        velo = self.velocity_map[seq[self.n_nts * 2 :]]
+        subs, prods = self.reaction_map[seq[0:CODON_SIZE]]
+        energy = self.energy_map[seq[0:CODON_SIZE]]
+        aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
+        velo = self.velocity_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
+        orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
         return Domain(
-            substrates=subs, products=prods, affinity=aff, velocity=velo, energy=energy,
+            substrates=subs,
+            products=prods,
+            affinity=aff,
+            velocity=velo,
+            energy=energy,
+            orientation=orient,
+            is_catalytic=True,
         )
 
     def __repr__(self) -> str:
@@ -128,32 +231,55 @@ class EnzymeFact(DomainFact):
 
 
 class TransporterFact(DomainFact):
+    """
+    Factory for generating transporter domains from nucleotide sequences. Transporters
+    essentially convert a type of molecule from their intracellular version to their
+    extracellular version and/or vice versa.
+
+    - `molecule_map` Map nucleotide sequences to transported molecules.
+    - `affinity_map` Map nucleotide sequences to affinity values (Km in MM. kinetic)
+    - `velocity_map` Map nucleotide sequences to maximum velocity values (Vmax in MM. kinetic)
+
+    Depending on molecule concentrations the transporter can work in both directions.
+    Thus it is not necessary to define both the intracellular and extracellular version
+    for each type of molecule.
+    """
+
     def __init__(
         self,
         molecule_map: dict[str, Molecule],
         affinity_map: dict[str, float],
         velocity_map: dict[str, float],
+        orientation_map: dict[str, bool],
     ):
 
         self.molecule_map = molecule_map
         self.affinity_map = affinity_map
         self.velocity_map = velocity_map
+        self.orientation_map = orientation_map
 
-        self.n_nts = len(next(iter(molecule_map)))
-        # TODO: validate lengths
+        _validate_seq_lens(molecule_map, "molecule_map")
+        _validate_seq_lens(affinity_map, "affinity_map")
+        _validate_seq_lens(velocity_map, "velocity_map")
+        _validate_seq_lens(orientation_map, "orientation_map")
 
     def __call__(self, seq: str) -> Domain:
-        mol1 = self.molecule_map[seq[0 : self.n_nts]]
-        aff = self.affinity_map[seq[self.n_nts : self.n_nts * 2]]
-        velo = self.velocity_map[seq[self.n_nts * 2 :]]
-        mol1.is_intracellular = True
-        mol2 = Molecule(name=mol1.name, energy=mol1.energy, is_intracellular=False)
+        mol1 = self.molecule_map[seq[0:CODON_SIZE]]
+        aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
+        velo = self.velocity_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
+        orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
+        mol2 = Molecule(
+            name=mol1.name,
+            energy=mol1.energy,
+            is_intracellular=not mol1.is_intracellular,
+        )
         return Domain(
-            substrates=(mol1,),
-            products=(mol2,),
+            substrates=[mol1],
+            products=[mol2],
             affinity=aff,
             velocity=velo,
             energy=0.0,
+            orientation=orient,
             is_transporter=True,
         )
 
@@ -163,33 +289,58 @@ class TransporterFact(DomainFact):
 
 
 class AllostericFact(DomainFact):
+    """
+    Factory for generating allosteric domains from nucleotide sequences. These domains
+    can activate or inhibit the protein non-competitively.
+
+    - `molecule_map` Map nucleotide sequences to effector molecules.
+    - `affinity_map` Map nucleotide sequences to affinity values (Km in MM. kinetic)
+    - `inhibitor_map` Map nucleotide sequences to bools deciding whether the domain
+      will be inhibiting or not (=activating).
+    - `is_transmembrane` whether this factory creates transmembrane receptors or not
+      (=intracellular receptors)
+
+    In case of a transmembrane receptor (`is_transmembrane=True`) the allosteric region
+    reacts to the extracellular version of the effector molecule. In case of an intracellular
+    receptor (`is_transmembrane=False`) the region reacts to the intracellular version of
+    the effector molecule.
+    """
+
     def __init__(
         self,
         molecule_map: dict[str, Molecule],
         affinity_map: dict[str, float],
-        allosteric_map: dict[str, tuple[bool, bool]],
+        inhibitor_map: dict[str, bool],
+        orientation_map: dict[str, bool],
+        is_transmembrane=False,
     ):
 
         self.molecule_map = molecule_map
         self.affinity_map = affinity_map
-        self.allosteric_map = allosteric_map
+        self.inhibitor_map = inhibitor_map
+        self.orientation_map = orientation_map
+        self.is_transmembrane = is_transmembrane
 
-        self.n_nts = len(next(iter(molecule_map)))
-        # TODO: validate lengths
+        _validate_seq_lens(molecule_map, "molecule_map")
+        _validate_seq_lens(affinity_map, "affinity_map")
+        _validate_seq_lens(inhibitor_map, "inhibitor_map")
+        _validate_seq_lens(orientation_map, "orientation_map")
 
     def __call__(self, seq: str) -> Domain:
-        mol = self.molecule_map[seq[0 : self.n_nts]]
-        aff = self.affinity_map[seq[self.n_nts : self.n_nts * 2]]
-        inh, intr = self.allosteric_map[seq[self.n_nts * 2 :]]
-        mol.is_intracellular = intr
+        mol = self.molecule_map[seq[0:CODON_SIZE]]
+        aff = self.affinity_map[seq[CODON_SIZE : CODON_SIZE * 2]]
+        inhib = self.inhibitor_map[seq[CODON_SIZE * 2 : CODON_SIZE * 3]]
+        orient = self.orientation_map[seq[CODON_SIZE * 3 :]]
+        mol.is_intracellular = not self.is_transmembrane
         return Domain(
-            substrates=(mol,),
-            products=tuple(),
+            substrates=[mol],
+            products=[],
             affinity=aff,
             velocity=0.0,
             energy=0.0,
-            is_receptor=True,
-            is_inhibiting=inh,
+            orientation=orient,
+            is_allosteric=True,
+            is_inhibiting=inhib,
         )
 
     def __repr__(self) -> str:
@@ -197,138 +348,16 @@ class AllostericFact(DomainFact):
         return "%s(molecules=%r)" % (clsname, set(self.molecule_map.values()))
 
 
-class Proteins:
-    def __init__(
-        self,
-        molecules: list[Molecule],
-        domain_map: dict[DomainFact, list[str]],
-        vmax_range: tuple[float, float] = (0.2, 5.0),
-        km_range: tuple[float, float] = (0.1, 10.0),
-        start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
-        stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-    ):
-        self.molecules = molecules
-        self.domain_map = domain_map
-        self.vmax_range = vmax_range
-        self.km_range = km_range
-        self.start_codons = start_codons
-        self.stop_codons = stop_codons
+class Protein:
+    """Container class to carry domains of a protein"""
 
-        self.seq_2_dom = {d: k for k, v in self.domain_map.items() for d in v}
-        self.n_dom_type_def_nts = len(next(iter(self.seq_2_dom)))
-        self.n_dom_detail_def_nts = 3 * CODON_SIZE
-        self.n_dom_def_nts = self.n_dom_type_def_nts + self.n_dom_detail_def_nts
-        self.codon_2_vmax = weight_map_fact(CODON_SIZE, *vmax_range)
-        self.codon_2_km = weight_map_fact(CODON_SIZE, *km_range)
-        self.codon_2_allo = double_bool_map_fact(CODON_SIZE)
-        self.min_n_seq_nts = self.n_dom_def_nts + 2 * CODON_SIZE
+    def __init__(self, domains: list[Domain], name=""):
+        self.name = name
+        self.domains = domains
 
-        # 1: internal molecules, 2: external molecules
-        self.int_mol_pad = 0
-        self.ext_mol_pad = len(molecules)
-        self.n_molecules = len(molecules) * 2
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(domains=%r,name=%r)" % (clsname, self.domains, self.name)
 
-    def get_coding_regions(self, seq: str) -> list[str]:
-        """
-        Get all possible coding regions in nucleotide sequence
-
-        Assuming coding region can start at any start codon and
-        is stopped with the first stop codon encountered in same
-        frame.
-
-        Ribosomes will stall without stop codon. So, a coding region
-        without a stop codon is not considerd.
-        (https://pubmed.ncbi.nlm.nih.gov/27934701/)
-        """
-        cdss = []
-        hits: list[list[int]] = [[] for _ in range(CODON_SIZE)]
-        i = 0
-        j = CODON_SIZE
-        k = 0
-        n = len(seq) + 1
-        while j <= n:
-            codon = seq[i:j]
-            if codon in self.start_codons:
-                hits[k].append(i)
-            elif codon in self.stop_codons:
-                for hit in hits[k]:
-                    cdss.append(seq[hit:j])
-                hits[k] = []
-            i += 1
-            j += 1
-            k = i % CODON_SIZE
-        return cdss
-
-    def get_proteome(
-        self, seq: str
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Get all possible proteins encoded by a nucleotide sequence.
-        Proteins are represented as dicts with domain labels and correspondig
-        weights.
-        
-        Proteins which could theoretically be translated, but from which we can
-        already tell by now that they would not be functional, will be sorted
-        out at this point.
-        """
-        bwd = reverse_complement(seq)
-        cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
-        cds = [d for d in cds if len(d) > self.min_n_seq_nts]
-        tensors = [self.translate_seq(d) for d in cds]
-        Km = torch.stack([d[0] for d in tensors])
-        Vmax = torch.stack([d[1] for d in tensors])
-        Ke = torch.stack([d[2] for d in tensors])
-        N = torch.stack([d[3] for d in tensors])
-        A = torch.stack([d[4] for d in tensors])
-        return (Km, Vmax, Ke, N, A)
-
-    def translate_seq(
-        self, seq: str
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Translate nucleotide sequence into a protein with domains, corresponding
-        weights, transmembrane regions, and signals.
-        """
-        i = 0
-        j = self.n_dom_type_def_nts
-        doms: list[Domain] = []
-        while j + self.n_dom_detail_def_nts <= len(seq):
-            domfact = self.seq_2_dom.get(seq[i:j])
-            if domfact is not None:
-                dom = domfact(seq[j : j + self.n_dom_detail_def_nts])
-                doms.append(dom)
-                i += self.n_dom_def_nts
-                j += self.n_dom_def_nts
-            else:
-                i += CODON_SIZE
-                j += CODON_SIZE
-
-        n_doms = len(doms)
-        Km = torch.full((self.n_molecules, n_doms), torch.nan)
-        Vmax = torch.full((n_doms,), torch.nan)
-        N = torch.full((self.n_molecules, n_doms), torch.nan)
-        A = torch.zeros(self.n_molecules, n_doms)
-
-        for dom_i, dom in enumerate(doms):
-            if dom.is_receptor:
-                mol = dom.substrates[0]
-                offset = self.int_mol_pad if mol.is_intracellular else self.ext_mol_pad
-                mol_i = self.molecules.index(mol)
-                val = -1.0 if dom.is_inhibiting else 1.0
-                A[mol_i + offset, dom_i] = val
-                Km[mol_i + offset, dom_i] = dom.affinity
-            elif dom.is_transporter:
-                # TODO: rather generic
-                mol1 = dom.substrates[0]
-                mol_i = self.molecules.index(mol1)
-                offset1 = self.int_mol_pad
-                offset2 = self.ext_mol_pad
-                N[mol_i + offset1]
-
-        A = A.sum(dim=1).clamp(-1, 1)
-        Km = Km.nanmean(dim=1).nan_to_num(0.0)
-        Vmax = Vmax.nanmean(dim=0).nan_to_num(0.0)
-        return
-
-
-# TODO: is_receptor -> is_allosteric ?
+    def __str__(self) -> str:
+        return self.name
