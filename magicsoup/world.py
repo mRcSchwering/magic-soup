@@ -119,7 +119,6 @@ class World:
         self.X = self._tensor(0, self.n_signals)
         self.Km = self._tensor(0, 0, self.n_signals)
         self.Vmax = self._tensor(0, 0)
-        self.Ke = self._tensor(0, 0)
         self.E = self._tensor(0, 0)
         self.N = self._tensor(0, 0, self.n_signals)
         self.A = self._tensor(0, 0, self.n_signals)
@@ -194,7 +193,12 @@ class World:
         """Integrate signals and update molecule maps"""
         self._send_molecules_from_world_to_x()
         Xd = integrate_signals(
-            X=self.X, Km=self.Km, Vmax=self.Vmax, Ke=self.Ke, N=self.N, A=self.A
+            X=self.X,
+            Km=self.Km,
+            Vmax=self.Vmax,
+            Ke=torch.exp(-self.E / self.abs_temp / GAS_CONSTANT),
+            N=self.N,
+            A=self.A.clamp(-1.0, 1.0),
         )
         self.X += trunc(Xd, n_decs=self.trunc_n_decs)
         self._send_molecules_from_x_to_world()
@@ -205,7 +209,6 @@ class World:
         self.X = self._expand(tens=self.X, by_n=by_n, dim=0)
         self.Km = self._expand(tens=self.Km, by_n=by_n, dim=0)
         self.Vmax = self._expand(tens=self.Vmax, by_n=by_n, dim=0)
-        self.Ke = self._expand(tens=self.Ke, by_n=by_n, dim=0)
         self.E = self._expand(tens=self.E, by_n=by_n, dim=0)
         self.N = self._expand(tens=self.N, by_n=by_n, dim=0)
         self.A = self._expand(tens=self.A, by_n=by_n, dim=0)
@@ -213,7 +216,6 @@ class World:
     def _expand_max_proteins(self, by_n: int):
         self.Km = self._expand(tens=self.Km, by_n=by_n, dim=1)
         self.Vmax = self._expand(tens=self.Vmax, by_n=by_n, dim=1)
-        self.Ke = self._expand(tens=self.Ke, by_n=by_n, dim=1)
         self.E = self._expand(tens=self.E, by_n=by_n, dim=1)
         self.N = self._expand(tens=self.N, by_n=by_n, dim=1)
         self.A = self._expand(tens=self.A, by_n=by_n, dim=1)
@@ -269,9 +271,6 @@ class World:
             N=self.N,
             A=self.A,
         )
-
-        self.Ke = torch.exp(-self.E / self.abs_temp / GAS_CONSTANT)
-        self.A = self.A.clamp(-1.0, 1.0)
 
     def _send_molecules_from_world_to_x(self):
         for ci, (x, y) in enumerate(self.cell_positions):
