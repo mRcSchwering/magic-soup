@@ -1,21 +1,16 @@
-from typing import Protocol
 import torch
-from .util import GAS_CONSTANT
 from .proteins import Protein, Molecule
-
-
-class MolIdx(Protocol):
-    def __call__(self, mol: Molecule, ext: bool = ..., /) -> int:
-        ...
 
 
 def get_cell_params(
     proteomes: list[list[Protein]],
-    n_proteins: int,
     n_signals: int,
-    abs_temp: float,
-    molidx: MolIdx,
-    dtype: torch.dtype,
+    mol_2_idx: dict[tuple[Molecule, bool], int],
+    Km: torch.Tensor,
+    Vmax: torch.Tensor,
+    E: torch.Tensor,
+    N: torch.Tensor,
+    A: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Generate cell-based parameter tensors from proteomes.
@@ -35,12 +30,6 @@ def get_cell_params(
     acts as an inhibiting effector on this protein. 0.0 means this molecule does not allosterically
     effect the protein.
     """
-    n_cells = len(proteomes)
-    Km = torch.zeros(n_cells, n_proteins, n_signals, dtype=dtype)
-    Vmax = torch.zeros(n_cells, n_proteins, dtype=dtype)
-    E = torch.zeros(n_cells, n_proteins, dtype=dtype)
-    N = torch.zeros(n_cells, n_proteins, n_signals, dtype=dtype)
-    A = torch.zeros(n_cells, n_proteins, n_signals, dtype=dtype)
 
     for cell_i, cell in enumerate(proteomes):
         for prot_i, protein in enumerate(cell):
@@ -54,7 +43,7 @@ def get_cell_params(
 
                 if dom.is_allosteric:
                     mol = dom.substrates[0]
-                    mol_i = molidx(mol, dom.is_transmembrane)
+                    mol_i = mol_2_idx[mol, dom.is_transmembrane]
                     km[mol_i].append(dom.affinity)
                     a[mol_i] += -1 if dom.is_inhibiting else 1
 
@@ -63,11 +52,11 @@ def get_cell_params(
                     mol = dom.substrates[0]
 
                     if dom.orientation:
-                        sub_i = molidx(mol)
-                        prod_i = molidx(mol, True)
+                        sub_i = mol_2_idx[mol, False]
+                        prod_i = mol_2_idx[mol, True]
                     else:
-                        sub_i = molidx(mol, True)
-                        prod_i = molidx(mol)
+                        sub_i = mol_2_idx[mol, True]
+                        prod_i = mol_2_idx[mol, False]
 
                     km[sub_i].append(dom.affinity)
                     n[sub_i] -= 1
@@ -87,13 +76,13 @@ def get_cell_params(
 
                     for mol in subs:
                         energy -= mol.energy
-                        mol_i = molidx(mol)
+                        mol_i = mol_2_idx[mol, False]
                         km[mol_i].append(dom.affinity)
                         n[mol_i] -= 1
 
                     for mol in prods:
                         energy += mol.energy
-                        mol_i = molidx(mol)
+                        mol_i = mol_2_idx[mol, False]
                         km[mol_i].append(1 / dom.affinity)
                         n[mol_i] += 1
 
@@ -109,10 +98,8 @@ def get_cell_params(
                 if len(km[mol_i]) > 0:
                     Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
 
-    Ke = torch.exp(-E / abs_temp / GAS_CONSTANT)
     A = A.clamp(-1.0, 1.0)
-
-    return (Km, Vmax, Ke, N, A)
+    return (Km, Vmax, E, N, A)
 
 
 def integrate_signals(

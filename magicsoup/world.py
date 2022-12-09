@@ -2,7 +2,7 @@ from typing import Optional
 import random
 import torch
 from .proteins import Molecule, Protein
-from .util import trunc, randstr
+from .util import trunc, randstr, GAS_CONSTANT
 from .kinetics import integrate_signals, get_cell_params
 
 # TODO: refactor API:
@@ -13,6 +13,8 @@ from .kinetics import integrate_signals, get_cell_params
 #       - dividing a cell
 #       - killing a cell
 #       - moving a cell
+
+# TODO: max_n_cells (avoid torch.cat)
 
 
 # TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
@@ -31,7 +33,12 @@ class Cell:
         self.n_survived_steps: Optional[int] = None
         self.molecules: Optional[torch.Tensor] = None
 
-    # TODO: needs repr
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(genome=%r,name=%r)" % (clsname, self.genome, self.name)
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class World:
@@ -98,10 +105,8 @@ class World:
         self.n_molecules = len(molecules)
         self.n_signals = 2 * self.n_molecules
 
-        # ordering of signals:
-        # internal molecules, external molecules
-        self.in_mol_pad = 0
-        self.ex_mol_pad = self.n_molecules
+        # ordering of signals: internal molecules, external molecules
+        self.mol_2_idx = self._get_mol_2_idx_map(molecules=molecules)
 
         self.molecule_map = self._get_molecule_map(mol_map_init=mol_map_init)
         self.cell_map = torch.zeros(map_size, map_size, device=device, dtype=torch.bool)
@@ -138,69 +143,37 @@ class World:
         cell.molecules = self.cell_molecules[idx]
         return cell
 
-    def add_cells(self, genomes: list[str], proteomes: list[list[Protein]]):
+    def add_random_cells(self, genomes: list[str], proteomes: list[list[Protein]]):
         """
         Randomly place cells on cell map and fill them with the molecules that
         were present at their respective pixels.
         """
-        # TODO: check lengths
-        n_cells = len(genomes)
-        pxls = torch.argwhere(~self.cell_map)
-
-        try:
-            idxs = random.sample(range(len(pxls)), k=n_cells)
-        except ValueError as err:
+        if len(genomes) != len(proteomes):
             raise ValueError(
-                f"Wanted to add {n_cells} cells but only {len(pxls)} pixels left on map"
-            ) from err
+                "Genomes and proteomes should be of equal length. "
+                "They both represent the same list of cells. "
+                f"Now, there are {len(genomes)} genomes and {len(proteomes)} proteomes."
+            )
 
-        positions = [tuple(d.tolist()) for d in pxls[idxs]]
-        self.cell_positions.extend(positions)  # type: ignore
+        n_cells = len(genomes)
         self.cells.extend(Cell(genome=d) for d in genomes)
+        positions = self._place_new_cells_in_random_positions(n_cells=n_cells)
 
-        # TODO: get parent actions, molecules (for duplication events only)
-        #       replication action should be set to 0 first
+        self._add_new_cells_to_proteome_params(proteomes=proteomes)
+        self._add_new_cells_to_x(positions=positions)
 
-        # TODO: also doublecheck this
-        xs = [d[0] for d in pxls]
-        ys = [d[1] for d in pxls]
-        cell_molecules = self.molecule_map[:, xs, ys].T
-
-        cell_survival = self._tensor(n_cells)
-        self.cell_molecules = torch.concat([self.cell_molecules, cell_molecules], dim=0)
-        self.cell_survival = torch.concat([self.cell_survival, cell_survival], dim=0)
-
-        X = torch.zeros(n_cells, self.n_signals, dtype=self.dtype)
-        for cell_i, (x, y) in enumerate(positions):
-            for mol_i in range(len(self.molecules)):
-                X[cell_i, mol_i + self.in_mol_pad] = self.cell_molecules[cell_i, mol_i]
-                X[cell_i, mol_i + self.ex_mol_pad] = self.molecule_map[mol_i, x, y]
-
-        self.X = torch.concat([self.X, X.to(self.device)], dim=0)
-
-        self._calculate_proteome_params(proteomes=proteomes)
+        cell_survival = torch.zeros(n_cells, dtype=self.dtype, device=self.device)
+        self.cell_survival = torch.cat([self.cell_survival, cell_survival], dim=0)
 
     @torch.no_grad()
     def diffuse_molecules(self):
         """Let molecules in world map diffuse by 1 time step"""
-        for cell_i, (x, y) in enumerate(self.cell_positions):
-            for mol_i in range(len(self.molecules)):
-                self.molecule_map[mol_i, x, y] = self.X[cell_i, mol_i + self.ex_mol_pad]
-
         before = self.molecule_map.unsqueeze(1)
         after = trunc(tens=self.conv113(before), n_decs=self.trunc_n_decs)
         self.molecule_map = torch.squeeze(after, 1)
 
-        for cell_i, (x, y) in enumerate(self.cell_positions):
-            for mol_i in range(len(self.molecules)):
-                self.X[cell_i, mol_i + self.in_mol_pad] = self.cell_molecules[
-                    cell_i, mol_i
-                ]
-                self.X[cell_i, mol_i + self.ex_mol_pad] = self.molecule_map[mol_i, x, y]
-
     def degrade_molecules(self):
         """Degrade molecules in world map and cells by 1 time step"""
-        self.X = trunc(tens=self.X * self.mol_degrad, n_decs=self.trunc_n_decs)
         self.molecule_map = trunc(
             tens=self.molecule_map * self.mol_degrad, n_decs=self.trunc_n_decs
         )
@@ -212,27 +185,86 @@ class World:
         """Increment number of current cells' time steps by 1"""
         self.cell_survival = self.cell_survival + 1
 
-    def _calculate_proteome_params(self, proteomes: list[list[Protein]]):
-        Km, Vmax, Ke, N, A = get_cell_params(
-            proteomes=proteomes,
-            n_proteins=self.n_max_proteins,
-            n_signals=self.n_signals,
-            abs_temp=self.abs_temp,
-            molidx=self._molidx,
-            dtype=self.dtype,
-        )
-        self.Km = torch.concat([self.Km, Km.to(self.device)], dim=0)
-        self.Vmax = torch.concat([self.Vmax, Vmax.to(self.device)], dim=0)
-        self.Ke = torch.concat([self.Ke, Ke.to(self.device)], dim=0)
-        self.N = torch.concat([self.N, N.to(self.device)], dim=0)
-        self.A = torch.concat([self.A, A.to(self.device)], dim=0)
-
     def integrate_signals(self):
         """Integrate signals and update molecule maps"""
+        self._send_molecules_from_world_to_x()
         Xd = integrate_signals(
             X=self.X, Km=self.Km, Vmax=self.Vmax, Ke=self.Ke, N=self.N, A=self.A
         )
-        self.X += Xd
+        self.X += trunc(Xd, n_decs=self.trunc_n_decs)
+        self._send_molecules_from_x_to_world()
+
+    def _place_new_cells_in_random_positions(
+        self, n_cells: int
+    ) -> list[tuple[int, int]]:
+        pxls = torch.argwhere(~self.cell_map)
+
+        try:
+            idxs = random.sample(range(len(pxls)), k=n_cells)
+        except ValueError as err:
+            raise ValueError(
+                f"Wanted to add {n_cells} cells but only {len(pxls)} pixels left on map"
+            ) from err
+
+        # TODO: doublecheck this
+        xs = [d[0] for d in pxls]
+        ys = [d[1] for d in pxls]
+        cell_molecules = self.molecule_map[:, xs, ys].T
+        self.cell_molecules = torch.cat([self.cell_molecules, cell_molecules], dim=0)
+
+        positions: list[tuple[int, int]] = [tuple(d.tolist()) for d in pxls[idxs]]  # type: ignore
+        self.cell_positions.extend(positions)
+
+        return positions
+
+    def _add_new_cells_to_x(self, positions: list[tuple[int, int]]):
+        X = torch.zeros(len(positions), self.n_signals, dtype=self.dtype)
+        for cell_i, (x, y) in enumerate(positions):
+            for mol_i in range(self.n_molecules):
+                X[cell_i, mol_i] = self.cell_molecules[cell_i, mol_i]
+                X[cell_i, mol_i + self.n_molecules] = self.molecule_map[mol_i, x, y]
+        self.X = torch.cat([self.X, X.to(self.device)], dim=0)
+
+    def _add_new_cells_to_proteome_params(self, proteomes: list[list[Protein]]):
+        n_cells = len(proteomes)
+        kwargs = {"dtype": self.dtype, "device": self.device}
+
+        Km = torch.zeros(n_cells, self.n_max_proteins, self.n_signals, **kwargs)
+        Vmax = torch.zeros(n_cells, self.n_max_proteins, **kwargs)
+        E = torch.zeros(n_cells, self.n_max_proteins, **kwargs)
+        N = torch.zeros(n_cells, self.n_max_proteins, self.n_signals, **kwargs)
+        A = torch.zeros(n_cells, self.n_max_proteins, self.n_signals, **kwargs)
+
+        Km, Vmax, E, N, A = get_cell_params(
+            proteomes=proteomes,
+            n_signals=self.n_signals,
+            mol_2_idx=self.mol_2_idx,
+            Km=Km,
+            Vmax=Vmax,
+            E=E,
+            N=N,
+            A=A,
+        )
+
+        Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
+
+        self.Km = torch.cat([self.Km, Km], dim=0)
+        self.Vmax = torch.cat([self.Vmax, Vmax], dim=0)
+        self.Ke = torch.cat([self.Ke, Ke], dim=0)
+        self.N = torch.cat([self.N, N], dim=0)
+        self.A = torch.cat([self.A, A], dim=0)
+
+    def _send_molecules_from_world_to_x(self):
+        for ci, (x, y) in enumerate(self.cell_positions):
+            for mi in range(self.n_molecules):
+                self.X[ci, mi] = self.cell_molecules[ci, mi]
+                self.X[ci, mi + self.n_molecules] = self.molecule_map[mi, x, y]
+
+    def _send_molecules_from_x_to_world(self):
+        for ci, (x, y) in enumerate(self.cell_positions):
+            for mi in range(self.n_molecules):
+                self.cell_molecules[ci, mi] = self.X[ci, mi]
+                self.molecule_map[mi, x, y] = self.X[ci, mi + self.n_molecules]
 
     def _get_molecule_map(self, mol_map_init: str) -> torch.Tensor:
         args = [self.n_molecules, self.map_size, self.map_size]
@@ -280,9 +312,15 @@ class World:
     def _tensor(self, *args) -> torch.Tensor:
         return torch.zeros(*args, **self.torch_kwargs)
 
-    def _molidx(self, mol: Molecule, extra=False) -> int:
-        pad = self.ex_mol_pad if extra else self.in_mol_pad
-        return self.molecules.index(mol) + pad
+    def _get_mol_2_idx_map(
+        self, molecules: list[Molecule]
+    ) -> dict[tuple[Molecule, bool], int]:
+        n_mols = len(molecules)
+        mol_2_idx = {}
+        for mol_i, mol in enumerate(molecules):
+            mol_2_idx[(mol, False)] = mol_i
+            mol_2_idx[(mol, True)] = mol_i + n_mols
+        return mol_2_idx
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
