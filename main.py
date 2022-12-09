@@ -1,10 +1,16 @@
 import time
+import torch
 import magicsoup as ms
 from magicsoup.util import variants
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 
 
 if __name__ == "__main__":
+    n_threads = torch.get_num_threads()
+    print(f"n threads {n_threads}")
+    n_interop_threads = torch.get_num_interop_threads()
+    print(f"n interop threads {n_interop_threads}")
+
     # fmt: off
     domains = {
         ms.CatalyticFact(): variants("ACNTGN") + variants("AGNTGN") + variants("CCNTTN"),

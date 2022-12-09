@@ -6,12 +6,13 @@ def get_cell_params(
     proteomes: list[list[Protein]],
     n_signals: int,
     mol_2_idx: dict[tuple[Molecule, bool], int],
+    cell_idxs: list[int],
     Km: torch.Tensor,
     Vmax: torch.Tensor,
     E: torch.Tensor,
     N: torch.Tensor,
     A: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+):
     """
     Generate cell-based parameter tensors from proteomes.
     Returns `(Km, Vmax, Ke, N, A)`:
@@ -31,7 +32,7 @@ def get_cell_params(
     effect the protein.
     """
 
-    for cell_i, cell in enumerate(proteomes):
+    for cell_i, cell in zip(cell_idxs, proteomes):
         for prot_i, protein in enumerate(cell):
             energy = 0.0
             km: list[list[float]] = [[] for _ in range(n_signals)]
@@ -97,9 +98,6 @@ def get_cell_params(
 
                 if len(km[mol_i]) > 0:
                     Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
-
-    A = A.clamp(-1.0, 1.0)
-    return (Km, Vmax, E, N, A)
 
 
 def integrate_signals(
