@@ -23,7 +23,10 @@ if __name__ == "__main__":
     # fmt: on
 
     genetics = ms.Genetics(
-        domain_facts=domains, molecules=MOLECULES, reactions=REACTIONS
+        domain_facts=domains,
+        molecules=MOLECULES,
+        reactions=REACTIONS,
+        init_genome_size_range=(500, 1000),
     )
 
     world = ms.World(molecules=MOLECULES)
@@ -45,9 +48,11 @@ if __name__ == "__main__":
     world.add_random_cells(genomes=genomes, proteomes=proteomes)
     td = time.time() - t0
     print(f"Adding {n_cells} cells: {td:.2f}s")
+    print(f"{int(world.affinities.shape[1])} max proteins")
 
     t0 = time.time()
     world.integrate_signals()
+    td = time.time() - t0
     print(f"Integrating signals: {td:.2f}s")
 
     t0 = time.time()
@@ -71,7 +76,6 @@ if __name__ == "__main__":
     td = time.time() - t0
     print(f"One step: {td:.2f}s")
 
-    exit()
     t0 = time.time()
     for _ in range(n_steps):
         world.integrate_signals()
