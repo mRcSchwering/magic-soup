@@ -290,6 +290,7 @@ class Protein:
     def __init__(self, domains: list[Domain], label="P"):
         self.domains = domains
         self.label = label
+        self.n_domains = len(domains)
 
     def __repr__(self) -> str:
         clsname = type(self).__name__

@@ -26,7 +26,7 @@ if __name__ == "__main__":
         domain_facts=domains, molecules=MOLECULES, reactions=REACTIONS
     )
 
-    world = ms.World(molecules=MOLECULES, n_max_proteins=1000)
+    world = ms.World(molecules=MOLECULES)
 
     n_cells = 1000
     n_steps = 10

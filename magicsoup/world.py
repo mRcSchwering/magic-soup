@@ -3,7 +3,7 @@ import random
 import torch
 from .proteins import Molecule, Protein
 from .util import trunc, randstr, GAS_CONSTANT
-from .kinetics import integrate_signals, get_cell_params
+from .kinetics import integrate_signals, calc_cell_params
 
 # TODO: refactor API:
 #       - adding new cells
@@ -86,16 +86,12 @@ class World:
         mol_diff_rate=1e-2,
         mol_map_init="randn",
         abs_temp=310.0,
-        n_max_proteins=1_000,
-        n_max_cells=1_000,
         trunc_n_decs=4,
         device="cpu",
         dtype=torch.float,
     ):
         self.map_size = map_size
         self.abs_temp = abs_temp
-        self.n_max_proteins = n_max_proteins
-        self.n_max_cells = n_max_cells
         self.mol_degrad = mol_degrad
         self.mol_diff_rate = mol_diff_rate
         self.trunc_n_decs = trunc_n_decs
@@ -114,19 +110,19 @@ class World:
         self.cell_map = torch.zeros(map_size, map_size, device=device, dtype=torch.bool)
         self.conv113 = self._get_conv(mol_diff_rate=mol_diff_rate)
 
-        self.cell_molecules = self._tensor(n_max_cells, self.n_molecules)
+        self.cell_molecules = self._tensor(0, self.n_molecules)
 
         self.cells: list[Cell] = []
-        self.cell_survival = self._tensor(n_max_cells)
+        self.cell_survival = self._tensor(0)
         self.cell_positions: list[tuple[int, int]] = []
 
-        self.X = self._tensor(n_max_cells, self.n_signals)
-        self.Km = self._tensor(n_max_cells, self.n_max_proteins, self.n_signals)
-        self.Vmax = self._tensor(n_max_cells, self.n_max_proteins)
-        self.Ke = self._tensor(n_max_cells, self.n_max_proteins)
-        self.E = self._tensor(n_max_cells, self.n_max_proteins)
-        self.N = self._tensor(n_max_cells, self.n_max_proteins, self.n_signals)
-        self.A = self._tensor(n_max_cells, self.n_max_proteins, self.n_signals)
+        self.X = self._tensor(0, self.n_signals)
+        self.Km = self._tensor(0, 0, self.n_signals)
+        self.Vmax = self._tensor(0, 0)
+        self.Ke = self._tensor(0, 0)
+        self.E = self._tensor(0, 0)
+        self.N = self._tensor(0, 0, self.n_signals)
+        self.A = self._tensor(0, 0, self.n_signals)
 
     def get_cell(
         self, by_idx: Optional[int] = None, by_name: Optional[str] = None
@@ -159,6 +155,13 @@ class World:
             )
 
         n_new_cells = len(genomes)
+        self._expand_max_cells(by_n=n_new_cells)
+
+        n_prots = int(self.Km.shape[1])
+        n_max_prots = max(len(d) for d in proteomes)
+        if n_max_prots > n_prots:
+            self._expand_max_proteins(by_n=n_max_prots - n_prots)
+
         cell_idxs = list(range(len(self.cells), len(self.cells) + n_new_cells))
         self.cells.extend(Cell(genome=d) for d in genomes)
         positions = self._place_new_cells_in_random_positions(cell_idxs=cell_idxs)
@@ -196,6 +199,31 @@ class World:
         self.X += trunc(Xd, n_decs=self.trunc_n_decs)
         self._send_molecules_from_x_to_world()
 
+    def _expand_max_cells(self, by_n: int):
+        self.cell_molecules = self._expand(tens=self.cell_molecules, by_n=by_n, dim=0)
+        self.cell_survival = self._expand(tens=self.cell_survival, by_n=by_n, dim=0)
+        self.X = self._expand(tens=self.X, by_n=by_n, dim=0)
+        self.Km = self._expand(tens=self.Km, by_n=by_n, dim=0)
+        self.Vmax = self._expand(tens=self.Vmax, by_n=by_n, dim=0)
+        self.Ke = self._expand(tens=self.Ke, by_n=by_n, dim=0)
+        self.E = self._expand(tens=self.E, by_n=by_n, dim=0)
+        self.N = self._expand(tens=self.N, by_n=by_n, dim=0)
+        self.A = self._expand(tens=self.A, by_n=by_n, dim=0)
+
+    def _expand_max_proteins(self, by_n: int):
+        self.Km = self._expand(tens=self.Km, by_n=by_n, dim=1)
+        self.Vmax = self._expand(tens=self.Vmax, by_n=by_n, dim=1)
+        self.Ke = self._expand(tens=self.Ke, by_n=by_n, dim=1)
+        self.E = self._expand(tens=self.E, by_n=by_n, dim=1)
+        self.N = self._expand(tens=self.N, by_n=by_n, dim=1)
+        self.A = self._expand(tens=self.A, by_n=by_n, dim=1)
+
+    def _expand(self, tens: torch.Tensor, by_n: int, dim: int) -> torch.Tensor:
+        pre = tens.shape[slice(dim)]
+        post = tens.shape[slice(dim + 1, tens.dim())]
+        zeros = torch.zeros(*pre, by_n, *post, **self.torch_kwargs)
+        return torch.cat([tens, zeros], dim=dim)
+
     def _place_new_cells_in_random_positions(
         self, cell_idxs: list[int]
     ) -> list[tuple[int, int]]:
@@ -230,7 +258,7 @@ class World:
     def _add_new_cells_to_proteome_params(
         self, proteomes: list[list[Protein]], cell_idxs: list[int]
     ):
-        get_cell_params(
+        calc_cell_params(
             proteomes=proteomes,
             n_signals=self.n_signals,
             cell_idxs=cell_idxs,
@@ -316,7 +344,7 @@ class World:
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(molecules=%r,map_size=%r,abs_temp=%r,mol_degrad=%r,mol_diff_rate=%r,n_max_proteins=%r,trunc_n_decs=%r,n_cells=%s)"
+            "%s(molecules=%r,map_size=%r,abs_temp=%r,mol_degrad=%r,mol_diff_rate=%r,trunc_n_decs=%r,n_cells=%s)"
             % (
                 clsname,
                 self.molecules,
@@ -324,7 +352,6 @@ class World:
                 self.abs_temp,
                 self.mol_degrad,
                 self.mol_diff_rate,
-                self.n_max_proteins,
                 self.trunc_n_decs,
                 len(self.cells),
             )

@@ -2,7 +2,7 @@ import torch
 from .proteins import Protein, Molecule
 
 
-def get_cell_params(
+def calc_cell_params(
     proteomes: list[list[Protein]],
     n_signals: int,
     mol_2_idx: dict[tuple[Molecule, bool], int],
@@ -202,6 +202,7 @@ def integrate_signals(
     #         them slightly different/in different order?
     #       - does it help to use masked tensors? (pytorch.org/docs/stable/masked.html)
     #       - better names, split into a few functions?
+    #       - torch.expand faster?
 
     # substrates
     sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p s)
