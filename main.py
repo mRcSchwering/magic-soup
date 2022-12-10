@@ -29,7 +29,7 @@ if __name__ == "__main__":
     world = ms.World(molecules=MOLECULES)
 
     n_cells = 1000
-    n_steps = 10
+    n_steps = 100
 
     t0 = time.time()
     genomes = genetics.get_genomes(n=n_cells)
@@ -42,7 +42,8 @@ if __name__ == "__main__":
     print(f"Getting {n_cells} proteomes: {td:.2f}s")
 
     t0 = time.time()
-    world.add_random_cells(genomes=genomes, proteomes=proteomes)
+    cells = [ms.Cell(genome=g, proteome=p) for g, p in zip(genomes, proteomes)]
+    world.add_random_cells(cells=cells)
     td = time.time() - t0
     print(f"Adding {n_cells} cells: {td:.2f}s")
     print(f"{int(world.affinities.shape[1])} max proteins")
