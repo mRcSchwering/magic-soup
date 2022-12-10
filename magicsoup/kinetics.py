@@ -100,6 +100,9 @@ def calc_cell_params(
                     Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
 
 
+# TODO: A can actually be > 1 (multiplying same effector n times...)
+
+
 def integrate_signals(
     X: torch.Tensor,
     Km: torch.Tensor,

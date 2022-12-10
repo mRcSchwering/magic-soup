@@ -23,10 +23,7 @@ if __name__ == "__main__":
     # fmt: on
 
     genetics = ms.Genetics(
-        domain_facts=domains,
-        molecules=MOLECULES,
-        reactions=REACTIONS,
-        init_genome_size_range=(500, 1000),
+        domain_facts=domains, molecules=MOLECULES, reactions=REACTIONS,
     )
 
     world = ms.World(molecules=MOLECULES)
@@ -61,12 +58,6 @@ if __name__ == "__main__":
     world.increment_cell_survival()
     td = time.time() - t0
     print(f"Degrade, diffuse, increment: {td:.2f}s")
-
-    t0 = time.time()
-    world._send_molecules_from_world_to_x()
-    world._send_molecules_from_x_to_world()
-    td = time.time() - t0
-    print(f"Send molecules to X and back: {td:.2f}s")
 
     t0 = time.time()
     world.integrate_signals()
