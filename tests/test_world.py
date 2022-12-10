@@ -1,21 +1,10 @@
 import time
 import torch
-from magicsoup.world import World
-from magicsoup.examples.default import MOLECULES
+import magicsoup as ms
+from magicsoup.examples.wood_ljungdahl import MOLECULES
 
 
 TOLERANCE = 1e-4
-
-
-def test_performance():
-    world = World(molecules=MOLECULES, actions=[], map_size=128, mol_map_init="randn")
-
-    t0 = time.time()
-    for _ in range(100):
-        world.diffuse_molecules()
-    td = time.time() - t0
-
-    assert td < 0.2, "Used to take 0.127"
 
 
 def test_diffuse():
@@ -50,7 +39,7 @@ def test_diffuse():
     ]
     # fmt: on
 
-    world = World(map_size=5, molecules=MOLECULES[:2], actions=[], mol_diff_rate=0.5)
+    world = ms.World(map_size=5, molecules=MOLECULES[:2], mol_diff_rate=0.5)
     world.molecule_map = torch.tensor([layer0, layer1])
 
     world.diffuse_molecules()
@@ -71,7 +60,7 @@ def test_degrade():
     ]
     # fmt: on
 
-    world = World(map_size=5, molecules=MOLECULES[:2], actions=[], mol_degrad=0.8)
+    world = ms.World(map_size=5, molecules=MOLECULES[:2], mol_degrad=0.8)
     world.molecule_map[0] = torch.tensor([layer0])
 
     world.degrade_molecules()

@@ -1,8 +1,5 @@
-import time
 import pytest
-from magicsoup.util import rand_genome
-from magicsoup.genetics import Genetics
-from magicsoup.examples.default import DOMAINS
+import magicsoup as ms
 
 
 # (genome, cds)
@@ -45,17 +42,10 @@ DATA = [
 
 @pytest.mark.parametrize("seq, exp", DATA)
 def test_get_coding_regions(seq, exp):
-    genetics = Genetics(domain_map={})
+    genetics = ms.Genetics(
+        domain_facts={ms.CatalyticFact(): ["AAAAAA"]}, molecules=[], reactions=[]
+    )
     res = genetics.get_coding_regions(seq="".join(seq.replace("\n", "").split()))
     assert len(res) == len(exp)
     assert set(res) == set(exp)
 
-
-def test_performance():
-    genetics = Genetics(domain_map=DOMAINS)
-    gs = [rand_genome((1000, 5000)) for _ in range(100)]
-
-    t0 = time.time()
-    _ = [genetics.get_proteome(seq=d) for d in gs]
-    td = time.time() - t0
-    assert td < 0.4, "Used to take 0.19"

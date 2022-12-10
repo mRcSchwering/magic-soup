@@ -67,7 +67,7 @@ def bool_map_fact(n_nts: int, p: float = 0.5) -> dict[str, bool]:
     Generate weighted codon-to-bool mapping 
     
     - `n_nts` number of nucleotides which will encode weight
-    - `p` chance of `True`
+    - `p` chance of `True` between 0.0 and 1.0
     """
     codons = variants("N" * n_nts)
     bls = random.choices((True, False), weights=(p, 1 - p), k=len(codons))
@@ -85,6 +85,8 @@ def generic_map_fact(n_nts: int, choices: Sequence[_Tv]) -> dict[str, _Tv]:
     - `choices` objects to be mapped to
     """
     n = len(choices)
+    if n < 1:
+        return {}
     codons = variants("N" * n_nts)
     return {d: choices[i % n] for i, d in enumerate(codons)}
 
