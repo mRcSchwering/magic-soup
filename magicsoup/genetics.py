@@ -11,6 +11,10 @@ from .util import (
 
 # TODO: summary() to see likelyhoods of different domains appearing
 
+# TODO: API:
+#       - generic mutations on all cells (give cell idxs back)
+#       - replication mutations
+
 
 class Genetics:
     """
