@@ -1,8 +1,9 @@
 from typing import Optional
+import warnings
 import random
 import torch
 from .proteins import Molecule, Protein
-from .util import randstr, GAS_CONSTANT
+from .util import GAS_CONSTANT, cpad2d, pad_2_true_idx
 from .kinetics import integrate_signals, calc_cell_params
 
 # TODO: refactor API:
@@ -30,6 +31,7 @@ class Cell:
         genome: str,
         proteome: list[Protein],
         position: tuple[int, int] = (-1, -1),
+        idx=-1,
         label: Optional[str] = None,
         n_survived_steps=0,
     ):
@@ -37,19 +39,24 @@ class Cell:
         self.proteome = proteome
         self.label = label
         self.position = position
+        self.idx = idx
         self.n_survived_steps = n_survived_steps
         self.int_molecules: Optional[torch.Tensor] = None
         self.ext_molecules: Optional[torch.Tensor] = None
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(genome=%r,proteome=%r,position=%r,label=%r,n_survived_steps=%r)" % (
-            clsname,
-            self.genome,
-            self.proteome,
-            self.position,
-            self.label,
-            self.n_survived_steps,
+        return (
+            "%s(genome=%r,proteome=%r,position=%r,idx=%r,label=%r,n_survived_steps=%r)"
+            % (
+                clsname,
+                self.genome,
+                self.proteome,
+                self.position,
+                self.idx,
+                self.label,
+                self.n_survived_steps,
+            )
         )
 
 
@@ -119,6 +126,7 @@ class World:
         self.molecule_map = self._get_molecule_map(mol_map_init=mol_map_init)
         self.cell_map = self._tensor(map_size, map_size, dtype=torch.bool)
         self.conv113 = self._get_conv(mol_diff_rate=mol_diff_rate)
+        self._pad_2_true_idx = self._get_pad_2_true_idx_map(size=map_size)
 
         self.cells: list[Cell] = []
 
@@ -157,12 +165,7 @@ class World:
         self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
 
         cell_idxs = list(range(len(self.cells), len(self.cells) + n_new_cells))
-        positions = self._place_new_cells_in_random_positions(cell_idxs=cell_idxs)
-
-        for pos, cell in zip(positions, cells):
-            cell.position = pos
-            self.cells.append(cell)
-
+        self._place_new_cells_in_random_positions(new_idxs=cell_idxs, new_cells=cells)
         self._add_new_cells_to_proteome_params(
             proteomes=[d.proteome for d in cells], cell_idxs=cell_idxs
         )
@@ -173,14 +176,7 @@ class World:
         self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
 
         cell_idxs = list(range(len(self.cells), len(self.cells) + n_new_cells))
-        positions = self._place_replicated_cells_near_parents(
-            cells=cells, cell_idxs=cell_idxs
-        )
-
-        for pos, cell in zip(positions, cells):
-            cell.position = pos
-            self.cells.append(cell)
-
+        self._place_replicated_cells_near_parents(new_idxs=cell_idxs, new_cells=cells)
         self._add_new_cells_to_proteome_params(
             proteomes=[d.proteome for d in cells], cell_idxs=cell_idxs
         )
@@ -188,9 +184,16 @@ class World:
     def kill_cells(self, cell_idxs: list[int]):
         spillout = self.cell_molecules[cell_idxs, :]
         self._add_cell_ext_molecules(cell_idxs=cell_idxs, molecules=spillout)
+        self._remove_cell_rows(idxs=cell_idxs)
 
-        self._delete_cells(idxs=cell_idxs)
-        self.cells = [d for i, d in enumerate(self.cells) if i not in cell_idxs]
+        new_idx = 0
+        new_cells = []
+        for old_idx, cell in enumerate(self.cells):
+            if old_idx not in cell_idxs:
+                cell.idx = new_idx
+                new_idx += 1
+                new_cells.append(cell)
+        self.cells = new_cells
 
     @torch.no_grad()
     def diffuse_molecules(self):
@@ -236,7 +239,7 @@ class World:
         self.stoichiometry = self._expand(t=self.stoichiometry, n=by_n, d=0)
         self.regulators = self._expand(t=self.regulators, n=by_n, d=0)
 
-    def _delete_cells(self, idxs: list[int]):
+    def _remove_cell_rows(self, idxs: list[int]):
         keep = torch.ones(self.cell_survival.shape[0], dtype=torch.bool)
         keep[idxs] = False
         self.cell_survival = self.cell_survival[keep]
@@ -258,42 +261,72 @@ class World:
             self.regulators = self._expand(t=self.regulators, n=by_n, d=1)
 
     def _place_replicated_cells_near_parents(
-        self, cells: list[Cell], cell_idxs: list[int]
-    ) -> list[tuple[int, int]]:
-        # TODO: implement
-        # idea: cells have already parent position but new genome and proteome
-        # so they just need to find a new position
-        # add parent cell_molecules, mark cell map, return positions
+        self, new_cells: list[Cell], new_idxs: list[int]
+    ):
+        # TODO: should figure out indexes itself, might not be able to replicate all cells
+        #       if not enough space.
+        #       1. try to replicate each cell, not index of each replicated cell
+        #       2. expand tensors, by number of actually added cells
+        #       3. add cell molecules to tensor, update cell parameters
+        padded_map = cpad2d(self.cell_map.to(torch.float)).to(torch.bool)
 
-        # positions: list[tuple[int, int]] = []
-        # for idx in cell_idxs:
-        #     x, y = self.cells[idx].position
-        #     xs, ys = self._get_moor_neighbourhood(x=x, y=y)
-        pass
+        xs = []
+        ys = []
+        for idx, cell in zip(new_idxs, new_cells):
+            old_x, old_y = cell.position
+            pad_x = old_x + 1
+            pad_y = old_y + 1
+            pxls = torch.argwhere(
+                ~padded_map[pad_x - 1 : pad_x + 2, pad_y - 1 : pad_y + 2]
+            )
+
+            try:
+                idxs = random.sample(range(len(pxls)), k=1)
+            except ValueError:
+                warnings.warn(
+                    f"Wanted to add a cell next to {old_x}, {old_y} no pixel was left on map"
+                )
+                continue
+
+            new_pad_x, new_pad_y = pxls[idxs[0]].tolist()
+            new_x = self._pad_2_true_idx[new_pad_x]
+            new_y = self._pad_2_true_idx[new_pad_y]
+            cell.position = new_x, new_y
+            cell.idx = idx
+            xs.append(new_x)
+            ys.append(new_y)
+            self.cells.append(cell)
+
+        self.cell_map[xs, ys] = True
+
+        # cell is supposed to have the same concentrations as the parent had
+        old_idxs = [d.idx for d in new_cells]
+        self.cell_molecules[new_idxs, :] = self.cell_molecules[old_idxs, :]
 
     def _place_new_cells_in_random_positions(
-        self, cell_idxs: list[int]
-    ) -> list[tuple[int, int]]:
-        n_cells = len(cell_idxs)
+        self, new_idxs: list[int], new_cells: list[Cell]
+    ):
+        n_cells = len(new_idxs)
         pxls = torch.argwhere(~self.cell_map)
 
         try:
             idxs = random.sample(range(len(pxls)), k=n_cells)
-        except ValueError as err:
-            raise ValueError(
+        except ValueError:
+            warnings.warn(
                 f"Wanted to add {n_cells} cells but only {len(pxls)} pixels left on map"
-            ) from err
+            )
+            return
 
-        positions: list[tuple[int, int]] = [tuple(d.tolist()) for d in pxls[idxs]]  # type: ignore
-        
-        xs = [d[0] for d in positions]
-        ys = [d[1] for d in positions]
+        xs, ys = pxls[idxs].T.tolist()
         self.cell_map[xs, ys] = True
 
-        # cell is supposed to have the same concentrations as the pxl it lives on
-        self.cell_molecules[cell_idxs, :] = self.molecule_map[:, xs, ys].T
+        for idx, x, y, cell in zip(new_idxs, xs, ys, new_cells):
+            cell.idx = idx
+            cell.position = (x, y)
+            self.cells.append(cell)
 
-        return positions
+        # cell is supposed to have the same concentrations as the pxl it lives on
+        self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T
 
     def _add_new_cells_to_proteome_params(
         self, proteomes: list[list[Protein]], cell_idxs: list[int]
@@ -408,6 +441,9 @@ class World:
             mol_2_idx[(mol, False)] = mol_i
             mol_2_idx[(mol, True)] = mol_i + self.n_molecules
         return mol_2_idx
+
+    def _get_pad_2_true_idx_map(self, size: int) -> dict[int, int]:
+        return {pad_2_true_idx(idx=i, size=size) for i in range(size + 2)}
 
     def __repr__(self) -> str:
         clsname = type(self).__name__

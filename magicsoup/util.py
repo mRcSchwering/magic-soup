@@ -135,3 +135,29 @@ def simulate_point_mutation(seq: str, p=1e-3, sub2indel=0.5) -> Optional[str]:
 def trunc(tens: torch.Tensor, n_decs: int) -> torch.Tensor:
     """Round values of a tensor to `n_decs` decimals"""
     return torch.round(tens * 10 ** n_decs) / (10 ** n_decs)
+
+
+def cpad1d(t: torch.Tensor, n=1) -> torch.Tensor:
+    """Circular `n` padding of 3d tensor in 3rd dimention"""
+    return torch.nn.functional.pad(t, (n, n), mode="circular")
+
+
+def cpad2d(t: torch.Tensor, n=1) -> torch.Tensor:
+    """Circular `n` padding of 2d tensor in 1st and 2nd dimension"""
+    return (
+        cpad1d(cpad1d(t.unsqueeze(0), n=n).permute(0, 2, 1), n=n)
+        .permute(0, 2, 1)
+        .squeeze(0)
+    )
+
+
+def pad_2_true_idx(idx: int, size: int, pad=1) -> int:
+    """
+    Convert index of a value in a circularly padded
+    array to the index of the value in the corresponding
+    non-padded array."""
+    if idx == 0:
+        return size - pad
+    if idx == size + pad:
+        return 0
+    return idx - pad
