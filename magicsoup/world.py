@@ -1,25 +1,29 @@
 from typing import Optional
-import warnings
+import logging
 import random
 import torch
 from .proteins import Molecule, Protein
 from .util import GAS_CONSTANT, cpad2d, pad_2_true_idx
 from .kinetics import integrate_signals, calc_cell_params
 
-# TODO: refactor API:
-#       - moving a cell
-
 
 # TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
 # TODO: summary()
-
-# TODO: logging
 # TODO: have Molecules carry their own idx?
+
+_log = logging.getLogger(__name__)
 
 
 class Cell:
     """
-    Container for information about a cell
+    Object representing a cell with its environment
+
+    - `genome` this cells full genome
+    - `proteome` the translated genome
+    - `position` Cell's position on the cell map. Will be set when added to the `World`
+    - `idx` Cell's index. Managed by `World`
+    - `label` Optional label you can use to track cells.
+    - `n_survived_steps` Number of time steps this cell has survived.
     """
 
     def __init__(
@@ -196,6 +200,9 @@ class World:
 
         Each cell will be placed randomly on the map and receive the molecule
         concentration of the pixel where it was added.
+
+        If there are less pixels left on the cell map than cells you want to add,
+        only the remaining pixels will be filled with new cells.
         """
         if len(cells) == 0:
             return
@@ -228,6 +235,9 @@ class World:
 
         Each cell will be placed randomly next to its parent (Moore's neighborhood)
         and will receive the same molecule concentrations as its parent.
+
+        If every pixel in the cells' Moore neighborhood is taken
+        the cell will not replicate.
         """
         if len(cells) == 0:
             return
@@ -278,6 +288,19 @@ class World:
                 new_cells.append(cell)
         self.cells = new_cells
 
+    def move_cells(self, cell_idxs: list[int]):
+        """
+        Move cells to a random position in their Moore neighborhood
+        
+        If every pixel in the cells' Moore neighborhood is taken
+        the cell will not be moved.
+        """
+        if len(cell_idxs) == 0:
+            return
+
+        cells = [self.cells[i] for i in cell_idxs]
+        self._randomly_move_cells(cells=cells)
+
     @torch.no_grad()
     def diffuse_molecules(self):
         """Let molecules in world map diffuse by 1 time step"""
@@ -315,8 +338,36 @@ class World:
             cells=self.cells, molecules=X[:, self._ext_mol_idxs]
         )
 
+    def _randomly_move_cells(self, cells: list[Cell]):
+        padded_map = cpad2d(self.cell_map.to(torch.float)).to(torch.bool)
+
+        for cell in cells:
+
+            # avaiable spots in neighborhood
+            old_x, old_y = cell.position
+            xps = slice(old_x, old_x + 3)
+            yps = slice(old_y, old_y + 3)
+            pxls = torch.argwhere(~padded_map[xps, yps])
+            if len(pxls) == 0:
+                _log.info(
+                    "Wanted to move cell at %i, %i"
+                    " but no pixel in the Moore neighborhood was free."
+                    " So, cell wasn't moved.",
+                    old_x,
+                    old_y,
+                )
+                continue
+
+            # set new cell position
+            idxs = random.sample(range(len(pxls)), k=1)
+            new_pad_x, new_pad_y = pxls[idxs[0]].tolist()
+            new_x = self._pad_2_true_idx[new_pad_x]
+            new_y = self._pad_2_true_idx[new_pad_y]
+            cell.position = new_x, new_y
+            self.cell_map[old_x, old_y] = False
+            self.cell_map[new_x, new_y] = True
+
     def _place_replicated_cells_near_parents(self, cells: list[Cell]) -> list[int]:
-        # padded map to parse neighborhood
         padded_map = cpad2d(self.cell_map.to(torch.float)).to(torch.bool)
 
         new_idx = len(self.cells)
@@ -329,10 +380,12 @@ class World:
             yps = slice(old_y, old_y + 3)
             pxls = torch.argwhere(~padded_map[xps, yps])
             if len(pxls) == 0:
-                warnings.warn(
-                    f"Wanted to replicate cell  next to {old_x}, {old_y}"
-                    " but not pixel in the Moore neighborhood was free."
-                    " So, cell wasn't able to replicate."
+                _log.info(
+                    "Wanted to replicate cell next to %i, %i"
+                    " but no pixel in the Moore neighborhood was free."
+                    " So, cell wasn't able to replicate.",
+                    old_x,
+                    old_y,
                 )
                 continue
 
@@ -357,10 +410,13 @@ class World:
         pxls = torch.argwhere(~self.cell_map)
         n_cells = len(cells)
         if n_cells > len(pxls):
-            warnings.warn(
-                f"Wanted to add {n_cells} new random cells"
-                f" but only {len(pxls)} pixels left on map."
-                f" So, only {len(pxls)} cells were added."
+            _log.info(
+                "Wanted to add %i new random cells"
+                " but only %i pixels left on map."
+                " So, only %i cells were added.",
+                n_cells,
+                len(pxls),
+                len(pxls),
             )
             n_cells = len(pxls)
 

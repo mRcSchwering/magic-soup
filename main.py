@@ -1,11 +1,18 @@
 import time
 import torch
+import logging
 import magicsoup as ms
 from magicsoup.util import variants
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        # level=logging.DEBUG,
+        format="%(levelname)s::%(asctime)s::%(module)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
     n_threads = torch.get_num_threads()
     print(f"n threads {n_threads}")
     n_interop_threads = torch.get_num_interop_threads()
