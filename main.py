@@ -1,31 +1,94 @@
+from argparse import ArgumentParser
+from contextlib import contextmanager
 import time
 import torch
 import logging
 import magicsoup as ms
-from magicsoup.util import variants
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
 
+_log = logging.getLogger(__name__)
 
-if __name__ == "__main__":
+
+@contextmanager
+def timeit(msg: str):
+    t0 = time.time()
+    yield
+    td = time.time() - t0
+    print(f"{msg}: {td:.2f}s")
+
+
+def generate_genomes(n_cells: int):
+    return [ms.random_genome() for _ in range(n_cells)]
+
+
+def derive_proteomes(genomes: list[str], genetics: ms.Genetics):
+    return genetics.get_proteomes(sequences=genomes)
+
+
+def add_new_cells(
+    genomes: list[str], proteomes: list[list[ms.Protein]], world: ms.World
+):
+    cells = [ms.Cell(genome=g, proteome=p) for g, p in zip(genomes, proteomes)]
+    world.add_random_cells(cells=cells)
+
+
+def enzymatic_activity(world: ms.World):
+    world.enzymatic_activity()
+
+
+def wrap_up_step(world: ms.World):
+    world.degrade_molecules()
+    world.diffuse_molecules()
+    world.increment_cell_survival()
+
+
+def kill_cells(world: ms.World, idx: int):
+    kill_idxs = torch.argwhere(world.cell_molecules[:, idx] < 0.1).flatten().tolist()
+    world.kill_cells(cell_idxs=kill_idxs)
+
+
+def replicate_cells(world: ms.World, idx: int):
+    rep_idxs = torch.argwhere(world.cell_molecules[:, idx] > 2.5).flatten().tolist()
+    cells = world.get_cells(by_idxs=rep_idxs)
+    world.replicate_cells(cells=[d.copy() for d in cells])
+
+
+def mutate_cells(world: ms.World, genetics: ms.Genetics):
+    mut_cells = []
+    for cell in world.cells:
+        seq = ms.point_mutatations(seq=cell.genome)
+        if seq is not None:
+            cell.proteome = genetics.get_proteome(seq=seq)
+            mut_cells.append(cell)
+    world.update_cells(mut_cells)
+
+
+def one_time_step(world: ms.World, genetics: ms.Genetics, idx: int):
+    kill_cells(world=world, idx=idx)
+    replicate_cells(world=world, idx=idx)
+    mutate_cells(world=world, genetics=genetics)
+    enzymatic_activity(world=world)
+    wrap_up_step(world=world)
+
+
+def main(loglevel: str, n_cells: int, n_steps: int):
     logging.basicConfig(
-        # level=logging.DEBUG,
+        level=getattr(logging, loglevel.upper()),
         format="%(levelname)s::%(asctime)s::%(module)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     n_threads = torch.get_num_threads()
-    print(f"n threads {n_threads}")
-    n_interop_threads = torch.get_num_interop_threads()
-    print(f"n interop threads {n_interop_threads}")
+    _log.info("torch n threads %i", n_threads)
 
     # fmt: off
     domains = {
-        ms.CatalyticFact(): variants("ACNTGN") + variants("AGNTGN") + variants("CCNTTN"),
-        ms.TransporterFact(): variants("ACNAGN") + variants("ACNTAN") + variants("AANTCN"),
-        ms.AllostericFact(is_transmembrane=False, is_inhibitor=False): variants("GCNTGN"),
-        ms.AllostericFact(is_transmembrane=False, is_inhibitor=True): variants("GCNTAN"),
-        ms.AllostericFact(is_transmembrane=True, is_inhibitor=False): variants("AGNTCN"),
-        ms.AllostericFact(is_transmembrane=True, is_inhibitor=True): variants("CCNTGN"),
+        ms.CatalyticFact(): ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),
+        ms.TransporterFact(): ms.variants("ACNAGN") + ms.variants("ACNTAN") + ms.variants("AANTCN"),
+        ms.AllostericFact(is_transmembrane=False, is_inhibitor=False): ms.variants("GCNTGN"),
+        ms.AllostericFact(is_transmembrane=False, is_inhibitor=True): ms.variants("GCNTAN"),
+        ms.AllostericFact(is_transmembrane=True, is_inhibitor=False): ms.variants("AGNTCN"),
+        ms.AllostericFact(is_transmembrane=True, is_inhibitor=True): ms.variants("CCNTGN"),
     }
     # fmt: on
 
@@ -35,89 +98,48 @@ if __name__ == "__main__":
 
     world = ms.World(molecules=MOLECULES)
 
-    n_cells = 1000
-    n_steps = 100
+    with timeit(f"Generating {n_cells} genomes"):
+        genomes = generate_genomes(n_cells=n_cells)
 
-    t0 = time.time()
-    genomes = genetics.get_genomes(n=n_cells)
-    td = time.time() - t0
-    print(f"Generating {n_cells} genomes: {td:.2f}s")
+    with timeit(f"Getting {n_cells} proteomes"):
+        proteomes = derive_proteomes(genomes=genomes, genetics=genetics)
 
-    t0 = time.time()
-    proteomes = genetics.get_proteomes(sequences=genomes)
-    td = time.time() - t0
-    print(f"Getting {n_cells} proteomes: {td:.2f}s")
+    with timeit(f"Adding {n_cells} cells"):
+        add_new_cells(genomes=genomes, proteomes=proteomes, world=world)
 
-    t0 = time.time()
-    cells = [ms.Cell(genome=g, proteome=p) for g, p in zip(genomes, proteomes)]
-    world.add_random_cells(cells=cells)
-    td = time.time() - t0
-    print(f"Adding {n_cells} cells: {td:.2f}s")
-    print(f"{int(world.affinities.shape[1])} max proteins")
+    with timeit("Integrating signals"):
+        enzymatic_activity(world=world)
 
-    t0 = time.time()
-    world.enzymatic_activity()
-    td = time.time() - t0
-    print(f"Integrating signals: {td:.2f}s")
+    with timeit("Degrade, diffuse, increment"):
+        wrap_up_step(world=world)
 
-    t0 = time.time()
-    world.degrade_molecules()
-    world.diffuse_molecules()
-    world.increment_cell_survival()
-    td = time.time() - t0
-    print(f"Degrade, diffuse, increment: {td:.2f}s")
-
-    t0 = time.time()
     idx_ATP = world.get_intracellular_molecule_idxs(molecules=[ATP])[0]
-    kill_idxs = (
-        torch.argwhere(world.cell_molecules[:, idx_ATP] < 0.1).flatten().tolist()
+
+    with timeit("Kill cells"):
+        kill_cells(world=world, idx=idx_ATP)
+
+    with timeit("Copy and replicate cells"):
+        replicate_cells(world=world, idx=idx_ATP)
+
+    with timeit("Mutate cells"):
+        mutate_cells(world=world, genetics=genetics)
+
+    with timeit("1 time step"):
+        one_time_step(world=world, genetics=genetics, idx=idx_ATP)
+
+    with timeit(f"{n_steps} time steps"):
+        for _ in range(n_steps):
+            one_time_step(world=world, genetics=genetics, idx=idx_ATP)
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--log", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="WARNING",
     )
-    world.kill_cells(cell_idxs=kill_idxs)
-    td = time.time() - t0
-    print(f"Kill {len(kill_idxs)} cells: {td:.2f}s")
+    parser.add_argument("--n_cells", default=1000)
+    parser.add_argument("--n_steps", default=100)
+    args = parser.parse_args()
 
-    t0 = time.time()
-    rep_idxs = torch.argwhere(world.cell_molecules[:, idx_ATP] > 2.5).flatten().tolist()
-    cells = world.get_cells(by_idxs=rep_idxs)
-    world.replicate_cells(cells=[d.copy() for d in cells])
-    td = time.time() - t0
-    print(f"Copy and replicate {len(rep_idxs)} cells: {td:.2f}s")
-
-    t0 = time.time()
-    kill_idxs = (
-        torch.argwhere(world.cell_molecules[:, idx_ATP] < 0.1).flatten().tolist()
-    )
-    world.kill_cells(cell_idxs=kill_idxs)
-
-    rep_idxs = torch.argwhere(world.cell_molecules[:, idx_ATP] > 2.5).flatten().tolist()
-    cells = world.get_cells(by_idxs=rep_idxs)
-    world.replicate_cells(cells=[d.copy() for d in cells])
-
-    world.enzymatic_activity()
-    world.degrade_molecules()
-    world.diffuse_molecules()
-    world.increment_cell_survival()
-    td = time.time() - t0
-    print(f"One step: {td:.2f}s")
-
-    t0 = time.time()
-    for _ in range(n_steps):
-        kill_idxs = (
-            torch.argwhere(world.cell_molecules[:, idx_ATP] < 0.1).flatten().tolist()
-        )
-        world.kill_cells(cell_idxs=kill_idxs)
-
-        rep_idxs = (
-            torch.argwhere(world.cell_molecules[:, idx_ATP] > 2.5).flatten().tolist()
-        )
-        cells = world.get_cells(by_idxs=rep_idxs)
-        world.replicate_cells(cells=[d.copy() for d in cells])
-
-        world.enzymatic_activity()
-        world.degrade_molecules()
-        world.diffuse_molecules()
-        world.increment_cell_survival()
-
-    td = time.time() - t0
-    print(f"Doing {n_steps} steps: {td:.2f}s")
+    main(loglevel=args.log, n_cells=args.n_cells, n_steps=args.n_steps)
 

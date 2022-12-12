@@ -207,6 +207,7 @@ class World:
 
         - `cells` cells with that need to be updated
         """
+        self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
         self._add_new_cells_to_proteome_params(
             proteomes=[d.proteome for d in cells], cell_idxs=[d.idx for d in cells]
         )

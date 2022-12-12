@@ -8,9 +8,11 @@ from .constants import ALL_NTS, CODON_SIZE
 
 # TODO: summary() to see likelyhoods of different domains appearing
 
-# TODO: API:
-#       - generic mutations on all cells (give cell idxs back)
-#       - replication mutations
+
+# TODO: Transformation mechanism
+# TODO: conjugation mechanism
+# TODO: Slipped_strand_mispairing / replication slippage
+# TODO: ectopic recombination
 
 
 def variants(seq: str) -> list[str]:
@@ -27,7 +29,7 @@ def variants(seq: str) -> list[str]:
     return [s.format(*d) for d in product(*nts)]
 
 
-def rand_genome(len_range=(100, 500)) -> str:
+def random_genome(len_range=(100, 500)) -> str:
     """
     Generate a random nucleotide sequence with length
     sampled within `len_range`.
@@ -49,26 +51,28 @@ def reverse_complement(seq: str) -> str:
     )
 
 
-# TODO: do with torch?
-def _subst(seq: str, idx: int) -> str:
+def substitution(seq: str, idx: int) -> str:
+    """Create a 1 nucleotide substitution at index"""
     nt = random.choice(ALL_NTS)
     return seq[:idx] + nt + seq[idx + 1 :]
 
 
-def _indel(seq: str, idx: int) -> str:
+def indel(seq: str, idx: int) -> str:
+    """Create a 1 nucleotide insertion or deletion at index"""
     if random.choice([True, False]):
         return seq[:idx] + seq[idx + 1 :]
     nt = random.choice(ALL_NTS)
     return seq[:idx] + nt + seq[idx:]
 
 
-def point_mutate(seq: str, p=1e-3, sub2indel=0.5) -> Optional[str]:
+def point_mutatations(seq: str, p=1e-3, p_indel=0.1) -> Optional[str]:
     """
     Mutate sequence with point mutations.
 
     - `seq` nucleotide sequence
-    - `p` chance of a point per nucleotide
-    - `sub2indel` chance of a substitution (inverse of chance of a deletion or insertion)
+    - `p` probability of a point per nucleotide
+    - `p_indel` probability of any point mutation being a deletion or insertion
+      (inverse probability of it being a substitution)
     
     Returns mutated sequence, or None if nothing was mutated.
     """
@@ -80,15 +84,15 @@ def point_mutate(seq: str, p=1e-3, sub2indel=0.5) -> Optional[str]:
     if n_muts == 0:
         return None
 
-    subs = torch.bernoulli(torch.tensor([sub2indel] * n_muts))
-    is_subs = subs.to(torch.bool).tolist()
+    indels = torch.bernoulli(torch.tensor([p_indel] * n_muts))
+    is_indel = indels.to(torch.bool).tolist()
 
     tmp = seq
-    for idx, is_sub in zip(mut_idxs, is_subs):
-        if is_sub:
-            tmp = _subst(seq=tmp, idx=idx)
+    for idx, is_indel in zip(mut_idxs, is_indel):
+        if is_indel:
+            tmp = indel(seq=tmp, idx=idx)
         else:
-            tmp = _indel(seq=tmp, idx=idx)
+            tmp = substitution(seq=tmp, idx=idx)
     return tmp
 
 
