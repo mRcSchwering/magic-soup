@@ -2,7 +2,7 @@ import time
 import torch
 import magicsoup as ms
 from magicsoup.util import variants
-from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP, ADP
+from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
 
 
 if __name__ == "__main__":
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     print(f"{int(world.affinities.shape[1])} max proteins")
 
     t0 = time.time()
-    world.integrate_signals()
+    world.enzymatic_activity()
     td = time.time() - t0
     print(f"Integrating signals: {td:.2f}s")
 
@@ -61,31 +61,32 @@ if __name__ == "__main__":
     print(f"Degrade, diffuse, increment: {td:.2f}s")
 
     t0 = time.time()
-    X_ATP = world.get_concentrations(molecules=[ATP])
-    kill_idxs = torch.argwhere(X_ATP[:, 0] < 0.1).flatten().tolist()
+    idx_ATP = world.get_intracellular_molecule_idxs(molecules=[ATP])[0]
+    kill_idxs = (
+        torch.argwhere(world.cell_molecules[:, idx_ATP] < 0.1).flatten().tolist()
+    )
     world.kill_cells(cell_idxs=kill_idxs)
     td = time.time() - t0
     print(f"Kill {len(kill_idxs)} cells: {td:.2f}s")
 
     t0 = time.time()
-    X_ATP = world.get_concentrations(molecules=[ATP, ADP])
-    rep_idxs = torch.argwhere(X_ATP[:, 0] > 2.5).flatten().tolist()
-    cells = [world.get_cell(by_idx=i).copy() for i in rep_idxs]
-    world.replicate_cells(cells=cells)
+    rep_idxs = torch.argwhere(world.cell_molecules[:, idx_ATP] > 2.5).flatten().tolist()
+    cells = world.get_cells(by_idxs=rep_idxs)
+    world.replicate_cells(cells=[d.copy() for d in cells])
     td = time.time() - t0
     print(f"Copy and replicate {len(rep_idxs)} cells: {td:.2f}s")
 
     t0 = time.time()
-    X_ATP = world.get_concentrations(molecules=[ATP])
-    kill_idxs = torch.argwhere(X_ATP[:, 0] < 0.1).flatten().tolist()
+    kill_idxs = (
+        torch.argwhere(world.cell_molecules[:, idx_ATP] < 0.1).flatten().tolist()
+    )
     world.kill_cells(cell_idxs=kill_idxs)
 
-    X_ATP = world.get_concentrations(molecules=[ATP])
-    rep_idxs = torch.argwhere(X_ATP[:, 0] > 2.5).flatten().tolist()
-    cells = [world.get_cell(by_idx=i).copy() for i in rep_idxs]
-    world.replicate_cells(cells=cells)
+    rep_idxs = torch.argwhere(world.cell_molecules[:, idx_ATP] > 2.5).flatten().tolist()
+    cells = world.get_cells(by_idxs=rep_idxs)
+    world.replicate_cells(cells=[d.copy() for d in cells])
 
-    world.integrate_signals()
+    world.enzymatic_activity()
     world.degrade_molecules()
     world.diffuse_molecules()
     world.increment_cell_survival()
@@ -94,16 +95,18 @@ if __name__ == "__main__":
 
     t0 = time.time()
     for _ in range(n_steps):
-        X_ATP = world.get_concentrations(molecules=[ATP])
-        kill_idxs = torch.argwhere(X_ATP[:, 0] < 0.1).flatten().tolist()
+        kill_idxs = (
+            torch.argwhere(world.cell_molecules[:, idx_ATP] < 0.1).flatten().tolist()
+        )
         world.kill_cells(cell_idxs=kill_idxs)
 
-        X_ATP = world.get_concentrations(molecules=[ATP])
-        rep_idxs = torch.argwhere(X_ATP[:, 0] > 2.5).flatten().tolist()
-        cells = [world.get_cell(by_idx=i).copy() for i in rep_idxs]
-        world.replicate_cells(cells=cells)
+        rep_idxs = (
+            torch.argwhere(world.cell_molecules[:, idx_ATP] > 2.5).flatten().tolist()
+        )
+        cells = world.get_cells(by_idxs=rep_idxs)
+        world.replicate_cells(cells=[d.copy() for d in cells])
 
-        world.integrate_signals()
+        world.enzymatic_activity()
         world.degrade_molecules()
         world.diffuse_molecules()
         world.increment_cell_survival()
