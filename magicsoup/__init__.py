@@ -1,3 +1,3 @@
-from .proteins import *
+from .containers import *
 from .genetics import *
 from .world import *

@@ -1,19 +1,95 @@
-from .proteins import Domain, DomainFact, Protein, Molecule
-from .util import (
-    ALL_NTS,
-    CODON_SIZE,
-    reverse_complement,
-    generic_map_fact,
-    bool_map_fact,
-    weight_map_fact,
-    rand_genome,
-)
+from typing import Optional
+from itertools import product
+import random
+import torch
+from .util import generic_map_fact, weight_map_fact, bool_map_fact
+from .containers import Domain, DomainFact, Protein, Molecule
+from .constants import ALL_NTS, CODON_SIZE
 
 # TODO: summary() to see likelyhoods of different domains appearing
 
 # TODO: API:
 #       - generic mutations on all cells (give cell idxs back)
 #       - replication mutations
+
+
+def variants(seq: str) -> list[str]:
+    """
+    Generate all variants of sequence where
+    'N' can be any nucleotide.
+    """
+    s = seq
+    n = s.count("N")
+    for i in range(n):
+        idx = s.find("N")
+        s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
+    nts = [ALL_NTS] * n
+    return [s.format(*d) for d in product(*nts)]
+
+
+def rand_genome(len_range=(100, 500)) -> str:
+    """
+    Generate a random nucleotide sequence with length
+    sampled within `len_range`.
+    """
+    k = random.randint(*len_range)
+    return "".join(random.choices(ALL_NTS, k=k))
+
+
+def reverse_complement(seq: str) -> str:
+    """Reverse-complement of a nucleotide sequence"""
+    rvsd = seq[::-1]
+    return (
+        rvsd.replace("A", "-")
+        .replace("T", "A")
+        .replace("-", "T")
+        .replace("G", "-")
+        .replace("C", "G")
+        .replace("-", "C")
+    )
+
+
+# TODO: do with torch?
+def _subst(seq: str, idx: int) -> str:
+    nt = random.choice(ALL_NTS)
+    return seq[:idx] + nt + seq[idx + 1 :]
+
+
+def _indel(seq: str, idx: int) -> str:
+    if random.choice([True, False]):
+        return seq[:idx] + seq[idx + 1 :]
+    nt = random.choice(ALL_NTS)
+    return seq[:idx] + nt + seq[idx:]
+
+
+def point_mutate(seq: str, p=1e-3, sub2indel=0.5) -> Optional[str]:
+    """
+    Mutate sequence with point mutations.
+
+    - `seq` nucleotide sequence
+    - `p` chance of a point per nucleotide
+    - `sub2indel` chance of a substitution (inverse of chance of a deletion or insertion)
+    
+    Returns mutated sequence, or None if nothing was mutated.
+    """
+    n = len(seq)
+    muts = torch.bernoulli(torch.tensor([p] * n))
+    mut_idxs = torch.argwhere(muts).flatten().tolist()
+
+    n_muts = len(mut_idxs)
+    if n_muts == 0:
+        return None
+
+    subs = torch.bernoulli(torch.tensor([sub2indel] * n_muts))
+    is_subs = subs.to(torch.bool).tolist()
+
+    tmp = seq
+    for idx, is_sub in zip(mut_idxs, is_subs):
+        if is_sub:
+            tmp = _subst(seq=tmp, idx=idx)
+        else:
+            tmp = _indel(seq=tmp, idx=idx)
+    return tmp
 
 
 class Genetics:
@@ -35,28 +111,27 @@ class Genetics:
         domain_facts: dict[DomainFact, list[str]],
         molecules: list[Molecule],
         reactions: list[tuple[list[Molecule], list[Molecule]]],
-        vmax_range: tuple[float, float] = (0.2, 5.0),
-        km_range: tuple[float, float] = (0.1, 10.0),
+        max_vmax: float = 5.0,
+        max_km: float = 10.0,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-        init_genome_size_range: tuple[int, int] = (50, 100),
         n_region_codons=2,
     ):
         self.domain_facts = domain_facts
         self.molecules = molecules
         self.reactions = reactions
-        self.vmax_range = vmax_range
-        self.km_range = km_range
+        self.max_vmax = max_vmax
+        self.max_km = max_km
         self.start_codons = start_codons
         self.stop_codons = stop_codons
-        self.init_genome_size_range = init_genome_size_range
         self.n_region_codons = n_region_codons
 
-        self.reaction_map = generic_map_fact(n_region_codons * CODON_SIZE, reactions)
-        self.molecule_map = generic_map_fact(n_region_codons * CODON_SIZE, molecules)
-        self.affinity_map = weight_map_fact(n_region_codons * CODON_SIZE, *km_range)
-        self.velocity_map = weight_map_fact(n_region_codons * CODON_SIZE, *vmax_range)
-        self.bool_map = bool_map_fact(n_region_codons * CODON_SIZE)
+        codons = variants("N" * n_region_codons * CODON_SIZE)
+        self.reaction_map = generic_map_fact(codons, reactions)
+        self.molecule_map = generic_map_fact(codons, molecules)
+        self.affinity_map = weight_map_fact(codons, 1 / max_km, max_km)
+        self.velocity_map = weight_map_fact(codons, 1 / max_vmax, max_vmax)
+        self.bool_map = bool_map_fact(codons)
 
         for domain_fact in self.domain_facts:
             domain_fact.region_size = n_region_codons * CODON_SIZE
@@ -76,26 +151,18 @@ class Genetics:
 
         self._validate_init()
 
-    def get_genomes(self, n: int) -> list[str]:
-        """Get n random genomes"""
-        return [rand_genome(len_range=self.init_genome_size_range) for _ in range(n)]
+    def get_proteomes(self, sequences: list[str]) -> list[list[Protein]]:
+        """For each nucleotide sequence get all possible proteins"""
+        return [self.get_proteome(seq=d) for d in sequences]
 
     def get_proteome(self, seq: str) -> list[Protein]:
-        """
-        Get all possible proteins encoded by a nucleotide sequence.
-        """
+        """Get all possible proteins encoded by a nucleotide sequence"""
         bwd = reverse_complement(seq)
         cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
         cds = [d for d in cds if len(d) > self.min_n_seq_nts]
         proteins = [self.translate_seq(d) for d in cds]
         proteins = [d for d in proteins if len(d) > 0]
         return [Protein(domains=d, label=f"P{i}") for i, d in enumerate(proteins)]
-
-    def get_proteomes(self, sequences: list[str]) -> list[list[Protein]]:
-        """
-        For each nucleotide sequence get all possible proteins.
-        """
-        return [self.get_proteome(seq=d) for d in sequences]
 
     def get_coding_regions(self, seq: str) -> list[str]:
         """
@@ -198,12 +265,12 @@ class Genetics:
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(domain_map=%r,vmax_range=%s,km_range=%r,start_codons=%r,stop_codons=%r)"
+            "%s(domain_map=%r,max_vmax=%s,max_km=%r,start_codons=%r,stop_codons=%r)"
             % (
                 clsname,
                 self.domain_map,
-                self.vmax_range,
-                self.km_range,
+                self.max_vmax,
+                self.max_km,
                 self.start_codons,
                 self.stop_codons,
             )

@@ -1,4 +1,6 @@
+from typing import Optional
 import abc
+import torch
 
 
 class Molecule:
@@ -299,3 +301,58 @@ class Protein:
     def __str__(self) -> str:
         return self.label
 
+
+class Cell:
+    """
+    Object representing a cell with its environment
+
+    - `genome` this cells full genome
+    - `proteome` the translated genome
+    - `position` Cell's position on the cell map. Will be set when added to the `World`
+    - `idx` Cell's index. Managed by `World`
+    - `label` Optional label you can use to track cells.
+    - `n_survived_steps` Number of time steps this cell has survived.
+    """
+
+    def __init__(
+        self,
+        genome: str,
+        proteome: list[Protein],
+        position: tuple[int, int] = (-1, -1),
+        idx=-1,
+        label="C",
+        n_survived_steps=0,
+    ):
+        self.genome = genome
+        self.proteome = proteome
+        self.label = label
+        self.position = position
+        self.idx = idx
+        self.n_survived_steps = n_survived_steps
+        self.int_molecules: Optional[torch.Tensor] = None
+        self.ext_molecules: Optional[torch.Tensor] = None
+
+    def copy(self) -> "Cell":
+        return Cell(
+            genome=self.genome,
+            proteome=self.proteome,
+            position=self.position,
+            idx=self.idx,
+            label=self.label,
+            n_survived_steps=self.n_survived_steps,
+        )
+
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return (
+            "%s(genome=%r,proteome=%r,position=%r,idx=%r,label=%r,n_survived_steps=%r)"
+            % (
+                clsname,
+                self.genome,
+                self.proteome,
+                self.position,
+                self.idx,
+                self.label,
+                self.n_survived_steps,
+            )
+        )

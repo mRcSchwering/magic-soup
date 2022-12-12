@@ -1,5 +1,5 @@
 import torch
-from .proteins import Protein, Molecule
+from .containers import Protein, Molecule
 
 
 def calc_cell_params(

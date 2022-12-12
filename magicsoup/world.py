@@ -2,8 +2,9 @@ from typing import Optional
 import logging
 import random
 import torch
-from .proteins import Molecule, Protein
-from .util import GAS_CONSTANT, cpad2d, pad_2_true_idx
+from .constants import GAS_CONSTANT
+from .containers import Molecule, Protein, Cell
+from .util import cpad2d, pad_2_true_idx
 from .kinetics import integrate_signals, calc_cell_params
 
 
@@ -12,62 +13,6 @@ from .kinetics import integrate_signals, calc_cell_params
 # TODO: have Molecules carry their own idx?
 
 _log = logging.getLogger(__name__)
-
-
-class Cell:
-    """
-    Object representing a cell with its environment
-
-    - `genome` this cells full genome
-    - `proteome` the translated genome
-    - `position` Cell's position on the cell map. Will be set when added to the `World`
-    - `idx` Cell's index. Managed by `World`
-    - `label` Optional label you can use to track cells.
-    - `n_survived_steps` Number of time steps this cell has survived.
-    """
-
-    def __init__(
-        self,
-        genome: str,
-        proteome: list[Protein],
-        position: tuple[int, int] = (-1, -1),
-        idx=-1,
-        label: Optional[str] = None,
-        n_survived_steps=0,
-    ):
-        self.genome = genome
-        self.proteome = proteome
-        self.label = label
-        self.position = position
-        self.idx = idx
-        self.n_survived_steps = n_survived_steps
-        self.int_molecules: Optional[torch.Tensor] = None
-        self.ext_molecules: Optional[torch.Tensor] = None
-
-    def copy(self) -> "Cell":
-        return Cell(
-            genome=self.genome,
-            proteome=self.proteome,
-            position=self.position,
-            idx=self.idx,
-            label=self.label,
-            n_survived_steps=self.n_survived_steps,
-        )
-
-    def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return (
-            "%s(genome=%r,proteome=%r,position=%r,idx=%r,label=%r,n_survived_steps=%r)"
-            % (
-                clsname,
-                self.genome,
-                self.proteome,
-                self.position,
-                self.idx,
-                self.label,
-                self.n_survived_steps,
-            )
-        )
 
 
 class World:
