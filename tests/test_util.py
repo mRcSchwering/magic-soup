@@ -45,26 +45,6 @@ def test_padding_indices():
     assert set(zip(xs, ys)) == {(2, 2)}
 
 
-def test_cpad2d():
-    # fmt: off
-    true_map = [
-        [1.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0]
-    ]
-    padded_map = [
-        [0.0, 0.0, 1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0, 1.0],
-        [0.0, 0.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0, 1.0],
-    ]
-    # fmt: on
-
-    res = util.cpad2d(torch.tensor(true_map), n=1)
-    assert torch.all(res == torch.tensor(padded_map))
-
-
 def test_pad_2_true_idx():
     assert util.pad_2_true_idx(idx=0, size=3, pad=1) == 2
     assert util.pad_2_true_idx(idx=1, size=3, pad=1) == 0

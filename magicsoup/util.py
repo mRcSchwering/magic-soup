@@ -30,15 +30,6 @@ def cpad1d(t: torch.Tensor, n=1) -> torch.Tensor:
     return torch.nn.functional.pad(t, (n, n), mode="circular")
 
 
-def cpad2d(t: torch.Tensor, n=1) -> torch.Tensor:
-    """Circular `n` padding of 2d tensor in 1st and 2nd dimension"""
-    return (
-        cpad1d(cpad1d(t.unsqueeze(0), n=n).permute(0, 2, 1), n=n)
-        .permute(0, 2, 1)
-        .squeeze(0)
-    )
-
-
 def pad_map(m: torch.Tensor) -> torch.Tensor:
     """Do a circular padding with size 1 on a 2d bool tensor"""
     return (

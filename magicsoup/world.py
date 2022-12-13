@@ -4,7 +4,7 @@ import random
 import torch
 from .constants import GAS_CONSTANT
 from .containers import Molecule, Protein, Cell
-from .util import cpad2d, pad_2_true_idx, padded_indices, pad_map, unpad_map
+from .util import pad_2_true_idx, padded_indices, pad_map, unpad_map
 from .kinetics import integrate_signals, calc_cell_params
 
 
@@ -76,7 +76,6 @@ class World:
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
 
         self._diffuse = self._get_conv(mol_diff_rate=mol_diff_rate)
-        self._pad_2_true_idx = self._get_pad_2_true_idx_map(size=self.map_size)
 
         self.cells: list[Cell] = []
 
@@ -600,9 +599,6 @@ class World:
             mol_2_idx[(mol, False)] = mol_i
             mol_2_idx[(mol, True)] = mol_i + n_molecules
         return mol_2_idx
-
-    def _get_pad_2_true_idx_map(self, size: int) -> dict[int, int]:
-        return {i: pad_2_true_idx(idx=i, size=size) for i in range(size + 2)}
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
