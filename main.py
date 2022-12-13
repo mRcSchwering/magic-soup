@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 from contextlib import contextmanager
 import time
 import torch
+from torch.utils.tensorboard import SummaryWriter
 import logging
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
@@ -128,9 +129,15 @@ def main(loglevel: str, n_cells: int, n_steps: int):
     with timeit("1 time step"):
         one_time_step(world=world, genetics=genetics, idx=idx_ATP)
 
+    writer = SummaryWriter()
+
     with timeit(f"{n_steps} time steps"):
-        for _ in range(n_steps):
+        for step_i in range(n_steps):
             one_time_step(world=world, genetics=genetics, idx=idx_ATP)
+            writer.add_scalar("Cells", len(world.cells), step_i)
+            writer.add_scalar("MeanSurvival", world.cell_survival.mean().item(), step_i)
+            writer.add_scalar("MaxSurvival", world.cell_survival.max().item(), step_i)
+            writer.add_scalar("MaxProteins", world.affinities.shape[1], step_i)
 
 
 if __name__ == "__main__":
