@@ -100,9 +100,13 @@ class Genetics:
     """
     Defines possible protein domains and how they are encoded on the genome.
     
-    - `domain_map` dict of all possible domain types and their encoding sequences.
-    - `vmax_range` define the range within which possible maximum protein velocities can occur
-    - `km_range` define the range within which possible protein substrate affinities can occur
+    - `domain_facts` dict mapping available domain factories to all possible nucleotide sequences
+      by which they are encoded. During translation if any of these nucleotide sequences appears
+      (in-frame) in the coding sequence it will create the mapped domain. Further following nucleotides
+      will be used to configure that domain.
+    - `vmax_range` Define the range within which possible maximum protein velocities can occur.
+    - `max_km` Define the maximum Km (i.e. lowest affinity) a domain can have to its substrate(s).
+      `1 / max_km` will be the minimum Km value (i.e. highest affinity).
     - `start_codons` set start codons which start a coding sequence (translation only happens within coding sequences)
     - `stop_codons` set stop codons which stop a coding sequence (translation only happens within coding sequences)
 
@@ -115,7 +119,7 @@ class Genetics:
         domain_facts: dict[DomainFact, list[str]],
         molecules: list[Molecule],
         reactions: list[tuple[list[Molecule], list[Molecule]]],
-        max_vmax: float = 5.0,
+        vmax_range: tuple[float, float] = (1, 1000),
         max_km: float = 10.0,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
@@ -124,7 +128,7 @@ class Genetics:
         self.domain_facts = domain_facts
         self.molecules = molecules
         self.reactions = reactions
-        self.max_vmax = max_vmax
+        self.vmax_range = vmax_range
         self.max_km = max_km
         self.start_codons = start_codons
         self.stop_codons = stop_codons
@@ -134,7 +138,7 @@ class Genetics:
         self.reaction_map = generic_map_fact(codons, reactions)
         self.molecule_map = generic_map_fact(codons, molecules)
         self.affinity_map = weight_map_fact(codons, 1 / max_km, max_km)
-        self.velocity_map = weight_map_fact(codons, 1 / max_vmax, max_vmax)
+        self.velocity_map = weight_map_fact(codons, *vmax_range)
         self.bool_map = bool_map_fact(codons)
 
         for domain_fact in self.domain_facts:
@@ -269,11 +273,11 @@ class Genetics:
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(domain_map=%r,max_vmax=%s,max_km=%r,start_codons=%r,stop_codons=%r)"
+            "%s(domain_map=%r,vmax_range=%s,max_km=%r,start_codons=%r,stop_codons=%r)"
             % (
                 clsname,
                 self.domain_map,
-                self.max_vmax,
+                self.vmax_range,
                 self.max_km,
                 self.start_codons,
                 self.stop_codons,

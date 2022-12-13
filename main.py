@@ -54,6 +54,7 @@ def replicate_cells(world: ms.World, idx: int):
 
 
 def mutate_cells(world: ms.World, genetics: ms.Genetics):
+    return
     mut_cells = []
     for cell in world.cells:
         seq = ms.point_mutatations(seq=cell.genome)

@@ -93,6 +93,13 @@ class World:
         self.stoichiometry = self._tensor(0, 0, 2 * self.n_molecules)
         self.regulators = self._tensor(0, 0, 2 * self.n_molecules)
 
+        _log.info("Major world tensors are running on %s as %s", device, dtype)
+        _log.debug(
+            "Instantiating world with size %i and %i molecule species",
+            map_size,
+            len(molecules),
+        )
+
     def get_cell(
         self, by_idx: Optional[int] = None, by_label: Optional[str] = None
     ) -> Cell:
@@ -112,6 +119,11 @@ class World:
 
     def get_cells(self, by_idxs: list[int]) -> list[Cell]:
         """More performant than calling `get_cell` multiple times"""
+        _log.debug("Getting %i cells by indices", len(by_idxs))
+
+        if len(by_idxs) == 0:
+            return []
+
         cells = [self.cells[i] for i in by_idxs]
         ext_molecules = self._get_cell_ext_molecules(cells=cells)
         for ci, cell in enumerate(cells):
@@ -149,6 +161,8 @@ class World:
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
         """
+        _log.debug("Adding %i random cells", len(cells))
+
         if len(cells) == 0:
             return
 
@@ -184,6 +198,8 @@ class World:
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not replicate.
         """
+        _log.debug("Replicating %i cells", len(cells))
+
         if len(cells) == 0:
             return
 
@@ -207,6 +223,11 @@ class World:
 
         - `cells` cells with that need to be updated
         """
+        _log.debug("Updating %i cells", len(cells))
+
+        for cell in cells:
+            self.cells[cell.idx] = cell
+
         self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
         self._add_new_cells_to_proteome_params(
             proteomes=[d.proteome for d in cells], cell_idxs=[d.idx for d in cells]
@@ -217,6 +238,8 @@ class World:
         Remove cells and spill out their molecule contents onto the pixels
         they used to live on.
         """
+        _log.debug("Killing %i cells", len(cell_idxs))
+
         if len(cell_idxs) == 0:
             return
 
@@ -241,6 +264,8 @@ class World:
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not be moved.
         """
+        _log.debug("Moving %i cells", len(cell_idxs))
+
         if len(cell_idxs) == 0:
             return
 
@@ -250,24 +275,39 @@ class World:
     @torch.no_grad()
     def diffuse_molecules(self):
         """Let molecules in world map diffuse by 1 time step"""
+        _log.debug("Diffusing %i molecule species", int(self.molecule_map.shape[0]))
+
         before = self.molecule_map.unsqueeze(1)
         after = self._diffuse(before)
         self.molecule_map = torch.squeeze(after, 1)
 
     def degrade_molecules(self):
         """Degrade molecules in world map and cells by 1 time step"""
+        _log.debug("Degrading %i molecule species", int(self.molecule_map.shape[0]))
+
         self.molecule_map = self.molecule_map * self.mol_degrad
         self.cell_molecules = self.cell_molecules * self.mol_degrad
 
     def increment_cell_survival(self):
         """Increment number of currently living cells' time steps by 1"""
+        _log.debug("Incrementing cell survival of %i cells", len(self.cells))
+
         idxs = list(range(len(self.cells)))
         self.cell_survival[idxs] += 1
 
     def enzymatic_activity(self):
         """Catalyze reactions for 1 time step and update molecule concentrations"""
+        _log.debug("Run enzymatic activity with %i cells", len(self.cells))
+
         ext_molecules = self._get_cell_ext_molecules(cells=self.cells)
         X = torch.cat([self.cell_molecules, ext_molecules], dim=1)
+
+        _log.debug(
+            "Integrate signals with (c, p, s)=(%i, %i, %i)",
+            int(X.shape[0]),
+            int(self.velocities.shape[1]),
+            int(X.shape[1]),
+        )
 
         Xd = integrate_signals(
             X=X,
