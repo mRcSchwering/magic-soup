@@ -334,8 +334,10 @@ class World:
 
             # avaiable spots in neighborhood
             old_x, old_y = cell.position
-            xps = slice(old_x, old_x + 3)
-            yps = slice(old_y, old_y + 3)
+            old_xp = old_x + 1
+            old_yp = old_y + 1
+            xps = slice(old_xp - 1, old_xp + 2)
+            yps = slice(old_yp - 1, old_yp + 2)
             pxls = torch.argwhere(~padded_map[xps, yps])
             if len(pxls) == 0:
                 _log.info(
@@ -348,13 +350,18 @@ class World:
                 continue
 
             # set new cell position
-            idxs = random.sample(range(len(pxls)), k=1)
-            new_pad_x, new_pad_y = pxls[idxs[0]].tolist()
+            offset_x, offset_y = random.choice(pxls.tolist())
+            new_pad_x = offset_x + old_xp - 1
+            new_pad_y = offset_y + old_yp - 1
             new_x = self._pad_2_true_idx[new_pad_x]
             new_y = self._pad_2_true_idx[new_pad_y]
             cell.position = new_x, new_y
             self.cell_map[old_x, old_y] = False
             self.cell_map[new_x, new_y] = True
+
+            # also update in padded map
+            padded_map[old_xp, old_yp] = False
+            padded_map[new_pad_x, new_pad_y] = True
 
     def _place_replicated_cells_near_parents(
         self, cells: list[Cell]
@@ -368,8 +375,10 @@ class World:
 
             # avaiable spots in neighborhood
             old_x, old_y = cell.position
-            xps = slice(old_x, old_x + 3)
-            yps = slice(old_y, old_y + 3)
+            old_xp = old_x + 1
+            old_yp = old_y + 1
+            xps = slice(old_xp - 1, old_xp + 2)
+            yps = slice(old_yp - 1, old_yp + 2)
             pxls = torch.argwhere(~padded_map[xps, yps])
             if len(pxls) == 0:
                 _log.info(
@@ -382,14 +391,16 @@ class World:
                 continue
 
             # set new cell position
-            idxs = random.sample(range(len(pxls)), k=1)
-            new_pad_x, new_pad_y = pxls[idxs[0]].tolist()
+            offset_x, offset_y = random.choice(pxls.tolist())
+            new_pad_x = offset_x + old_xp - 1
+            new_pad_y = offset_y + old_yp - 1
             new_x = self._pad_2_true_idx[new_pad_x]
             new_y = self._pad_2_true_idx[new_pad_y]
             cell.position = new_x, new_y
-            print(f"setting pxl to true", self.cell_map[new_x, new_y])
             self.cell_map[new_x, new_y] = True
-            print(self.cell_map[new_x, new_y])
+
+            # also update in padded map
+            padded_map[new_pad_x, new_pad_y] = True
 
             # set new cell idx
             old_idxs.append(cell.idx)
