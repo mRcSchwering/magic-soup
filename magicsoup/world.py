@@ -387,7 +387,9 @@ class World:
             new_x = self._pad_2_true_idx[new_pad_x]
             new_y = self._pad_2_true_idx[new_pad_y]
             cell.position = new_x, new_y
+            print(f"setting pxl to true", self.cell_map[new_x, new_y])
             self.cell_map[new_x, new_y] = True
+            print(self.cell_map[new_x, new_y])
 
             # set new cell idx
             old_idxs.append(cell.idx)

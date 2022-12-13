@@ -70,7 +70,7 @@ def indel(seq: str, idx: int) -> str:
     return seq[:idx] + nt + seq[idx:]
 
 
-def point_mutatations(seq: str, p=1e-3, p_indel=0.1) -> Optional[str]:
+def _old_point_mutatations(seq: str, p=1e-3, p_indel=0.1) -> Optional[str]:
     """
     Mutate sequence with point mutations.
 
@@ -99,6 +99,42 @@ def point_mutatations(seq: str, p=1e-3, p_indel=0.1) -> Optional[str]:
         else:
             tmp = substitution(seq=tmp, idx=idx)
     return tmp
+
+
+def point_mutatations(seqs: list[str], p=1e-3, p_indel=0.1) -> list[str]:
+    """
+    Mutate sequences with point mutations.
+
+    - `seqs` nucleotide sequences
+    - `p` probability of a point per nucleotide
+    - `p_indel` probability of any point mutation being a deletion or insertion
+      (inverse probability of it being a substitution)
+    
+    Returns all sequences (muated or not).
+    """
+    n = len(seqs)
+    lens = [len(d) for d in seqs]
+    s_max = max(lens)
+
+    mask = torch.zeros(n, s_max)
+    for i, s in enumerate(lens):
+        mask[i, :s] = True
+
+    probs = torch.full((n, s_max), p)
+    muts = torch.bernoulli(probs)
+    mut_idxs = torch.argwhere(muts * mask).tolist()
+
+    probs = torch.full((len(mut_idxs),), p_indel)
+    indels = torch.bernoulli(probs).to(torch.bool).tolist()
+
+    tmps = [d for d in seqs]
+    for (seq_i, pos_i), is_indel in zip(mut_idxs, indels):
+        if is_indel:
+            tmps[seq_i] = indel(seq=tmps[seq_i], idx=pos_i)
+        else:
+            tmps[seq_i] = substitution(seq=tmps[seq_i], idx=pos_i)
+
+    return tmps
 
 
 class Genetics:

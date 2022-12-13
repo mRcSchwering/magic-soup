@@ -332,15 +332,16 @@ class Cell:
         self.int_molecules: Optional[torch.Tensor] = None
         self.ext_molecules: Optional[torch.Tensor] = None
 
-    def copy(self) -> "Cell":
-        return Cell(
-            genome=self.genome,
-            proteome=self.proteome,
-            position=self.position,
-            idx=self.idx,
-            label=self.label,
-            n_survived_steps=self.n_survived_steps,
-        )
+    def copy(self, **kwargs) -> "Cell":
+        old_kwargs = {
+            "genome": self.genome,
+            "proteome": self.proteome,
+            "position": self.position,
+            "idx": self.idx,
+            "label": self.label,
+            "n_survived_steps": self.n_survived_steps,
+        }
+        return Cell(**{**old_kwargs, **kwargs})
 
     def __repr__(self) -> str:
         clsname = type(self).__name__

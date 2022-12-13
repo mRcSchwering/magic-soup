@@ -1,9 +1,9 @@
 from argparse import ArgumentParser
 from contextlib import contextmanager
+import logging
 import time
 import torch
 from torch.utils.tensorboard import SummaryWriter
-import logging
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
 
@@ -18,8 +18,8 @@ def timeit(msg: str):
     print(f"{msg}: {td:.2f}s")
 
 
-def generate_genomes(n_cells: int):
-    return ms.random_genomes(n=n_cells)
+def generate_genomes(n_cells: int, size: int):
+    return ms.random_genomes(n=n_cells, s=size)
 
 
 def derive_proteomes(genomes: list[str], genetics: ms.Genetics):
@@ -55,13 +55,15 @@ def replicate_cells(world: ms.World, idx: int):
 
 
 def mutate_cells(world: ms.World, genetics: ms.Genetics):
-    return
+    new_gs = ms.point_mutatations(seqs=[d.genome for d in world.cells])
+
     mut_cells = []
-    for cell in world.cells:
-        seq = ms.point_mutatations(seq=cell.genome)
-        if seq is not None:
-            cell.proteome = genetics.get_proteome(seq=seq)
-            mut_cells.append(cell)
+    for new_g, cell in zip(new_gs, world.cells):
+        if new_g != cell.genome:
+            new_p = genetics.get_proteome(seq=new_g)
+            new_cell = cell.copy(genome=new_g, proteome=new_p)
+            mut_cells.append(new_cell)
+
     world.update_cells(mut_cells)
 
 
@@ -73,7 +75,7 @@ def one_time_step(world: ms.World, genetics: ms.Genetics, idx: int):
     wrap_up_step(world=world)
 
 
-def main(loglevel: str, n_cells: int, n_steps: int):
+def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
     logging.basicConfig(
         level=getattr(logging, loglevel.upper()),
         format="%(levelname)s::%(asctime)s::%(module)s: %(message)s",
@@ -101,7 +103,7 @@ def main(loglevel: str, n_cells: int, n_steps: int):
     world = ms.World(molecules=MOLECULES)
 
     with timeit(f"Generating {n_cells} genomes"):
-        genomes = generate_genomes(n_cells=n_cells)
+        genomes = generate_genomes(n_cells=n_cells, size=init_genome_size)
 
     with timeit(f"Getting {n_cells} proteomes"):
         proteomes = derive_proteomes(genomes=genomes, genetics=genetics)
@@ -133,11 +135,23 @@ def main(loglevel: str, n_cells: int, n_steps: int):
 
     with timeit(f"{n_steps} time steps"):
         for step_i in range(n_steps):
+            t0 = time.time()
             one_time_step(world=world, genetics=genetics, idx=idx_ATP)
-            writer.add_scalar("Cells", len(world.cells), step_i)
-            writer.add_scalar("MeanSurvival", world.cell_survival.mean().item(), step_i)
-            writer.add_scalar("MaxSurvival", world.cell_survival.max().item(), step_i)
-            writer.add_scalar("MaxProteins", world.affinities.shape[1], step_i)
+            t1 = time.time()
+
+            writer.add_scalar("Cells/total", len(world.cells), step_i)
+            writer.add_scalar(
+                "Cells/MeanSurv", world.cell_survival.mean().item(), step_i
+            )
+            writer.add_scalar("Cells/MaxSurv", world.cell_survival.max().item(), step_i)
+            writer.add_scalar("Other/MaxProteins", world.affinities.shape[1], step_i)
+            writer.add_scalar("Other/SpStep", t1 - t0, step_i)
+
+            if step_i % 2 == 0:
+                writer.add_image("Cellmap", world.cell_map, step_i, dataformats="HW")
+                writer.add_image(
+                    "ATPmap", world.molecule_map[idx_ATP], step_i, dataformats="HW"
+                )
 
 
 if __name__ == "__main__":
@@ -147,7 +161,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("--n_cells", default=1000, type=int)
     parser.add_argument("--n_steps", default=100, type=int)
+    parser.add_argument("--init_genome_size", default=500, type=int)
     args = parser.parse_args()
 
-    main(loglevel=args.log, n_cells=args.n_cells, n_steps=args.n_steps)
+    main(
+        loglevel=args.log,
+        n_cells=args.n_cells,
+        n_steps=args.n_steps,
+        init_genome_size=args.init_genome_size,
+    )
 
