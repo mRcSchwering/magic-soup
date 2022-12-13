@@ -138,8 +138,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="WARNING",
     )
-    parser.add_argument("--n_cells", default=1000)
-    parser.add_argument("--n_steps", default=100)
+    parser.add_argument("--n_cells", default=1000, type=int)
+    parser.add_argument("--n_steps", default=100, type=int)
     args = parser.parse_args()
 
     main(loglevel=args.log, n_cells=args.n_cells, n_steps=args.n_steps)

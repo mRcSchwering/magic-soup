@@ -170,7 +170,9 @@ class World:
 
         n_new_cells = len(new_idxs)
         self._expand_max_cells(by_n=n_new_cells)
-        self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
+
+        new_cells = [ſelf.cells[i] for i in new_idxs]
+        self._expand_max_proteins(max_n=max(len(d.proteome) for d in new_cells))
 
         # cell is supposed to have the same concentrations as the pxl it lives on
         new_positions = [self.cells[i].position for i in new_idxs]
@@ -182,7 +184,7 @@ class World:
         self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T
 
         self._add_new_cells_to_proteome_params(
-            proteomes=[d.proteome for d in cells], cell_idxs=new_idxs
+            proteomes=[d.proteome for d in new_cells], cell_idxs=new_idxs
         )
 
     def replicate_cells(self, cells: list[Cell]):
@@ -203,18 +205,19 @@ class World:
         if len(cells) == 0:
             return
 
-        new_idxs = self._place_replicated_cells_near_parents(cells=cells)
-        n_new_cells = len(new_idxs)
+        old_idxs, new_idxs = self._place_replicated_cells_near_parents(cells=cells)
 
+        n_new_cells = len(new_idxs)
         self._expand_max_cells(by_n=n_new_cells)
-        self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
+
+        new_cells = [self.cells[i] for i in new_idxs]
+        self._expand_max_proteins(max_n=max(len(d.proteome) for d in new_cells))
 
         # cell is supposed to have the same concentrations as the parent had
-        old_idxs = [d.idx for d in cells]
         self.cell_molecules[new_idxs, :] = self.cell_molecules[old_idxs, :]
 
         self._add_new_cells_to_proteome_params(
-            proteomes=[d.proteome for d in cells], cell_idxs=new_idxs
+            proteomes=[d.proteome for d in new_cells], cell_idxs=new_idxs
         )
 
     def update_cells(self, cells: list[Cell]):
@@ -353,11 +356,14 @@ class World:
             self.cell_map[old_x, old_y] = False
             self.cell_map[new_x, new_y] = True
 
-    def _place_replicated_cells_near_parents(self, cells: list[Cell]) -> list[int]:
+    def _place_replicated_cells_near_parents(
+        self, cells: list[Cell]
+    ) -> tuple[list[int], list[int]]:
         padded_map = cpad2d(self.cell_map.to(torch.float)).to(torch.bool)
 
         new_idx = len(self.cells)
         new_idxs: list[int] = []
+        old_idxs: list[int] = []
         for cell in cells:
 
             # avaiable spots in neighborhood
@@ -384,12 +390,13 @@ class World:
             self.cell_map[new_x, new_y] = True
 
             # set new cell idx
+            old_idxs.append(cell.idx)
             cell.idx = new_idx
             self.cells.append(cell)
             new_idxs.append(new_idx)
             new_idx += 1
 
-        return new_idxs
+        return old_idxs, new_idxs
 
     def _place_new_cells_in_random_positions(self, cells: list[Cell]) -> list[int]:
         # available spots on map
