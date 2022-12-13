@@ -1,4 +1,5 @@
 from typing import TypeVar, Sequence
+from itertools import product
 import string
 import random
 import torch
@@ -36,6 +37,49 @@ def cpad2d(t: torch.Tensor, n=1) -> torch.Tensor:
         .permute(0, 2, 1)
         .squeeze(0)
     )
+
+
+def pad_map(m: torch.Tensor) -> torch.Tensor:
+    """Do a circular padding with size 1 on a 2d bool tensor"""
+    return (
+        cpad1d(cpad1d(m.to(torch.float).unsqueeze(0), n=1).permute(0, 2, 1), n=1)
+        .permute(0, 2, 1)
+        .squeeze(0)
+        .to(torch.bool)
+    )
+
+
+def unpad_map(m: torch.Tensor) -> torch.Tensor:
+    """Remove a padding with size 1 from a 2d tensor"""
+    return m[1:-1, 1:-1]
+
+
+def _padded_index(i: int, s: int) -> list[int]:
+    if i == 0:
+        return [i, s - 2]
+    if i == 1:
+        return [i, s - 1]
+    if i == s - 1:
+        return [i, 1]
+    if i == s - 2:
+        return [i, 0]
+    return [i]
+
+
+def padded_indices(x: int, y: int, s: int) -> tuple[list[int], list[int]]:
+    """
+    For a (x, y) position in a 2d tensor with circular padding of size 1
+    get all other (x, y) positions that represent the same position.
+    Returned as 2 lists of the same size with all x and all y values.
+    """
+    xs_ = _padded_index(i=x, s=s)
+    ys_ = _padded_index(i=y, s=s)
+    xs = []
+    ys = []
+    for x, y in product(xs_, ys_):
+        xs.append(x)
+        ys.append(y)
+    return xs, ys
 
 
 def pad_2_true_idx(idx: int, size: int, pad=1) -> int:

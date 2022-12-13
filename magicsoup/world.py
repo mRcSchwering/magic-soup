@@ -4,7 +4,7 @@ import random
 import torch
 from .constants import GAS_CONSTANT
 from .containers import Molecule, Protein, Cell
-from .util import cpad2d, pad_2_true_idx
+from .util import cpad2d, pad_2_true_idx, padded_indices, pad_map, unpad_map
 from .kinetics import integrate_signals, calc_cell_params
 
 
@@ -169,6 +169,9 @@ class World:
         new_idxs = self._place_new_cells_in_random_positions(cells=cells)
 
         n_new_cells = len(new_idxs)
+        if n_new_cells == 0:
+            return
+
         self._expand_max_cells(by_n=n_new_cells)
 
         new_cells = [ſelf.cells[i] for i in new_idxs]
@@ -208,6 +211,9 @@ class World:
         old_idxs, new_idxs = self._place_replicated_cells_near_parents(cells=cells)
 
         n_new_cells = len(new_idxs)
+        if n_new_cells == 0:
+            return
+
         self._expand_max_cells(by_n=n_new_cells)
 
         new_cells = [self.cells[i] for i in new_idxs]
@@ -328,18 +334,18 @@ class World:
         )
 
     def _randomly_move_cells(self, cells: list[Cell]):
-        padded_map = cpad2d(self.cell_map.to(torch.float)).to(torch.bool)
+        size = self.map_size + 2
+        padded_map = pad_map(self.cell_map)
 
         for cell in cells:
-
-            # avaiable spots in neighborhood
             old_x, old_y = cell.position
             old_xp = old_x + 1
             old_yp = old_y + 1
-            xps = slice(old_xp - 1, old_xp + 2)
-            yps = slice(old_yp - 1, old_yp + 2)
-            pxls = torch.argwhere(~padded_map[xps, yps])
-            if len(pxls) == 0:
+            new_pos = self._find_open_spot_in_neighborhood(
+                padded_map=padded_map, x=old_xp, y=old_yp, size=size
+            )
+
+            if new_pos is None:
                 _log.info(
                     "Wanted to move cell at %i, %i"
                     " but no pixel in the Moore neighborhood was free."
@@ -349,38 +355,38 @@ class World:
                 )
                 continue
 
-            # set new cell position
-            offset_x, offset_y = random.choice(pxls.tolist())
-            new_pad_x = offset_x + old_xp - 1
-            new_pad_y = offset_y + old_yp - 1
-            new_x = self._pad_2_true_idx[new_pad_x]
-            new_y = self._pad_2_true_idx[new_pad_y]
-            cell.position = new_x, new_y
-            self.cell_map[old_x, old_y] = False
-            self.cell_map[new_x, new_y] = True
+            # move cells
+            old_pos = padded_indices(x=old_xp, y=old_yp, s=size)
+            padded_map[old_pos] = False
 
-            # also update in padded map
-            padded_map[old_xp, old_yp] = False
-            padded_map[new_pad_x, new_pad_y] = True
+            padded_map[new_pos] = True
+            xs, ys = new_pos
+            cell.position = (
+                pad_2_true_idx(idx=xs[0], size=self.map_size),
+                pad_2_true_idx(idx=ys[0], size=self.map_size),
+            )
+
+        self.cell_map = unpad_map(padded_map)
 
     def _place_replicated_cells_near_parents(
         self, cells: list[Cell]
     ) -> tuple[list[int], list[int]]:
-        padded_map = cpad2d(self.cell_map.to(torch.float)).to(torch.bool)
+        size = self.map_size + 2
+        padded_map = pad_map(self.cell_map)
 
         new_idx = len(self.cells)
         new_idxs: list[int] = []
         old_idxs: list[int] = []
-        for cell in cells:
 
-            # avaiable spots in neighborhood
+        for cell in cells:
             old_x, old_y = cell.position
             old_xp = old_x + 1
             old_yp = old_y + 1
-            xps = slice(old_xp - 1, old_xp + 2)
-            yps = slice(old_yp - 1, old_yp + 2)
-            pxls = torch.argwhere(~padded_map[xps, yps])
-            if len(pxls) == 0:
+            new_pos = self._find_open_spot_in_neighborhood(
+                padded_map=padded_map, x=old_xp, y=old_yp, size=size
+            )
+
+            if new_pos is None:
                 _log.info(
                     "Wanted to replicate cell next to %i, %i"
                     " but no pixel in the Moore neighborhood was free."
@@ -390,17 +396,13 @@ class World:
                 )
                 continue
 
-            # set new cell position
-            offset_x, offset_y = random.choice(pxls.tolist())
-            new_pad_x = offset_x + old_xp - 1
-            new_pad_y = offset_y + old_yp - 1
-            new_x = self._pad_2_true_idx[new_pad_x]
-            new_y = self._pad_2_true_idx[new_pad_y]
-            cell.position = new_x, new_y
-            self.cell_map[new_x, new_y] = True
-
-            # also update in padded map
-            padded_map[new_pad_x, new_pad_y] = True
+            # place cell in position
+            padded_map[new_pos] = True
+            xs, ys = new_pos
+            cell.position = (
+                pad_2_true_idx(idx=xs[0], size=self.map_size),
+                pad_2_true_idx(idx=ys[0], size=self.map_size),
+            )
 
             # set new cell idx
             old_idxs.append(cell.idx)
@@ -408,6 +410,8 @@ class World:
             self.cells.append(cell)
             new_idxs.append(new_idx)
             new_idx += 1
+
+        self.cell_map = unpad_map(padded_map)
 
         return old_idxs, new_idxs
 
@@ -460,6 +464,20 @@ class World:
             N=self.stoichiometry,
             A=self.regulators,
         )
+
+    def _find_open_spot_in_neighborhood(
+        self, padded_map: torch.Tensor, x: int, y: int, size: int
+    ) -> Optional[tuple[list[int], list[int]]]:
+        xps = slice(x - 1, x + 2)
+        yps = slice(y - 1, y + 2)
+        pxls = torch.argwhere(~padded_map[xps, yps])
+        if len(pxls) == 0:
+            return None
+
+        offset_x, offset_y = random.choice(pxls.tolist())
+        new_x = offset_x + x - 1
+        new_y = offset_y + y - 1
+        return padded_indices(x=new_x, y=new_y, s=size)
 
     def _get_cell_ext_molecules(self, cells: list[Cell]) -> torch.Tensor:
         xs = []

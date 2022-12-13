@@ -148,9 +148,9 @@ def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
             writer.add_scalar("Other/SpStep", t1 - t0, step_i)
 
             if step_i % 2 == 0:
-                writer.add_image("Cellmap", world.cell_map, step_i, dataformats="HW")
+                writer.add_image("Maps/Cells", world.cell_map, step_i, dataformats="HW")
                 writer.add_image(
-                    "ATPmap", world.molecule_map[idx_ATP], step_i, dataformats="HW"
+                    "Maps/ATP", world.molecule_map[idx_ATP], step_i, dataformats="HW"
                 )
 
 
