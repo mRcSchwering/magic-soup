@@ -18,7 +18,7 @@ def timeit(msg: str):
 
 
 def generate_genomes(n_cells: int):
-    return [ms.random_genome() for _ in range(n_cells)]
+    return ms.random_genomes(n=n_cells)
 
 
 def derive_proteomes(genomes: list[str], genetics: ms.Genetics):

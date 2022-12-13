@@ -29,13 +29,18 @@ def variants(seq: str) -> list[str]:
     return [s.format(*d) for d in product(*nts)]
 
 
-def random_genome(len_range=(100, 500)) -> str:
+def random_genome(s=100) -> str:
     """
-    Generate a random nucleotide sequence with length
-    sampled within `len_range`.
+    Generate a random nucleotide sequence with length `s`
     """
-    k = random.randint(*len_range)
-    return "".join(random.choices(ALL_NTS, k=k))
+    return "".join(random.choices(ALL_NTS, k=s))
+
+
+def random_genomes(n: int, s=100) -> list[str]:
+    """
+    Generate `n` random nucleotide sequences each with length `s`
+    """
+    return [random_genome(s=s) for _ in range(n)]
 
 
 def reverse_complement(seq: str) -> str:
