@@ -11,6 +11,7 @@ from .kinetics import integrate_signals, calc_cell_params
 # TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
 # TODO: summary()
 # TODO: have Molecules carry their own idx?
+# TODO: placing cells is still weird. maybe easier to avoid padded_map?!
 
 _log = logging.getLogger(__name__)
 
@@ -173,7 +174,7 @@ class World:
 
         self._expand_max_cells(by_n=n_new_cells)
 
-        new_cells = [ſelf.cells[i] for i in new_idxs]
+        new_cells = [self.cells[i] for i in new_idxs]
         self._expand_max_proteins(max_n=max(len(d.proteome) for d in new_cells))
 
         # cell is supposed to have the same concentrations as the pxl it lives on
@@ -332,6 +333,21 @@ class World:
             cells=self.cells, molecules=X[:, self._ext_mol_idxs]
         )
 
+    def _add_new_cells_to_proteome_params(
+        self, proteomes: list[list[Protein]], cell_idxs: list[int]
+    ):
+        calc_cell_params(
+            proteomes=proteomes,
+            n_signals=2 * self.n_molecules,
+            cell_idxs=cell_idxs,
+            mol_2_idx=self._mol_2_idx,
+            Km=self.affinities,
+            Vmax=self.velocities,
+            E=self.energies,
+            N=self.stoichiometry,
+            A=self.regulators,
+        )
+
     def _randomly_move_cells(self, cells: list[Cell]):
         size = self.map_size + 2
         padded_map = pad_map(self.cell_map)
@@ -448,21 +464,6 @@ class World:
             new_idx += 1
 
         return new_idxs
-
-    def _add_new_cells_to_proteome_params(
-        self, proteomes: list[list[Protein]], cell_idxs: list[int]
-    ):
-        calc_cell_params(
-            proteomes=proteomes,
-            n_signals=2 * self.n_molecules,
-            cell_idxs=cell_idxs,
-            mol_2_idx=self._mol_2_idx,
-            Km=self.affinities,
-            Vmax=self.velocities,
-            E=self.energies,
-            N=self.stoichiometry,
-            A=self.regulators,
-        )
 
     def _find_open_spot_in_neighborhood(
         self, padded_map: torch.Tensor, x: int, y: int, size: int

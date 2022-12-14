@@ -2,6 +2,12 @@ import torch
 from .containers import Protein, Molecule
 
 
+# TODO: maybe faster to first check which proteins in each cell actually changed,
+#       then only check (cell_i, protein_i) instead of all proteins for cell_i
+
+# TODO: some tests for calc_cell_params
+
+
 def calc_cell_params(
     proteomes: list[list[Protein]],
     n_signals: int,
@@ -183,11 +189,43 @@ def integrate_signals(
     where `dG0` is the standard Gibb's free energy of this reaction, `R` is gas constant,
     `T` is absolute temperature.
 
-    There's currently a chance that proteins in a cell can deconstruct more
-    of a molecule than available. This would lead to a negative concentration
-    in the resulting signals `X`. To avoid this, there is a correction heuristic
-    which will downregulate these proteins by so much, that the molecule will
-    only be reduced to 0.
+    While the reaction quotient `Q` is well below _Ke_ the protein will proceed with the reaction
+    in forward direction with a velocity as defined by the above equiations in each time step.
+    However, as `Q` approaches `Ke` there is a chance that in one time step `Q` surpasses `Ke`.
+    In the next time step the reaction would turn around and `Q` might possibly jump again below
+    `Ke`. Thus, in a sensitive protein (low `Km`, high `Vmax`, no inhibition) `Q` might jump
+    above and below `Ke` with every time step, i.e. always overshootig the equilibrium state.
+    
+    One would have to solve for `v` given `Ke` and the stoichiometry in order to limit `v`
+    to reach the exact equilibrium state. The equiation has this form:
+
+    ```
+        ([P] + m * v)^m / ([S] + n * v)^n = Ke
+    ```
+
+    Where `[P]` and `[S]` are product and substrate concentrations and `m` and `n` are their
+    stoichiometric coefficients (extends as product with multiple substrate and product species).
+
+    I can't solve this in general. Thus, to limit the extend of such a flickering around the
+    equilibrium state `Km`s of the backwards reaction should the inverse of the forward reaction.
+    E.g. if the forward reaction was very sensitive and tends to overshoot the equilibrium state,
+    the backward reaction will be very unsensitive and only slowly approach the equilibrium state
+    from the other side.
+
+    Somehwat related: As reactions can overshoot their equilibriums state, they can also
+    overshoot the actual substrate concentrations. I.e. it can happen that a protein tries to
+    react with more substrate than actually available (e.g. very low `Km`, high `Vmax`). In
+    addition, each protein in the cell is not aware of the other proteins. So, 2 proteins could
+    both try to react with substrate `S`. And while each of them would have had enough `S`, both
+    of them together actually reduce `S` to a negative concentration.
+
+    To avoid this there is a correction term that limits the velocity of any protein to the actual
+    abundance of the substrates. If there are multiple proteins in a cell all using up the same
+    substrate, these limiting substrate abundances are shared equally among these proteins.
+    Furthermore, instead of allowing the proteins to reduce substrates to exactly `0.0`, they will
+    actually only be allowed to reduce any substrate to a small number `eps > 0.0`. This is to
+    avoid creating infinite reaction quotients and it is another mitigation for the problem of
+    overshooting the equilibirum state.
 
     Limitations:
     - all based on Michaelis-Menten kinetics, no cooperativity
@@ -195,6 +233,7 @@ def integrate_signals(
     - there are substrate-substrate interactions but no interactions among effectors
     - 1 protein can have multiple substrates and products but there is only 1 Km for each type of molecule
     - there can only be 1 effector per molecule (e.g. not 2 different allosteric controls for the same type of molecule)
+    - proteins can catalyze reactions in a way that they overshoot their equilibirum state (heuristics try to avoid that, see text above)
     """
     # TODO: refactor:
     #       - it seems like some of the masks are unnecessary (e.g. if I know that in
@@ -223,7 +262,7 @@ def integrate_signals(
     Q = nom / denom  # (c, p)
 
     # adjust direction
-    adj_N = torch.where(Q - Ke > 0.0, -1.0, 1.0)  # (c, p)
+    adj_N = torch.where(Q > Ke, -1.0, 1.0)  # (c, p)
     N_adj = torch.einsum("cps,cp->cps", N, adj_N)
 
     # inhibitors
@@ -272,15 +311,5 @@ def integrate_signals(
 
         # TODO: can I already predict this before calculated Xd the first time?
         #       maybe at the time when I know the intended protein velocities?
-
-    # TODO: correct for X1 Q -Ke changes
-    #       if the new concentration (x1) would have changed the direction
-    #       of the reaction (a -> b) -> (b -> a), I would have a constant
-    #       back and forth between the 2 reactions always overshooting the
-    #       actual equilibrium
-    #       It would be better in this case to arrive at Q = Ke, so that
-    #       the reaction stops with x1
-    #       could be a correction term (like X1 < 0) or better solution
-    #       that can be calculated ahead of time
 
     return Xd

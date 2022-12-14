@@ -8,6 +8,7 @@ from .constants import ALL_NTS, CODON_SIZE
 
 # TODO: summary() to see likelyhoods of different domains appearing
 
+# TODO: maybe cell-based functions and then use multiprocessing?
 
 # TODO: Transformation mechanism
 # TODO: conjugation mechanism
