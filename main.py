@@ -153,6 +153,8 @@ def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
                     "Maps/ATP", world.molecule_map[idx_ATP], step_i, dataformats="HW"
                 )
 
+    writer.close()
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()

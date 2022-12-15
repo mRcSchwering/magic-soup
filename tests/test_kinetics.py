@@ -1,5 +1,6 @@
 import pytest
 import torch
+from magicsoup.constants import EPS
 from magicsoup.kinetics import integrate_signals
 
 TOLERANCE = 1e-4
@@ -345,7 +346,7 @@ def test_mm_kinetic_with_allosteric_action():
     assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
 
 
-def test_reduce_velocity_to_avoid_negative_concentrations():
+def test_reduce_velocity_to_avoid_zero_concentrations():
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
     # cell 0: P0: a -> b, P1: b -> d
     # cell 1: P0: 2c -> d
@@ -398,9 +399,9 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     # expected outcome
     v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
     # but this would lead to Xd + X0 = -0.0615 (for a)
-    assert X0[0, 0] - v0_c0 < 0.0
-    # so velocity should be reduced to a (it will be 0 afterwards)
-    v0_c0 = X0[0, 0]
+    assert X0[0, 0] - v0_c0 < EPS
+    # so velocity should be reduced to a (it will be eps afterwards)
+    v0_c0 = X0[0, 0] - EPS
     # the other protein was unaffected
     v1_c1 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1])
     dx_c0_a = -v0_c0
@@ -410,9 +411,9 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
 
     v0_c1 = mm(x=X0[1, 2], v=Vmax[1, 0], k=Km[1, 0, 2], n=2)
     # but this would lead to Xd + X0 = -0.0722 (for c)
-    assert X0[1, 2] - 2 * v0_c1 < 0.0
+    assert X0[1, 2] - 2 * v0_c1 < EPS
     # so velocity should be reduced to c (it will be 0 afterwards)
-    v0_c1 = X0[1, 2] / 2
+    v0_c1 = X0[1, 2] / 2 - EPS
     dx_c1_a = 0.0
     dx_c1_b = 0.0
     dx_c1_c = -2 * v0_c1
@@ -430,6 +431,9 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
     assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
     assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+
+    X1 = X0 + Xd
+    assert not torch.any(X1 < EPS)
 
 
 def test_reactions_are_turned_around():
@@ -511,3 +515,37 @@ def test_reactions_are_turned_around():
     assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
     assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
     assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+
+
+def test_substrate_concentrations_never_get_too_low():
+    n_cells = 1000
+    n_prots = 100
+    n_mols = 20
+
+    # fmt: off
+
+    # concentrations (c, s)
+    X0 = torch.randn(n_cells, n_mols).abs()
+
+    # reactions (c, p, s)
+    N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
+
+    # affinities (c, p, s)
+    Km = torch.randn(n_cells, n_prots, n_mols).abs()
+
+    # max velocities (c, p)
+    Vmax = torch.randn(n_cells, n_prots).abs()
+
+    # allosterics (c, p, s)
+    A = torch.randint(low=-1, high=2, size=(n_cells, n_prots, n_mols))
+
+    # equilibrium constants (c, p)
+    Ke = torch.full((n_cells, n_prots), 999.9)
+
+    # fmt: on
+
+    # test
+    Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+
+    X1 = X0 + Xd
+    assert not torch.any(X1 < EPS)

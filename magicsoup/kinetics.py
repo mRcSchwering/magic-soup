@@ -1,4 +1,5 @@
 import torch
+from .constants import EPS
 from .containers import Protein, Molecule
 
 
@@ -247,7 +248,7 @@ def integrate_signals(
     #       - torch.expand faster?
 
     # substrates
-    sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p s)
+    sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p, s)
     sub_X = torch.einsum("cps,cs->cps", sub_M, X)  # (c, p, s)
     sub_N = torch.where(N < 0.0, -N, 0.0)  # (c, p, s)
 
@@ -291,8 +292,8 @@ def integrate_signals(
     Xd = torch.einsum("cps,cp->cs", N_adj, prot_V)
 
     X1 = X + Xd
-    if torch.any(X1 < 0):
-        neg_conc = torch.where(X1 < 0, 1.0, 0.0)  # (c, s)
+    if torch.any(X1 < EPS):
+        neg_conc = torch.where(X1 < EPS, 1.0, 0.0)  # (c, s)
         candidates = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p, s)
 
         # which proteins need to be down-regulated (c, p)
@@ -300,7 +301,7 @@ def integrate_signals(
         prot_M = BX_mask.max(dim=2).values
 
         # what are the correction factors (c,)
-        correct = torch.where(neg_conc > 0.0, -X / Xd, 1.0).min(dim=1).values
+        correct = torch.where(neg_conc > 0.0, -(X - EPS) / Xd, 1.0).min(dim=1).values
 
         # correction for protein velocities (c, p)
         prot_V_adj = torch.einsum("cp,c->cp", prot_M, correct)
