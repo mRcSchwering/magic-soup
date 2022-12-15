@@ -29,10 +29,9 @@ def calc_cell_params(
     amount of this molecule is being used up by the protein. Numbers > 0.0 indicate this amount of this
     molecule is being created by the protein. 0.0 means this molecule is not part of the reaction of
     this protein.
-    - `A` allosteric control of all proteins for each signal.
-    1.0 means this molecule acts as an activating effector on this protein. -1.0 means this molecule
-    acts as an inhibiting effector on this protein. 0.0 means this molecule does not allosterically
-    effect the protein.
+    - `A` allosteric control of all proteins for each signal. Numbers > 0.0 mean this molecule acts as
+    an activating effector on this protein, numbers < 0.0 mean this molecule acts as an inhibiting
+    effector on this protein. 0.0 means this molecule does not allosterically effect the protein.
     """
 
     # TODO: maybe faster to first check which proteins in each cell actually changed,
