@@ -91,7 +91,7 @@ class World:
         self.velocities = self._tensor(0, 0)
         self.energies = self._tensor(0, 0)
         self.stoichiometry = self._tensor(0, 0, 2 * self.n_molecules)
-        self.regulators = self._tensor(0, 0, 2 * self.n_molecules)
+        self.effectors = self._tensor(0, 0, 2 * self.n_molecules)
 
         _log.info("Major world tensors are running on %s as %s", device, dtype)
         _log.debug(
@@ -324,7 +324,7 @@ class World:
             Vmax=self.velocities,
             Ke=torch.exp(-self.energies / self.abs_temp / GAS_CONSTANT),
             N=self.stoichiometry,
-            A=self.regulators.clamp(-1.0, 1.0),
+            A=self.effectors,
         )
         X += Xd
 
@@ -345,7 +345,7 @@ class World:
             Vmax=self.velocities,
             E=self.energies,
             N=self.stoichiometry,
-            A=self.regulators,
+            A=self.effectors,
         )
 
     def _randomly_move_cells(self, cells: list[Cell]):
@@ -559,7 +559,7 @@ class World:
         self.velocities = self._expand(t=self.velocities, n=by_n, d=0)
         self.energies = self._expand(t=self.energies, n=by_n, d=0)
         self.stoichiometry = self._expand(t=self.stoichiometry, n=by_n, d=0)
-        self.regulators = self._expand(t=self.regulators, n=by_n, d=0)
+        self.effectors = self._expand(t=self.effectors, n=by_n, d=0)
 
     def _remove_cell_rows(self, idxs: list[int]):
         keep = torch.ones(self.cell_survival.shape[0], dtype=torch.bool)
@@ -570,7 +570,7 @@ class World:
         self.velocities = self.velocities[keep]
         self.energies = self.energies[keep]
         self.stoichiometry = self.stoichiometry[keep]
-        self.regulators = self.regulators[keep]
+        self.effectors = self.effectors[keep]
 
     def _expand_max_proteins(self, max_n: int):
         n_prots = int(self.affinities.shape[1])
@@ -580,7 +580,7 @@ class World:
             self.velocities = self._expand(t=self.velocities, n=by_n, d=1)
             self.energies = self._expand(t=self.energies, n=by_n, d=1)
             self.stoichiometry = self._expand(t=self.stoichiometry, n=by_n, d=1)
-            self.regulators = self._expand(t=self.regulators, n=by_n, d=1)
+            self.effectors = self._expand(t=self.effectors, n=by_n, d=1)
 
     def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
         pre = t.shape[slice(d)]

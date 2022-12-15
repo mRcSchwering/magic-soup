@@ -244,8 +244,8 @@ def test_mm_kinetic_with_allosteric_action():
 
     # concentrations (c, s)
     X0 = torch.tensor([
-        [1.1, 2.5, 0.9, 1.0],
-        [2.3, 1.6, 3.0, 0.9],
+        [2.1, 3.5, 1.9, 2.0],
+        [3.2, 1.6, 4.0, 1.9],
     ])
 
     # reactions (c, p, s)
@@ -280,7 +280,7 @@ def test_mm_kinetic_with_allosteric_action():
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]   ],
         [   [0.0, 0.0, -1.0, -1.0],
-            [0.0, 0.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
 
@@ -289,43 +289,38 @@ def test_mm_kinetic_with_allosteric_action():
 
     # fmt: on
 
-    def mmi(x, kx, v, i, ki):
-        return v * x / (kx + x) * (1 - i / (ki + i))
+    def mm(x, kx, v):
+        return v * x / (kx + x)
 
-    def mm2i(x, kx, v, i1, ki1, i2, ki2):
-        return v * x / (kx + x) * max(0, 1 - i1 / (ki1 + i1) - i2 / (ki2 + i2))
+    def fi(i, ki):
+        return 1 - i / (ki + i)
 
-    def mma(x, kx, v, a, ka):
-        return v * x / (kx + x) * a / (ka + a)
+    def fi2(i1, ki1, i2, ki2):
+        return max(0, 1 - i1 * i2 / ((ki1 + i1) * (ki2 + i2)))
 
-    def mm2a(x, kx, v, a1, ka1, a2, ka2):
-        return v * x / (kx + x) * min(1, a1 / (ka1 + a1) + a2 / (ka2 + a2))
+    def fa(a, ka):
+        return a / (ka + a)
+
+    def fa2(a1, ka1, a2, ka2):
+        return min(1, a1 * a2 / ((ka1 + a1) * (ka2 + a2)))
 
     # expected outcome
-    v0_c0 = mmi(x=X0[0, 0], v=Vmax[0, 0], kx=Km[0, 0, 0], i=X0[0, 2], ki=Km[0, 0, 2])
-    v1_c0 = mma(x=X0[0, 2], v=Vmax[0, 1], kx=Km[0, 1, 2], a=X0[0, 0], ka=Km[0, 1, 0])
+    v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], kx=Km[0, 0, 0]) * fi(
+        i=X0[0, 2], ki=Km[0, 0, 2]
+    )
+    v1_c0 = mm(x=X0[0, 2], v=Vmax[0, 1], kx=Km[0, 1, 2]) * fa(
+        a=X0[0, 0], ka=Km[0, 1, 0]
+    )
     dx_c0_b = v0_c0
     dx_c0_a = -v0_c0
     dx_c0_c = -v1_c0
     dx_c0_d = v1_c0
 
-    v0_c1 = mm2i(
-        x=X0[1, 0],
-        v=Vmax[1, 0],
-        kx=Km[1, 0, 0],
-        i1=X0[1, 2],
-        ki1=Km[1, 0, 2],
-        i2=X0[1, 3],
-        ki2=Km[1, 0, 3],
+    v0_c1 = mm(x=X0[1, 0], v=Vmax[1, 0], kx=Km[1, 0, 0]) * fi2(
+        i1=X0[1, 2], ki1=Km[1, 0, 2], i2=X0[1, 3], ki2=Km[1, 0, 3]
     )
-    v1_c1 = mm2a(
-        x=X0[1, 2],
-        v=Vmax[1, 1],
-        kx=Km[1, 1, 2],
-        a1=X0[1, 0],
-        ka1=Km[1, 1, 0],
-        a2=X0[1, 1],
-        ka2=Km[1, 1, 1],
+    v1_c1 = mm(x=X0[1, 2], v=Vmax[1, 1], kx=Km[1, 1, 2]) * fa2(
+        a1=X0[1, 0], ka1=Km[1, 1, 0], a2=X0[1, 1], ka2=Km[1, 1, 1],
     )
     dx_c1_a = -v0_c1
     dx_c1_b = v0_c1
@@ -522,8 +517,6 @@ def test_substrate_concentrations_never_get_too_low():
     n_prots = 100
     n_mols = 20
 
-    # fmt: off
-
     # concentrations (c, s)
     X0 = torch.randn(n_cells, n_mols).abs()
 
@@ -542,10 +535,8 @@ def test_substrate_concentrations_never_get_too_low():
     # equilibrium constants (c, p)
     Ke = torch.full((n_cells, n_prots), 999.9)
 
-    # fmt: on
-
     # test
     Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
 
     X1 = X0 + Xd
-    assert not torch.any(X1 < EPS)
+    assert not torch.any(X1 + TOLERANCE < EPS)

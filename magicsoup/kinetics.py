@@ -2,10 +2,6 @@ import torch
 from .constants import EPS
 from .containers import Protein, Molecule
 
-
-# TODO: maybe faster to first check which proteins in each cell actually changed,
-#       then only check (cell_i, protein_i) instead of all proteins for cell_i
-
 # TODO: some tests for calc_cell_params
 
 
@@ -38,6 +34,9 @@ def calc_cell_params(
     acts as an inhibiting effector on this protein. 0.0 means this molecule does not allosterically
     effect the protein.
     """
+
+    # TODO: maybe faster to first check which proteins in each cell actually changed,
+    #       then only check (cell_i, protein_i) instead of all proteins for cell_i
 
     for cell_i, cell in zip(cell_idxs, proteomes):
         for prot_i, protein in enumerate(cell):
@@ -107,9 +106,6 @@ def calc_cell_params(
                     Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
 
 
-# TODO: A can actually be > 1 (multiplying same effector n times...)
-
-
 def integrate_signals(
     X: torch.Tensor,
     Km: torch.Tensor,
@@ -124,18 +120,16 @@ def integrate_signals(
     There are `c` cells, `p` proteins, `s` signals/molecules.
 
     - `X` Signal/molecule concentrations (c, s). Must all be >= 0.0.
-    - `Km` Domain affinities of all proteins for each signal (c, p, s). Must all be >= 0.0.
+    - `Km` Domain affinities of all proteins for each molecule (c, p, s). Must all be >= 0.0.
     - `Vmax` Maximum velocities of all proteins (c, p). Must all be >= 0.0.
     - `Ke` Equilibrium constants of all proteins (c, p). If the current reaction quotient of a protein
     exceeds its equilibrium constant, it will work in the other direction. Must all be >= 0.0.
-    - `N` Reaction stoichiometry of all proteins for each signal (c, p, s). Numbers < 0.0 indicate this
+    - `N` Reaction stoichiometry of all proteins for each molecule (c, p, s). Numbers < 0.0 indicate this
     amount of this molecule is being used up by the protein. Numbers > 0.0 indicate this amount of this
     molecule is being created by the protein. 0.0 means this molecule is not part of the reaction of
     this protein.
-    - `A` allosteric control of all proteins for each signal (c, p, s). Must all be -1.0, 0.0, or 1.0.
-    1.0 means this molecule acts as an activating effector on this protein. -1.0 means this molecule
-    acts as an inhibiting effector on this protein. 0.0 means this molecule does not allosterically
-    effect the protein.
+    - `A` allosteric control of all proteins for each molecule (c, p, s). Numbers > 0.0 mean these molecules
+    act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
     
     Everything is based on Michaelis Menten kinetics where protein velocity
     depends on substrate concentration:
@@ -167,13 +161,15 @@ def integrate_signals(
         Va = a / (Kma + a)
     ```
 
-    Multiple effectors are summed up in `Vi` and `Va` and each is clamped to `[0;1]`
-    before being multiplied with `Vmax`.
+    Multiple inhibitors and activators are each integrated with each other as if they
+    were interacting with each other. I.e. they are multiplied when calculating their
+    activity. Each term is clamped to `[0; 1]` before it is multiplied with `Vmax`.
+    So a protein can never exceed `Vmax`.
 
     ```
         v = Vmax * x / (Km + x) * Va * (1 - Vi)
-        Va = Va1 + Va2 + ...
-        Vi = Vi1 + Vi2 + ...
+        Va = a1 * a2 / ((Kma1 + a1) * (Kma2 + a2))
+        Vi = i1 * i2 / ((Kmi1 + i1) * (Kmi2 + i2))
     ```
 
     Equilibrium constants `Ke` define whether the reaction of a protein (as defined in `N`)
@@ -267,15 +263,20 @@ def integrate_signals(
     N_adj = torch.einsum("cps,cp->cps", N, adj_N)
 
     # inhibitors
-    inh_M = torch.where(A < 0.0, 1.0, 0.0)  # (c, p, s)
-    inh_X = torch.einsum("cps,cs->cps", inh_M, X)  # (c, p, s)
-    inh_V = torch.nansum(inh_X / (Km + inh_X), dim=2).clamp(0, 1)  # (c, p)
+    inh_N = torch.where(A < 0.0, -A, 0.0)  # (c, p, s)
+    inh_M = torch.any(A < 0.0, dim=2)  # (c, p)
+    inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
+    nom = torch.pow(inh_X, inh_N).prod(2)  # (c, p)
+    denom = torch.pow(Km + inh_X, inh_N).prod(2)  # (c, p)
+    inh_V = torch.where(inh_M, nom / denom, 0.0).clamp(0.0, 1.0)  # (c, p)
 
     # activators
-    act_M = torch.where(A > 0.0, 1.0, 0.0)  # (c, p, s)
-    act_X = torch.einsum("cps,cs->cps", act_M, X)  # (c, p, s)
-    act_V = torch.nansum(act_X / (Km + act_X), dim=2).clamp(0, 1)  # (c, p)
-    act_V_adj = torch.where(act_M.sum(dim=2) > 0, act_V, 1.0)  # (c, p)
+    act_N = torch.where(A > 0.0, A, 0.0)  # (c, p, s)
+    act_M = torch.any(A > 0.0, dim=2)  # (c, p)
+    act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
+    nom = torch.pow(act_X, act_N).prod(2)  # (c, p)
+    denom = torch.pow(Km + act_X, act_N).prod(2)  # (c, p)
+    act_V = torch.where(act_M, nom / denom, 1.0).clamp(0.0, 1.0)  # (c, p)
 
     # substrates
     sub_M = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p s)
@@ -286,7 +287,7 @@ def integrate_signals(
     prot_Vmax = sub_M.max(dim=2).values * Vmax  # (c, p)
     nom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
     denom = torch.pow(Km + sub_X, sub_N).prod(2)  # (c, p)
-    prot_V = prot_Vmax * nom / denom * (1 - inh_V) * act_V_adj  # (c, p)
+    prot_V = prot_Vmax * nom / denom * (1 - inh_V) * act_V  # (c, p)
 
     # concentration deltas (c, s)
     Xd = torch.einsum("cps,cp->cs", N_adj, prot_V)
@@ -312,5 +313,8 @@ def integrate_signals(
 
         # TODO: can I already predict this before calculated Xd the first time?
         #       maybe at the time when I know the intended protein velocities?
+        #       and then use this as the maximum Vmax, so that protein velocities
+        #       are capped automatically capped to this velocity if substrate
+        #       concentrations are low
 
     return Xd
