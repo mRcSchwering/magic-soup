@@ -1,9 +1,125 @@
 import pytest
 import torch
+from magicsoup.containers import Protein, Domain, Molecule
 from magicsoup.constants import EPS
-from magicsoup.kinetics import integrate_signals
+from magicsoup.kinetics import integrate_signals, calc_cell_params
 
 TOLERANCE = 1e-4
+
+# fmt: off
+
+ma = Molecule("a", energy=15)
+mb = Molecule("b", energy=10)
+mc = Molecule("c", energy=10)
+md = Molecule("d", energy=5)
+
+mol_2_idx = {
+    (ma, False): 0, (mb, False): 1, (mc, False): 2, (md, False): 3,
+    (ma, True): 4, (mb, True): 5, (mc, True): 6, (md, True): 7,
+}
+
+r_a_b = [[ma], [mb]]
+r_b_c = [[mb], [mc]]
+r_bc_d = [[mb, mc], [md]]
+
+# fmt: on
+
+
+def avg(*x):
+    return sum(x) / len(x)
+
+
+def test_simple_cell_params():
+    # fmt: off
+    p0 = Protein(domains=[
+        Domain(*r_a_b, affinity=0.5, velocity=1.0, orientation=True, is_catalytic=True),
+        Domain(*r_bc_d, affinity=1.5, velocity=1.2, orientation=False, is_catalytic=True),
+    ])
+    p1 = Protein(domains=[
+        Domain(*r_b_c, affinity=0.9, velocity=2.0, orientation=True, is_catalytic=True),
+        Domain(*r_bc_d, affinity=1.2, velocity=1.3, orientation=False, is_catalytic=True),
+    ])
+    c0 = [p0, p1]
+
+    p0 = Protein(domains=[
+        Domain(*r_a_b, affinity=0.3, velocity=1.1, orientation=False, is_catalytic=True),
+        Domain(*r_bc_d, affinity=1.4, velocity=2.1, orientation=False, is_catalytic=True),
+    ])
+    p1 = Protein(domains=[
+        Domain(*r_b_c, affinity=0.3, velocity=1.9, orientation=True, is_catalytic=True),
+        Domain(*r_bc_d, affinity=1.7, velocity=2.3, orientation=True, is_catalytic=True),
+    ])
+    c1 = [p0, p1]
+
+    # fmt: on
+
+    Km = torch.zeros(2, 3, 8)
+    Vmax = torch.zeros(2, 3)
+    E = torch.zeros(2, 3)
+    N = torch.zeros(2, 3, 8)
+    A = torch.zeros(2, 3, 8)
+
+    calc_cell_params(
+        proteomes=[c0, c1],
+        n_signals=4,
+        mol_2_idx=mol_2_idx,
+        cell_idxs=[0, 1],
+        Km=Km,
+        Vmax=Vmax,
+        E=E,
+        N=N,
+        A=A,
+    )
+
+    assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Km[0, 0, 1] == pytest.approx(avg(1 / 0.5, 1 / 1.5), abs=TOLERANCE)
+    assert Km[0, 0, 2] == pytest.approx(1 / 1.5, abs=TOLERANCE)
+    assert Km[0, 0, 3] == pytest.approx(1.5, abs=TOLERANCE)
+    assert Km[0, 0, 4] == 0.0
+    assert Km[0, 0, 5] == 0.0
+    assert Km[0, 0, 6] == 0.0
+    assert Km[0, 0, 7] == 0.0
+    assert Km[0, 1, 0] == 0.0
+    assert Km[0, 1, 1] == pytest.approx(avg(0.9, 1 / 1.2), abs=TOLERANCE)
+    assert Km[0, 1, 2] == pytest.approx(avg(1 / 0.9, 1 / 1.2), abs=TOLERANCE)
+    assert Km[0, 1, 3] == pytest.approx(1.2, abs=TOLERANCE)
+    assert Km[0, 1, 4] == 0.0
+    assert Km[0, 1, 5] == 0.0
+    assert Km[0, 1, 6] == 0.0
+    assert Km[0, 1, 7] == 0.0
+
+    assert Km[1, 0, 0] == pytest.approx(1 / 0.3, abs=TOLERANCE)
+    assert Km[1, 0, 1] == pytest.approx(avg(0.3, 1 / 1.4), abs=TOLERANCE)
+    assert Km[1, 0, 2] == pytest.approx(1 / 1.4, abs=TOLERANCE)
+    assert Km[1, 0, 3] == pytest.approx(1.4, abs=TOLERANCE)
+    assert Km[1, 0, 4] == 0.0
+    assert Km[1, 0, 5] == 0.0
+    assert Km[1, 0, 6] == 0.0
+    assert Km[1, 0, 7] == 0.0
+    assert Km[1, 1, 0] == 0.0
+    assert Km[1, 1, 1] == pytest.approx(avg(0.3, 1.7), abs=TOLERANCE)
+    assert Km[1, 1, 2] == pytest.approx(avg(1 / 0.3, 1.7), abs=TOLERANCE)
+    assert Km[1, 1, 3] == pytest.approx(1 / 1.7, abs=TOLERANCE)
+    assert Km[1, 1, 4] == 0.0
+    assert Km[1, 1, 5] == 0.0
+    assert Km[1, 1, 6] == 0.0
+    assert Km[1, 1, 7] == 0.0
+
+    assert Vmax[0, 0] == pytest.approx(avg(1.0, 1.2), abs=TOLERANCE)
+    assert Vmax[0, 1] == pytest.approx(avg(2.0, 1.3), abs=TOLERANCE)
+    assert Vmax[0, 2] == 0.0
+
+    assert Vmax[1, 0] == pytest.approx(avg(1.1, 2.1), abs=TOLERANCE)
+    assert Vmax[1, 1] == pytest.approx(avg(1.9, 2.3), abs=TOLERANCE)
+    assert Vmax[1, 2] == 0.0
+
+    assert E[0, 0] == 10 - 15 + 10 + 10 - 5
+    assert E[0, 1] == pytest.approx(avg(2.0, 1.3), abs=TOLERANCE)
+    assert E[0, 2] == 0.0
+
+    assert E[1, 0] == pytest.approx(avg(1.1, 2.1), abs=TOLERANCE)
+    assert E[1, 1] == pytest.approx(avg(1.9, 2.3), abs=TOLERANCE)
+    assert E[1, 2] == 0.0
 
 
 def test_simple_mm_kinetic():
