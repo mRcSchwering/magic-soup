@@ -3,7 +3,7 @@ from itertools import product
 import random
 import torch
 from .util import generic_map_fact, weight_map_fact, bool_map_fact
-from .containers import Domain, DomainFact, Protein, Molecule
+from .containers import _Domain, _DomainFact, Protein, Molecule
 from .constants import ALL_NTS, CODON_SIZE
 
 # TODO: summary() to see likelyhoods of different domains appearing
@@ -158,7 +158,7 @@ class Genetics:
 
     def __init__(
         self,
-        domain_facts: dict[DomainFact, list[str]],
+        domain_facts: dict[_DomainFact, list[str]],
         molecules: list[Molecule],
         reactions: list[tuple[list[Molecule], list[Molecule]]],
         vmax_range: tuple[float, float] = (1, 1000),
@@ -245,14 +245,14 @@ class Genetics:
             k = i % CODON_SIZE
         return cdss
 
-    def translate_seq(self, seq: str) -> list[Domain]:
+    def translate_seq(self, seq: str) -> list[_Domain]:
         """
         Translate nucleotide sequence into a protein with domains, corresponding
         weights, transmembrane regions, and signals.
         """
         i = 0
         j = self.n_dom_type_def_nts
-        doms: list[Domain] = []
+        doms: list[_Domain] = []
         while j + self.n_dom_detail_def_nts <= len(seq):
             domfact = self.domain_map.get(seq[i:j])
             if domfact is not None:

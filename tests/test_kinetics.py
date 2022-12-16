@@ -1,6 +1,6 @@
 import pytest
 import torch
-from magicsoup.containers import Protein, Domain, Molecule
+from magicsoup.containers import Protein, Molecule, CatalyticDomain, AllostericDomain
 from magicsoup.constants import EPS
 from magicsoup.kinetics import integrate_signals, calc_cell_params
 
@@ -18,10 +18,10 @@ mol_2_idx = {
     (ma, True): 4, (mb, True): 5, (mc, True): 6, (md, True): 7,
 }
 
-r_a_b = [[ma], [mb]]
-r_b_c = [[mb], [mc]]
-r_bc_d = [[mb, mc], [md]]
-r_d_bb = [[md], [mb, mb]]
+r_a_b = ([ma], [mb])
+r_b_c = ([mb], [mc])
+r_bc_d = ([mb, mc], [md])
+r_d_bb = ([md], [mb, mb])
 
 # fmt: on
 
@@ -30,28 +30,187 @@ def avg(*x):
     return sum(x) / len(x)
 
 
-def test_cell_params_with_catalytic_domains():
+def test_cell_params_with_allosteric_domains():
     # fmt: off
+
     p0 = Protein(domains=[
-        Domain(*r_a_b, affinity=0.5, velocity=1.0, orientation=True, is_catalytic=True),
-        Domain(*r_bc_d, affinity=1.5, velocity=1.2, orientation=False, is_catalytic=True),
+        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
+        AllostericDomain(mc, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
+        AllostericDomain(md, affinity=2.0, is_transmembrane=False, is_inhibiting=True),
     ])
     p1 = Protein(domains=[
-        Domain(*r_b_c, affinity=0.9, velocity=2.0, orientation=True, is_catalytic=True),
-        Domain(*r_bc_d, affinity=1.2, velocity=1.3, orientation=False, is_catalytic=True),
+        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
+        AllostericDomain(ma, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
+        AllostericDomain(ma, affinity=1.5, is_transmembrane=True, is_inhibiting=False),
+    ])
+    c0 = [p0, p1]
+
+    p0 = Protein(domains=[
+        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
+        AllostericDomain(mb, affinity=1.0, is_transmembrane=False, is_inhibiting=True),
+        AllostericDomain(mb, affinity=1.5, is_transmembrane=True, is_inhibiting=True),
+    ])
+    p1 = Protein(domains=[
+        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
+        AllostericDomain(md, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
+        AllostericDomain(md, affinity=1.5, is_transmembrane=False, is_inhibiting=False),
+    ])
+    c1 = [p0, p1]
+
+    # fmt: on
+
+    Km = torch.zeros(2, 3, 8)
+    Vmax = torch.zeros(2, 3)
+    E = torch.zeros(2, 3)
+    N = torch.zeros(2, 3, 8)
+    A = torch.zeros(2, 3, 8)
+
+    calc_cell_params(
+        proteomes=[c0, c1],
+        n_signals=8,
+        mol_2_idx=mol_2_idx,
+        cell_idxs=[0, 1],
+        Km=Km,
+        Vmax=Vmax,
+        E=E,
+        N=N,
+        A=A,
+    )
+
+    assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Km[0, 0, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
+    assert Km[0, 0, 2] == pytest.approx(1.0, abs=TOLERANCE)
+    assert Km[0, 0, 3] == pytest.approx(2.0, abs=TOLERANCE)
+    for i in [4, 5, 6, 7]:
+        assert Km[0, 0, i] == 0.0
+    assert Km[0, 1, 0] == pytest.approx(avg(0.5, 1.0), abs=TOLERANCE)
+    assert Km[0, 1, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
+    assert Km[0, 1, 2] == pytest.approx(0.0, abs=TOLERANCE)
+    assert Km[0, 1, 3] == pytest.approx(0.0, abs=TOLERANCE)
+    assert Km[0, 1, 4] == pytest.approx(1.5, abs=TOLERANCE)
+    for i in [5, 6, 7]:
+        assert Km[0, 1, i] == 0.0
+    for i in range(8):
+        assert Km[0, 2, i] == 0.0
+
+    assert Km[1, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Km[1, 0, 1] == pytest.approx(avg(1 / 0.5, 1.0), abs=TOLERANCE)
+    assert Km[1, 0, 2] == pytest.approx(0.0, abs=TOLERANCE)
+    assert Km[1, 0, 3] == pytest.approx(0.0, abs=TOLERANCE)
+    assert Km[1, 0, 5] == pytest.approx(1.5, abs=TOLERANCE)
+    for i in [4, 6, 7]:
+        assert Km[1, 0, i] == 0.0
+    assert Km[1, 1, 0] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Km[1, 1, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
+    assert Km[1, 1, 2] == pytest.approx(0.0, abs=TOLERANCE)
+    assert Km[1, 1, 3] == pytest.approx(avg(1.0, 1.5), abs=TOLERANCE)
+    for i in [4, 5, 6, 7]:
+        assert Km[1, 1, i] == 0.0
+    for i in range(8):
+        assert Km[1, 2, i] == 0.0
+
+    assert Vmax[0, 0] == pytest.approx(2.0, abs=TOLERANCE)
+    assert Vmax[0, 1] == pytest.approx(2.0, abs=TOLERANCE)
+    assert Vmax[0, 2] == 0.0
+
+    assert Vmax[1, 0] == pytest.approx(2.0, abs=TOLERANCE)
+    assert Vmax[1, 1] == pytest.approx(2.0, abs=TOLERANCE)
+    assert Vmax[1, 2] == 0.0
+
+    assert E[0, 0] == 10 - 15
+    assert E[0, 1] == 10 - 15
+    assert E[0, 2] == 0
+
+    assert E[1, 0] == 10 - 15
+    assert E[1, 1] == 10 - 15
+    assert E[1, 2] == 0
+
+    assert N[0, 0, 0] == -1
+    assert N[0, 0, 1] == 1
+    assert N[0, 0, 2] == 0
+    assert N[0, 0, 3] == 0
+    for i in [4, 5, 6, 7]:
+        assert N[0, 0, i] == 0
+    assert N[0, 1, 0] == -1
+    assert N[0, 1, 1] == 1  # b is added and removed
+    assert N[0, 1, 2] == 0
+    assert N[0, 1, 3] == 0
+    for i in [4, 5, 6, 7]:
+        assert N[0, 1, i] == 0
+    for i in range(8):
+        assert N[0, 2, i] == 0
+
+    assert N[1, 0, 0] == -1
+    assert N[1, 0, 1] == 1  # b is added and removed
+    assert N[1, 0, 2] == 0
+    assert N[1, 0, 3] == 0
+    for i in [4, 5, 6, 7]:
+        assert N[1, 0, i] == 0
+    assert N[1, 1, 0] == -1
+    assert N[1, 1, 1] == 1
+    assert N[1, 1, 2] == 0  # c is added and removed
+    assert N[1, 1, 3] == 0
+    for i in [4, 5, 6, 7]:
+        assert N[1, 1, i] == 0
+    for i in range(8):
+        assert N[1, 2, i] == 0
+
+    assert A[0, 0, 0] == 0
+    assert A[0, 0, 1] == 0
+    assert A[0, 0, 2] == 1
+    assert A[0, 0, 3] == -1
+    for i in [4, 5, 6, 7]:
+        assert A[0, 0, i] == 0
+    assert A[0, 1, 0] == 1
+    assert A[0, 1, 1] == 0
+    assert A[0, 1, 2] == 0
+    assert A[0, 1, 3] == 0
+    assert A[0, 1, 4] == 1
+    for i in [5, 6, 7]:
+        assert A[0, 1, i] == 0
+    for i in range(8):
+        assert A[0, 2, i] == 0
+
+    assert A[1, 0, 0] == 0
+    assert A[1, 0, 1] == -1
+    assert A[1, 0, 2] == 0
+    assert A[1, 0, 3] == 0
+    assert A[1, 0, 5] == -1
+    for i in [4, 6, 7]:
+        assert A[0, 0, i] == 0
+    assert A[1, 1, 0] == 0
+    assert A[1, 1, 1] == 0
+    assert A[1, 1, 2] == 0
+    assert A[1, 1, 3] == 2
+    for i in [4, 5, 6, 7]:
+        assert A[1, 1, i] == 0
+    for i in range(8):
+        assert A[1, 2, i] == 0
+
+
+def test_cell_params_with_catalytic_domains():
+    # fmt: off
+
+    p0 = Protein(domains=[
+        CatalyticDomain(r_a_b, affinity=0.5, velocity=1.0, is_bkwd=False),
+        CatalyticDomain(r_bc_d, affinity=1.5, velocity=1.2, is_bkwd=True),
+    ])
+    p1 = Protein(domains=[
+        CatalyticDomain(r_b_c, affinity=0.9, velocity=2.0, is_bkwd=False),
+        CatalyticDomain(r_bc_d, affinity=1.2, velocity=1.3, is_bkwd=True),
     ])
     p2 = Protein(domains=[
-        Domain(*r_d_bb, affinity=3.1, velocity=5.1, orientation=True, is_catalytic=True),
+        CatalyticDomain(r_d_bb, affinity=3.1, velocity=5.1, is_bkwd=False),
     ])
     c0 = [p0, p1, p2]
 
     p0 = Protein(domains=[
-        Domain(*r_a_b, affinity=0.3, velocity=1.1, orientation=False, is_catalytic=True),
-        Domain(*r_bc_d, affinity=1.4, velocity=2.1, orientation=False, is_catalytic=True),
+        CatalyticDomain(r_a_b, affinity=0.3, velocity=1.1, is_bkwd=True),
+        CatalyticDomain(r_bc_d, affinity=1.4, velocity=2.1, is_bkwd=True),
     ])
     p1 = Protein(domains=[
-        Domain(*r_b_c, affinity=0.3, velocity=1.9, orientation=True, is_catalytic=True),
-        Domain(*r_bc_d, affinity=1.7, velocity=2.3, orientation=True, is_catalytic=True),
+        CatalyticDomain(r_b_c, affinity=0.3, velocity=1.9, is_bkwd=False),
+        CatalyticDomain(r_bc_d, affinity=1.7, velocity=2.3, is_bkwd=False),
     ])
     c1 = [p0, p1]
 
@@ -158,6 +317,8 @@ def test_cell_params_with_catalytic_domains():
         assert N[1, 1, i] == 0
     for i in range(8):
         assert N[1, 2, i] == 0
+
+    assert not A.any()
 
 
 def test_simple_mm_kinetic():

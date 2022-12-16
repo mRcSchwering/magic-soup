@@ -89,10 +89,10 @@ def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
     domains = {
         ms.CatalyticFact(): ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),
         ms.TransporterFact(): ms.variants("ACNAGN") + ms.variants("ACNTAN") + ms.variants("AANTCN"),
-        ms.AllostericFact(is_transmembrane=False, is_inhibitor=False): ms.variants("GCNTGN"),
-        ms.AllostericFact(is_transmembrane=False, is_inhibitor=True): ms.variants("GCNTAN"),
-        ms.AllostericFact(is_transmembrane=True, is_inhibitor=False): ms.variants("AGNTCN"),
-        ms.AllostericFact(is_transmembrane=True, is_inhibitor=True): ms.variants("CCNTGN"),
+        ms.AllostericFact(is_transmembrane=False, is_inhibiting=False): ms.variants("GCNTGN"),
+        ms.AllostericFact(is_transmembrane=False, is_inhibiting=True): ms.variants("GCNTAN"),
+        ms.AllostericFact(is_transmembrane=True, is_inhibiting=False): ms.variants("AGNTCN"),
+        ms.AllostericFact(is_transmembrane=True, is_inhibiting=True): ms.variants("CCNTGN"),
     }
     # fmt: on
 

@@ -45,7 +45,7 @@ class Molecule:
         return self.name
 
 
-class Domain:
+class _Domain:
     """
     Container that defines a domain. A protein can have multiple domains
     which together define the function of that protein.
@@ -64,7 +64,7 @@ class Domain:
       this domain (e.g. the reaction catalyzed). Molecule concentrations and this
       energy decide whether the reaction can take place and/or in which direction
       it will go.
-    - `orientation` Bool which decides in which direction the domain will be coulpled.
+    - `is_bkwd` Bool which decides in which direction the domain will be coulpled.
       This is relevant for proteins with multiple domains. Depending on molecule
       concentrations and energies the overall reaction catalyzed and/or performed
       by the protein can occur from left to right, or right to left. Whether a domain's
@@ -84,7 +84,7 @@ class Domain:
         products: list[Molecule],
         affinity: float,
         velocity: float,
-        orientation: bool,
+        is_bkwd: bool,
         label="D",
         is_catalytic=False,
         is_transporter=False,
@@ -96,7 +96,7 @@ class Domain:
         self.products = products
         self.affinity = affinity
         self.velocity = velocity
-        self.orientation = orientation
+        self.is_bkwd = is_bkwd
         self.label = label
 
         self.is_catalytic = is_catalytic
@@ -108,14 +108,14 @@ class Domain:
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,orientation=%r,label=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r,is_transmembrane=%r)"
+            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,is_bkwd=%r,label=%r,is_catalytic=%r,is_transporter=%r,is_allosteric=%r,is_inhibiting=%r,is_transmembrane=%r)"
             % (
                 clsname,
                 self.substrates,
                 self.products,
                 self.affinity,
                 self.velocity,
-                self.orientation,
+                self.is_bkwd,
                 self.label,
                 self.is_catalytic,
                 self.is_transporter,
@@ -126,6 +126,8 @@ class Domain:
         )
 
     def __str__(self) -> str:
+        # TODO: Transporter molecule A in->out not very useful
+        #       maybe put __str__ into each class
         ins = ",".join(str(d) for d in self.substrates)
         outs = ",".join(str(d) for d in self.products)
         if self.is_transporter:
@@ -137,7 +139,7 @@ class Domain:
         return f"Domain({ins}->{outs})"
 
 
-class DomainFact(abc.ABC):
+class _DomainFact(abc.ABC):
     """Base class to create domain factory. Must implement __call__."""
 
     n_regions: int
@@ -151,12 +153,31 @@ class DomainFact(abc.ABC):
         self.orientation_map: dict[str, bool] = {}
 
     @abc.abstractmethod
-    def __call__(self, seq: str) -> Domain:
+    def __call__(self, seq: str) -> _Domain:
         """Instantiate domain object from encoding nucleotide sequence"""
         raise NotImplementedError("Implement __call__")
 
 
-class CatalyticFact(DomainFact):
+class CatalyticDomain(_Domain):
+    def __init__(
+        self,
+        reaction: tuple[list[Molecule], list[Molecule]],
+        affinity: float,
+        velocity: float,
+        is_bkwd: bool,
+    ):
+        subs, prods = reaction
+        super().__init__(
+            substrates=[d.copy() for d in subs],
+            products=[d.copy() for d in prods],
+            affinity=affinity,
+            velocity=velocity,
+            is_bkwd=is_bkwd,
+            is_catalytic=True,
+        )
+
+
+class CatalyticFact(_DomainFact):
     """
     Factory for generating catalytic domains from nucleotide sequences.
 
@@ -172,18 +193,13 @@ class CatalyticFact(DomainFact):
 
     n_regions = 4
 
-    def __call__(self, seq: str) -> Domain:
-        subs, prods = self.reaction_map[seq[0 : self.region_size]]
+    def __call__(self, seq: str) -> _Domain:
+        react = self.reaction_map[seq[0 : self.region_size]]
         aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
         velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
-        orient = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
-        return Domain(
-            substrates=[d.copy() for d in subs],
-            products=[d.copy() for d in prods],
-            affinity=aff,
-            velocity=velo,
-            orientation=orient,
-            is_catalytic=True,
+        is_bkwd = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
+        return CatalyticDomain(
+            reaction=react, affinity=aff, velocity=velo, is_bkwd=is_bkwd
         )
 
     def __repr__(self) -> str:
@@ -191,7 +207,7 @@ class CatalyticFact(DomainFact):
         return "%s(n_regions=%r)" % (clsname, self.n_regions)
 
 
-class TransporterFact(DomainFact):
+class TransporterFact(_DomainFact):
     """
     Factory for generating transporter domains from nucleotide sequences. Transporters
     essentially convert a type of molecule from their intracellular version to their
@@ -208,17 +224,17 @@ class TransporterFact(DomainFact):
 
     n_regions = 4
 
-    def __call__(self, seq: str) -> Domain:
+    def __call__(self, seq: str) -> _Domain:
         mol = self.molecule_map[seq[0 : self.region_size]].copy()
         aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
         velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
-        orient = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
-        return Domain(
+        is_bkwd = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
+        return _Domain(
             substrates=[mol],
             products=[],
             affinity=aff,
             velocity=velo,
-            orientation=orient,
+            is_bkwd=is_bkwd,
             is_transporter=True,
         )
 
@@ -227,7 +243,27 @@ class TransporterFact(DomainFact):
         return "%s(n_regions=%r)" % (clsname, self.n_regions)
 
 
-class AllostericFact(DomainFact):
+class AllostericDomain(_Domain):
+    def __init__(
+        self,
+        effector: Molecule,
+        affinity: float,
+        is_inhibiting: bool,
+        is_transmembrane: bool,
+    ):
+        super().__init__(
+            substrates=[effector],
+            products=[],
+            affinity=affinity,
+            velocity=0.0,
+            is_bkwd=False,
+            is_allosteric=True,
+            is_inhibiting=is_inhibiting,
+            is_transmembrane=is_transmembrane,
+        )
+
+
+class AllostericFact(_DomainFact):
     """
     Factory for generating allosteric domains from nucleotide sequences. These domains
     can activate or inhibit the protein non-competitively.
@@ -244,41 +280,33 @@ class AllostericFact(DomainFact):
     the effector molecule.
     """
 
-    n_regions = 3
+    n_regions = 2
 
     def __init__(
-        self, is_transmembrane=False, is_inhibitor=False,
+        self, is_transmembrane=False, is_inhibiting=False,
     ):
         super().__init__()
         self.is_transmembrane = is_transmembrane
-        self.is_inhibitor = is_inhibitor
+        self.is_inhibiting = is_inhibiting
 
-    def __call__(self, seq: str) -> Domain:
+    def __call__(self, seq: str) -> _Domain:
         mol = self.molecule_map[seq[0 : self.region_size]].copy()
         aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
-        orient = self.orientation_map[seq[self.region_size * 2 : self.region_size * 3]]
-        return Domain(
-            substrates=[mol],
-            products=[],
+        return AllostericDomain(
+            effector=mol,
             affinity=aff,
-            velocity=0.0,
-            orientation=orient,
-            is_allosteric=True,
-            is_inhibiting=self.is_inhibitor,
+            is_inhibiting=self.is_inhibiting,
             is_transmembrane=self.is_transmembrane,
         )
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(n_regions?%r,is_transmembrane=%r,is_inhibitor=%r)" % (
+        return "%s(n_regions?%r,is_transmembrane=%r,is_inhibiting=%r)" % (
             clsname,
             self.n_regions,
             self.is_transmembrane,
-            self.is_inhibitor,
+            self.is_inhibiting,
         )
-
-
-DOMAIN_FACTORIES = (CatalyticFact, TransporterFact, AllostericFact)
 
 
 class Protein:
@@ -289,7 +317,7 @@ class Protein:
     - `label` a label, only to recognize it, has no effect
     """
 
-    def __init__(self, domains: list[Domain], label="P"):
+    def __init__(self, domains: list[_Domain], label="P"):
         self.domains = domains
         self.label = label
         self.n_domains = len(domains)

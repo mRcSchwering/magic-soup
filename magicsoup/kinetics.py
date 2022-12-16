@@ -57,12 +57,12 @@ def calc_cell_params(
                     vmax.append(dom.velocity)
                     mol = dom.substrates[0]
 
-                    if dom.orientation:
-                        sub_i = mol_2_idx[mol, False]
-                        prod_i = mol_2_idx[mol, True]
-                    else:
+                    if dom.is_bkwd:
                         sub_i = mol_2_idx[mol, True]
                         prod_i = mol_2_idx[mol, False]
+                    else:
+                        sub_i = mol_2_idx[mol, False]
+                        prod_i = mol_2_idx[mol, True]
 
                     km[sub_i].append(dom.affinity)
                     n[sub_i] -= 1
@@ -73,12 +73,12 @@ def calc_cell_params(
                 if dom.is_catalytic:
                     vmax.append(dom.velocity)
 
-                    if dom.orientation:
-                        subs = dom.substrates
-                        prods = dom.products
-                    else:
+                    if dom.is_bkwd:
                         subs = dom.products
                         prods = dom.substrates
+                    else:
+                        subs = dom.substrates
+                        prods = dom.products
 
                     for mol in subs:
                         energy -= mol.energy
