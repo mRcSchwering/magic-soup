@@ -207,6 +207,20 @@ class CatalyticFact(_DomainFact):
         return "%s(n_regions=%r)" % (clsname, self.n_regions)
 
 
+class TransporterDomain(_Domain):
+    def __init__(
+        self, molecule: Molecule, affinity: float, velocity: float, is_bkwd: bool
+    ):
+        super().__init__(
+            substrates=[molecule],
+            products=[],
+            affinity=affinity,
+            velocity=velocity,
+            is_bkwd=is_bkwd,
+            is_transporter=True,
+        )
+
+
 class TransporterFact(_DomainFact):
     """
     Factory for generating transporter domains from nucleotide sequences. Transporters
@@ -229,13 +243,8 @@ class TransporterFact(_DomainFact):
         aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
         velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
         is_bkwd = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
-        return _Domain(
-            substrates=[mol],
-            products=[],
-            affinity=aff,
-            velocity=velo,
-            is_bkwd=is_bkwd,
-            is_transporter=True,
+        return TransporterDomain(
+            molecule=mol, affinity=aff, velocity=velo, is_bkwd=is_bkwd
         )
 
     def __repr__(self) -> str:

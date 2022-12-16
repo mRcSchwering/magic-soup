@@ -2,8 +2,6 @@ import torch
 from .constants import EPS
 from .containers import Protein, Molecule
 
-# TODO: some tests for calc_cell_params
-
 
 def calc_cell_params(
     proteomes: list[list[Protein]],
@@ -213,7 +211,9 @@ def integrate_signals(
     equilibrium state `Km`s of the backwards reaction should the inverse of the forward reaction.
     E.g. if the forward reaction was very sensitive and tends to overshoot the equilibrium state,
     the backward reaction will be very unsensitive and only slowly approach the equilibrium state
-    from the other side.
+    from the other side. As transporters also work with this mechanism, they tend to have a
+    direction. So, if a transporter has a high affinity in one direction, it will have a low
+    affinity in the other.
 
     Somehwat related: As reactions can overshoot their equilibriums state, they can also
     overshoot the actual substrate concentrations. I.e. it can happen that a protein tries to

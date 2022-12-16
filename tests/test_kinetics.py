@@ -1,6 +1,12 @@
 import pytest
 import torch
-from magicsoup.containers import Protein, Molecule, CatalyticDomain, AllostericDomain
+from magicsoup.containers import (
+    Protein,
+    Molecule,
+    CatalyticDomain,
+    AllostericDomain,
+    TransporterDomain,
+)
 from magicsoup.constants import EPS
 from magicsoup.kinetics import integrate_signals, calc_cell_params
 
@@ -28,6 +34,53 @@ r_d_bb = ([md], [mb, mb])
 
 def avg(*x):
     return sum(x) / len(x)
+
+
+def test_cell_params_with_transporter_domains():
+    # fmt: off
+
+    p0 = Protein(domains=[
+        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False)
+    ])
+    p1 = Protein(domains=[
+        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False),
+        TransporterDomain(molecule=ma, affinity=0.2, velocity=1.1, is_bkwd=True)
+    ])
+    c0 = [p0, p1]
+
+    p0 = Protein(domains=[
+        TransporterDomain(molecule=ma, affinity=0.4, velocity=1.5, is_bkwd=False),
+        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.4, is_bkwd=False),
+        TransporterDomain(molecule=mb, affinity=0.6, velocity=1.3, is_bkwd=False),
+        TransporterDomain(molecule=mc, affinity=0.7, velocity=1.2, is_bkwd=False)
+    ])
+    p1 = Protein(domains=[
+        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
+        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False)
+    ])
+    c1 = [p0, p1]
+
+    # fmt: on
+
+    Km = torch.zeros(2, 3, 8)
+    Vmax = torch.zeros(2, 3)
+    E = torch.zeros(2, 3)
+    N = torch.zeros(2, 3, 8)
+    A = torch.zeros(2, 3, 8)
+
+    calc_cell_params(
+        proteomes=[c0, c1],
+        n_signals=8,
+        mol_2_idx=mol_2_idx,
+        cell_idxs=[0, 1],
+        Km=Km,
+        Vmax=Vmax,
+        E=E,
+        N=N,
+        A=A,
+    )
+
+    # TODO: finish these tests
 
 
 def test_cell_params_with_allosteric_domains():
@@ -224,7 +277,7 @@ def test_cell_params_with_catalytic_domains():
 
     calc_cell_params(
         proteomes=[c0, c1],
-        n_signals=4,
+        n_signals=8,
         mol_2_idx=mol_2_idx,
         cell_idxs=[0, 1],
         Km=Km,
