@@ -105,6 +105,13 @@ def calc_cell_params(
                     Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
 
 
+# TODO: a molecule can be created by one domain and at the same time deconstructed
+#       by another. Currently, this results in N = 0 for that molecule. With the current
+#       implementation, the molecule will not be part of X_sub and X_prod, i.e. not part
+#       of the MM equiation. Does this make sense???
+#       Shouldn't that molecule then act more like an allosteric activator?
+
+
 def integrate_signals(
     X: torch.Tensor,
     Km: torch.Tensor,
