@@ -80,7 +80,69 @@ def test_cell_params_with_transporter_domains():
         A=A,
     )
 
-    # TODO: finish these tests
+    assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Km[0, 0, 4] == pytest.approx(1 / 0.5, abs=TOLERANCE)
+    for i in [1, 2, 3, 5, 6, 7]:
+        assert Km[0, 0, i] == 0.0
+    assert Km[0, 1, 0] == pytest.approx(avg(0.5, 1 / 0.2), abs=TOLERANCE)
+    assert Km[0, 1, 4] == pytest.approx(avg(1 / 0.5, 0.2), abs=TOLERANCE)
+    for i in [1, 2, 3, 5, 6, 7]:
+        assert Km[0, 1, i] == 0.0
+
+    assert Km[1, 0, 0] == pytest.approx(avg(0.4, 0.5), abs=TOLERANCE)
+    assert Km[1, 0, 1] == pytest.approx(0.6, abs=TOLERANCE)
+    assert Km[1, 0, 2] == pytest.approx(0.7, abs=TOLERANCE)
+    assert Km[1, 0, 4] == pytest.approx(avg(1 / 0.4, 1 / 0.5), abs=TOLERANCE)
+    assert Km[1, 0, 5] == pytest.approx(1 / 0.6, abs=TOLERANCE)
+    assert Km[1, 0, 6] == pytest.approx(1 / 0.7, abs=TOLERANCE)
+    for i in [3, 7]:
+        assert Km[1, 0, i] == 0.0
+    assert Km[1, 1, 0] == pytest.approx(avg(0.5, 0.5), abs=TOLERANCE)
+    assert Km[1, 1, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
+    assert Km[1, 1, 4] == pytest.approx(1 / 0.5, abs=TOLERANCE)
+    for i in [2, 3, 5, 6, 7]:
+        assert Km[1, 1, i] == 0.0
+
+    assert Vmax[0, 0] == pytest.approx(1.5, abs=TOLERANCE)
+    assert Vmax[0, 1] == pytest.approx(avg(1.5, 1.1), abs=TOLERANCE)
+    assert Vmax[0, 2] == 0.0
+
+    assert Vmax[1, 0] == pytest.approx(avg(1.5, 1.4, 1.3, 1.2), abs=TOLERANCE)
+    assert Vmax[1, 1] == pytest.approx(avg(2.0, 1.5), abs=TOLERANCE)
+    assert Vmax[1, 2] == 0.0
+
+    assert E[0, 0] == 0
+    assert E[0, 1] == 0
+    assert E[0, 2] == 0
+
+    assert E[1, 0] == 0
+    assert E[1, 1] == 10 - 15
+    assert E[1, 2] == 0
+
+    assert N[0, 0, 0] == -1
+    assert N[0, 0, 4] == 1
+    for i in [1, 2, 3, 5, 6, 7]:
+        assert N[0, 0, i] == 0
+    assert N[0, 1, 0] == 0
+    assert N[0, 1, 4] == 0
+    for i in [1, 2, 3, 5, 6, 7]:
+        assert N[0, 1, i] == 0
+
+    assert N[1, 0, 0] == -2
+    assert N[1, 0, 1] == -1
+    assert N[1, 0, 2] == -1
+    assert N[1, 0, 4] == 2
+    assert N[1, 0, 5] == 1
+    assert N[1, 0, 6] == 1
+    for i in [3, 7]:
+        assert N[1, 0, i] == 0
+    assert N[1, 1, 0] == -2
+    assert N[1, 1, 1] == 1
+    assert N[1, 1, 4] == 1
+    for i in [2, 3, 5, 6, 7]:
+        assert N[1, 1, i] == 0
+
+    assert not A.any()
 
 
 def test_cell_params_with_allosteric_domains():
