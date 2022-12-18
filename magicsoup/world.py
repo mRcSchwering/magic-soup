@@ -55,7 +55,7 @@ class World:
         self,
         molecules: list[Molecule],
         map_size=128,
-        mol_degrad=0.99,
+        mol_degrad=0.999,
         mol_diff_rate=1e-2,
         mol_map_init="randn",
         abs_temp=310.0,
@@ -253,6 +253,15 @@ class World:
             return
 
         cells = [self.cells[i] for i in cell_idxs]
+
+        xs = []
+        ys = []
+        for cell in cells:
+            x, y = cell.position
+            xs.append(x)
+            ys.append(y)
+        self.cell_map[xs, ys] = False
+
         spillout = self.cell_molecules[cell_idxs, :]
         self._add_cell_ext_molecules(cells=cells, molecules=spillout)
         self._remove_cell_rows(idxs=cell_idxs)
@@ -342,8 +351,8 @@ class World:
         cells: dict[str, Any] = {}
         cells["nCells"] = n_cells
         cells["pctMapOccupied"] = n_cells / pxls * 100
-        cells["maxSurvival"] = self.cell_survival.max().item()
-        cells["avgSurvival"] = self.cell_survival.mean().item()
+        cells["maxSurvival"] = self.cell_survival.max().item() if n_cells > 0 else 0.0
+        cells["avgSurvival"] = self.cell_survival.mean().item() if n_cells > 0 else 0.0
         cells["maxGenomeSize"] = max(g_lens) if n_cells > 0 else 0.0
         cells["avgGenomeSize"] = sum(g_lens) / n_cells if n_cells > 0 else 0.0
 
@@ -361,6 +370,7 @@ class World:
         print("\nCurrently living cells:")
         print(f"- {n_cells} cells occupying {cells['pctMapOccupied']:.0f}% of the map")
         print(f"- {cells['avgSurvival']:.0f} average cell survival, the oldest cell is {cells['maxSurvival']:.0f} old")
+        print(f"- {cells['avgGenomeSize']:.0f} average genome size, the largest genome is {cells['maxGenomeSize']:.0f} large")
 
         print("\nCurrent average molecule concentrations:")
         for name, item in mols.items():
