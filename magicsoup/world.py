@@ -8,7 +8,6 @@ from magicsoup.util import pad_2_true_idx, padded_indices, pad_map, unpad_map
 from magicsoup.kinetics import integrate_signals, calc_cell_params
 
 
-# TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
 # TODO: have Molecules carry their own idx?
 # TODO: placing cells is still weird. maybe easier to avoid padded_map?!
 
@@ -24,7 +23,9 @@ class World:
     - `molecules` list of all molecules that are part of this simulation
     - `map_size` number of pixels in x- and y-direction
     - `mol_degrad` Factor by which molecules are degraded per time step (`1.0` for no degradation)
-    - `mol_diff_rate` Factor by which molecules diffuse per time step (`0.0` for no diffusion)
+    - `mol_diff_rate` Factor by which molecules diffuse per time step (`0.0` for no diffusion).
+      `1e-2`-`1e-3` is realistic for small biological molecules if you assume room temperature
+      and each pixel has side lengths of 10um.
     - `mol_map_init` How to initialize molecule maps (`randn` or `zeros`)
     - `n_max_proteins` how many proteins any single cell is expected to have at maximum at any point during the simulation
     - `abs_temp` Absolute temperature (K). Affects entropy term of reaction energy (i.e. in which direction a reaction will occur)
