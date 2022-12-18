@@ -1,6 +1,6 @@
 import torch
-from .constants import EPS
-from .containers import Protein, Molecule
+from magicsoup.constants import EPS
+from magicsoup.containers import Protein, Molecule
 
 
 def calc_cell_params(
@@ -248,6 +248,7 @@ def integrate_signals(
     #       - does it help to use masked tensors? (pytorch.org/docs/stable/masked.html)
     #       - better names, split into a few functions?
     #       - torch.expand faster?
+    X = X.clamp(EPS)
 
     # substrates
     sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p, s)
@@ -274,7 +275,7 @@ def integrate_signals(
     inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
     nom = torch.pow(inh_X, inh_N).prod(2)  # (c, p)
     denom = torch.pow(Km + inh_X, inh_N).prod(2)  # (c, p)
-    inh_V = torch.where(inh_M, nom / denom, 0.0).clamp(0.0, 1.0)  # (c, p)
+    inh_V = torch.where(inh_M, nom / denom, 0.0)  # (c, p)
 
     # activators
     act_N = torch.where(A > 0.0, A, 0.0)  # (c, p, s)
@@ -282,7 +283,7 @@ def integrate_signals(
     act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
     nom = torch.pow(act_X, act_N).prod(2)  # (c, p)
     denom = torch.pow(Km + act_X, act_N).prod(2)  # (c, p)
-    act_V = torch.where(act_M, nom / denom, 1.0).clamp(0.0, 1.0)  # (c, p)
+    act_V = torch.where(act_M, nom / denom, 1.0)  # (c, p)
 
     # substrates
     sub_M = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p s)
@@ -295,8 +296,13 @@ def integrate_signals(
     denom = torch.pow(Km + sub_X, sub_N).prod(2)  # (c, p)
     prot_V = prot_Vmax * nom / denom * (1 - inh_V) * act_V  # (c, p)
 
+    assert not torch.any(N_adj.isnan())  # TODO: rm
+    assert not torch.any(prot_V.isnan())  # TODO: rm
+
     # concentration deltas (c, s)
     Xd = torch.einsum("cps,cp->cs", N_adj, prot_V)
+
+    assert not torch.any(Xd.isnan())  # TODO: rm
 
     X1 = X + Xd
     if torch.any(X1 < EPS):
@@ -309,6 +315,7 @@ def integrate_signals(
 
         # what are the correction factors (c,)
         correct = torch.where(neg_conc > 0.0, -(X - EPS) / Xd, 1.0).min(dim=1).values
+        correct = torch.nan_to_num(correct, nan=0.0)
 
         # correction for protein velocities (c, p)
         prot_V_adj = torch.einsum("cp,c->cp", prot_M, correct)
@@ -322,5 +329,10 @@ def integrate_signals(
         #       and then use this as the maximum Vmax, so that protein velocities
         #       are capped automatically capped to this velocity if substrate
         #       concentrations are low
+
+        X1 = X + Xd
+
+    # float precision can still drive X1 below 0
+    Xd = torch.where(X1 < EPS, EPS - X1, Xd)
 
     return Xd

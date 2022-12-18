@@ -946,27 +946,29 @@ def test_substrate_concentrations_never_get_too_low():
     n_cells = 1000
     n_prots = 100
     n_mols = 20
+    n_steps = 10
 
     # concentrations (c, s)
-    X0 = torch.randn(n_cells, n_mols).abs()
+    X = torch.randn(n_cells, n_mols).abs() + EPS
 
     # reactions (c, p, s)
     N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
 
     # affinities (c, p, s)
-    Km = torch.randn(n_cells, n_prots, n_mols).abs()
+    Km = torch.randn(n_cells, n_prots, n_mols).abs() + EPS
 
     # max velocities (c, p)
-    Vmax = torch.randn(n_cells, n_prots).abs()
+    Vmax = torch.randn(n_cells, n_prots).abs() * 1000
 
     # allosterics (c, p, s)
-    A = torch.randint(low=-1, high=2, size=(n_cells, n_prots, n_mols))
+    A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
 
     # equilibrium constants (c, p)
-    Ke = torch.full((n_cells, n_prots), 999.9)
+    Ke = torch.randn(n_cells, n_prots).abs() * 2
 
     # test
-    Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
-
-    X1 = X0 + Xd
-    assert not torch.any(X1 + TOLERANCE < EPS)
+    for _ in range(n_steps):
+        Xd = integrate_signals(X=X, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+        X = X + Xd
+        assert not torch.any(X + TOLERANCE < EPS)
+        assert not torch.any(X.isnan())

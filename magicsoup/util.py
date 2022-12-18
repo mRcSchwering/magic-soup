@@ -20,11 +20,6 @@ def randstr(n: int = 12) -> str:
     )
 
 
-def trunc(tens: torch.Tensor, n_decs: int) -> torch.Tensor:
-    """Round values of a tensor to `n_decs` decimals"""
-    return torch.round(tens * 10 ** n_decs) / (10 ** n_decs)
-
-
 def cpad1d(t: torch.Tensor, n=1) -> torch.Tensor:
     """Circular `n` padding of 3d tensor in 3rd dimention"""
     return torch.nn.functional.pad(t, (n, n), mode="circular")

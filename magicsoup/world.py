@@ -1,15 +1,14 @@
-from typing import Optional
+from typing import Optional, Any
 import logging
 import random
 import torch
-from .constants import GAS_CONSTANT
-from .containers import Molecule, Protein, Cell
-from .util import pad_2_true_idx, padded_indices, pad_map, unpad_map
-from .kinetics import integrate_signals, calc_cell_params
+from magicsoup.constants import GAS_CONSTANT, EPS
+from magicsoup.containers import Molecule, Protein, Cell
+from magicsoup.util import pad_2_true_idx, padded_indices, pad_map, unpad_map
+from magicsoup.kinetics import integrate_signals, calc_cell_params
 
 
 # TODO: fit diffusion rate to natural diffusion rate of small molecules in cell
-# TODO: summary()
 # TODO: have Molecules carry their own idx?
 # TODO: placing cells is still weird. maybe easier to avoid padded_map?!
 
@@ -318,6 +317,8 @@ class World:
             int(X.shape[1]),
         )
 
+        print(torch.any(self.affinities == 0.0))
+
         Xd = integrate_signals(
             X=X,
             Km=self.affinities,
@@ -326,12 +327,50 @@ class World:
             N=self.stoichiometry,
             A=self.effectors,
         )
-        X += Xd
+        # X += Xd
+        X = X + Xd
 
         self.cell_molecules = X[:, self._int_mol_idxs]
         self._put_cell_ext_molecules(
             cells=self.cells, molecules=X[:, self._ext_mol_idxs]
         )
+
+    def summary(self, as_dict=False) -> Optional[dict]:
+        """Get current world summary"""
+        n_cells = len(self.cells)
+        g_lens = [len(d.genome) for d in self.cells]
+        pxls = self.map_size * self.map_size
+
+        cells: dict[str, Any] = {}
+        cells["nCells"] = n_cells
+        cells["pctMapOccupied"] = n_cells / pxls * 100
+        cells["maxSurvival"] = self.cell_survival.max().item()
+        cells["avgSurvival"] = self.cell_survival.mean().item()
+        cells["maxGenomeSize"] = max(g_lens) if n_cells > 0 else 0.0
+        cells["avgGenomeSize"] = sum(g_lens) / n_cells if n_cells > 0 else 0.0
+
+        mols: dict[str, Any] = {}
+        for idx, mol in enumerate(self.molecules):
+            mols[mol.name] = {
+                "avgExtConc": self.molecule_map[idx].mean().item(),
+                "avgIntConc": self.cell_molecules[:, idx].mean().item(),
+            }
+
+        if as_dict:
+            return {"molecules": mols, "cells": cells}
+
+        # fmt: off
+        print("\nCurrently living cells:")
+        print(f"- {n_cells} cells occupying {cells['pctMapOccupied']:.0f}% of the map")
+        print(f"- {cells['avgSurvival']:.0f} average cell survival, the oldest cell is {cells['maxSurvival']:.0f} old")
+
+        print("\nCurrent average molecule concentrations:")
+        for name, item in mols.items():
+            print(f"- {name}: {item['avgIntConc']:.2f} intracellular, {item['avgExtConc']:.2f} extracellular")
+        # fmt: on
+
+        print("")
+        return None
 
     def _add_new_cells_to_proteome_params(
         self, proteomes: list[list[Protein]], cell_idxs: list[int]
@@ -509,9 +548,9 @@ class World:
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
         if init == "zeros":
-            return self._tensor(*args)
+            return self._tensor(*args) + EPS
         if init == "randn":
-            return torch.randn(*args, **self.torch_kwargs).abs()
+            return torch.randn(*args, **self.torch_kwargs).abs() + EPS
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."

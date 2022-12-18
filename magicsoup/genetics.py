@@ -2,11 +2,9 @@ from typing import Optional
 from itertools import product
 import random
 import torch
-from .util import generic_map_fact, weight_map_fact, bool_map_fact
-from .containers import _Domain, _DomainFact, Protein, Molecule
-from .constants import ALL_NTS, CODON_SIZE
-
-# TODO: summary() to see likelyhoods of different domains appearing
+from magicsoup.util import generic_map_fact, weight_map_fact, bool_map_fact
+from magicsoup.containers import _Domain, _DomainFact, Protein, Molecule
+from magicsoup.constants import ALL_NTS, CODON_SIZE
 
 # TODO: maybe cell-based functions and then use multiprocessing?
 
@@ -212,6 +210,7 @@ class Genetics:
         cds = [d for d in cds if len(d) > self.min_n_seq_nts]
         proteins = [self.translate_seq(d) for d in cds]
         proteins = [d for d in proteins if len(d) > 0]
+        proteins = [d for d in proteins if not all(dd.is_allosteric for dd in d)]
         return [Protein(domains=d, label=f"P{i}") for i, d in enumerate(proteins)]
 
     def get_coding_regions(self, seq: str) -> list[str]:
@@ -265,6 +264,94 @@ class Genetics:
                 j += CODON_SIZE
 
         return doms
+
+    def summary(self, as_dict=False) -> Optional[dict]:
+        """Summary of the current genetics setup"""
+        n_genomes = 1000
+        sizes = (100, 1000)
+        out: dict[str, dict[str, float]] = {}
+
+        for size in sizes:
+            gs = random_genomes(n=n_genomes, s=size)
+            ps = self.get_proteomes(sequences=gs)
+            n_viable_proteomes = 0
+            n_proteins = 0
+            n_domains = 0
+            n_transp = 0
+            n_reg_transp = 0
+            n_catal = 0
+            n_reg_catal = 0
+            n_catal_transp = 0
+            n_reg_catal_transp = 0
+            for proteome in ps:
+                if len(proteome) > 0:
+                    n_viable_proteomes += 1
+                for prot in proteome:
+                    n_proteins += 1
+                    n_domains += len(prot.domains)
+                    has_transp = any(d.is_transporter for d in prot.domains)
+                    has_catal = any(d.is_catalytic for d in prot.domains)
+                    has_allos = any(d.is_allosteric for d in prot.domains)
+                    if has_transp and has_catal and has_allos:
+                        n_reg_catal_transp += 1
+                        continue
+                    if has_transp and has_catal:
+                        n_catal_transp += 1
+                        continue
+                    if has_transp and has_allos:
+                        n_reg_transp += 1
+                        continue
+                    if has_transp:
+                        n_transp += 1
+                        continue
+                    if has_catal and has_allos:
+                        n_reg_catal += 1
+                        continue
+                    if has_catal:
+                        n_catal += 1
+                        continue
+
+            # fmt: off
+            out[f"genomeSize{size}"] = {
+                "pctViableProteomes": n_viable_proteomes / n_genomes * 100,
+                "avgProteinsPerGenome": n_proteins / n_viable_proteomes,
+                "avgDomainsPerProtein": n_domains / n_proteins,
+                "pctTransporterProteins": n_transp / n_proteins * 100,
+                "pctRegulatedTransporterProteins": n_reg_transp / n_proteins * 100,
+                "pctCatalyticProteins": n_catal / n_proteins * 100,
+                "pctRegulatedCatalyticProteins": n_reg_catal / n_proteins * 100,
+                "pctCatalyticTransporterProteins": n_catal_transp / n_proteins * 100,
+                "pctRegulatedCatalyticTransporterProteins": n_reg_catal_transp / n_proteins * 100,
+            }
+            # fmt: on
+
+        if as_dict:
+            return out
+
+        def f(x: float, x_reg: float) -> tuple[float, float]:
+            both = x + x_reg
+            if both == 0.0:
+                return (0.0, 0.0)
+            return both, x_reg / both * 100
+
+        print("Expected proteomes")
+        for size in sizes:
+            # fmt: off
+            print(f"\nWith genome size {size}")
+            res = out[f"genomeSize{size}"]
+            print(f"{res['pctViableProteomes']:.1f}% yield viable proteomes, for these viable proteomes:")
+            print(f"- {res['avgProteinsPerGenome']:.1f} average proteins per genome")
+            print(f"- {res['avgDomainsPerProtein']:.1f} average domains per protein")
+            both, reg = f(res['pctTransporterProteins'], res['pctRegulatedTransporterProteins'])
+            print(f"- {both:.0f}% pure transporter proteins, {reg:.0f}% of them are regulated")
+            both, reg = f(res['pctCatalyticProteins'], res['pctRegulatedCatalyticProteins'])
+            print(f"- {both:.0f}% pure catalytic proteins, {reg:.0f}% of them are regulated")
+            both, reg = f(res['pctCatalyticTransporterProteins'], res['pctRegulatedCatalyticTransporterProteins'])
+            print(f"- {both:.0f}% catalytic transporter proteins, {reg:.0f}% of them are regulated")
+            # fmt: on
+
+        print("")
+        return None
 
     def _validate_init(self):
         lens = set(len(d) for d in self.domain_map)

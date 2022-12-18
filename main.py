@@ -89,16 +89,17 @@ def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
     domains = {
         ms.CatalyticFact(): ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),
         ms.TransporterFact(): ms.variants("ACNAGN") + ms.variants("ACNTAN") + ms.variants("AANTCN"),
-        ms.AllostericFact(is_transmembrane=False, is_inhibiting=False): ms.variants("GCNTGN"),
-        ms.AllostericFact(is_transmembrane=False, is_inhibiting=True): ms.variants("GCNTAN"),
-        ms.AllostericFact(is_transmembrane=True, is_inhibiting=False): ms.variants("AGNTCN"),
-        ms.AllostericFact(is_transmembrane=True, is_inhibiting=True): ms.variants("CCNTGN"),
+        ms.AllostericFact(is_transmembrane=False, is_inhibiting=False): ms.variants("GGNANN"),
+        ms.AllostericFact(is_transmembrane=False, is_inhibiting=True): ms.variants("GGNTNN"),
+        ms.AllostericFact(is_transmembrane=True, is_inhibiting=False): ms.variants("GGNCNN"),
+        ms.AllostericFact(is_transmembrane=True, is_inhibiting=True): ms.variants("GGNGNN"),
     }
     # fmt: on
 
     genetics = ms.Genetics(
         domain_facts=domains, molecules=MOLECULES, reactions=REACTIONS,
     )
+    genetics.summary()
 
     world = ms.World(molecules=MOLECULES)
 
@@ -116,6 +117,8 @@ def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
 
     with timeit("Degrade, diffuse, increment"):
         wrap_up_step(world=world)
+
+    world.summary()
 
     idx_ATP = world.get_intracellular_molecule_idxs(molecules=[ATP])[0]
 
@@ -154,6 +157,8 @@ def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
                 )
 
     writer.close()
+
+    world.summary()
 
 
 if __name__ == "__main__":
