@@ -159,7 +159,7 @@ class Genetics:
         domain_facts: dict[_DomainFact, list[str]],
         molecules: list[Molecule],
         reactions: list[tuple[list[Molecule], list[Molecule]]],
-        vmax_range: tuple[float, float] = (1, 1000),
+        vmax_range: tuple[float, float] = (1, 10),
         max_km: float = 10.0,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),

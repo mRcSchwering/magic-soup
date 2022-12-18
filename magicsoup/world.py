@@ -317,8 +317,6 @@ class World:
             int(X.shape[1]),
         )
 
-        print(torch.any(self.affinities == 0.0))
-
         Xd = integrate_signals(
             X=X,
             Km=self.affinities,
@@ -327,8 +325,7 @@ class World:
             N=self.stoichiometry,
             A=self.effectors,
         )
-        # X += Xd
-        X = X + Xd
+        X += Xd
 
         self.cell_molecules = X[:, self._int_mol_idxs]
         self._put_cell_ext_molecules(

@@ -109,6 +109,14 @@ def calc_cell_params(
 #       of the MM equiation. Does this make sense???
 #       Shouldn't that molecule then act more like an allosteric activator?
 
+# TODO: Currently, I cant handle high Vmax. Even with Vmax >= 50, if there are proteins
+#       with many substrates and/or effectors, the effectors will multiply to Inf, which
+#       in turn will create NaNs down the line. These NaNs then propagate. The problem
+#       is X.pow(N).prod(2) which can explode. This doesn't seem to happen with small Vmax.
+#       One explanation might be my heuristic that is supposed to prevent negative concentrations.
+#       This heuristic becomes more unstable with large Vmax, and it might thereby create
+#       more possibilities for proteins to create more of a molecule that physically possible.
+
 
 def integrate_signals(
     X: torch.Tensor,
@@ -248,7 +256,6 @@ def integrate_signals(
     #       - does it help to use masked tensors? (pytorch.org/docs/stable/masked.html)
     #       - better names, split into a few functions?
     #       - torch.expand faster?
-    X = X.clamp(EPS)
 
     # substrates
     sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p, s)
@@ -296,13 +303,8 @@ def integrate_signals(
     denom = torch.pow(Km + sub_X, sub_N).prod(2)  # (c, p)
     prot_V = prot_Vmax * nom / denom * (1 - inh_V) * act_V  # (c, p)
 
-    assert not torch.any(N_adj.isnan())  # TODO: rm
-    assert not torch.any(prot_V.isnan())  # TODO: rm
-
     # concentration deltas (c, s)
     Xd = torch.einsum("cps,cp->cs", N_adj, prot_V)
-
-    assert not torch.any(Xd.isnan())  # TODO: rm
 
     X1 = X + Xd
     if torch.any(X1 < EPS):
@@ -331,8 +333,9 @@ def integrate_signals(
         #       concentrations are low
 
         X1 = X + Xd
+        if torch.any(X1 < EPS):
 
-    # float precision can still drive X1 below 0
-    Xd = torch.where(X1 < EPS, EPS - X1, Xd)
+            # float precision can still drive X1 below 0
+            Xd = torch.where(X1 < EPS, EPS - X1, Xd)
 
     return Xd

@@ -958,7 +958,7 @@ def test_substrate_concentrations_never_get_too_low():
     Km = torch.randn(n_cells, n_prots, n_mols).abs() + EPS
 
     # max velocities (c, p)
-    Vmax = torch.randn(n_cells, n_prots).abs() * 1000
+    Vmax = torch.randn(n_cells, n_prots).abs() * 10
 
     # allosterics (c, p, s)
     A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
