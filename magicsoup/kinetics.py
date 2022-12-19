@@ -264,85 +264,113 @@ def integrate_signals(
     #       - better names, split into a few functions?
     #       - torch.expand faster?
 
-    # substrates
-    sub_M = torch.where(N < 0.0, 1.0, 0.0)  # (c, p, s)
-    sub_X = torch.einsum("cps,cs->cps", sub_M, X)  # (c, p, s)
-    sub_N = torch.where(N < 0.0, -N, 0.0)  # (c, p, s)
+    Q = _get_reaction_quotients(X=X, N=N)  # (c, p)
 
-    # products
-    pro_M = torch.where(N > 0.0, 1.0, 0.0)  # (c, p s)
-    pro_X = torch.einsum("cps,cs->cps", pro_M, X)  # (c, p, s)
-    pro_N = torch.where(N > 0.0, N, 0.0)  # (c, p, s)
-
-    # quotients
-    nom = torch.pow(pro_X, pro_N).prod(2)  # (c, p)
-    denom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
-    Q = nom / denom  # (c, p)
+    # effectors
+    inh_V = _get_inhibitor_activity(X=X, A=A, Km=Km)  # (c, p)
+    act_V = _get_activator_activity(X=X, A=A, Km=Km)  # (c, p)
 
     # adjust direction
     adj_N = torch.where(Q > Ke, -1.0, 1.0)  # (c, p)
     N_adj = torch.einsum("cps,cp->cps", N, adj_N)
 
-    # inhibitors
-    inh_N = torch.where(A < 0.0, -A, 0.0)  # (c, p, s)
+    # proteins
+    prot_V = _get_protein_activity(X=X, N=N_adj, Km=Km)  # (c, p)
+    V_normal = Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
+
+    # adjust with maximum allowable velocity
+    # TODO: not correct yet
+    V_allowed = (
+        (X - EPS).unsqueeze(1).expand(-1, V_normal.shape[1], -1).min(dim=2).values
+    )
+    V = V_normal.clamp(max=V_allowed)
+
+    # concentration deltas (c, s)
+    Xd = torch.einsum("cps,cp->cs", N_adj, V)
+
+    # X1 = X + Xd
+    # if torch.any(X1 < EPS):
+    #     neg_conc = torch.where(X1 < EPS, 1.0, 0.0)  # (c, s)
+    #     candidates = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p, s)
+
+    #     # which proteins need to be down-regulated (c, p)
+    #     BX_mask = torch.einsum("cps,cs->cps", candidates, neg_conc)
+    #     prot_M = BX_mask.max(dim=2).values
+
+    #     # what are the correction factors (c,)
+    #     correct = torch.where(neg_conc > 0.0, -(X - EPS) / Xd, 1.0).min(dim=1).values
+    #     correct = torch.nan_to_num(correct, nan=0.0)
+
+    #     # correction for protein velocities (c, p)
+    #     prot_V_adj = torch.einsum("cp,c->cp", prot_M, correct)
+    #     prot_V_adj = torch.where(prot_V_adj == 0.0, 1.0, prot_V_adj)
+
+    #     # new concentration deltas (c, s)
+    #     Xd = torch.einsum("cps,cp->cs", N_adj, V * prot_V_adj)
+
+    #     # TODO: can I already predict this before calculated Xd the first time?
+    #     #       maybe at the time when I know the intended protein velocities?
+    #     #       and then use this as the maximum Vmax, so that protein velocities
+    #     #       are capped automatically capped to this velocity if substrate
+    #     #       concentrations are low
+
+    X1 = X + Xd
+    if torch.any(X1 < EPS):
+
+        # float precision can still drive X1 below 0
+        Xd = torch.where(X1 < EPS, EPS - X1, Xd)
+
+    return Xd
+
+
+def _get_reaction_quotients(X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
+    # substrates
+    sub_mask = N < 0.0  # (c, p, s)
+    sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
+    sub_N = sub_mask * -N  # (c, p, s)
+
+    # products
+    pro_mask = N > 0.0  # (c, p s)
+    pro_X = torch.einsum("cps,cs->cps", pro_mask, X)  # (c, p, s)
+    pro_N = pro_mask * N  # (c, p, s)
+
+    # quotients
+    nom = torch.pow(pro_X, pro_N).prod(2)  # (c, p)
+    denom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
+    return nom / denom  # (c, p)
+
+
+def _get_protein_activity(
+    X: torch.Tensor, N: torch.Tensor, Km: torch.Tensor
+) -> torch.Tensor:
+    # substrates
+    mask = N < 0.0  # (c, p s)
+    sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
+    sub_N = mask * -N  # (c, p, s)
+
+    # proteins
+    nom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
+    denom = torch.pow(Km + sub_X, sub_N).prod(2)  # (c, p)
+    return nom / denom  # (c, p)
+
+
+def _get_inhibitor_activity(
+    X: torch.Tensor, A: torch.Tensor, Km: torch.Tensor
+) -> torch.Tensor:
+    inh_N = (-A).clamp(0)  # (c, p, s)
     inh_M = torch.any(A < 0.0, dim=2)  # (c, p)
     inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
     nom = torch.pow(inh_X, inh_N).prod(2)  # (c, p)
     denom = torch.pow(Km + inh_X, inh_N).prod(2)  # (c, p)
-    inh_V = torch.where(inh_M, nom / denom, 0.0)  # (c, p)
+    return torch.where(inh_M, nom / denom, 0.0)  # (c, p)
 
-    # activators
-    act_N = torch.where(A > 0.0, A, 0.0)  # (c, p, s)
+
+def _get_activator_activity(
+    X: torch.Tensor, A: torch.Tensor, Km: torch.Tensor
+) -> torch.Tensor:
+    act_N = A.clamp(0)  # (c, p, s)
     act_M = torch.any(A > 0.0, dim=2)  # (c, p)
     act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
     nom = torch.pow(act_X, act_N).prod(2)  # (c, p)
     denom = torch.pow(Km + act_X, act_N).prod(2)  # (c, p)
-    act_V = torch.where(act_M, nom / denom, 1.0)  # (c, p)
-
-    # substrates
-    sub_M = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p s)
-    sub_X = torch.einsum("cps,cs->cps", sub_M, X)  # (c, p, s)
-    sub_N = torch.where(N_adj < 0.0, -N_adj, 0.0)  # (c, p, s)
-
-    # proteins
-    prot_Vmax = sub_M.max(dim=2).values * Vmax  # (c, p)
-    nom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
-    denom = torch.pow(Km + sub_X, sub_N).prod(2)  # (c, p)
-    prot_V = prot_Vmax * nom / denom * (1 - inh_V) * act_V  # (c, p)
-
-    # concentration deltas (c, s)
-    Xd = torch.einsum("cps,cp->cs", N_adj, prot_V)
-
-    X1 = X + Xd
-    if torch.any(X1 < EPS):
-        neg_conc = torch.where(X1 < EPS, 1.0, 0.0)  # (c, s)
-        candidates = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p, s)
-
-        # which proteins need to be down-regulated (c, p)
-        BX_mask = torch.einsum("cps,cs->cps", candidates, neg_conc)
-        prot_M = BX_mask.max(dim=2).values
-
-        # what are the correction factors (c,)
-        correct = torch.where(neg_conc > 0.0, -(X - EPS) / Xd, 1.0).min(dim=1).values
-        correct = torch.nan_to_num(correct, nan=0.0)
-
-        # correction for protein velocities (c, p)
-        prot_V_adj = torch.einsum("cp,c->cp", prot_M, correct)
-        prot_V_adj = torch.where(prot_V_adj == 0.0, 1.0, prot_V_adj)
-
-        # new concentration deltas (c, s)
-        Xd = torch.einsum("cps,cp->cs", N_adj, prot_V * prot_V_adj)
-
-        # TODO: can I already predict this before calculated Xd the first time?
-        #       maybe at the time when I know the intended protein velocities?
-        #       and then use this as the maximum Vmax, so that protein velocities
-        #       are capped automatically capped to this velocity if substrate
-        #       concentrations are low
-
-        X1 = X + Xd
-        if torch.any(X1 < EPS):
-
-            # float precision can still drive X1 below 0
-            Xd = torch.where(X1 < EPS, EPS - X1, Xd)
-
-    return Xd
+    return torch.where(act_M, nom / denom, 1.0)  # (c, p)
