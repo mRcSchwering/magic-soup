@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from contextlib import contextmanager
 import logging
+from multiprocessing import Pool
 import time
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -35,18 +36,20 @@ def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
     )
     genetics.summary()
 
-    genomes = ms.random_genomes(n=n_cells, s=init_genome_size)
+    genomes = genetics.random_genomes(n=n_cells, s=init_genome_size)
     proteomes = genetics.get_proteomes(sequences=genomes)
 
-    genomes2 = ms.point_mutatations(seqs=genomes)
-    proteomes2 = genetics.get_proteomes(sequences=genomes2)
+    with timeit(
+        f"point mutations for {len(proteomes):,} proteomes from genomes of size {init_genome_size}"
+    ):
+        new_gs, idxs = ms.point_mutatations(seqs=genomes)
+        new_ps = genetics.get_proteomes(sequences=new_gs)
 
-    is_equal = torch.zeros(len(genomes)).to(torch.bool)
     with timeit(
         f"comparing {len(proteomes):,} proteomes from genomes of size {init_genome_size}"
     ):
-        for idx, (p1, p2) in enumerate(zip(proteomes, proteomes2)):
-            is_equal[idx] = p1 == p2
+        for idx, p2 in zip(idxs, new_ps):
+            _ = proteomes[idx] == p2
     exit()
 
     n_threads = torch.get_num_threads()

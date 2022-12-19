@@ -1,12 +1,12 @@
+from typing import Optional
 import torch
 from magicsoup.constants import EPS
 from magicsoup.containers import Protein
 
 
 def calc_cell_params(
-    proteomes: list[list[Protein]],
+    cell_prots: list[tuple[int, int, Optional[Protein]]],
     n_signals: int,
-    cell_idxs: list[int],
     Km: torch.Tensor,
     Vmax: torch.Tensor,
     E: torch.Tensor,
@@ -31,79 +31,83 @@ def calc_cell_params(
     effector on this protein. 0.0 means this molecule does not allosterically effect the protein.
     """
 
-    # TODO: maybe faster to first check which proteins in each cell actually changed,
-    #       then only check (cell_i, protein_i) instead of all proteins for cell_i
-
-    for cell_i, cell in zip(cell_idxs, proteomes):
-        for prot_i, protein in enumerate(cell):
-
-            energy = 0.0
-            km: list[list[float]] = [[] for _ in range(n_signals)]
-            vmax: list[float] = []
-            a: list[int] = [0 for _ in range(n_signals)]
-            n: list[int] = [0 for _ in range(n_signals)]
-
-            for dom in protein.domains:
-
-                if dom.is_allosteric:
-                    mol = dom.substrates[0]
-                    if dom.is_transmembrane:
-                        mol_i = mol.ext_idx
-                    else:
-                        mol_i = mol.int_idx
-                    km[mol_i].append(dom.affinity)
-                    a[mol_i] += -1 if dom.is_inhibiting else 1
-
-                if dom.is_transporter:
-                    vmax.append(dom.velocity)
-                    mol = dom.substrates[0]
-
-                    if dom.is_bkwd:
-                        sub_i = mol.ext_idx
-                        prod_i = mol.int_idx
-                    else:
-                        sub_i = mol.int_idx
-                        prod_i = mol.ext_idx
-
-                    km[sub_i].append(dom.affinity)
-                    n[sub_i] -= 1
-
-                    km[prod_i].append(1 / dom.affinity)
-                    n[prod_i] += 1
-
-                if dom.is_catalytic:
-                    vmax.append(dom.velocity)
-
-                    if dom.is_bkwd:
-                        subs = dom.products
-                        prods = dom.substrates
-                    else:
-                        subs = dom.substrates
-                        prods = dom.products
-
-                    for mol in subs:
-                        energy -= mol.energy
-                        mol_i = mol.int_idx
-                        km[mol_i].append(dom.affinity)
-                        n[mol_i] -= 1
-
-                    for mol in prods:
-                        energy += mol.energy
-                        mol_i = mol.int_idx
-                        km[mol_i].append(1 / dom.affinity)
-                        n[mol_i] += 1
-
-            E[cell_i, prot_i] = energy
-
-            if len(vmax) > 0:
-                Vmax[cell_i, prot_i] = sum(vmax) / len(vmax)
-
+    for cell_i, prot_i, protein in cell_prots:
+        if protein is None:
+            E[cell_i, prot_i] = 0.0
+            Vmax[cell_i, prot_i] = 0.0
             for mol_i in range(n_signals):
-                A[cell_i, prot_i, mol_i] = float(a[mol_i])
-                N[cell_i, prot_i, mol_i] = float(n[mol_i])
+                Km[cell_i, prot_i, mol_i] = 0.0
+                A[cell_i, prot_i, mol_i] = 0.0
+                N[cell_i, prot_i, mol_i] = 0.0
+            return None
 
-                if len(km[mol_i]) > 0:
-                    Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
+        energy = 0.0
+        km: list[list[float]] = [[] for _ in range(n_signals)]
+        vmax: list[float] = []
+        a: list[int] = [0 for _ in range(n_signals)]
+        n: list[int] = [0 for _ in range(n_signals)]
+
+        for dom in protein.domains:
+
+            if dom.is_allosteric:
+                mol = dom.substrates[0]
+                if dom.is_transmembrane:
+                    mol_i = mol.ext_idx
+                else:
+                    mol_i = mol.int_idx
+                km[mol_i].append(dom.affinity)
+                a[mol_i] += -1 if dom.is_inhibiting else 1
+
+            if dom.is_transporter:
+                vmax.append(dom.velocity)
+                mol = dom.substrates[0]
+
+                if dom.is_bkwd:
+                    sub_i = mol.ext_idx
+                    prod_i = mol.int_idx
+                else:
+                    sub_i = mol.int_idx
+                    prod_i = mol.ext_idx
+
+                km[sub_i].append(dom.affinity)
+                n[sub_i] -= 1
+
+                km[prod_i].append(1 / dom.affinity)
+                n[prod_i] += 1
+
+            if dom.is_catalytic:
+                vmax.append(dom.velocity)
+
+                if dom.is_bkwd:
+                    subs = dom.products
+                    prods = dom.substrates
+                else:
+                    subs = dom.substrates
+                    prods = dom.products
+
+                for mol in subs:
+                    energy -= mol.energy
+                    mol_i = mol.int_idx
+                    km[mol_i].append(dom.affinity)
+                    n[mol_i] -= 1
+
+                for mol in prods:
+                    energy += mol.energy
+                    mol_i = mol.int_idx
+                    km[mol_i].append(1 / dom.affinity)
+                    n[mol_i] += 1
+
+        E[cell_i, prot_i] = energy
+
+        if len(vmax) > 0:
+            Vmax[cell_i, prot_i] = sum(vmax) / len(vmax)
+
+        for mol_i in range(n_signals):
+            A[cell_i, prot_i, mol_i] = float(a[mol_i])
+            N[cell_i, prot_i, mol_i] = float(n[mol_i])
+
+            if len(km[mol_i]) > 0:
+                Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
 
 
 # TODO: a molecule can be created by one domain and at the same time deconstructed

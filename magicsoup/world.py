@@ -1,15 +1,14 @@
 from typing import Optional, Any
 import logging
 import random
+from itertools import product
 import math
 import torch
 from magicsoup.constants import GAS_CONSTANT, EPS
-from magicsoup.containers import Molecule, Cell
-from magicsoup.util import pad_2_true_idx, padded_indices, pad_map, unpad_map
+from magicsoup.containers import Molecule, Cell, Protein
+from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import integrate_signals, calc_cell_params
 
-
-# TODO: placing cells is still weird. maybe easier to avoid padded_map?!
 
 _log = logging.getLogger(__name__)
 
@@ -63,6 +62,7 @@ class World:
         abs_temp=310.0,
         device="cpu",
         dtype=torch.float,
+        n_workers=4,
     ):
         self.molecules = molecules
         self.map_size = map_size
@@ -72,6 +72,7 @@ class World:
         self.mol_diff_coef = mol_diff_coef
         self.dtype = dtype
         self.device = device
+        self.n_workers = n_workers
         self.torch_kwargs = {"dtype": dtype, "device": device}
 
         self.n_molecules = len(molecules)
@@ -82,6 +83,10 @@ class World:
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
 
         self._diffuse = self._get_conv(mol_diff_rate=mol_diff_coef * 1e6)
+        self._moores_map = {
+            (x, y): moore_nghbrhd(x, y, map_size)
+            for x, y in product(range(map_size), range(map_size))
+        }
 
         self.cells: list[Cell] = []
 
@@ -173,7 +178,20 @@ class World:
             ys.append(y)
         self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T
 
-        self._add_new_cells_to_proteome_params(new_cells=new_cells)
+        cell_prots: list[tuple[int, int, Optional[Protein]]] = []
+        for cell in new_cells:
+            for prot_i, prot in enumerate(cell.proteome):
+                cell_prots.append((cell.idx, prot_i, prot))
+
+        calc_cell_params(
+            cell_prots=cell_prots,
+            n_signals=2 * self.n_molecules,
+            Km=self.affinities,
+            Vmax=self.velocities,
+            E=self.energies,
+            N=self.stoichiometry,
+            A=self.effectors,
+        )
 
     def replicate_cells(self, cells: list[Cell]):
         """
@@ -207,7 +225,20 @@ class World:
         # cell is supposed to have the same concentrations as the parent had
         self.cell_molecules[new_idxs, :] = self.cell_molecules[old_idxs, :]
 
-        self._add_new_cells_to_proteome_params(new_cells=new_cells)
+        cell_prots: list[tuple[int, int, Optional[Protein]]] = []
+        for cell in new_cells:
+            for prot_i, prot in enumerate(cell.proteome):
+                cell_prots.append((cell.idx, prot_i, prot))
+
+        calc_cell_params(
+            cell_prots=cell_prots,
+            n_signals=2 * self.n_molecules,
+            Km=self.affinities,
+            Vmax=self.velocities,
+            E=self.energies,
+            N=self.stoichiometry,
+            A=self.effectors,
+        )
 
     def update_cells(self, cells: list[Cell]):
         """
@@ -217,11 +248,31 @@ class World:
         """
         _log.debug("Updating %i cells", len(cells))
 
-        for cell in cells:
-            self.cells[cell.idx] = cell
+        cell_prots: list[tuple[int, int, Optional[Protein]]] = []
+        for new_cell in cells:
+            ci = new_cell.idx
+            oldprot = self.cells[ci].proteome
+            newprot = new_cell.proteome
+            n_new = len(newprot)
+            n_old = len(oldprot)
+            n = min(n_old, n_new)
+            for pi, (np, op) in enumerate(zip(newprot[:n], oldprot[:n])):
+                if np != op:
+                    cell_prots.append((ci, pi, np))
+            if n_old > n_new:
+                cell_prots.extend((ci, i, None) for i in range(n, n_old))
 
         self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
-        self._add_new_cells_to_proteome_params(new_cells=cells)
+
+        calc_cell_params(
+            cell_prots=cell_prots,
+            n_signals=2 * self.n_molecules,
+            Km=self.affinities,
+            Vmax=self.velocities,
+            E=self.energies,
+            N=self.stoichiometry,
+            A=self.effectors,
+        )
 
     def kill_cells(self, cell_idxs: list[int]):
         """
@@ -361,100 +412,66 @@ class World:
         print("")
         return None
 
-    def _add_new_cells_to_proteome_params(self, new_cells: list[Cell]):
-        proteomes = [d.proteome for d in new_cells]
-        cell_idxs = [d.idx for d in new_cells]
-
-        calc_cell_params(
-            proteomes=proteomes,
-            n_signals=2 * self.n_molecules,
-            cell_idxs=cell_idxs,
-            Km=self.affinities,
-            Vmax=self.velocities,
-            E=self.energies,
-            N=self.stoichiometry,
-            A=self.effectors,
-        )
-
     def _randomly_move_cells(self, cells: list[Cell]):
-        size = self.map_size + 2
-        padded_map = pad_map(self.cell_map)
-
         for cell in cells:
-            old_x, old_y = cell.position
-            old_xp = old_x + 1
-            old_yp = old_y + 1
-            new_pos = self._find_open_spot_in_neighborhood(
-                padded_map=padded_map, x=old_xp, y=old_yp, size=size
-            )
+            x, y = cell.position
+            positions = self._moores_map[(x, y)]
+            xs, ys = list(map(list, zip(*positions)))
+            pxls = torch.argwhere(~self.cell_map[xs, ys])
 
-            if new_pos is None:
+            if len(pxls) == 0:
                 _log.info(
                     "Wanted to move cell at %i, %i"
                     " but no pixel in the Moore neighborhood was free."
                     " So, cell wasn't moved.",
-                    old_x,
-                    old_y,
+                    x,
+                    y,
                 )
                 continue
 
+            offset_x, offset_y = random.choice(pxls.tolist())
+            new_pos = (offset_x + x - 1, offset_y + y - 1)
+
             # move cells
-            old_pos = padded_indices(x=old_xp, y=old_yp, s=size)
-            padded_map[old_pos] = False
-
-            padded_map[new_pos] = True
-            xs, ys = new_pos
-            cell.position = (
-                pad_2_true_idx(idx=xs[0], size=self.map_size),
-                pad_2_true_idx(idx=ys[0], size=self.map_size),
-            )
-
-        self.cell_map = unpad_map(padded_map)
+            self.cell_map[x, y] = False
+            self.cell_map[new_pos] = True
+            cell.position = new_pos
 
     def _place_replicated_cells_near_parents(
         self, cells: list[Cell]
     ) -> tuple[list[int], list[int]]:
-        size = self.map_size + 2
-        padded_map = pad_map(self.cell_map)
-
-        new_idx = len(self.cells)
-        new_idxs: list[int] = []
-        old_idxs: list[int] = []
-
+        idx = 0
+        new_idxs = []
+        old_idxs = []
         for cell in cells:
-            old_x, old_y = cell.position
-            old_xp = old_x + 1
-            old_yp = old_y + 1
-            new_pos = self._find_open_spot_in_neighborhood(
-                padded_map=padded_map, x=old_xp, y=old_yp, size=size
-            )
+            x, y = cell.position
+            positions = self._moores_map[(x, y)]
+            xs, ys = list(map(list, zip(*positions)))
+            pxls = torch.argwhere(~self.cell_map[xs, ys])
 
-            if new_pos is None:
+            if len(pxls) == 0:
                 _log.info(
                     "Wanted to replicate cell next to %i, %i"
                     " but no pixel in the Moore neighborhood was free."
                     " So, cell wasn't able to replicate.",
-                    old_x,
-                    old_y,
+                    x,
+                    y,
                 )
                 continue
 
+            offset_x, offset_y = random.choice(pxls.tolist())
+            new_pos = (offset_x + x - 1, offset_y + y - 1)
+
             # place cell in position
-            padded_map[new_pos] = True
-            xs, ys = new_pos
-            cell.position = (
-                pad_2_true_idx(idx=xs[0], size=self.map_size),
-                pad_2_true_idx(idx=ys[0], size=self.map_size),
-            )
+            self.cell_map[new_pos] = True
+            cell.position = new_pos
 
             # set new cell idx
             old_idxs.append(cell.idx)
-            cell.idx = new_idx
+            new_idxs.append(idx)
+            cell.idx = idx
             self.cells.append(cell)
-            new_idxs.append(new_idx)
-            new_idx += 1
-
-        self.cell_map = unpad_map(padded_map)
+            idx += 1
 
         return old_idxs, new_idxs
 
@@ -492,20 +509,6 @@ class World:
             new_idx += 1
 
         return new_idxs
-
-    def _find_open_spot_in_neighborhood(
-        self, padded_map: torch.Tensor, x: int, y: int, size: int
-    ) -> Optional[tuple[list[int], list[int]]]:
-        xps = slice(x - 1, x + 2)
-        yps = slice(y - 1, y + 2)
-        pxls = torch.argwhere(~padded_map[xps, yps])
-        if len(pxls) == 0:
-            return None
-
-        offset_x, offset_y = random.choice(pxls.tolist())
-        new_x = offset_x + x - 1
-        new_y = offset_y + y - 1
-        return padded_indices(x=new_x, y=new_y, s=size)
 
     def _get_cell_ext_molecules(self, cells: list[Cell]) -> torch.Tensor:
         xs = []

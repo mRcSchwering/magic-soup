@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 from torch.utils.tensorboard import SummaryWriter
 import magicsoup as ms
+from magicsoup.constants import NOW
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
 
 _log = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    writer = SummaryWriter(log_dir=_this_dir / "runs")
+    writer = SummaryWriter(log_dir=_this_dir / "runs" / NOW)
     n_threads = torch.get_num_threads()
     _log.info("torch n threads %i", n_threads)
 
@@ -49,19 +50,21 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
     world = ms.World(molecules=MOLECULES)
     world.summary()
 
-    idx_ATP = world.get_intracellular_molecule_idxs(molecules=[ATP])[0]
+    idx_ATP = ATP.int_idx
 
     for step_i in range(n_steps):
 
         with timeit("addCells", step_i, writer):
-            genomes = ms.random_genomes(n=n_cells, s=rand_genome_size)
+            genomes = genetics.random_genomes(n=n_cells, s=rand_genome_size)
             proteomes = genetics.get_proteomes(sequences=genomes)
             cells = [ms.Cell(genome=g, proteome=p) for g, p in zip(genomes, proteomes)]
             world.add_random_cells(cells=cells)
 
+        # TODO: takes > 0.4s
         with timeit("activity", step_i, writer):
             world.enzymatic_activity()
 
+        # TODO: takes > 0.15s
         with timeit("kill", step_i, writer):
             kill_idxs = (
                 torch.argwhere(world.cell_molecules[:, idx_ATP] < 1.0)
@@ -70,6 +73,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
             )
             world.kill_cells(cell_idxs=kill_idxs)
 
+        # TODO: takes > 3s
         with timeit("replicate", step_i, writer):
             rep_idxs = (
                 torch.argwhere(world.cell_molecules[:, idx_ATP] > 5.0)
@@ -80,19 +84,21 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
             world.cell_molecules[rep_idxs, idx_ATP] -= 5.0
             world.replicate_cells(cells=[d.copy() for d in cells])
 
+        # TODO: takes > 0.3s
         with timeit("mutateGenomes", step_i, writer):
-            new_gs = ms.point_mutatations(seqs=[d.genome for d in world.cells])
+            new_gs, chgd_idxs = ms.point_mutatations(
+                seqs=[d.genome for d in world.cells]
+            )
 
-        # TODO: Prio 2: takes > 0.6s
+        # TODO: takes > 2s
         with timeit("getMutatedProteomes", step_i, writer):
-            mut_cells = []
-            for new_g, cell in zip(new_gs, world.cells):
-                if new_g != cell.genome:
-                    new_p = genetics.get_proteome(seq=new_g)
-                    new_cell = cell.copy(genome=new_g, proteome=new_p)
-                    mut_cells.append(new_cell)
+            new_ps = genetics.get_proteomes(sequences=new_gs)
+            mut_cells = [
+                world.cells[i].copy(genome=g, proteome=p)
+                for i, g, p in zip(chgd_idxs, new_gs, new_ps)
+            ]
 
-        # TODO: Prio 1, takes > 2s
+        # TODO: > 0.4s
         with timeit("updateMutatedCells", step_i, writer):
             world.update_cells(mut_cells)
 

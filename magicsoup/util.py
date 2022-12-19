@@ -2,7 +2,6 @@ from typing import TypeVar, Sequence
 from itertools import product
 import string
 import random
-import torch
 
 
 def randstr(n: int = 12) -> str:
@@ -20,64 +19,21 @@ def randstr(n: int = 12) -> str:
     )
 
 
-def cpad1d(t: torch.Tensor, n=1) -> torch.Tensor:
-    """Circular `n` padding of 3d tensor in 3rd dimention"""
-    return torch.nn.functional.pad(t, (n, n), mode="circular")
+def rad1_nghbrhd(x: int, size: int) -> list[int]:
+    """Radial 1D neigborhood of `x` with radius 1 in a circular map of size `size`"""
+    if x == 0:
+        return [size - 1, 1]
+    if x == size - 1:
+        return [x - 1, 0]
+    return [x - 1, x + 1]
 
 
-def pad_map(m: torch.Tensor) -> torch.Tensor:
-    """Do a circular padding with size 1 on a 2d bool tensor"""
-    return (
-        cpad1d(cpad1d(m.to(torch.float).unsqueeze(0), n=1).permute(0, 2, 1), n=1)
-        .permute(0, 2, 1)
-        .squeeze(0)
-        .to(torch.bool)
-    )
-
-
-def unpad_map(m: torch.Tensor) -> torch.Tensor:
-    """Remove a padding with size 1 from a 2d tensor"""
-    return m[1:-1, 1:-1]
-
-
-def _padded_index(i: int, s: int) -> list[int]:
-    if i == 0:
-        return [i, s - 2]
-    if i == 1:
-        return [i, s - 1]
-    if i == s - 1:
-        return [i, 1]
-    if i == s - 2:
-        return [i, 0]
-    return [i]
-
-
-def padded_indices(x: int, y: int, s: int) -> tuple[list[int], list[int]]:
-    """
-    For a (x, y) position in a 2d tensor with circular padding of size 1
-    get all other (x, y) positions that represent the same position.
-    Returned as 2 lists of the same size with all x and all y values.
-    """
-    xs_ = _padded_index(i=x, s=s)
-    ys_ = _padded_index(i=y, s=s)
-    xs = []
-    ys = []
-    for x, y in product(xs_, ys_):
-        xs.append(x)
-        ys.append(y)
-    return xs, ys
-
-
-def pad_2_true_idx(idx: int, size: int, pad=1) -> int:
-    """
-    Convert index of a value in a circularly padded
-    array to the index of the value in the corresponding
-    non-padded array."""
-    if idx == 0:
-        return size - pad
-    if idx == size + pad:
-        return 0
-    return idx - pad
+def moore_nghbrhd(x: int, y: int, size: int) -> list[tuple[int, int]]:
+    """Moore's neighborhood of `x, y` with radius 1 in a circular map of size `size`"""
+    xs = rad1_nghbrhd(x=x, size=size)
+    ys = rad1_nghbrhd(x=y, size=size)
+    res = set((x, y) for x, y in product(xs + [x], ys + [y]))
+    return list(res - {(x, y)})
 
 
 def weight_map_fact(seqs: list[str], min_w: float, max_w: float) -> dict[str, float]:

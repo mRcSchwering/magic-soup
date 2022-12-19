@@ -67,10 +67,12 @@ def test_cell_params_with_transporter_domains():
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
+    cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
+    cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
+
     calc_cell_params(
-        proteomes=[c0, c1],
+        cell_prots=cell_prots0 + cell_prots1,
         n_signals=8,
-        cell_idxs=[0, 1],
         Km=Km,
         Vmax=Vmax,
         E=E,
@@ -178,10 +180,12 @@ def test_cell_params_with_allosteric_domains():
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
+    cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
+    cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
+
     calc_cell_params(
-        proteomes=[c0, c1],
+        cell_prots=cell_prots0 + cell_prots1,
         n_signals=8,
-        cell_idxs=[0, 1],
         Km=Km,
         Vmax=Vmax,
         E=E,
@@ -334,10 +338,12 @@ def test_cell_params_with_catalytic_domains():
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
+    cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
+    cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
+
     calc_cell_params(
-        proteomes=[c0, c1],
+        cell_prots=cell_prots0 + cell_prots1,
         n_signals=8,
-        cell_idxs=[0, 1],
         Km=Km,
         Vmax=Vmax,
         E=E,

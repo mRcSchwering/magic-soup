@@ -1,6 +1,7 @@
 from typing import Optional
 from itertools import product
 import random
+from multiprocessing import Pool
 import torch
 from magicsoup.util import generic_map_fact, weight_map_fact, bool_map_fact
 from magicsoup.containers import _Domain, _DomainFact, Protein, Molecule
@@ -35,13 +36,6 @@ def random_genome(s=100) -> str:
     return "".join(random.choices(ALL_NTS, k=s))
 
 
-def random_genomes(n: int, s=100) -> list[str]:
-    """
-    Generate `n` random nucleotide sequences each with length `s`
-    """
-    return [random_genome(s=s) for _ in range(n)]
-
-
 def reverse_complement(seq: str) -> str:
     """Reverse-complement of a nucleotide sequence"""
     rvsd = seq[::-1]
@@ -69,38 +63,9 @@ def indel(seq: str, idx: int) -> str:
     return seq[:idx] + nt + seq[idx:]
 
 
-def _old_point_mutatations(seq: str, p=1e-3, p_indel=0.1) -> Optional[str]:
-    """
-    Mutate sequence with point mutations.
-
-    - `seq` nucleotide sequence
-    - `p` probability of a point per nucleotide
-    - `p_indel` probability of any point mutation being a deletion or insertion
-      (inverse probability of it being a substitution)
-    
-    Returns mutated sequence, or None if nothing was mutated.
-    """
-    n = len(seq)
-    muts = torch.bernoulli(torch.tensor([p] * n))
-    mut_idxs = torch.argwhere(muts).flatten().tolist()
-
-    n_muts = len(mut_idxs)
-    if n_muts == 0:
-        return None
-
-    indels = torch.bernoulli(torch.tensor([p_indel] * n_muts))
-    is_indel = indels.to(torch.bool).tolist()
-
-    tmp = seq
-    for idx, is_indel in zip(mut_idxs, is_indel):
-        if is_indel:
-            tmp = indel(seq=tmp, idx=idx)
-        else:
-            tmp = substitution(seq=tmp, idx=idx)
-    return tmp
-
-
-def point_mutatations(seqs: list[str], p=1e-3, p_indel=0.1) -> list[str]:
+def point_mutatations(
+    seqs: list[str], p=1e-3, p_indel=0.1
+) -> tuple[list[str], list[int]]:
     """
     Mutate sequences with point mutations.
 
@@ -133,7 +98,8 @@ def point_mutatations(seqs: list[str], p=1e-3, p_indel=0.1) -> list[str]:
         else:
             tmps[seq_i] = substitution(seq=tmps[seq_i], idx=pos_i)
 
-    return tmps
+    idxs = list(set(d[0] for d in mut_idxs))
+    return [tmps[i] for i in idxs], idxs
 
 
 class Genetics:
@@ -164,6 +130,7 @@ class Genetics:
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         n_region_codons=2,
+        n_workers=4,
     ):
         self.domain_facts = domain_facts
         self.molecules = molecules
@@ -173,6 +140,7 @@ class Genetics:
         self.start_codons = start_codons
         self.stop_codons = stop_codons
         self.n_region_codons = n_region_codons
+        self.n_workers = n_workers
 
         codons = variants("N" * n_region_codons * CODON_SIZE)
         self.reaction_map = generic_map_fact(codons, reactions)
@@ -199,9 +167,17 @@ class Genetics:
 
         self._validate_init()
 
+    def random_genomes(self, n: int, s=100) -> list[str]:
+        """
+        Generate `n` random nucleotide sequences each with length `s`
+        """
+        with Pool(self.n_workers) as pool:
+            return pool.map(random_genome, [s] * n)
+
     def get_proteomes(self, sequences: list[str]) -> list[list[Protein]]:
         """For each nucleotide sequence get all possible proteins"""
-        return [self.get_proteome(seq=d) for d in sequences]
+        with Pool(self.n_workers) as pool:
+            return pool.map(self.get_proteome, sequences)
 
     def get_proteome(self, seq: str) -> list[Protein]:
         """Get all possible proteins encoded by a nucleotide sequence"""
@@ -272,7 +248,7 @@ class Genetics:
         out: dict[str, dict[str, float]] = {}
 
         for size in sizes:
-            gs = random_genomes(n=n_genomes, s=size)
+            gs = self.random_genomes(n=n_genomes, s=size)
             ps = self.get_proteomes(sequences=gs)
             n_viable_proteomes = 0
             n_proteins = 0
