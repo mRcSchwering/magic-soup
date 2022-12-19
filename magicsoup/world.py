@@ -1,6 +1,7 @@
 from typing import Optional, Any
 import logging
 import random
+import math
 import torch
 from magicsoup.constants import GAS_CONSTANT, EPS
 from magicsoup.containers import Molecule, Protein, Cell
@@ -22,12 +23,14 @@ class World:
 
     - `molecules` list of all molecules that are part of this simulation
     - `map_size` number of pixels in x- and y-direction
-    - `mol_degrad` Factor by which molecules are degraded per time step (`1.0` for no degradation)
-    - `mol_diff_rate` Factor by which molecules diffuse per time step (`0.0` for no diffusion).
-      `1e-2`-`1e-3` is realistic for small biological molecules if you assume room temperature
-      and each pixel has side lengths of 10um.
-    - `mol_map_init` How to initialize molecule maps (`randn` or `zeros`)
-    - `n_max_proteins` how many proteins any single cell is expected to have at maximum at any point during the simulation
+    - `mol_halflife` Half life of all molecules. Assuming each time step is a second, values around 1e5 are realistic.
+      Must be > 0.0.
+    - `mol_diff_coef` Diffusion coefficient for all molecules. Assuming one time step is a second and one pixel
+      has a size of 10um, values around 1e-8 are realistic. 0.0 would mean no diffusion at all. Diffusion rate reaches
+      its maximum at around 1e-6 where all molecules are equally spread out around the pixels' Moor's neighborhood with
+      each time step.
+    - `mol_map_init` How to initialize molecule maps (`randn` or `zeros`). `zeros` are not actually 0.0 but a small positive
+      value instead.
     - `abs_temp` Absolute temperature (K). Affects entropy term of reaction energy (i.e. in which direction a reaction will occur)
     - `dtype` pytorch dtype to use for tensors (see pytorch docs)
     - `device` pytorch device to use for tensors (e.g. `cpu` or `gpu`, see pytorch docs)
@@ -55,8 +58,8 @@ class World:
         self,
         molecules: list[Molecule],
         map_size=128,
-        mol_degrad=0.999,
-        mol_diff_rate=1e-2,
+        mol_halflife=100_000,
+        mol_diff_coef=1e-8,
         mol_map_init="randn",
         abs_temp=310.0,
         device="cpu",
@@ -65,8 +68,9 @@ class World:
         self.molecules = molecules
         self.map_size = map_size
         self.abs_temp = abs_temp
-        self.mol_degrad = mol_degrad
-        self.mol_diff_rate = mol_diff_rate
+        self.mol_halflife = mol_halflife
+        self.mol_degrad = math.exp(-math.log(2) / mol_halflife)
+        self.mol_diff_coef = mol_diff_coef
         self.dtype = dtype
         self.device = device
         self.torch_kwargs = {"dtype": dtype, "device": device}
@@ -76,7 +80,7 @@ class World:
         self._int_mol_idxs = list(range(self.n_molecules))
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
 
-        self._diffuse = self._get_conv(mol_diff_rate=mol_diff_rate)
+        self._diffuse = self._get_conv(mol_diff_rate=mol_diff_coef * 1e6)
 
         self.cells: list[Cell] = []
 
@@ -565,11 +569,11 @@ class World:
         )
 
     def _get_conv(self, mol_diff_rate: float) -> torch.nn.Conv2d:
-        if not 0.0 <= mol_diff_rate <= 1.0:
-            raise ValueError(
-                "Diffusion rate must be between 0 and 1."
-                f" Now it's mol_diff_rate={mol_diff_rate}"
-            )
+        if mol_diff_rate < 0.0:
+            mol_diff_rate = -mol_diff_rate
+
+        if mol_diff_rate > 1.0:
+            mol_diff_rate = 1.0
 
         if mol_diff_rate == 0.0:
             a = 0.0
@@ -651,13 +655,13 @@ class World:
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(molecules=%r,map_size=%r,mol_degrad=%r,mol_diff_rate=%r,abs_temp=%r,device=%r,dtype=%r)"
+            "%s(molecules=%r,map_size=%r,mol_halflife=%r,mol_diff_coef=%r,abs_temp=%r,device=%r,dtype=%r)"
             % (
                 clsname,
                 self.molecules,
                 self.map_size,
-                self.mol_degrad,
-                self.mol_diff_rate,
+                self.mol_halflife,
+                self.mol_diff_coef,
                 self.abs_temp,
                 self.device,
                 self.dtype,

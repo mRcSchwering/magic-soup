@@ -80,9 +80,11 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
             world.cell_molecules[rep_idxs, idx_ATP] -= 5.0
             world.replicate_cells(cells=[d.copy() for d in cells])
 
-        with timeit("mutate", step_i, writer):
+        with timeit("mutateGenomes", step_i, writer):
             new_gs = ms.point_mutatations(seqs=[d.genome for d in world.cells])
 
+        # TODO: Prio 2: takes > 0.6s
+        with timeit("getMutatedProteomes", step_i, writer):
             mut_cells = []
             for new_g, cell in zip(new_gs, world.cells):
                 if new_g != cell.genome:
@@ -90,6 +92,8 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
                     new_cell = cell.copy(genome=new_g, proteome=new_p)
                     mut_cells.append(new_cell)
 
+        # TODO: Prio 1, takes > 2s
+        with timeit("updateMutatedCells", step_i, writer):
             world.update_cells(mut_cells)
 
         with timeit("wrapUp", step_i, writer):
