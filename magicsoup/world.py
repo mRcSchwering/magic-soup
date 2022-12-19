@@ -4,12 +4,11 @@ import random
 import math
 import torch
 from magicsoup.constants import GAS_CONSTANT, EPS
-from magicsoup.containers import Molecule, Protein, Cell
+from magicsoup.containers import Molecule, Cell
 from magicsoup.util import pad_2_true_idx, padded_indices, pad_map, unpad_map
 from magicsoup.kinetics import integrate_signals, calc_cell_params
 
 
-# TODO: have Molecules carry their own idx?
 # TODO: placing cells is still weird. maybe easier to avoid padded_map?!
 
 _log = logging.getLogger(__name__)
@@ -77,6 +76,9 @@ class World:
 
         self.n_molecules = len(molecules)
         self._mol_2_idx = self._get_mol_2_idx_map(molecules=molecules)
+        for idx, mol in enumerate(molecules):
+            mol.int_idx = idx
+            mol.ext_idx = self.n_molecules + idx
         self._int_mol_idxs = list(range(self.n_molecules))
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
 
@@ -190,9 +192,7 @@ class World:
             ys.append(y)
         self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T
 
-        self._add_new_cells_to_proteome_params(
-            proteomes=[d.proteome for d in new_cells], cell_idxs=new_idxs
-        )
+        self._add_new_cells_to_proteome_params(new_cells=new_cells)
 
     def replicate_cells(self, cells: list[Cell]):
         """
@@ -226,9 +226,7 @@ class World:
         # cell is supposed to have the same concentrations as the parent had
         self.cell_molecules[new_idxs, :] = self.cell_molecules[old_idxs, :]
 
-        self._add_new_cells_to_proteome_params(
-            proteomes=[d.proteome for d in new_cells], cell_idxs=new_idxs
-        )
+        self._add_new_cells_to_proteome_params(new_cells=new_cells)
 
     def update_cells(self, cells: list[Cell]):
         """
@@ -242,9 +240,7 @@ class World:
             self.cells[cell.idx] = cell
 
         self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
-        self._add_new_cells_to_proteome_params(
-            proteomes=[d.proteome for d in cells], cell_idxs=[d.idx for d in cells]
-        )
+        self._add_new_cells_to_proteome_params(new_cells=cells)
 
     def kill_cells(self, cell_idxs: list[int]):
         """
@@ -384,9 +380,10 @@ class World:
         print("")
         return None
 
-    def _add_new_cells_to_proteome_params(
-        self, proteomes: list[list[Protein]], cell_idxs: list[int]
-    ):
+    def _add_new_cells_to_proteome_params(self, new_cells: list[Cell]):
+        proteomes = [d.proteome for d in new_cells]
+        cell_idxs = [d.idx for d in new_cells]
+
         calc_cell_params(
             proteomes=proteomes,
             n_signals=2 * self.n_molecules,

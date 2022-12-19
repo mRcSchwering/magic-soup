@@ -19,10 +19,9 @@ mb = Molecule("b", energy=10)
 mc = Molecule("c", energy=10)
 md = Molecule("d", energy=5)
 
-mol_2_idx = {
-    (ma, False): 0, (mb, False): 1, (mc, False): 2, (md, False): 3,
-    (ma, True): 4, (mb, True): 5, (mc, True): 6, (md, True): 7,
-}
+for idx, mol in enumerate([ma, mb, mc, md]):
+    mol.int_idx = idx
+    mol.ext_idx = 4 + idx
 
 r_a_b = ([ma], [mb])
 r_b_c = ([mb], [mc])
@@ -71,7 +70,6 @@ def test_cell_params_with_transporter_domains():
     calc_cell_params(
         proteomes=[c0, c1],
         n_signals=8,
-        mol_2_idx=mol_2_idx,
         cell_idxs=[0, 1],
         Km=Km,
         Vmax=Vmax,
@@ -183,7 +181,6 @@ def test_cell_params_with_allosteric_domains():
     calc_cell_params(
         proteomes=[c0, c1],
         n_signals=8,
-        mol_2_idx=mol_2_idx,
         cell_idxs=[0, 1],
         Km=Km,
         Vmax=Vmax,
@@ -340,7 +337,6 @@ def test_cell_params_with_catalytic_domains():
     calc_cell_params(
         proteomes=[c0, c1],
         n_signals=8,
-        mol_2_idx=mol_2_idx,
         cell_idxs=[0, 1],
         Km=Km,
         Vmax=Vmax,

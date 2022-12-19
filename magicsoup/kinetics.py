@@ -1,12 +1,11 @@
 import torch
 from magicsoup.constants import EPS
-from magicsoup.containers import Protein, Molecule
+from magicsoup.containers import Protein
 
 
 def calc_cell_params(
     proteomes: list[list[Protein]],
     n_signals: int,
-    mol_2_idx: dict[tuple[Molecule, bool], int],
     cell_idxs: list[int],
     Km: torch.Tensor,
     Vmax: torch.Tensor,
@@ -37,6 +36,7 @@ def calc_cell_params(
 
     for cell_i, cell in zip(cell_idxs, proteomes):
         for prot_i, protein in enumerate(cell):
+
             energy = 0.0
             km: list[list[float]] = [[] for _ in range(n_signals)]
             vmax: list[float] = []
@@ -47,7 +47,10 @@ def calc_cell_params(
 
                 if dom.is_allosteric:
                     mol = dom.substrates[0]
-                    mol_i = mol_2_idx[mol, dom.is_transmembrane]
+                    if dom.is_transmembrane:
+                        mol_i = mol.ext_idx
+                    else:
+                        mol_i = mol.int_idx
                     km[mol_i].append(dom.affinity)
                     a[mol_i] += -1 if dom.is_inhibiting else 1
 
@@ -56,11 +59,11 @@ def calc_cell_params(
                     mol = dom.substrates[0]
 
                     if dom.is_bkwd:
-                        sub_i = mol_2_idx[mol, True]
-                        prod_i = mol_2_idx[mol, False]
+                        sub_i = mol.ext_idx
+                        prod_i = mol.int_idx
                     else:
-                        sub_i = mol_2_idx[mol, False]
-                        prod_i = mol_2_idx[mol, True]
+                        sub_i = mol.int_idx
+                        prod_i = mol.ext_idx
 
                     km[sub_i].append(dom.affinity)
                     n[sub_i] -= 1
@@ -80,13 +83,13 @@ def calc_cell_params(
 
                     for mol in subs:
                         energy -= mol.energy
-                        mol_i = mol_2_idx[mol, False]
+                        mol_i = mol.int_idx
                         km[mol_i].append(dom.affinity)
                         n[mol_i] -= 1
 
                     for mol in prods:
                         energy += mol.energy
-                        mol_i = mol_2_idx[mol, False]
+                        mol_i = mol.int_idx
                         km[mol_i].append(1 / dom.affinity)
                         n[mol_i] += 1
 

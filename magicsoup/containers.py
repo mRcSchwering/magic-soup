@@ -3,6 +3,9 @@ import abc
 import torch
 
 
+# TODO: tests for containers, e.g. comparisons
+
+
 class Molecule:
     """
     Represents a type of molecule which is part of the world, can diffuse,
@@ -25,14 +28,13 @@ class Molecule:
     def __init__(self, name: str, energy: float):
         self.name = name
         self.energy = energy
+        self.int_idx = -1
+        self.ext_idx = -1
 
-    def copy(self) -> "Molecule":
-        """Instatiate this type of molecule again"""
-        return Molecule(name=self.name, energy=self.energy)
+        self._hash = hash((self.name, self.energy))
 
     def __hash__(self) -> int:
-        clsname = type(self).__name__
-        return hash((clsname, self.name, self.energy))
+        return self._hash
 
     def __eq__(self, other) -> bool:
         return hash(self) == hash(other)
@@ -105,6 +107,26 @@ class _Domain:
         self.is_inhibiting = is_inhibiting
         self.is_transmembrane = is_transmembrane
 
+        self._hash = hash(
+            (
+                tuple(self.substrates),
+                tuple(self.products),
+                self.affinity,
+                self.velocity,
+                self.is_bkwd,
+                self.is_catalytic,
+                self.is_transporter,
+                self.is_allosteric,
+                self.is_transmembrane,
+            )
+        )
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def __eq__(self, other) -> bool:
+        return hash(self) == hash(other)
+
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
@@ -126,17 +148,9 @@ class _Domain:
         )
 
     def __str__(self) -> str:
-        # TODO: Transporter molecule A in->out not very useful
-        #       maybe put __str__ into each class
         ins = ",".join(str(d) for d in self.substrates)
         outs = ",".join(str(d) for d in self.products)
-        if self.is_transporter:
-            return f"TransporterDomain({ins}->{outs})"
-        if self.is_allosteric:
-            return f"ReceptorDomain({ins})"
-        if self.is_catalytic:
-            return f"CatalyticDomain({ins}->{outs})"
-        return f"Domain({ins}->{outs})"
+        return f"Domain({ins}<->{outs})"
 
 
 class _DomainFact(abc.ABC):
@@ -168,13 +182,22 @@ class CatalyticDomain(_Domain):
     ):
         subs, prods = reaction
         super().__init__(
-            substrates=[d.copy() for d in subs],
-            products=[d.copy() for d in prods],
+            substrates=subs,
+            products=prods,
             affinity=affinity,
             velocity=velocity,
             is_bkwd=is_bkwd,
             is_catalytic=True,
         )
+
+    def __str__(self) -> str:
+        if self.is_bkwd:
+            outs = ",".join(str(d) for d in self.substrates)
+            ins = ",".join(str(d) for d in self.products)
+        else:
+            ins = ",".join(str(d) for d in self.substrates)
+            outs = ",".join(str(d) for d in self.products)
+        return f"CatalyticDomain({ins}->{outs})"
 
 
 class CatalyticFact(_DomainFact):
@@ -220,6 +243,10 @@ class TransporterDomain(_Domain):
             is_transporter=True,
         )
 
+    def __str__(self) -> str:
+        d = "outwards" if self.is_bkwd else "inwards"
+        return f"TransporterDomain({self.substrates[0]},{d})"
+
 
 class TransporterFact(_DomainFact):
     """
@@ -239,7 +266,7 @@ class TransporterFact(_DomainFact):
     n_regions = 4
 
     def __call__(self, seq: str) -> _Domain:
-        mol = self.molecule_map[seq[0 : self.region_size]].copy()
+        mol = self.molecule_map[seq[0 : self.region_size]]
         aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
         velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
         is_bkwd = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
@@ -271,6 +298,11 @@ class AllostericDomain(_Domain):
             is_transmembrane=is_transmembrane,
         )
 
+    def __str__(self) -> str:
+        loc = "transmembrane" if self.is_transmembrane else "cytosolic"
+        eff = "inhibiting" if self.is_inhibiting else "activating"
+        return f"ReceptorDomain({self.substrates[0]},{loc},{eff})"
+
 
 class AllostericFact(_DomainFact):
     """
@@ -299,7 +331,7 @@ class AllostericFact(_DomainFact):
         self.is_inhibiting = is_inhibiting
 
     def __call__(self, seq: str) -> _Domain:
-        mol = self.molecule_map[seq[0 : self.region_size]].copy()
+        mol = self.molecule_map[seq[0 : self.region_size]]
         aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
         return AllostericDomain(
             effector=mol,
@@ -330,6 +362,14 @@ class Protein:
         self.domains = domains
         self.label = label
         self.n_domains = len(domains)
+
+        self._hash = hash(tuple(self.domains))
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def __eq__(self, other) -> bool:
+        return hash(self) == hash(other)
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
@@ -368,6 +408,12 @@ class Cell:
         self.n_survived_steps = n_survived_steps
         self.int_molecules: Optional[torch.Tensor] = None
         self.ext_molecules: Optional[torch.Tensor] = None
+
+    def __hash__(self) -> int:
+        return hash(self.genome)
+
+    def __eq__(self, other) -> bool:
+        return hash(self) == hash(other)
 
     def copy(self, **kwargs) -> "Cell":
         old_kwargs = {

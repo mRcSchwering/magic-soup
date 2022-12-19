@@ -38,7 +38,7 @@ def test_diffuse():
     ]
     # fmt: on
 
-    world = ms.World(map_size=5, molecules=MOLECULES[:2], mol_diff_rate=0.5)
+    world = ms.World(map_size=5, molecules=MOLECULES[:2], mol_diff_coef=0.5 / 1e6)
     world.molecule_map = torch.tensor([layer0, layer1])
 
     world.diffuse_molecules()
@@ -59,7 +59,8 @@ def test_degrade():
     ]
     # fmt: on
 
-    world = ms.World(map_size=5, molecules=MOLECULES[:2], mol_degrad=0.8)
+    world = ms.World(map_size=5, molecules=MOLECULES[:2], mol_halflife=1.0)
+    world.mol_degrad = 0.8
     world.molecule_map[0] = torch.tensor([layer0])
 
     world.degrade_molecules()
