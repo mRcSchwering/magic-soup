@@ -75,7 +75,6 @@ class World:
         self.torch_kwargs = {"dtype": dtype, "device": device}
 
         self.n_molecules = len(molecules)
-        self._mol_2_idx = self._get_mol_2_idx_map(molecules=molecules)
         for idx, mol in enumerate(molecules):
             mol.int_idx = idx
             mol.ext_idx = self.n_molecules + idx
@@ -136,24 +135,6 @@ class World:
             cell.int_molecules = self.cell_molecules[cell.idx, :]
             cell.ext_molecules = ext_molecules[ci, :]
         return cells
-
-    def get_intracellular_molecule_idxs(self, molecules: list[Molecule]) -> list[int]:
-        """
-        Get indexes for intracellular molecule concentrations.
-
-        Intracellular molecule concentrations are referenced on `cell_molecules`.
-        This is a tensor with cells in dimension 0 and molecules in dimension 1.
-        Use like:
-
-        ```
-            idxs = world.get_molecule_idxs(molecules=[ATP, ADP])
-            X = world.cell_molecules[:, idxs]
-        ```
-
-        It gets updated whenever some action that changes the amount of cells
-        is performed. So, you should always access it directly on `world.cell_molecules`.
-        """
-        return [self._mol_2_idx[(d, False)] for d in molecules]
 
     def add_random_cells(self, cells: list[Cell]):
         """
@@ -388,7 +369,6 @@ class World:
             proteomes=proteomes,
             n_signals=2 * self.n_molecules,
             cell_idxs=cell_idxs,
-            mol_2_idx=self._mol_2_idx,
             Km=self.affinities,
             Vmax=self.velocities,
             E=self.energies,
@@ -638,16 +618,6 @@ class World:
 
     def _tensor(self, *args, **kwargs) -> torch.Tensor:
         return torch.zeros(*args, **{**self.torch_kwargs, **kwargs})
-
-    def _get_mol_2_idx_map(
-        self, molecules: list[Molecule]
-    ) -> dict[tuple[Molecule, bool], int]:
-        n_molecules = len(molecules)
-        mol_2_idx = {}
-        for mol_i, mol in enumerate(molecules):
-            mol_2_idx[(mol, False)] = mol_i
-            mol_2_idx[(mol, True)] = mol_i + n_molecules
-        return mol_2_idx
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
