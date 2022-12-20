@@ -80,9 +80,8 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
                 .flatten()
                 .tolist()
             )
-            cells = world.get_cells(by_idxs=rep_idxs)
-            world.cell_molecules[rep_idxs, idx_ATP] -= 5.0
-            world.replicate_cells(cells=[d.copy() for d in cells])
+            succ_parents, children = world.replicate_cells(parent_idxs=rep_idxs)
+            world.cell_molecules[succ_parents + children, idx_ATP] -= 5.0
 
         # TODO: takes > 0.3s
         with timeit("mutateGenomes", step_i, writer):

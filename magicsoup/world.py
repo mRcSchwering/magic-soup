@@ -193,7 +193,7 @@ class World:
             A=self.effectors,
         )
 
-    def replicate_cells(self, cells: list[Cell]):
+    def replicate_cells(self, parent_idxs) -> tuple[list[int], list[int]]:
         """
         Replicate existing cells with new genomes and proteomes.
 
@@ -206,39 +206,30 @@ class World:
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not replicate.
         """
-        _log.debug("Replicating %i cells", len(cells))
+        _log.debug("Replicating %i cells", len(parent_idxs))
+        if len(parent_idxs) == 0:
+            return [], []
 
-        if len(cells) == 0:
-            return
+        succ_parent_idxs, child_idxs = self._replicate_cells_as_possible(
+            parent_idxs=parent_idxs
+        )
 
-        old_idxs, new_idxs = self._place_replicated_cells_near_parents(cells=cells)
-
-        n_new_cells = len(new_idxs)
+        n_new_cells = len(child_idxs)
         if n_new_cells == 0:
-            return
+            return [], []
 
         self._expand_max_cells(by_n=n_new_cells)
 
-        new_cells = [self.cells[i] for i in new_idxs]
-        self._expand_max_proteins(max_n=max(len(d.proteome) for d in new_cells))
-
         # cell is supposed to have the same concentrations as the parent had
-        self.cell_molecules[new_idxs, :] = self.cell_molecules[old_idxs, :]
+        self.cell_molecules[child_idxs, :] = self.cell_molecules[succ_parent_idxs, :]
 
-        cell_prots: list[tuple[int, int, Optional[Protein]]] = []
-        for cell in new_cells:
-            for prot_i, prot in enumerate(cell.proteome):
-                cell_prots.append((cell.idx, prot_i, prot))
+        self.affinities[child_idxs] = self.affinities[succ_parent_idxs]
+        self.velocities[child_idxs] = self.velocities[succ_parent_idxs]
+        self.energies[child_idxs] = self.energies[succ_parent_idxs]
+        self.stoichiometry[child_idxs] = self.stoichiometry[succ_parent_idxs]
+        self.effectors[child_idxs] = self.effectors[succ_parent_idxs]
 
-        calc_cell_params(
-            cell_prots=cell_prots,
-            n_signals=2 * self.n_molecules,
-            Km=self.affinities,
-            Vmax=self.velocities,
-            E=self.energies,
-            N=self.stoichiometry,
-            A=self.effectors,
-        )
+        return succ_parent_idxs, child_idxs
 
     def update_cells(self, cells: list[Cell]):
         """
@@ -435,14 +426,16 @@ class World:
             self.cell_map[new_x, new_y] = True
             cell.position = (new_x, new_y)
 
-    def _place_replicated_cells_near_parents(
-        self, cells: list[Cell]
+    def _replicate_cells_as_possible(
+        self, parent_idxs: list[int]
     ) -> tuple[list[int], list[int]]:
         idx = 0
-        new_idxs = []
-        old_idxs = []
-        for cell in cells:
-            x, y = cell.position
+        child_idxs = []
+        successful_parent_idxs = []
+        for parent_idx in parent_idxs:
+            parent = self.cells[parent_idx]
+
+            x, y = parent.position
             nghbrhd = self._nghbrhd_map[(x, y)]
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
             n = len(pxls)
@@ -450,26 +443,23 @@ class World:
             if n == 0:
                 _log.info(
                     "Wanted to replicate cell next to %i, %i"
-                    " but no pixel in the Moore neighborhood was free."
+                    " but no pixel in the neighborhood was available."
                     " So, cell wasn't able to replicate.",
                     x,
                     y,
                 )
                 continue
 
-            # place cell in position
             new_x, new_y = pxls[random.randint(0, n - 1)].tolist()
             self.cell_map[new_x, new_y] = True
-            cell.position = (new_x, new_y)
 
-            # set new cell idx
-            old_idxs.append(cell.idx)
-            new_idxs.append(idx)
-            cell.idx = idx
-            self.cells.append(cell)
+            child = parent.copy(idx=idx, position=(new_x, new_y))
+            successful_parent_idxs.append(parent_idx)
+            child_idxs.append(idx)
+            self.cells.append(child)
             idx += 1
 
-        return old_idxs, new_idxs
+        return successful_parent_idxs, child_idxs
 
     def _place_new_cells_in_random_positions(self, cells: list[Cell]) -> list[int]:
         # available spots on map
