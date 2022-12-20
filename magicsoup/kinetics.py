@@ -254,15 +254,8 @@ def integrate_signals(
     - proteins can catalyze reactions in a way that they overshoot their equilibirum state (heuristics try to avoid that, see text above)
     """
     # TODO: refactor:
-    #       - it seems like some of the masks are unnecessary (e.g. if I know that in
-    #         N there is 0.0 in certain places, do I really need a mask like sub_M?)
     #       - can I first do the nom / denom, then pow and prod afterwards?
-    #       - are there some things which I basically calculate 2 times? Can I avoid it?
-    #         or are there some intermediates which could be reused if I would calculate
-    #         them slightly different/in different order?
     #       - does it help to use masked tensors? (pytorch.org/docs/stable/masked.html)
-    #       - better names, split into a few functions?
-    #       - torch.expand faster?
 
     Q = _get_reaction_quotients(X=X, N=N)  # (c, p)
 
@@ -276,49 +269,17 @@ def integrate_signals(
 
     # proteins
     prot_V = _get_protein_activity(X=X, N=N_adj, Km=Km)  # (c, p)
-    V_normal = Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
+    V = Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
 
-    # adjust with maximum allowable velocity
-    # TODO: not correct yet
-    V_allowed = (
-        (X - EPS).unsqueeze(1).expand(-1, V_normal.shape[1], -1).min(dim=2).values
-    )
-    V = V_normal.clamp(max=V_allowed)
+    # get limiting velocities (substrate would be empty)
+    X_max = torch.einsum("cs,cps->cps", -X + EPS, 1 / N_adj)
+    V_limit = X_max.max(dim=2).values.clamp(0.0)
 
-    # concentration deltas (c, s)
-    Xd = torch.einsum("cps,cp->cs", N_adj, V)
+    Xd = torch.einsum("cps,cp->cs", N_adj, V.clamp(max=V_limit).nan_to_num())
 
-    # X1 = X + Xd
-    # if torch.any(X1 < EPS):
-    #     neg_conc = torch.where(X1 < EPS, 1.0, 0.0)  # (c, s)
-    #     candidates = torch.where(N_adj < 0.0, 1.0, 0.0)  # (c, p, s)
-
-    #     # which proteins need to be down-regulated (c, p)
-    #     BX_mask = torch.einsum("cps,cs->cps", candidates, neg_conc)
-    #     prot_M = BX_mask.max(dim=2).values
-
-    #     # what are the correction factors (c,)
-    #     correct = torch.where(neg_conc > 0.0, -(X - EPS) / Xd, 1.0).min(dim=1).values
-    #     correct = torch.nan_to_num(correct, nan=0.0)
-
-    #     # correction for protein velocities (c, p)
-    #     prot_V_adj = torch.einsum("cp,c->cp", prot_M, correct)
-    #     prot_V_adj = torch.where(prot_V_adj == 0.0, 1.0, prot_V_adj)
-
-    #     # new concentration deltas (c, s)
-    #     Xd = torch.einsum("cps,cp->cs", N_adj, V * prot_V_adj)
-
-    #     # TODO: can I already predict this before calculated Xd the first time?
-    #     #       maybe at the time when I know the intended protein velocities?
-    #     #       and then use this as the maximum Vmax, so that protein velocities
-    #     #       are capped automatically capped to this velocity if substrate
-    #     #       concentrations are low
-
-    X1 = X + Xd
-    if torch.any(X1 < EPS):
-
-        # float precision can still drive X1 below 0
-        Xd = torch.where(X1 < EPS, EPS - X1, Xd)
+    # low float precision can still drive X below 0
+    # final lazy correction
+    Xd = Xd.clamp(-X + EPS)
 
     return Xd
 

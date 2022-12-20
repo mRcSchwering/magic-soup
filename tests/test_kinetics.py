@@ -447,7 +447,7 @@ def test_simple_mm_kinetic():
 
     # concentrations (c, s)
     X0 = torch.tensor([
-        [1.1, 0.1, 2.9, 0.8],
+        [1.1, 0.9, 2.9, 0.8],
         [2.9, 3.1, 2.1, 1.0],
     ])
 
@@ -669,7 +669,7 @@ def test_mm_kinetic_with_multiple_substrates():
 
 def test_mm_kinetic_with_allosteric_action():
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
-    # cell 0: P0: a -> b, inhibitor=c, P1: c -> d, activator=a
+    # cell 0: P0: a -> b, inhibitor=c, P1: c -> d, activator=a, P3: a -> b, inh=c, act=d
     # cell 1: P0: a -> b, inhibitor=c,d, P1: c -> d, activator=a,b
 
     # fmt: off
@@ -684,7 +684,7 @@ def test_mm_kinetic_with_allosteric_action():
     N = torch.tensor([
         [   [-1.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, -1.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0]   ],
+            [-1.0, 1.0, 0.0, 0.0]   ],
         [   [-1.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, -1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]   ],
@@ -694,7 +694,7 @@ def test_mm_kinetic_with_allosteric_action():
     Km = torch.tensor([
         [   [1.2, 3.1, 0.7, 0.0],
             [1.0, 0.0, 0.9, 1.2],
-            [0.0, 0.0, 0.0, 0.0] ],
+            [1.0, 0.1, 1.0, 1.0] ],
         [   [2.1, 1.3, 1.0, 0.6],
             [1.3, 0.8, 0.3, 1.1],
             [0.0, 0.0, 0.0, 0.0] ],
@@ -702,7 +702,7 @@ def test_mm_kinetic_with_allosteric_action():
 
     # max velocities (c, p)
     Vmax = torch.tensor([
-        [2.1, 2.0, 0.0],
+        [2.1, 2.0, 1.0],
         [3.2, 2.5, 0.0],
     ])
 
@@ -710,7 +710,7 @@ def test_mm_kinetic_with_allosteric_action():
     A = torch.tensor([
         [   [0.0, 0.0, -1.0, 0.0],
             [1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]   ],
+            [0.0, 0.0, -1.0, 1.0]   ],
         [   [0.0, 0.0, -1.0, -1.0],
             [1.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]   ],
@@ -743,8 +743,13 @@ def test_mm_kinetic_with_allosteric_action():
     v1_c0 = mm(x=X0[0, 2], v=Vmax[0, 1], kx=Km[0, 1, 2]) * fa(
         a=X0[0, 0], ka=Km[0, 1, 0]
     )
-    dx_c0_b = v0_c0
-    dx_c0_a = -v0_c0
+    v2_c0 = (
+        mm(x=X0[0, 0], v=Vmax[0, 2], kx=Km[0, 2, 0])
+        * fi(i=X0[0, 2], ki=Km[0, 2, 2])
+        * fa(a=X0[0, 3], ka=Km[0, 2, 3])
+    )
+    dx_c0_b = v0_c0 + v2_c0
+    dx_c0_a = -v0_c0 - v2_c0
     dx_c0_c = -v1_c0
     dx_c0_d = v1_c0
 
@@ -782,7 +787,7 @@ def test_reduce_velocity_to_avoid_zero_concentrations():
 
     # concentrations (c, s)
     X0 = torch.tensor([
-        [0.1, 0.1, 2.9, 0.8],
+        [0.1, 1.0, 2.9, 0.8],
         [2.9, 3.1, 0.1, 1.0],
     ])
 
@@ -840,7 +845,7 @@ def test_reduce_velocity_to_avoid_zero_concentrations():
     # but this would lead to Xd + X0 = -0.0722 (for c)
     assert X0[1, 2] - 2 * v0_c1 < EPS
     # so velocity should be reduced to c (it will be 0 afterwards)
-    v0_c1 = X0[1, 2] / 2 - EPS
+    v0_c1 = (X0[1, 2] - EPS) / 2
     dx_c1_a = 0.0
     dx_c1_b = 0.0
     dx_c1_c = -2 * v0_c1
