@@ -4,10 +4,10 @@ import random
 from itertools import product
 import math
 import torch
-from magicsoup.constants import GAS_CONSTANT, EPS
+from magicsoup.constants import EPS
 from magicsoup.containers import Molecule, Cell, Protein
 from magicsoup.util import moore_nghbrhd
-from magicsoup.kinetics import integrate_signals, calc_cell_params
+from magicsoup.kinetics import Kinetics
 
 
 _log = logging.getLogger(__name__)
@@ -89,6 +89,7 @@ class World:
         }
 
         self.cells: list[Cell] = []
+        self.kinetics = Kinetics(n_signals=2 * self.n_molecules)
 
         self.cell_map = self._tensor(self.map_size, self.map_size, dtype=torch.bool)
         self.cell_survival = self._tensor(0)
@@ -96,12 +97,6 @@ class World:
         self.molecule_map = self._get_molecule_map(
             n=self.n_molecules, size=self.map_size, init=mol_map_init
         )
-
-        self.affinities = self._tensor(0, 0, 2 * self.n_molecules)
-        self.velocities = self._tensor(0, 0)
-        self.energies = self._tensor(0, 0)
-        self.stoichiometry = self._tensor(0, 0, 2 * self.n_molecules)
-        self.effectors = self._tensor(0, 0, 2 * self.n_molecules)
 
         _log.info("Major world tensors are running on %s as %s", device, dtype)
         _log.debug(
@@ -164,10 +159,14 @@ class World:
         if n_new_cells == 0:
             return
 
-        self._expand_max_cells(by_n=n_new_cells)
+        self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
+        self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
+        self.kinetics.increase_max_cells(by_n=n_new_cells)
 
         new_cells = [self.cells[i] for i in new_idxs]
-        self._expand_max_proteins(max_n=max(len(d.proteome) for d in new_cells))
+        self.kinetics.increase_max_proteins(
+            max_n=max(len(d.proteome) for d in new_cells)
+        )
 
         # cell is supposed to have the same concentrations as the pxl it lives on
         new_positions = [self.cells[i].position for i in new_idxs]
@@ -178,20 +177,12 @@ class World:
             ys.append(y)
         self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T
 
-        cell_prots: list[tuple[int, int, Optional[Protein]]] = []
+        set_params: list[tuple[int, int, Protein]] = []
         for cell in new_cells:
             for prot_i, prot in enumerate(cell.proteome):
-                cell_prots.append((cell.idx, prot_i, prot))
+                set_params.append((cell.idx, prot_i, prot))
 
-        calc_cell_params(
-            cell_prots=cell_prots,
-            n_signals=2 * self.n_molecules,
-            Km=self.affinities,
-            Vmax=self.velocities,
-            E=self.energies,
-            N=self.stoichiometry,
-            A=self.effectors,
-        )
+        self.kinetics.set_cell_params(cell_prots=set_params)
 
     def replicate_cells(self, parent_idxs) -> tuple[list[int], list[int]]:
         """
@@ -218,16 +209,14 @@ class World:
         if n_new_cells == 0:
             return [], []
 
-        self._expand_max_cells(by_n=n_new_cells)
+        self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
+        self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
+        self.kinetics.increase_max_cells(by_n=n_new_cells)
 
         # cell is supposed to have the same concentrations as the parent had
         self.cell_molecules[child_idxs, :] = self.cell_molecules[succ_parent_idxs, :]
 
-        self.affinities[child_idxs] = self.affinities[succ_parent_idxs]
-        self.velocities[child_idxs] = self.velocities[succ_parent_idxs]
-        self.energies[child_idxs] = self.energies[succ_parent_idxs]
-        self.stoichiometry[child_idxs] = self.stoichiometry[succ_parent_idxs]
-        self.effectors[child_idxs] = self.effectors[succ_parent_idxs]
+        self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
 
         return succ_parent_idxs, child_idxs
 
@@ -239,7 +228,8 @@ class World:
         """
         _log.debug("Updating %i cells", len(cells))
 
-        cell_prots: list[tuple[int, int, Optional[Protein]]] = []
+        set_params: list[tuple[int, int, Protein]] = []
+        unset_params: list[tuple[int, int]] = []
         for new_cell in cells:
             ci = new_cell.idx
             oldprot = self.cells[ci].proteome
@@ -249,21 +239,13 @@ class World:
             n = min(n_old, n_new)
             for pi, (np, op) in enumerate(zip(newprot[:n], oldprot[:n])):
                 if np != op:
-                    cell_prots.append((ci, pi, np))
+                    set_params.append((ci, pi, np))
             if n_old > n_new:
-                cell_prots.extend((ci, i, None) for i in range(n, n_old))
+                unset_params.extend((ci, i) for i in range(n, n_old))
 
-        self._expand_max_proteins(max_n=max(len(d.proteome) for d in cells))
-
-        calc_cell_params(
-            cell_prots=cell_prots,
-            n_signals=2 * self.n_molecules,
-            Km=self.affinities,
-            Vmax=self.velocities,
-            E=self.energies,
-            N=self.stoichiometry,
-            A=self.effectors,
-        )
+        self.kinetics.increase_max_proteins(max_n=max(len(d.proteome) for d in cells))
+        self.kinetics.set_cell_params(cell_prots=set_params)
+        self.kinetics.unset_cell_params(cell_prots=unset_params)
 
     def kill_cells(self, cell_idxs: list[int]):
         """
@@ -287,7 +269,12 @@ class World:
 
         spillout = self.cell_molecules[cell_idxs, :]
         self._add_cell_ext_molecules(cells=cells, molecules=spillout)
-        self._remove_cell_rows(idxs=cell_idxs)
+
+        keep = torch.ones(self.cell_survival.shape[0], dtype=torch.bool)
+        keep[cell_idxs] = False
+        self.cell_survival = self.cell_survival[keep]
+        self.cell_molecules = self.cell_molecules[keep]
+        self.kinetics.remove_cell_params(keep=keep)
 
         new_idx = 0
         new_cells = []
@@ -343,21 +330,7 @@ class World:
         ext_molecules = self._get_cell_ext_molecules(cells=self.cells)
         X = torch.cat([self.cell_molecules, ext_molecules], dim=1)
 
-        _log.debug(
-            "Integrate signals with (c, p, s)=(%i, %i, %i)",
-            int(X.shape[0]),
-            int(self.velocities.shape[1]),
-            int(X.shape[1]),
-        )
-
-        Xd = integrate_signals(
-            X=X,
-            Km=self.affinities,
-            Vmax=self.velocities,
-            Ke=torch.exp(-self.energies / self.abs_temp / GAS_CONSTANT),
-            N=self.stoichiometry,
-            A=self.effectors,
-        )
+        Xd = self.kinetics.integrate_signals(X=X)
         X += Xd
 
         self.cell_molecules = X[:, self._int_mol_idxs]
@@ -568,36 +541,6 @@ class World:
         )
         conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
         return conv
-
-    def _expand_max_cells(self, by_n: int):
-        self.cell_survival = self._expand(t=self.cell_survival, n=by_n, d=0)
-        self.cell_molecules = self._expand(t=self.cell_molecules, n=by_n, d=0)
-        self.affinities = self._expand(t=self.affinities, n=by_n, d=0)
-        self.velocities = self._expand(t=self.velocities, n=by_n, d=0)
-        self.energies = self._expand(t=self.energies, n=by_n, d=0)
-        self.stoichiometry = self._expand(t=self.stoichiometry, n=by_n, d=0)
-        self.effectors = self._expand(t=self.effectors, n=by_n, d=0)
-
-    def _remove_cell_rows(self, idxs: list[int]):
-        keep = torch.ones(self.cell_survival.shape[0], dtype=torch.bool)
-        keep[idxs] = False
-        self.cell_survival = self.cell_survival[keep]
-        self.cell_molecules = self.cell_molecules[keep]
-        self.affinities = self.affinities[keep]
-        self.velocities = self.velocities[keep]
-        self.energies = self.energies[keep]
-        self.stoichiometry = self.stoichiometry[keep]
-        self.effectors = self.effectors[keep]
-
-    def _expand_max_proteins(self, max_n: int):
-        n_prots = int(self.affinities.shape[1])
-        if max_n > n_prots:
-            by_n = max_n - n_prots
-            self.affinities = self._expand(t=self.affinities, n=by_n, d=1)
-            self.velocities = self._expand(t=self.velocities, n=by_n, d=1)
-            self.energies = self._expand(t=self.energies, n=by_n, d=1)
-            self.stoichiometry = self._expand(t=self.stoichiometry, n=by_n, d=1)
-            self.effectors = self._expand(t=self.effectors, n=by_n, d=1)
 
     def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
         pre = t.shape[slice(d)]

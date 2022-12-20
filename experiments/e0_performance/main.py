@@ -109,7 +109,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
         writer.add_scalar("Cells/total", len(world.cells), step_i)
         writer.add_scalar("Cells/MeanSurv", world.cell_survival.mean().item(), step_i)
         writer.add_scalar("Cells/MaxSurv", world.cell_survival.max().item(), step_i)
-        writer.add_scalar("Other/MaxProteins", world.affinities.shape[1], step_i)
+        writer.add_scalar("Other/MaxProteins", world.kinetics.Km.shape[1], step_i)
         writer.add_scalar(
             "Other/AvgATPint", world.cell_molecules[:, idx_ATP].mean(), step_i
         )

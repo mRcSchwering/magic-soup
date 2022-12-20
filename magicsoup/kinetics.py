@@ -1,8 +1,10 @@
-from typing import Optional
+import logging
 import torch
+from multiprocessing import Pool
 from magicsoup.constants import EPS, GAS_CONSTANT
 from magicsoup.containers import Protein
 
+_log = logging.getLogger(__name__)
 
 # TODO: a molecule can be created by one domain and at the same time deconstructed
 #       by another. Currently, this results in N = 0 for that molecule. With the current
@@ -19,331 +21,12 @@ from magicsoup.containers import Protein
 #       more possibilities for proteins to create more of a molecule that physically possible.
 
 
+# TODO: proper docstring
 class Kinetics:
-    def __init__(
-        self,
-        n_signals: int,
-        abs_temp=310.0,
-        dtype=torch.float,
-        device="cpu",
-        n_workers=4,
-    ):
-        self.n_signals = n_signals
-        self.abs_temp = abs_temp
-        self.dtype = dtype
-        self.device = device
-        self.n_workers = n_workers
-        self.torch_kwargs = {"dtype": dtype, "device": device}
-
-        self.Km = self._tensor(0, 0, n_signals)
-        self.Vmax = self._tensor(0, 0)
-        self.E = self._tensor(0, 0)
-        self.N = self._tensor(0, 0, n_signals)
-        self.A = self._tensor(0, 0, n_signals)
-
-    def set_cell_params(self, cell_prots: list[tuple[int, int, Optional[Protein]]]):
-        for cell_i, prot_i, protein in cell_prots:
-            if protein is None:
-                self.E[cell_i, prot_i] = 0.0
-                self.Vmax[cell_i, prot_i] = 0.0
-                for mol_i in range(self.n_signals):
-                    self.Km[cell_i, prot_i, mol_i] = 0.0
-                    self.A[cell_i, prot_i, mol_i] = 0.0
-                    self.N[cell_i, prot_i, mol_i] = 0.0
-                continue
-
-            energy = 0.0
-            Km: list[list[float]] = [[] for _ in range(self.n_signals)]
-            Vmax: list[float] = []
-            A: list[int] = [0 for _ in range(self.n_signals)]
-            N: list[int] = [0 for _ in range(self.n_signals)]
-
-            for dom in protein.domains:
-
-                if dom.is_allosteric:
-                    mol = dom.substrates[0]
-                    if dom.is_transmembrane:
-                        mol_i = mol.ext_idx
-                    else:
-                        mol_i = mol.int_idx
-                    Km[mol_i].append(dom.affinity)
-                    A[mol_i] += -1 if dom.is_inhibiting else 1
-
-                if dom.is_transporter:
-                    Vmax.append(dom.velocity)
-                    mol = dom.substrates[0]
-
-                    if dom.is_bkwd:
-                        sub_i = mol.ext_idx
-                        prod_i = mol.int_idx
-                    else:
-                        sub_i = mol.int_idx
-                        prod_i = mol.ext_idx
-
-                    Km[sub_i].append(dom.affinity)
-                    N[sub_i] -= 1
-
-                    Km[prod_i].append(1 / dom.affinity)
-                    N[prod_i] += 1
-
-                if dom.is_catalytic:
-                    Vmax.append(dom.velocity)
-
-                    if dom.is_bkwd:
-                        subs = dom.products
-                        prods = dom.substrates
-                    else:
-                        subs = dom.substrates
-                        prods = dom.products
-
-                    for mol in subs:
-                        energy -= mol.energy
-                        mol_i = mol.int_idx
-                        Km[mol_i].append(dom.affinity)
-                        N[mol_i] -= 1
-
-                    for mol in prods:
-                        energy += mol.energy
-                        mol_i = mol.int_idx
-                        Km[mol_i].append(1 / dom.affinity)
-                        N[mol_i] += 1
-
-            self.E[cell_i, prot_i] = energy
-
-            if len(Vmax) > 0:
-                self.Vmax[cell_i, prot_i] = sum(Vmax) / len(Vmax)
-
-            for mol_i, (a, n, k) in enumerate(zip(A, N, Km)):
-                self.A[cell_i, prot_i, mol_i] = float(a)
-                self.N[cell_i, prot_i, mol_i] = float(n)
-
-                if len(k) > 0:
-                    self.Km[cell_i, prot_i, mol_i] = sum(k) / len(k)
-
-    def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
-        inh_V = self._get_inhibitor_activity(X=X)  # (c, p)
-        act_V = self._get_activator_activity(X=X)  # (c, p)
-
-        # adjust direction
-        Ke = torch.exp(-self.E / self.abs_temp / GAS_CONSTANT)
-        Q = self._get_reaction_quotients(X=X)  # (c, p)
-        adj_N = torch.where(Q > Ke, -1.0, 1.0)  # (c, p)
-        N_adj = torch.einsum("cps,cp->cps", self.N, adj_N)
-
-        prot_V = self._get_protein_activity(X=X, N=N_adj)  # (c, p)
-        V = self.Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
-
-        # get limiting velocities (substrate would be empty)
-        X_max = torch.einsum("cs,cps->cps", -X + EPS, 1 / N_adj)
-        V_limit = X_max.max(dim=2).values.clamp(0.0)
-
-        Xd = torch.einsum("cps,cp->cs", N_adj, V.clamp(max=V_limit).nan_to_num())
-
-        # low float precision can still drive X below 0
-        # final lazy correction
-        Xd = Xd.clamp(-X + EPS)
-
-        return Xd
-
-    def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
-        """Copy paremeters from a list of cells to another list of cells"""
-        self.Km[to_idxs] = self.Km[from_idxs]
-        self.Vmax[to_idxs] = self.Vmax[from_idxs]
-        self.E[to_idxs] = self.E[from_idxs]
-        self.N[to_idxs] = self.N[from_idxs]
-        self.A[to_idxs] = self.A[from_idxs]
-
-    def remove_cell_params(self, idxs: list[int]):
-        """Remove cell params for a list of cells"""
-        keep = torch.ones(len(self.Km), dtype=torch.bool)
-        keep[idxs] = False
-        self.Km = self.Km[keep]
-        self.Vmax = self.Vmax[keep]
-        self.E = self.E[keep]
-        self.N = self.N[keep]
-        self.A = self.A[keep]
-
-    def increase_max_cells(self, by_n: int):
-        """Increase the cell dimension by `by_n`"""
-        self.Km = self._expand(t=self.Km, n=by_n, d=0)
-        self.Vmax = self._expand(t=self.Vmax, n=by_n, d=0)
-        self.E = self._expand(t=self.E, n=by_n, d=0)
-        self.N = self._expand(t=self.N, n=by_n, d=0)
-        self.A = self._expand(t=self.A, n=by_n, d=0)
-
-    def increase_max_proteins(self, max_n: int):
-        """Increase the protein dimension to `max_n`"""
-        n_prots = int(self.Km.shape[1])
-        if max_n > n_prots:
-            by_n = max_n - n_prots
-            self.Km = self._expand(t=self.Km, n=by_n, d=1)
-            self.Vmax = self._expand(t=self.Vmax, n=by_n, d=1)
-            self.E = self._expand(t=self.E, n=by_n, d=1)
-            self.N = self._expand(t=self.N, n=by_n, d=1)
-            self.A = self._expand(t=self.A, n=by_n, d=1)
-
-    def _get_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
-        # substrates
-        sub_mask = self.N < 0.0  # (c, p, s)
-        sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
-        sub_N = sub_mask * -self.N  # (c, p, s)
-
-        # products
-        pro_mask = self.N > 0.0  # (c, p s)
-        pro_X = torch.einsum("cps,cs->cps", pro_mask, X)  # (c, p, s)
-        pro_N = pro_mask * self.N  # (c, p, s)
-
-        # quotients
-        nom = torch.pow(pro_X, pro_N).prod(2)  # (c, p)
-        denom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
-        return nom / denom  # (c, p)
-
-    def _get_protein_activity(self, X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
-        mask = N < 0.0  # (c, p s)
-        sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
-        sub_N = mask * -N  # (c, p, s)
-        return torch.pow(sub_X / (self.Km + sub_X), sub_N).prod(2)  # (c, p)
-
-    def _get_inhibitor_activity(self, X: torch.Tensor) -> torch.Tensor:
-        inh_N = (-self.A).clamp(0)  # (c, p, s)
-        inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
-        V = torch.pow(inh_X / (self.Km + inh_X), inh_N).prod(2)  # (c, p)
-        return torch.where(torch.any(self.A < 0.0, dim=2), V, 0.0)  # (c, p)
-
-    def _get_activator_activity(self, X: torch.Tensor) -> torch.Tensor:
-        act_N = self.A.clamp(0)  # (c, p, s)
-        act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
-        V = torch.pow(act_X / (self.Km + act_X), act_N).prod(2)  # (c, p)
-        return torch.where(torch.any(self.A > 0.0, dim=2), V, 1.0)  # (c, p)
-
-    def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
-        pre = t.shape[slice(d)]
-        post = t.shape[slice(d + 1, t.dim())]
-        zeros = self._tensor(*pre, n, *post)
-        return torch.cat([t, zeros], dim=d)
-
-    def _tensor(self, *args, **kwargs) -> torch.Tensor:
-        return torch.zeros(*args, **{**self.torch_kwargs, **kwargs})
-
-
-def calc_cell_params(
-    cell_prots: list[tuple[int, int, Optional[Protein]]],
-    n_signals: int,
-    Km: torch.Tensor,
-    Vmax: torch.Tensor,
-    E: torch.Tensor,
-    N: torch.Tensor,
-    A: torch.Tensor,
-):
     """
-    Generate cell-based parameter tensors from proteomes.
-    Returns `(Km, Vmax, Ke, N, A)`:
-
-    - `X` Signal/molecule concentrations
-    - `Km` Domain affinities of all proteins for each signal
-    - `Vmax` Maximum velocities of all proteins
-    - `Ke` Equilibrium constants of all proteins. If the current reaction quotient of a protein
-    exceeds its equilibrium constant, it will work in the other direction
-    - `N` Reaction stoichiometry of all proteins for each signal. Numbers < 0.0 indicate this
-    amount of this molecule is being used up by the protein. Numbers > 0.0 indicate this amount of this
-    molecule is being created by the protein. 0.0 means this molecule is not part of the reaction of
-    this protein.
-    - `A` allosteric control of all proteins for each signal. Numbers > 0.0 mean this molecule acts as
-    an activating effector on this protein, numbers < 0.0 mean this molecule acts as an inhibiting
-    effector on this protein. 0.0 means this molecule does not allosterically effect the protein.
-    """
-
-    for cell_i, prot_i, protein in cell_prots:
-        if protein is None:
-            E[cell_i, prot_i] = 0.0
-            Vmax[cell_i, prot_i] = 0.0
-            for mol_i in range(n_signals):
-                Km[cell_i, prot_i, mol_i] = 0.0
-                A[cell_i, prot_i, mol_i] = 0.0
-                N[cell_i, prot_i, mol_i] = 0.0
-            return None
-
-        energy = 0.0
-        km: list[list[float]] = [[] for _ in range(n_signals)]
-        vmax: list[float] = []
-        a: list[int] = [0 for _ in range(n_signals)]
-        n: list[int] = [0 for _ in range(n_signals)]
-
-        for dom in protein.domains:
-
-            if dom.is_allosteric:
-                mol = dom.substrates[0]
-                if dom.is_transmembrane:
-                    mol_i = mol.ext_idx
-                else:
-                    mol_i = mol.int_idx
-                km[mol_i].append(dom.affinity)
-                a[mol_i] += -1 if dom.is_inhibiting else 1
-
-            if dom.is_transporter:
-                vmax.append(dom.velocity)
-                mol = dom.substrates[0]
-
-                if dom.is_bkwd:
-                    sub_i = mol.ext_idx
-                    prod_i = mol.int_idx
-                else:
-                    sub_i = mol.int_idx
-                    prod_i = mol.ext_idx
-
-                km[sub_i].append(dom.affinity)
-                n[sub_i] -= 1
-
-                km[prod_i].append(1 / dom.affinity)
-                n[prod_i] += 1
-
-            if dom.is_catalytic:
-                vmax.append(dom.velocity)
-
-                if dom.is_bkwd:
-                    subs = dom.products
-                    prods = dom.substrates
-                else:
-                    subs = dom.substrates
-                    prods = dom.products
-
-                for mol in subs:
-                    energy -= mol.energy
-                    mol_i = mol.int_idx
-                    km[mol_i].append(dom.affinity)
-                    n[mol_i] -= 1
-
-                for mol in prods:
-                    energy += mol.energy
-                    mol_i = mol.int_idx
-                    km[mol_i].append(1 / dom.affinity)
-                    n[mol_i] += 1
-
-        E[cell_i, prot_i] = energy
-
-        if len(vmax) > 0:
-            Vmax[cell_i, prot_i] = sum(vmax) / len(vmax)
-
-        for mol_i in range(n_signals):
-            A[cell_i, prot_i, mol_i] = float(a[mol_i])
-            N[cell_i, prot_i, mol_i] = float(n[mol_i])
-
-            if len(km[mol_i]) > 0:
-                Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
-
-
-def integrate_signals(
-    X: torch.Tensor,
-    Km: torch.Tensor,
-    Vmax: torch.Tensor,
-    Ke: torch.Tensor,
-    N: torch.Tensor,
-    A: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Calculate new molecules constructed or deconstructed by all proteins of all cells
-    after 1 timestep. Returns the change in signals in shape `(c, s)`.
-    There are `c` cells, `p` proteins, `s` signals/molecules.
+    Class holding logic for simulating protein work. There are `c` cells, `p` proteins, `s` signals.
+    Signals are basically molecules, but we have to differentiate between the molecule species
+    inside and outside of the cell. So, there are twice as many signals as molecule species.
 
     - `X` Signal/molecule concentrations (c, s). Must all be >= 0.0.
     - `Km` Domain affinities of all proteins for each molecule (c, p, s). Must all be >= 0.0.
@@ -460,73 +143,240 @@ def integrate_signals(
     - there can only be 1 effector per molecule (e.g. not 2 different allosteric controls for the same type of molecule)
     - proteins can catalyze reactions in a way that they overshoot their equilibirum state (heuristics try to avoid that, see text above)
     """
-    Q = _get_reaction_quotients(X=X, N=N)  # (c, p)
 
-    # effectors
-    inh_V = _get_inhibitor_activity(X=X, A=A, Km=Km)  # (c, p)
-    act_V = _get_activator_activity(X=X, A=A, Km=Km)  # (c, p)
+    def __init__(
+        self,
+        n_signals: int,
+        abs_temp=310.0,
+        dtype=torch.float,
+        device="cpu",
+        n_workers=4,
+    ):
+        self.n_signals = n_signals
+        self.abs_temp = abs_temp
+        self.dtype = dtype
+        self.device = device
+        self.n_workers = n_workers
+        self.torch_kwargs = {"dtype": dtype, "device": device}
 
-    # adjust direction
-    adj_N = torch.where(Q > Ke, -1.0, 1.0)  # (c, p)
-    N_adj = torch.einsum("cps,cp->cps", N, adj_N)
+        self.Km = self._tensor(0, 0, n_signals)
+        self.Vmax = self._tensor(0, 0)
+        self.E = self._tensor(0, 0)
+        self.N = self._tensor(0, 0, n_signals)
+        self.A = self._tensor(0, 0, n_signals)
 
-    # proteins
-    prot_V = _get_protein_activity(X=X, N=N_adj, Km=Km)  # (c, p)
-    V = Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
+    def unset_cell_params(self, cell_prots: list[tuple[int, int]]):
+        """Set cell params for these proteins to 0.0"""
+        cells, prots = list(map(list, zip(*cell_prots)))
+        self.E[cells, prots] = 0.0
+        self.Vmax[cells, prots] = 0.0
+        self.Km[cells, prots] = 0.0
+        self.A[cells, prots] = 0.0
+        self.N[cells, prots] = 0.0
 
-    # get limiting velocities (substrate would be empty)
-    X_max = torch.einsum("cs,cps->cps", -X + EPS, 1 / N_adj)
-    V_limit = X_max.max(dim=2).values.clamp(0.0)
+    def set_cell_params(self, cell_prots: list[tuple[int, int, Protein]]):
+        """Set cell params for these proteins accordingly"""
+        with Pool(self.n_workers) as pool:
+            args = [(d[0], d[1], self.n_signals, d[2]) for d in cell_prots]
+            res = pool.starmap(Kinetics._get_protein_params, args)
 
-    Xd = torch.einsum("cps,cp->cs", N_adj, V.clamp(max=V_limit).nan_to_num())
+        cis = []
+        pis = []
+        E = []
+        Km = []
+        Vmax = []
+        A = []
+        N = []
+        for ci, pi, e, k, v, a, n in res:
+            cis.append(ci)
+            pis.append(pi)
+            E.append(e)
+            Km.append(k)
+            Vmax.append(v)
+            A.append(a)
+            N.append(n)
+        self.E[cis, pis] = torch.tensor(E)
+        self.Km[cis, pis] = torch.tensor(Km)
+        self.Vmax[cis, pis] = torch.tensor(Vmax)
+        self.A[cis, pis] = torch.tensor(A)
+        self.N[cis, pis] = torch.tensor(N)
 
-    # low float precision can still drive X below 0
-    # final lazy correction
-    Xd = Xd.clamp(-X + EPS)
+    def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
+        """
+        Simulate protein work by integrating all signals.
 
-    return Xd
+        - `X` Signal/molecule concentrations (c, s). Must all be >= 0.0.
+        
+        Returns `delta X`, the molecules deconstructed or constructed during
+        this time step.
+        """
+        _log.debug(
+            "Integrate signals with (c, p, s)=(%i, %i, %i)", *list(self.Km.shape),
+        )
 
+        inh_V = self._get_inhibitor_activity(X=X)  # (c, p)
+        act_V = self._get_activator_activity(X=X)  # (c, p)
 
-def _get_reaction_quotients(X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
-    # substrates
-    sub_mask = N < 0.0  # (c, p, s)
-    sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
-    sub_N = sub_mask * -N  # (c, p, s)
+        # adjust direction
+        Ke = torch.exp(-self.E / self.abs_temp / GAS_CONSTANT)
+        Q = self._get_reaction_quotients(X=X)  # (c, p)
+        adj_N = torch.where(Q > Ke, -1.0, 1.0)  # (c, p)
+        N_adj = torch.einsum("cps,cp->cps", self.N, adj_N)
 
-    # products
-    pro_mask = N > 0.0  # (c, p s)
-    pro_X = torch.einsum("cps,cs->cps", pro_mask, X)  # (c, p, s)
-    pro_N = pro_mask * N  # (c, p, s)
+        prot_V = self._get_protein_activity(X=X, N=N_adj)  # (c, p)
+        V = self.Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
 
-    # quotients
-    nom = torch.pow(pro_X, pro_N).prod(2)  # (c, p)
-    denom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
-    return nom / denom  # (c, p)
+        # get limiting velocities (substrate would be empty)
+        X_max = torch.einsum("cs,cps->cps", -X + EPS, 1 / N_adj)
+        V_limit = X_max.max(dim=2).values.clamp(0.0)
 
+        Xd = torch.einsum("cps,cp->cs", N_adj, V.clamp(max=V_limit).nan_to_num())
 
-def _get_protein_activity(
-    X: torch.Tensor, N: torch.Tensor, Km: torch.Tensor
-) -> torch.Tensor:
-    mask = N < 0.0  # (c, p s)
-    sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
-    sub_N = mask * -N  # (c, p, s)
-    return torch.pow(sub_X / (Km + sub_X), sub_N).prod(2)  # (c, p)
+        # low float precision can still drive X below 0
+        # final lazy correction
+        Xd = Xd.clamp(-X + EPS)
 
+        return Xd
 
-def _get_inhibitor_activity(
-    X: torch.Tensor, A: torch.Tensor, Km: torch.Tensor
-) -> torch.Tensor:
-    inh_N = (-A).clamp(0)  # (c, p, s)
-    inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
-    V = torch.pow(inh_X / (Km + inh_X), inh_N).prod(2)  # (c, p)
-    return torch.where(torch.any(A < 0.0, dim=2), V, 0.0)  # (c, p)
+    def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
+        """Copy paremeters from a list of cells to another list of cells"""
+        self.Km[to_idxs] = self.Km[from_idxs]
+        self.Vmax[to_idxs] = self.Vmax[from_idxs]
+        self.E[to_idxs] = self.E[from_idxs]
+        self.N[to_idxs] = self.N[from_idxs]
+        self.A[to_idxs] = self.A[from_idxs]
 
+    def remove_cell_params(self, keep: torch.Tensor):
+        """Filter cell params for cells in `keep`"""
+        self.Km = self.Km[keep]
+        self.Vmax = self.Vmax[keep]
+        self.E = self.E[keep]
+        self.N = self.N[keep]
+        self.A = self.A[keep]
 
-def _get_activator_activity(
-    X: torch.Tensor, A: torch.Tensor, Km: torch.Tensor
-) -> torch.Tensor:
-    act_N = A.clamp(0)  # (c, p, s)
-    act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
-    V = torch.pow(act_X / (Km + act_X), act_N).prod(2)  # (c, p)
-    return torch.where(torch.any(A > 0.0, dim=2), V, 1.0)  # (c, p)
+    def increase_max_cells(self, by_n: int):
+        """Increase the cell dimension by `by_n`"""
+        self.Km = self._expand(t=self.Km, n=by_n, d=0)
+        self.Vmax = self._expand(t=self.Vmax, n=by_n, d=0)
+        self.E = self._expand(t=self.E, n=by_n, d=0)
+        self.N = self._expand(t=self.N, n=by_n, d=0)
+        self.A = self._expand(t=self.A, n=by_n, d=0)
+
+    def increase_max_proteins(self, max_n: int):
+        """Increase the protein dimension to `max_n`"""
+        n_prots = int(self.Km.shape[1])
+        if max_n > n_prots:
+            by_n = max_n - n_prots
+            self.Km = self._expand(t=self.Km, n=by_n, d=1)
+            self.Vmax = self._expand(t=self.Vmax, n=by_n, d=1)
+            self.E = self._expand(t=self.E, n=by_n, d=1)
+            self.N = self._expand(t=self.N, n=by_n, d=1)
+            self.A = self._expand(t=self.A, n=by_n, d=1)
+
+    def _get_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
+        # substrates
+        sub_mask = self.N < 0.0  # (c, p, s)
+        sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
+        sub_N = sub_mask * -self.N  # (c, p, s)
+
+        # products
+        pro_mask = self.N > 0.0  # (c, p s)
+        pro_X = torch.einsum("cps,cs->cps", pro_mask, X)  # (c, p, s)
+        pro_N = pro_mask * self.N  # (c, p, s)
+
+        # quotients
+        nom = torch.pow(pro_X, pro_N).prod(2)  # (c, p)
+        denom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
+        return nom / denom  # (c, p)
+
+    def _get_protein_activity(self, X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
+        mask = N < 0.0  # (c, p s)
+        sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
+        sub_N = mask * -N  # (c, p, s)
+        return torch.pow(sub_X / (self.Km + sub_X), sub_N).prod(2)  # (c, p)
+
+    def _get_inhibitor_activity(self, X: torch.Tensor) -> torch.Tensor:
+        inh_N = (-self.A).clamp(0)  # (c, p, s)
+        inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
+        V = torch.pow(inh_X / (self.Km + inh_X), inh_N).prod(2)  # (c, p)
+        return torch.where(torch.any(self.A < 0.0, dim=2), V, 0.0)  # (c, p)
+
+    def _get_activator_activity(self, X: torch.Tensor) -> torch.Tensor:
+        act_N = self.A.clamp(0)  # (c, p, s)
+        act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
+        V = torch.pow(act_X / (self.Km + act_X), act_N).prod(2)  # (c, p)
+        return torch.where(torch.any(self.A > 0.0, dim=2), V, 1.0)  # (c, p)
+
+    def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
+        pre = t.shape[slice(d)]
+        post = t.shape[slice(d + 1, t.dim())]
+        zeros = self._tensor(*pre, n, *post)
+        return torch.cat([t, zeros], dim=d)
+
+    def _tensor(self, *args, **kwargs) -> torch.Tensor:
+        return torch.zeros(*args, **{**self.torch_kwargs, **kwargs})
+
+    @staticmethod
+    def _get_protein_params(
+        cell_i: int, prot_i: int, n_signals: int, protein: Protein
+    ) -> tuple[int, int, float, list[float], float, list[float], list[float]]:
+        energy = 0.0
+        Km: list[list[float]] = [[] for _ in range(n_signals)]
+        Vmax: list[float] = []
+        A: list[float] = [0.0 for _ in range(n_signals)]
+        N: list[float] = [0.0 for _ in range(n_signals)]
+
+        for dom in protein.domains:
+
+            if dom.is_allosteric:
+                mol = dom.substrates[0]
+                if dom.is_transmembrane:
+                    mol_i = mol.ext_idx
+                else:
+                    mol_i = mol.int_idx
+                Km[mol_i].append(dom.affinity)
+                A[mol_i] += -1.0 if dom.is_inhibiting else 1.0
+
+            if dom.is_transporter:
+                Vmax.append(dom.velocity)
+                mol = dom.substrates[0]
+
+                if dom.is_bkwd:
+                    sub_i = mol.ext_idx
+                    prod_i = mol.int_idx
+                else:
+                    sub_i = mol.int_idx
+                    prod_i = mol.ext_idx
+
+                Km[sub_i].append(dom.affinity)
+                N[sub_i] -= 1.0
+
+                Km[prod_i].append(1 / dom.affinity)
+                N[prod_i] += 1.0
+
+            if dom.is_catalytic:
+                Vmax.append(dom.velocity)
+
+                if dom.is_bkwd:
+                    subs = dom.products
+                    prods = dom.substrates
+                else:
+                    subs = dom.substrates
+                    prods = dom.products
+
+                for mol in subs:
+                    energy -= mol.energy
+                    mol_i = mol.int_idx
+                    Km[mol_i].append(dom.affinity)
+                    N[mol_i] -= 1.0
+
+                for mol in prods:
+                    energy += mol.energy
+                    mol_i = mol.int_idx
+                    Km[mol_i].append(1 / dom.affinity)
+                    N[mol_i] += 1.0
+
+        v = sum(Vmax) / len(Vmax) if len(Vmax) > 0 else 0.0
+        ks = [sum(d) / len(d) if len(d) > 0 else 0.0 for d in Km]
+        return cell_i, prot_i, energy, ks, v, A, N
 

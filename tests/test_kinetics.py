@@ -42,8 +42,8 @@ def test_unsetting_cell_params():
     N = torch.randn(2, 3, 8)
     A = torch.randn(2, 3, 8)
 
-    cell_prots0 = [(0, i, None) for i in range(3)]
-    cell_prots1 = [(1, i, None) for i in range(3)]
+    cell_prots0 = [(0, i) for i in range(3)]
+    cell_prots1 = [(1, i) for i in range(3)]
 
     # test
     kinetics = Kinetics(n_signals=8)
@@ -52,7 +52,7 @@ def test_unsetting_cell_params():
     kinetics.E = E
     kinetics.N = N
     kinetics.A = A
-    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
+    kinetics.unset_cell_params(cell_prots=cell_prots0 + cell_prots1)
 
     assert torch.all(Km == 0.0)
     assert torch.all(Vmax == 0.0)

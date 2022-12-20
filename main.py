@@ -4,6 +4,7 @@ import time
 import torch
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
+from magicsoup.kinetics import Kinetics
 
 
 @contextmanager
@@ -35,17 +36,20 @@ def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
     genomes = genetics.random_genomes(n=n_cells, s=init_genome_size)
     proteomes = genetics.get_proteomes(sequences=genomes)
 
-    with timeit(
-        f"point mutations for {len(proteomes):,} proteomes from genomes of size {init_genome_size}"
-    ):
-        new_gs, idxs = ms.point_mutatations(seqs=genomes)
-        new_ps = genetics.get_proteomes(sequences=new_gs)
+    # test
+    kinetics = Kinetics(n_signals=len(MOLECULES) * 2)
+    kinetics.increase_max_cells(by_n=len(proteomes))
+    kinetics.increase_max_proteins(max_n=max(len(d) for d in proteomes))
 
     with timeit(
-        f"comparing {len(proteomes):,} proteomes from genomes of size {init_genome_size}"
+        f"set cell params for {len(proteomes):,} proteomes from genomes of size {init_genome_size}"
     ):
-        for idx, p2 in zip(idxs, new_ps):
-            _ = proteomes[idx] == p2
+        cell_prots = []
+        for cell_i, cell in enumerate(proteomes):
+            for prot_i, prot in enumerate(cell):
+                cell_prots.append((cell_i, prot_i, prot))
+        kinetics.set_cell_params(cell_prots=cell_prots)
+
     exit()
 
     n_threads = torch.get_num_threads()
