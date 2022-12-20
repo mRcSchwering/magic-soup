@@ -167,6 +167,8 @@ class Kinetics:
 
     def unset_cell_params(self, cell_prots: list[tuple[int, int]]):
         """Set cell params for these proteins to 0.0"""
+        if len(cell_prots) == 0:
+            return
         cells, prots = list(map(list, zip(*cell_prots)))
         self.E[cells, prots] = 0.0
         self.Vmax[cells, prots] = 0.0
@@ -176,6 +178,9 @@ class Kinetics:
 
     def set_cell_params(self, cell_prots: list[tuple[int, int, Protein]]):
         """Set cell params for these proteins accordingly"""
+        if len(cell_prots) == 0:
+            return
+
         with Pool(self.n_workers) as pool:
             args = [(d[0], d[1], self.n_signals, d[2]) for d in cell_prots]
             res = pool.starmap(Kinetics._get_protein_params, args)
