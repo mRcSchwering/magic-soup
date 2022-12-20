@@ -6,6 +6,7 @@ import time
 import torch
 from torch.utils.tensorboard import SummaryWriter
 import magicsoup as ms
+from magicsoup.constants import EPS
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
 
 _log = logging.getLogger(__name__)
@@ -20,6 +21,38 @@ def timeit(msg: str):
 
 
 def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
+    n_cells = 1000
+    n_prots = 100
+    n_mols = 20
+    n_steps = 10
+
+    # concentrations (c, s)
+    X = torch.randn(n_cells, n_mols).abs() + EPS
+
+    # reactions (c, p, s)
+    N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
+
+    # affinities (c, p, s)
+    Km = torch.randn(n_cells, n_prots, n_mols).abs() + EPS
+
+    # max velocities (c, p)
+    Vmax = torch.randn(n_cells, n_prots).abs() * 10
+
+    # allosterics (c, p, s)
+    A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
+
+    # equilibrium constants (c, p)
+    Ke = torch.randn(n_cells, n_prots).abs() * 2
+
+    # test
+    t0 = time.time()
+    for _ in range(n_steps):
+        Xd = ms.integrate_signals(X=X, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+        X = X + Xd
+    print(time.time() - t0)
+
+    exit()
+
     # fmt: off
     domains = {
         ms.CatalyticFact(): ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),

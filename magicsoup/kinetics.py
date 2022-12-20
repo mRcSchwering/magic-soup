@@ -4,6 +4,21 @@ from magicsoup.constants import EPS
 from magicsoup.containers import Protein
 
 
+# TODO: a molecule can be created by one domain and at the same time deconstructed
+#       by another. Currently, this results in N = 0 for that molecule. With the current
+#       implementation, the molecule will not be part of X_sub and X_prod, i.e. not part
+#       of the MM equiation. Does this make sense???
+#       Shouldn't that molecule then act more like an allosteric activator?
+
+# TODO: Currently, I cant handle high Vmax. Even with Vmax >= 50, if there are proteins
+#       with many substrates and/or effectors, the effectors will multiply to Inf, which
+#       in turn will create NaNs down the line. These NaNs then propagate. The problem
+#       is X.pow(N).prod(2) which can explode. This doesn't seem to happen with small Vmax.
+#       One explanation might be my heuristic that is supposed to prevent negative concentrations.
+#       This heuristic becomes more unstable with large Vmax, and it might thereby create
+#       more possibilities for proteins to create more of a molecule that physically possible.
+
+
 def calc_cell_params(
     cell_prots: list[tuple[int, int, Optional[Protein]]],
     n_signals: int,
@@ -108,21 +123,6 @@ def calc_cell_params(
 
             if len(km[mol_i]) > 0:
                 Km[cell_i, prot_i, mol_i] = sum(km[mol_i]) / len(km[mol_i])
-
-
-# TODO: a molecule can be created by one domain and at the same time deconstructed
-#       by another. Currently, this results in N = 0 for that molecule. With the current
-#       implementation, the molecule will not be part of X_sub and X_prod, i.e. not part
-#       of the MM equiation. Does this make sense???
-#       Shouldn't that molecule then act more like an allosteric activator?
-
-# TODO: Currently, I cant handle high Vmax. Even with Vmax >= 50, if there are proteins
-#       with many substrates and/or effectors, the effectors will multiply to Inf, which
-#       in turn will create NaNs down the line. These NaNs then propagate. The problem
-#       is X.pow(N).prod(2) which can explode. This doesn't seem to happen with small Vmax.
-#       One explanation might be my heuristic that is supposed to prevent negative concentrations.
-#       This heuristic becomes more unstable with large Vmax, and it might thereby create
-#       more possibilities for proteins to create more of a molecule that physically possible.
 
 
 def integrate_signals(
@@ -253,10 +253,6 @@ def integrate_signals(
     - there can only be 1 effector per molecule (e.g. not 2 different allosteric controls for the same type of molecule)
     - proteins can catalyze reactions in a way that they overshoot their equilibirum state (heuristics try to avoid that, see text above)
     """
-    # TODO: refactor:
-    #       - can I first do the nom / denom, then pow and prod afterwards?
-    #       - does it help to use masked tensors? (pytorch.org/docs/stable/masked.html)
-
     Q = _get_reaction_quotients(X=X, N=N)  # (c, p)
 
     # effectors
@@ -304,34 +300,26 @@ def _get_reaction_quotients(X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
 def _get_protein_activity(
     X: torch.Tensor, N: torch.Tensor, Km: torch.Tensor
 ) -> torch.Tensor:
-    # substrates
     mask = N < 0.0  # (c, p s)
     sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
     sub_N = mask * -N  # (c, p, s)
-
-    # proteins
-    nom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
-    denom = torch.pow(Km + sub_X, sub_N).prod(2)  # (c, p)
-    return nom / denom  # (c, p)
+    return torch.pow(sub_X / (Km + sub_X), sub_N).prod(2)  # (c, p)
 
 
 def _get_inhibitor_activity(
     X: torch.Tensor, A: torch.Tensor, Km: torch.Tensor
 ) -> torch.Tensor:
     inh_N = (-A).clamp(0)  # (c, p, s)
-    inh_M = torch.any(A < 0.0, dim=2)  # (c, p)
     inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
-    nom = torch.pow(inh_X, inh_N).prod(2)  # (c, p)
-    denom = torch.pow(Km + inh_X, inh_N).prod(2)  # (c, p)
-    return torch.where(inh_M, nom / denom, 0.0)  # (c, p)
+    V = torch.pow(inh_X / (Km + inh_X), inh_N).prod(2)  # (c, p)
+    return torch.where(torch.any(A < 0.0, dim=2), V, 0.0)  # (c, p)
 
 
 def _get_activator_activity(
     X: torch.Tensor, A: torch.Tensor, Km: torch.Tensor
 ) -> torch.Tensor:
     act_N = A.clamp(0)  # (c, p, s)
-    act_M = torch.any(A > 0.0, dim=2)  # (c, p)
     act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
-    nom = torch.pow(act_X, act_N).prod(2)  # (c, p)
-    denom = torch.pow(Km + act_X, act_N).prod(2)  # (c, p)
-    return torch.where(act_M, nom / denom, 1.0)  # (c, p)
+    V = torch.pow(act_X / (Km + act_X), act_N).prod(2)  # (c, p)
+    return torch.where(torch.any(A > 0.0, dim=2), V, 1.0)  # (c, p)
+
