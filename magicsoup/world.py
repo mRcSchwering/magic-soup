@@ -83,8 +83,8 @@ class World:
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
 
         self._diffuse = self._get_conv(mol_diff_rate=mol_diff_coef * 1e6)
-        self._moores_map = {
-            (x, y): moore_nghbrhd(x, y, map_size)
+        self._nghbrhd_map = {
+            (x, y): torch.tensor(moore_nghbrhd(x, y, map_size))
             for x, y in product(range(map_size), range(map_size))
         }
 
@@ -415,11 +415,11 @@ class World:
     def _randomly_move_cells(self, cells: list[Cell]):
         for cell in cells:
             x, y = cell.position
-            positions = self._moores_map[(x, y)]
-            xs, ys = list(map(list, zip(*positions)))
-            pxls = torch.argwhere(~self.cell_map[xs, ys])
+            nghbrhd = self._nghbrhd_map[(x, y)]
+            pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
+            n = len(pxls)
 
-            if len(pxls) == 0:
+            if n == 0:
                 _log.info(
                     "Wanted to move cell at %i, %i"
                     " but no pixel in the Moore neighborhood was free."
@@ -429,13 +429,11 @@ class World:
                 )
                 continue
 
-            offset_x, offset_y = random.choice(pxls.tolist())
-            new_pos = (offset_x + x - 1, offset_y + y - 1)
-
             # move cells
+            new_x, new_y = pxls[random.randint(0, n - 1)].tolist()
             self.cell_map[x, y] = False
-            self.cell_map[new_pos] = True
-            cell.position = new_pos
+            self.cell_map[new_x, new_y] = True
+            cell.position = (new_x, new_y)
 
     def _place_replicated_cells_near_parents(
         self, cells: list[Cell]
@@ -445,11 +443,11 @@ class World:
         old_idxs = []
         for cell in cells:
             x, y = cell.position
-            positions = self._moores_map[(x, y)]
-            xs, ys = list(map(list, zip(*positions)))
-            pxls = torch.argwhere(~self.cell_map[xs, ys])
+            nghbrhd = self._nghbrhd_map[(x, y)]
+            pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
+            n = len(pxls)
 
-            if len(pxls) == 0:
+            if n == 0:
                 _log.info(
                     "Wanted to replicate cell next to %i, %i"
                     " but no pixel in the Moore neighborhood was free."
@@ -459,12 +457,10 @@ class World:
                 )
                 continue
 
-            offset_x, offset_y = random.choice(pxls.tolist())
-            new_pos = (offset_x + x - 1, offset_y + y - 1)
-
             # place cell in position
-            self.cell_map[new_pos] = True
-            cell.position = new_pos
+            new_x, new_y = pxls[random.randint(0, n - 1)].tolist()
+            self.cell_map[new_x, new_y] = True
+            cell.position = (new_x, new_y)
 
             # set new cell idx
             old_idxs.append(cell.idx)
