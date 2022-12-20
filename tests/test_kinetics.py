@@ -8,7 +8,7 @@ from magicsoup.containers import (
     TransporterDomain,
 )
 from magicsoup.constants import EPS
-from magicsoup.kinetics import integrate_signals, calc_cell_params
+from magicsoup.kinetics import Kinetics
 
 TOLERANCE = 1e-4
 
@@ -33,6 +33,32 @@ r_d_bb = ([md], [mb, mb])
 
 def avg(*x):
     return sum(x) / len(x)
+
+
+def test_unsetting_cell_params():
+    Km = torch.randn(2, 3, 8)
+    Vmax = torch.randn(2, 3)
+    E = torch.randn(2, 3)
+    N = torch.randn(2, 3, 8)
+    A = torch.randn(2, 3, 8)
+
+    cell_prots0 = [(0, i, None) for i in range(3)]
+    cell_prots1 = [(1, i, None) for i in range(3)]
+
+    # test
+    kinetics = Kinetics(n_signals=8)
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.N = N
+    kinetics.A = A
+    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
+
+    assert torch.all(Km == 0.0)
+    assert torch.all(Vmax == 0.0)
+    assert torch.all(E == 0.0)
+    assert torch.all(N == 0.0)
+    assert torch.all(A == 0.0)
 
 
 def test_cell_params_with_transporter_domains():
@@ -70,15 +96,14 @@ def test_cell_params_with_transporter_domains():
     cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
     cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
 
-    calc_cell_params(
-        cell_prots=cell_prots0 + cell_prots1,
-        n_signals=8,
-        Km=Km,
-        Vmax=Vmax,
-        E=E,
-        N=N,
-        A=A,
-    )
+    # test
+    kinetics = Kinetics(n_signals=8)
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.N = N
+    kinetics.A = A
+    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
 
     assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Km[0, 0, 4] == pytest.approx(1 / 0.5, abs=TOLERANCE)
@@ -183,15 +208,14 @@ def test_cell_params_with_allosteric_domains():
     cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
     cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
 
-    calc_cell_params(
-        cell_prots=cell_prots0 + cell_prots1,
-        n_signals=8,
-        Km=Km,
-        Vmax=Vmax,
-        E=E,
-        N=N,
-        A=A,
-    )
+    # test
+    kinetics = Kinetics(n_signals=8)
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.N = N
+    kinetics.A = A
+    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
 
     assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Km[0, 0, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
@@ -341,15 +365,14 @@ def test_cell_params_with_catalytic_domains():
     cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
     cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
 
-    calc_cell_params(
-        cell_prots=cell_prots0 + cell_prots1,
-        n_signals=8,
-        Km=Km,
-        Vmax=Vmax,
-        E=E,
-        N=N,
-        A=A,
-    )
+    # test
+    kinetics = Kinetics(n_signals=8)
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.N = N
+    kinetics.A = A
+    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
 
     assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Km[0, 0, 1] == pytest.approx(avg(1 / 0.5, 1 / 1.5), abs=TOLERANCE)
@@ -480,8 +503,8 @@ def test_simple_mm_kinetic():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p)
-    Ke = torch.full((2, 3), 999.9)
+    # reaction energies (c, p)
+    E = torch.full((2, 3), -99999.9)
 
     # fmt: on
 
@@ -501,7 +524,13 @@ def test_simple_mm_kinetic():
     dx_c1_d = dx_c1_d_1 + dx_c1_d_2
 
     # test
-    Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics.N = N
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.A = A
+    Xd = kinetics.integrate_signals(X=X0)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -556,8 +585,8 @@ def test_mm_kinetic_with_proportions():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p)
-    Ke = torch.full((2, 3), 999.9)
+    # reaction energies (c, p)
+    E = torch.full((2, 3), -99999.9)
 
     # fmt: on
 
@@ -577,7 +606,13 @@ def test_mm_kinetic_with_proportions():
     dx_c1_d = 0.0
 
     # test
-    Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics.N = N
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.A = A
+    Xd = kinetics.integrate_signals(X=X0)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -632,8 +667,8 @@ def test_mm_kinetic_with_multiple_substrates():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p)
-    Ke = torch.full((2, 3), 999.9)
+    # reaction energies (c, p)
+    E = torch.full((2, 3), -99999.9)
 
     # fmt: on
 
@@ -654,7 +689,13 @@ def test_mm_kinetic_with_multiple_substrates():
     dx_c1_d = -c1_v0
 
     # test
-    Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics.N = N
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.A = A
+    Xd = kinetics.integrate_signals(X=X0)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -716,8 +757,8 @@ def test_mm_kinetic_with_allosteric_action():
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
 
-    # equilibrium constants (c, p)
-    Ke = torch.full((2, 3), 999.9)
+    # reaction energies (c, p)
+    E = torch.full((2, 3), -99999.9)
 
     # fmt: on
 
@@ -765,7 +806,13 @@ def test_mm_kinetic_with_allosteric_action():
     dx_c1_d = v1_c1
 
     # test
-    Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics.N = N
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.A = A
+    Xd = kinetics.integrate_signals(X=X0)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -820,8 +867,8 @@ def test_reduce_velocity_to_avoid_zero_concentrations():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p)
-    Ke = torch.full((2, 3), 999.9)
+    # reaction energies (c, p)
+    E = torch.full((2, 3), -99999.9)
 
     # fmt: on
 
@@ -852,7 +899,13 @@ def test_reduce_velocity_to_avoid_zero_concentrations():
     dx_c1_d = v0_c1
 
     # test
-    Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics.N = N
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.A = A
+    Xd = kinetics.integrate_signals(X=X0)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -910,10 +963,10 @@ def test_reactions_are_turned_around():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # equilibrium constants (c, p)
-    Ke = torch.full((2, 3), 999.9)
-    Ke[0, 0] = 2.2 # b/a = 2.3, so b -> a
-    Ke[1, 1] = 2.8 # d/a = 2.9, so d -> a
+    # reaction energies (c, p)
+    E = torch.full((2, 3), -99999.9)
+    E[0, 0] = -2000 # b/a = 2.3, so b -> a
+    E[1, 1] = -2000 # d/a = 2.9, so d -> a
 
     # fmt: on
 
@@ -936,7 +989,13 @@ def test_reactions_are_turned_around():
     dx_c1_d = v0_c1 - v1_c1
 
     # test
-    Xd = integrate_signals(X=X0, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics.N = N
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.A = A
+    Xd = kinetics.integrate_signals(X=X0)
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -955,27 +1014,29 @@ def test_substrate_concentrations_never_get_too_low():
     n_mols = 20
     n_steps = 10
 
+    kinetics = Kinetics(n_signals=n_mols)
+
     # concentrations (c, s)
     X = torch.randn(n_cells, n_mols).abs() + EPS
 
     # reactions (c, p, s)
-    N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
+    kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
 
     # affinities (c, p, s)
-    Km = torch.randn(n_cells, n_prots, n_mols).abs() + EPS
+    kinetics.Km = torch.randn(n_cells, n_prots, n_mols).abs() + EPS
 
     # max velocities (c, p)
-    Vmax = torch.randn(n_cells, n_prots).abs() * 10
+    kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 10
 
     # allosterics (c, p, s)
-    A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
+    kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
 
-    # equilibrium constants (c, p)
-    Ke = torch.randn(n_cells, n_prots).abs() * 2
+    # reaction energies (c, p)
+    kinetics.E = torch.randn(n_cells, n_prots)
 
     # test
     for _ in range(n_steps):
-        Xd = integrate_signals(X=X, Km=Km, Vmax=Vmax, Ke=Ke, N=N, A=A)
+        Xd = kinetics.integrate_signals(X=X)
         X = X + Xd
         assert not torch.any(X + TOLERANCE < EPS)
         assert not torch.any(X.isnan())

@@ -1,6 +1,6 @@
 from typing import Optional
 import torch
-from magicsoup.constants import EPS
+from magicsoup.constants import EPS, GAS_CONSTANT
 from magicsoup.containers import Protein
 
 
@@ -17,6 +17,213 @@ from magicsoup.containers import Protein
 #       One explanation might be my heuristic that is supposed to prevent negative concentrations.
 #       This heuristic becomes more unstable with large Vmax, and it might thereby create
 #       more possibilities for proteins to create more of a molecule that physically possible.
+
+
+class Kinetics:
+    def __init__(
+        self,
+        n_signals: int,
+        abs_temp=310.0,
+        dtype=torch.float,
+        device="cpu",
+        n_workers=4,
+    ):
+        self.n_signals = n_signals
+        self.abs_temp = abs_temp
+        self.dtype = dtype
+        self.device = device
+        self.n_workers = n_workers
+        self.torch_kwargs = {"dtype": dtype, "device": device}
+
+        self.Km = self._tensor(0, 0, n_signals)
+        self.Vmax = self._tensor(0, 0)
+        self.E = self._tensor(0, 0)
+        self.N = self._tensor(0, 0, n_signals)
+        self.A = self._tensor(0, 0, n_signals)
+
+    def set_cell_params(self, cell_prots: list[tuple[int, int, Optional[Protein]]]):
+        for cell_i, prot_i, protein in cell_prots:
+            if protein is None:
+                self.E[cell_i, prot_i] = 0.0
+                self.Vmax[cell_i, prot_i] = 0.0
+                for mol_i in range(self.n_signals):
+                    self.Km[cell_i, prot_i, mol_i] = 0.0
+                    self.A[cell_i, prot_i, mol_i] = 0.0
+                    self.N[cell_i, prot_i, mol_i] = 0.0
+                continue
+
+            energy = 0.0
+            Km: list[list[float]] = [[] for _ in range(self.n_signals)]
+            Vmax: list[float] = []
+            A: list[int] = [0 for _ in range(self.n_signals)]
+            N: list[int] = [0 for _ in range(self.n_signals)]
+
+            for dom in protein.domains:
+
+                if dom.is_allosteric:
+                    mol = dom.substrates[0]
+                    if dom.is_transmembrane:
+                        mol_i = mol.ext_idx
+                    else:
+                        mol_i = mol.int_idx
+                    Km[mol_i].append(dom.affinity)
+                    A[mol_i] += -1 if dom.is_inhibiting else 1
+
+                if dom.is_transporter:
+                    Vmax.append(dom.velocity)
+                    mol = dom.substrates[0]
+
+                    if dom.is_bkwd:
+                        sub_i = mol.ext_idx
+                        prod_i = mol.int_idx
+                    else:
+                        sub_i = mol.int_idx
+                        prod_i = mol.ext_idx
+
+                    Km[sub_i].append(dom.affinity)
+                    N[sub_i] -= 1
+
+                    Km[prod_i].append(1 / dom.affinity)
+                    N[prod_i] += 1
+
+                if dom.is_catalytic:
+                    Vmax.append(dom.velocity)
+
+                    if dom.is_bkwd:
+                        subs = dom.products
+                        prods = dom.substrates
+                    else:
+                        subs = dom.substrates
+                        prods = dom.products
+
+                    for mol in subs:
+                        energy -= mol.energy
+                        mol_i = mol.int_idx
+                        Km[mol_i].append(dom.affinity)
+                        N[mol_i] -= 1
+
+                    for mol in prods:
+                        energy += mol.energy
+                        mol_i = mol.int_idx
+                        Km[mol_i].append(1 / dom.affinity)
+                        N[mol_i] += 1
+
+            self.E[cell_i, prot_i] = energy
+
+            if len(Vmax) > 0:
+                self.Vmax[cell_i, prot_i] = sum(Vmax) / len(Vmax)
+
+            for mol_i, (a, n, k) in enumerate(zip(A, N, Km)):
+                self.A[cell_i, prot_i, mol_i] = float(a)
+                self.N[cell_i, prot_i, mol_i] = float(n)
+
+                if len(k) > 0:
+                    self.Km[cell_i, prot_i, mol_i] = sum(k) / len(k)
+
+    def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
+        inh_V = self._get_inhibitor_activity(X=X)  # (c, p)
+        act_V = self._get_activator_activity(X=X)  # (c, p)
+
+        # adjust direction
+        Ke = torch.exp(-self.E / self.abs_temp / GAS_CONSTANT)
+        Q = self._get_reaction_quotients(X=X)  # (c, p)
+        adj_N = torch.where(Q > Ke, -1.0, 1.0)  # (c, p)
+        N_adj = torch.einsum("cps,cp->cps", self.N, adj_N)
+
+        prot_V = self._get_protein_activity(X=X, N=N_adj)  # (c, p)
+        V = self.Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
+
+        # get limiting velocities (substrate would be empty)
+        X_max = torch.einsum("cs,cps->cps", -X + EPS, 1 / N_adj)
+        V_limit = X_max.max(dim=2).values.clamp(0.0)
+
+        Xd = torch.einsum("cps,cp->cs", N_adj, V.clamp(max=V_limit).nan_to_num())
+
+        # low float precision can still drive X below 0
+        # final lazy correction
+        Xd = Xd.clamp(-X + EPS)
+
+        return Xd
+
+    def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
+        """Copy paremeters from a list of cells to another list of cells"""
+        self.Km[to_idxs] = self.Km[from_idxs]
+        self.Vmax[to_idxs] = self.Vmax[from_idxs]
+        self.E[to_idxs] = self.E[from_idxs]
+        self.N[to_idxs] = self.N[from_idxs]
+        self.A[to_idxs] = self.A[from_idxs]
+
+    def remove_cell_params(self, idxs: list[int]):
+        """Remove cell params for a list of cells"""
+        keep = torch.ones(len(self.Km), dtype=torch.bool)
+        keep[idxs] = False
+        self.Km = self.Km[keep]
+        self.Vmax = self.Vmax[keep]
+        self.E = self.E[keep]
+        self.N = self.N[keep]
+        self.A = self.A[keep]
+
+    def increase_max_cells(self, by_n: int):
+        """Increase the cell dimension by `by_n`"""
+        self.Km = self._expand(t=self.Km, n=by_n, d=0)
+        self.Vmax = self._expand(t=self.Vmax, n=by_n, d=0)
+        self.E = self._expand(t=self.E, n=by_n, d=0)
+        self.N = self._expand(t=self.N, n=by_n, d=0)
+        self.A = self._expand(t=self.A, n=by_n, d=0)
+
+    def increase_max_proteins(self, max_n: int):
+        """Increase the protein dimension to `max_n`"""
+        n_prots = int(self.Km.shape[1])
+        if max_n > n_prots:
+            by_n = max_n - n_prots
+            self.Km = self._expand(t=self.Km, n=by_n, d=1)
+            self.Vmax = self._expand(t=self.Vmax, n=by_n, d=1)
+            self.E = self._expand(t=self.E, n=by_n, d=1)
+            self.N = self._expand(t=self.N, n=by_n, d=1)
+            self.A = self._expand(t=self.A, n=by_n, d=1)
+
+    def _get_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
+        # substrates
+        sub_mask = self.N < 0.0  # (c, p, s)
+        sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
+        sub_N = sub_mask * -self.N  # (c, p, s)
+
+        # products
+        pro_mask = self.N > 0.0  # (c, p s)
+        pro_X = torch.einsum("cps,cs->cps", pro_mask, X)  # (c, p, s)
+        pro_N = pro_mask * self.N  # (c, p, s)
+
+        # quotients
+        nom = torch.pow(pro_X, pro_N).prod(2)  # (c, p)
+        denom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
+        return nom / denom  # (c, p)
+
+    def _get_protein_activity(self, X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
+        mask = N < 0.0  # (c, p s)
+        sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
+        sub_N = mask * -N  # (c, p, s)
+        return torch.pow(sub_X / (self.Km + sub_X), sub_N).prod(2)  # (c, p)
+
+    def _get_inhibitor_activity(self, X: torch.Tensor) -> torch.Tensor:
+        inh_N = (-self.A).clamp(0)  # (c, p, s)
+        inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
+        V = torch.pow(inh_X / (self.Km + inh_X), inh_N).prod(2)  # (c, p)
+        return torch.where(torch.any(self.A < 0.0, dim=2), V, 0.0)  # (c, p)
+
+    def _get_activator_activity(self, X: torch.Tensor) -> torch.Tensor:
+        act_N = self.A.clamp(0)  # (c, p, s)
+        act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
+        V = torch.pow(act_X / (self.Km + act_X), act_N).prod(2)  # (c, p)
+        return torch.where(torch.any(self.A > 0.0, dim=2), V, 1.0)  # (c, p)
+
+    def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
+        pre = t.shape[slice(d)]
+        post = t.shape[slice(d + 1, t.dim())]
+        zeros = self._tensor(*pre, n, *post)
+        return torch.cat([t, zeros], dim=d)
+
+    def _tensor(self, *args, **kwargs) -> torch.Tensor:
+        return torch.zeros(*args, **{**self.torch_kwargs, **kwargs})
 
 
 def calc_cell_params(
