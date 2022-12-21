@@ -1017,13 +1017,13 @@ def test_substrate_concentrations_never_get_too_low():
     kinetics = Kinetics(n_signals=n_mols)
 
     # concentrations (c, s)
-    X = torch.randn(n_cells, n_mols).abs() + EPS
+    X = torch.randn(n_cells, n_mols).abs()
 
     # reactions (c, p, s)
     kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
 
     # affinities (c, p, s)
-    kinetics.Km = torch.randn(n_cells, n_prots, n_mols).abs() + EPS
+    kinetics.Km = torch.randn(n_cells, n_prots, n_mols).abs()
 
     # max velocities (c, p)
     kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 10

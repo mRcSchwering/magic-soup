@@ -499,9 +499,9 @@ class World:
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
         if init == "zeros":
-            return self._tensor(*args) + EPS
+            return self._tensor(*args)
         if init == "randn":
-            return torch.randn(*args, **self.torch_kwargs).abs() + EPS
+            return torch.randn(*args, **self.torch_kwargs).abs()
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."
