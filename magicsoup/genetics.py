@@ -7,7 +7,13 @@ from magicsoup.util import generic_map_fact, weight_map_fact, bool_map_fact
 from magicsoup.containers import _Domain, _DomainFact, Protein, Molecule
 from magicsoup.constants import ALL_NTS, CODON_SIZE
 
-# TODO: maybe cell-based functions and then use multiprocessing?
+# TODO: move translate sequences to world
+# TODO: translate into tensors instead of protein/domain classes
+# TODO: collect tensors in matrix to do aggretations and assigning
+#       to kinetics tensors purely in pytorch
+# TODO: then chek whether I can have a CNN or RNN instead of these
+#       weight/bool/domain maps, so that the whole mapping process
+#       can be expressed purely in a pytorch NN
 
 # TODO: Transformation mechanism
 # TODO: conjugation mechanism
@@ -201,23 +207,60 @@ class Genetics:
         without a stop codon is not considerd.
         (https://pubmed.ncbi.nlm.nih.gov/27934701/)
         """
+        n = len(seq)
+
+        start_idxs = []
+        for start_codon in self.start_codons:
+            i = 0
+            # could sort out for too small CDS already (too far at end)
+            while i < n - 2 * CODON_SIZE:
+                try:
+                    hit = seq[i:].index(start_codon)
+                    start_idxs.append(i + hit)
+                    i = i + hit + CODON_SIZE
+                except ValueError:
+                    break
+
+        stop_idxs = []
+        for stop_codon in self.stop_codons:
+            i = 0
+            while i < n - CODON_SIZE:
+                try:
+                    hit = seq[i:].index(stop_codon)
+                    stop_idxs.append(i + hit)
+                    i = i + hit + CODON_SIZE
+                except ValueError:
+                    break
+
+        start_idxs.sort()
+        stop_idxs.sort()
+
+        by_frame: list[tuple[list[int], ...]] = [([], []), ([], []), ([], [])]
+        for start_idx in start_idxs:
+            if start_idx % 3 == 0:
+                by_frame[0][0].append(start_idx)
+            elif (start_idx + 1) % 3 == 0:
+                by_frame[1][0].append(start_idx)
+            else:
+                by_frame[2][0].append(start_idx)
+        for stop_idx in stop_idxs:
+            if stop_idx % 3 == 0:
+                by_frame[0][1].append(stop_idx)
+            elif (stop_idx + 1) % 3 == 0:
+                by_frame[1][1].append(stop_idx)
+            else:
+                by_frame[2][1].append(stop_idx)
+
         cdss = []
-        hits: list[list[int]] = [[] for _ in range(CODON_SIZE)]
-        i = 0
-        j = CODON_SIZE
-        k = 0
-        n = len(seq) + 1
-        while j <= n:
-            codon = seq[i:j]
-            if codon in self.start_codons:
-                hits[k].append(i)
-            elif codon in self.stop_codons:
-                for hit in hits[k]:
-                    cdss.append(seq[hit:j])
-                hits[k] = []
-            i += 1
-            j += 1
-            k = i % CODON_SIZE
+        for start_idxs, stop_idxs in by_frame:
+            for start_idx in start_idxs:
+                # could sort out for too small CDS already (too close to start)
+                stop_idxs = [d for d in stop_idxs if d > start_idx + CODON_SIZE]
+                if len(stop_idxs) > 0:
+                    cdss.append(seq[start_idx : min(stop_idxs) + CODON_SIZE])
+                else:
+                    break
+
         return cdss
 
     def translate_seq(self, seq: str) -> list[_Domain]:
@@ -388,3 +431,4 @@ class Genetics:
                 self.stop_codons,
             )
         )
+

@@ -48,3 +48,4 @@ def test_get_coding_regions(seq, exp):
     res = genetics.get_coding_regions(seq="".join(seq.replace("\n", "").split()))
     assert len(res) == len(exp)
     assert set(res) == set(exp)
+
