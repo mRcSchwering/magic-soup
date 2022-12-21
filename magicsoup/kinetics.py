@@ -1,6 +1,5 @@
 import logging
 import torch
-from multiprocessing import Pool
 from magicsoup.constants import EPS, GAS_CONSTANT
 from magicsoup.containers import Protein
 
@@ -181,10 +180,6 @@ class Kinetics:
         if len(cell_prots) == 0:
             return
 
-        with Pool(self.n_workers) as pool:
-            args = [(d[0], d[1], self.n_signals, d[2]) for d in cell_prots]
-            res = pool.starmap(Kinetics._get_protein_params, args)
-
         cis = []
         pis = []
         E = []
@@ -192,7 +187,8 @@ class Kinetics:
         Vmax = []
         A = []
         N = []
-        for ci, pi, e, k, v, a, n in res:
+        for ci, pi, prot in cell_prots:
+            e, k, v, a, n = self._get_protein_params(protein=prot)
             cis.append(ci)
             pis.append(pi)
             E.append(e)
@@ -312,24 +308,14 @@ class Kinetics:
         V = torch.pow(act_X / (self.Km + act_X), act_N).prod(2)  # (c, p)
         return torch.where(torch.any(self.A > 0.0, dim=2), V, 1.0)  # (c, p)
 
-    def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
-        pre = t.shape[slice(d)]
-        post = t.shape[slice(d + 1, t.dim())]
-        zeros = self._tensor(*pre, n, *post)
-        return torch.cat([t, zeros], dim=d)
-
-    def _tensor(self, *args, **kwargs) -> torch.Tensor:
-        return torch.zeros(*args, **{**self.torch_kwargs, **kwargs})
-
-    @staticmethod
     def _get_protein_params(
-        cell_i: int, prot_i: int, n_signals: int, protein: Protein
-    ) -> tuple[int, int, float, list[float], float, list[float], list[float]]:
+        self, protein: Protein
+    ) -> tuple[float, list[float], float, list[float], list[float]]:
         energy = 0.0
-        Km: list[list[float]] = [[] for _ in range(n_signals)]
+        Km: list[list[float]] = [[] for _ in range(self.n_signals)]
         Vmax: list[float] = []
-        A: list[float] = [0.0 for _ in range(n_signals)]
-        N: list[float] = [0.0 for _ in range(n_signals)]
+        A: list[float] = [0.0 for _ in range(self.n_signals)]
+        N: list[float] = [0.0 for _ in range(self.n_signals)]
 
         for dom in protein.domains:
 
@@ -383,5 +369,13 @@ class Kinetics:
 
         v = sum(Vmax) / len(Vmax) if len(Vmax) > 0 else 0.0
         ks = [sum(d) / len(d) if len(d) > 0 else 0.0 for d in Km]
-        return cell_i, prot_i, energy, ks, v, A, N
+        return energy, ks, v, A, N
 
+    def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
+        pre = t.shape[slice(d)]
+        post = t.shape[slice(d + 1, t.dim())]
+        zeros = self._tensor(*pre, n, *post)
+        return torch.cat([t, zeros], dim=d)
+
+    def _tensor(self, *args, **kwargs) -> torch.Tensor:
+        return torch.zeros(*args, **{**self.torch_kwargs, **kwargs})
