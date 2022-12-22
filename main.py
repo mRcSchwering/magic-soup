@@ -17,6 +17,17 @@ def timeit(msg: str):
 
 def main(loglevel: str, n_cells: int, n_steps: int, init_genome_size: int):
 
+    genomes = [ms.random_genome(s=100) for _ in range(n_cells)]
+
+    with timeit(f"check for {len(genomes):,} genomes"):
+        # len(list(filter(lambda seq: sum(d == "A" for d in seq) / len(seq) > 0.25, genomes)))
+        len([seq for seq in genomes if sum(d == "A" for d in seq) / len(seq) > 0.25])
+
+    # with timeit(f"check for {len(genomes):,} genomes"):
+    #     [seq for seq in genomes if sum(d == "A" for d in seq) > 0.3]
+
+    return
+
     # fmt: off
     domains = {
         ms.CatalyticFact(): ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),

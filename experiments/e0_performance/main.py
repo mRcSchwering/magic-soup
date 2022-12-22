@@ -59,9 +59,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
     }
     # fmt: on
 
-    genetics = ms.Genetics(
-        domain_facts=domains, molecules=MOLECULES, reactions=REACTIONS,
-    )
+    genetics = ms.Genetics(domain_facts=domains, molecules=MOLECULES)
     genetics.summary()
 
     world = ms.World(genetics=genetics)
@@ -72,7 +70,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
     for step_i in range(n_steps):
 
         with timeit("addCells", step_i, writer):
-            genomes = genetics.random_genomes(n=n_cells, s=rand_genome_size)
+            genomes = [ms.random_genome(rand_genome_size) for _ in range(n_cells)]
             world.add_random_cells(genomes=genomes)
 
         # TODO: takes > 0.4s
@@ -100,9 +98,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
 
         # TODO: takes > 0.3s
         with timeit("mutateGenomes", step_i, writer):
-            new_gs, chgd_idxs = ms.point_mutatations(
-                seqs=[d.genome for d in world.cells]
-            )
+            new_gs, chgd_idxs = ms.point_mutations(seqs=[d.genome for d in world.cells])
 
         # TODO: takes > 2s
         with timeit("getMutatedProteomes", step_i, writer):

@@ -1,8 +1,5 @@
 from typing import Optional
-import random
-from multiprocessing import Pool
-import torch
-from magicsoup.util import reverse_complement
+from magicsoup.util import reverse_complement, random_genome
 from magicsoup.containers import _Domain, _DomainFact, Protein, Molecule
 from magicsoup.constants import ALL_NTS, CODON_SIZE
 
@@ -17,66 +14,6 @@ from magicsoup.constants import ALL_NTS, CODON_SIZE
 # TODO: conjugation mechanism
 # TODO: Slipped_strand_mispairing / replication slippage
 # TODO: ectopic recombination
-
-
-def random_genome(s=100) -> str:
-    """
-    Generate a random nucleotide sequence with length `s`
-    """
-    return "".join(random.choices(ALL_NTS, k=s))
-
-
-def substitution(seq: str, idx: int) -> str:
-    """Create a 1 nucleotide substitution at index"""
-    nt = random.choice(ALL_NTS)
-    return seq[:idx] + nt + seq[idx + 1 :]
-
-
-def indel(seq: str, idx: int) -> str:
-    """Create a 1 nucleotide insertion or deletion at index"""
-    if random.choice([True, False]):
-        return seq[:idx] + seq[idx + 1 :]
-    nt = random.choice(ALL_NTS)
-    return seq[:idx] + nt + seq[idx:]
-
-
-def point_mutatations(
-    seqs: list[str], p=1e-3, p_indel=0.1
-) -> tuple[list[str], list[int]]:
-    """
-    Mutate sequences with point mutations.
-
-    - `seqs` nucleotide sequences
-    - `p` probability of a point per nucleotide
-    - `p_indel` probability of any point mutation being a deletion or insertion
-      (inverse probability of it being a substitution)
-    
-    Returns all sequences (muated or not).
-    """
-    n = len(seqs)
-    lens = [len(d) for d in seqs]
-    s_max = max(lens)
-
-    mask = torch.zeros(n, s_max)
-    for i, s in enumerate(lens):
-        mask[i, :s] = True
-
-    probs = torch.full((n, s_max), p)
-    muts = torch.bernoulli(probs)
-    mut_idxs = torch.argwhere(muts * mask).tolist()
-
-    probs = torch.full((len(mut_idxs),), p_indel)
-    indels = torch.bernoulli(probs).to(torch.bool).tolist()
-
-    tmps = [d for d in seqs]
-    for (seq_i, pos_i), is_indel in zip(mut_idxs, indels):
-        if is_indel:
-            tmps[seq_i] = indel(seq=tmps[seq_i], idx=pos_i)
-        else:
-            tmps[seq_i] = substitution(seq=tmps[seq_i], idx=pos_i)
-
-    idxs = list(set(d[0] for d in mut_idxs))
-    return [tmps[i] for i in idxs], idxs
 
 
 class Genetics:
@@ -101,21 +38,19 @@ class Genetics:
         self,
         domain_facts: dict[_DomainFact, list[str]],
         molecules: list[Molecule],
-        vmax_range: tuple[float, float] = (1, 10),
-        max_km: float = 10.0,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-        n_workers=4,
     ):
-        self.domain_facts = domain_facts
+        if any(len(d) != CODON_SIZE for d in start_codons):
+            raise ValueError(f"Not all start codons are of length {CODON_SIZE}")
+        if any(len(d) != CODON_SIZE for d in stop_codons):
+            raise ValueError(f"Not all stop codons are of length {CODON_SIZE}")
+
         self.molecules = molecules
-        self.vmax_range = vmax_range
-        self.max_km = max_km
         self.start_codons = start_codons
         self.stop_codons = stop_codons
-        self.n_workers = n_workers
 
-        self.domain_map = {d: k for k, v in self.domain_facts.items() for d in v}
+        self.domain_map = {d: k for k, v in domain_facts.items() for d in v}
         dom_lens = set(len(d) for d in self.domain_map)
         if len(dom_lens) != 1:
             raise ValueError(
@@ -124,14 +59,14 @@ class Genetics:
                 f" Now there are multiple lengths: {', '.join(str(d) for d in dom_lens)}"
             )
 
-        self.n_dom_type_def_nts = dom_lens.pop()
-        if self.n_dom_type_def_nts % CODON_SIZE != 0:
+        self.dom_type_size = dom_lens.pop()
+        if self.dom_type_size % CODON_SIZE != 0:
             raise ValueError(
                 f"Sequences that define domains should be a multiple of {CODON_SIZE}."
-                f" Now sequences in domain_facts have a length of {self.n_dom_type_def_nts}"
+                f" Now sequences in domain_facts have a length of {self.dom_type_size}"
             )
 
-        dfnd_doms = set(dd for d in self.domain_facts.values() for dd in d)
+        dfnd_doms = set(dd for d in domain_facts.values() for dd in d)
         act_doms = set(self.domain_map)
         if act_doms != dfnd_doms:
             rdff = dfnd_doms - act_doms
@@ -150,7 +85,7 @@ class Genetics:
             )
 
         dfnd_molecules: set[Molecule] = set()
-        for fact in self.domain_facts:
+        for fact in domain_facts:
             if hasattr(fact, "molecule_map"):
                 for mol in fact.molecule_map.values():
                     dfnd_molecules.add(mol)
@@ -168,38 +103,14 @@ class Genetics:
                 f" Known molecules: {', '.join(str(d) for d in self.molecules)}."
             )
 
-        max_region_size = max(d.min_len for d in domain_facts)
-        self.n_dom_detail_def_nts = max_region_size * self.n_dom_type_def_nts
-        self.n_dom_def_nts = self.n_dom_type_def_nts + self.n_dom_detail_def_nts
-        self.min_n_seq_nts = self.n_dom_def_nts + 2 * CODON_SIZE
-
-        if any(len(d) != CODON_SIZE for d in self.start_codons):
-            raise ValueError(
-                f"Not all start codons are of length CODON_SIZE={CODON_SIZE}"
-            )
-
-        if any(len(d) != CODON_SIZE for d in self.stop_codons):
-            raise ValueError(
-                f"Not all stop codons are of length CODON_SIZE={CODON_SIZE}"
-            )
-
-    def random_genomes(self, n: int, s=100) -> list[str]:
-        """
-        Generate `n` random nucleotide sequences each with length `s`
-        """
-        with Pool(self.n_workers) as pool:
-            return pool.map(random_genome, [s] * n)
-
-    def get_proteomes(self, sequences: list[str]) -> list[list[Protein]]:
-        """For each nucleotide sequence get all possible proteins"""
-        with Pool(self.n_workers) as pool:
-            return pool.map(self.get_proteome, sequences)
+        self.dom_details_size = max(d.min_len for d in domain_facts)
+        self.dom_size = self.dom_type_size + self.dom_details_size
+        self.min_cds_size = self.dom_size + 2 * CODON_SIZE
 
     def get_proteome(self, seq: str) -> list[Protein]:
         """Get all possible proteins encoded by a nucleotide sequence"""
         bwd = reverse_complement(seq)
         cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
-        cds = [d for d in cds if len(d) > self.min_n_seq_nts]
         proteins = [self.translate_seq(d) for d in cds]
         proteins = [d for d in proteins if len(d) > 0]
         proteins = [d for d in proteins if not all(dd.is_allosteric for dd in d)]
@@ -218,12 +129,12 @@ class Genetics:
         (https://pubmed.ncbi.nlm.nih.gov/27934701/)
         """
         n = len(seq)
+        max_start_idx = n - self.min_cds_size
 
         start_idxs = []
         for start_codon in self.start_codons:
             i = 0
-            # could sort out for too small CDS already (too far at end)
-            while i < n - 2 * CODON_SIZE:
+            while i < max_start_idx:
                 try:
                     hit = seq[i:].index(start_codon)
                     start_idxs.append(i + hit)
@@ -264,10 +175,11 @@ class Genetics:
         cdss = []
         for start_idxs, stop_idxs in by_frame:
             for start_idx in start_idxs:
-                # could sort out for too small CDS already (too close to start)
                 stop_idxs = [d for d in stop_idxs if d > start_idx + CODON_SIZE]
                 if len(stop_idxs) > 0:
-                    cdss.append(seq[start_idx : min(stop_idxs) + CODON_SIZE])
+                    cds_end_idx = min(stop_idxs) + CODON_SIZE
+                    if cds_end_idx - start_idx > self.min_cds_size:
+                        cdss.append(seq[start_idx:cds_end_idx])
                 else:
                     break
 
@@ -276,18 +188,19 @@ class Genetics:
     def translate_seq(self, seq: str) -> list[_Domain]:
         """
         Translate nucleotide sequence into a protein with domains, corresponding
-        weights, transmembrane regions, and signals.
+        affinities, velocities, transmembrane regions and so on as defined by
+        `domain_facts`.
         """
         i = 0
-        j = self.n_dom_type_def_nts
+        j = self.dom_type_size
         doms: list[_Domain] = []
-        while j + self.n_dom_detail_def_nts <= len(seq):
+        while i + self.dom_size <= len(seq):
             domfact = self.domain_map.get(seq[i:j])
             if domfact is not None:
-                dom = domfact(seq[j : j + self.n_dom_detail_def_nts])
+                dom = domfact(seq[j : j + self.dom_details_size])
                 doms.append(dom)
-                i += self.n_dom_def_nts
-                j += self.n_dom_def_nts
+                i += self.dom_size
+                j += self.dom_size
             else:
                 i += CODON_SIZE
                 j += CODON_SIZE
@@ -301,8 +214,8 @@ class Genetics:
         out: dict[str, dict[str, float]] = {}
 
         for size in sizes:
-            gs = self.random_genomes(n=n_genomes, s=size)
-            ps = self.get_proteomes(sequences=gs)
+            gs = [random_genome(s=size) for _ in range(n_genomes)]
+            ps = [self.get_proteome(seq=d) for d in gs]
             n_viable_proteomes = 0
             n_proteins = 0
             n_domains = 0
@@ -384,15 +297,11 @@ class Genetics:
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return (
-            "%s(domain_map=%r,vmax_range=%s,max_km=%r,start_codons=%r,stop_codons=%r)"
-            % (
-                clsname,
-                self.domain_map,
-                self.vmax_range,
-                self.max_km,
-                self.start_codons,
-                self.stop_codons,
-            )
+        return "%s(domain_map=%r,molecules=%r,start_codons=%r,stop_codons=%r)" % (
+            clsname,
+            self.domain_map,
+            self.molecules,
+            self.start_codons,
+            self.stop_codons,
         )
 

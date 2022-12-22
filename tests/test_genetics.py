@@ -2,6 +2,17 @@ import pytest
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES
 
+DOMAIN_FACT = {
+    ms.CatalyticFact(
+        {"AAA": ([MOLECULES[0]], [MOLECULES[1]])},
+        {"AAA": 1.0},
+        {"AAA": 1.0},
+        {"AAA": True},
+    ): ["AAAAAA"]
+}
+# min domain size is 2 + 4 codons = 18 nucleotides
+# min CDS is 24 nucleotides (with start and stop codons)
+
 
 # (genome, cds)
 DATA = [
@@ -13,7 +24,8 @@ DATA = [
         TCCTGTCAC TGTGAGAAG TTTCAATTA TAGATTCCT
         GGGGCGATT GGCGATGGT
         """,
-        ["TTGGAATAG", "TTGGTAACAAAGGTTAAAACGCCAAACGAGTATCGGCCAATCCTGTCACTGTGA"],
+        # "TTGGAATAG" is too short
+        ["TTGGTAACAAAGGTTAAAACGCCAAACGAGTATCGGCCAATCCTGTCACTGTGA"],
     ),
     (
         """
@@ -27,34 +39,23 @@ DATA = [
         CGTTTCCGT TCTCGT
         """,
         [
+            # "GTGTTACGTTATTGA" is too short
+            # "GTGAAGTAA" is too short
             "ATGAATTACGAAAGCGGGCGTACTACTTCTGGGGATACGATTAGTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGA",
             "GTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGAAAGAGCAAATTGCGAGCTCCCCGTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
-            "GTGTTACGTTATTGA",
             "TTGAAAGAGCAAATTGCGAGCTCCCCGTGA",
             "TTGCGAGCTCCCCGTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAA",
             "GTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
             "TTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAG",
             "GTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
-            "GTGAAGTAA",
         ],
     ),
 ]
 
-DOMAIN_FACT = {
-    ms.CatalyticFact(
-        {"AAA": ([MOLECULES[0]], [MOLECULES[1]])},
-        {"AAA": 1.0},
-        {"AAA": 1.0},
-        {"AAA": True},
-    ): ["AAAAAA"]
-}
-
 
 @pytest.mark.parametrize("seq, exp", DATA)
 def test_get_coding_regions(seq, exp):
-    genetics = ms.Genetics(
-        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2]
-    )
+    genetics = ms.Genetics(domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2])
     res = genetics.get_coding_regions(seq="".join(seq.replace("\n", "").split()))
     assert len(res) == len(exp)
     assert set(res) == set(exp)
