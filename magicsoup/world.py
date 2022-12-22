@@ -142,7 +142,6 @@ class World:
         if n_new_cells == 0:
             return
 
-        cells: list[Cell] = []
         prot_lens = []
         new_idxs = []
         new_params: list[tuple[int, int, Protein]] = []
@@ -152,7 +151,7 @@ class World:
             prot_lens.append(len(proteome))
             new_idxs.append(run_idx)
             cell = Cell(idx=run_idx, genome=genome, proteome=proteome, position=pos)
-            cells.append(cell)
+            self.cells.append(cell)
             for prot_i, prot in enumerate(proteome):
                 new_params.append((run_idx, prot_i, prot))
             run_idx += 1
@@ -308,6 +307,8 @@ class World:
     def enzymatic_activity(self):
         """Catalyze reactions for 1 time step and update molecule concentrations"""
         _log.debug("Run enzymatic activity with %i cells", len(self.cells))
+        if len(self.cells) == 0:
+            return
 
         xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
         X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
