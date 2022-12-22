@@ -5,7 +5,7 @@ from itertools import product
 import math
 import torch
 from magicsoup.constants import EPS
-from magicsoup.containers import Molecule, Cell, Protein
+from magicsoup.containers import Cell, Protein
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics

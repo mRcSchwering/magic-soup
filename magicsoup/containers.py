@@ -1,9 +1,33 @@
-from typing import Optional
+from typing import Optional, Any
 import abc
 import torch
+from magicsoup.constants import CODON_SIZE, ALL_NTS
 
 
 # TODO: tests for containers, e.g. comparisons
+
+
+def _get_region_size(seqs: dict[str, Any], label: str) -> int:
+    lens = set(len(d) for d in seqs)
+    if len(lens) != 1:
+        raise ValueError(
+            f"Keys of {label} must all have the same length."
+            f" Now there are lengths: {', '.join(str(d) for d in lens)}"
+        )
+    size = lens.pop()
+    if size % CODON_SIZE != 0:
+        raise ValueError(
+            f"Key lengths of {label} must be a multiple of {CODON_SIZE}."
+            f" Now they have lengths {size}"
+        )
+    all_chars = set(dd for d in seqs for dd in d)
+    if all_chars > set(ALL_NTS):
+        raise ValueError(
+            f"Some unknown nucleotides were defined in {label}:"
+            f" {', '.join(all_chars - set(ALL_NTS))}."
+            f" Known nucleotides are: {', '.join(ALL_NTS)}"
+        )
+    return size
 
 
 class Molecule:
@@ -156,15 +180,7 @@ class _Domain:
 class _DomainFact(abc.ABC):
     """Base class to create domain factory. Must implement __call__."""
 
-    n_regions: int
-
-    def __init__(self):
-        self.region_size = 0
-        self.molecule_map: dict[str, Molecule] = {}
-        self.reaction_map: dict[str, tuple[list[Molecule], list[Molecule]]] = {}
-        self.affinity_map: dict[str, float] = {}
-        self.velocity_map: dict[str, float] = {}
-        self.orientation_map: dict[str, bool] = {}
+    min_len = 0
 
     @abc.abstractmethod
     def __call__(self, seq: str) -> _Domain:
@@ -214,20 +230,44 @@ class CatalyticFact(_DomainFact):
     is not necessary to additionally define the reverse reaction.
     """
 
-    n_regions = 4
+    def __init__(
+        self,
+        reaction_map: dict[str, tuple[list[Molecule], list[Molecule]]],
+        affinity_map: dict[str, float],
+        velocity_map: dict[str, float],
+        orientation_map: dict[str, bool],
+    ):
+        self.reaction_map = reaction_map
+        self.affinity_map = affinity_map
+        self.velocity_map = velocity_map
+        self.orientation_map = orientation_map
+
+        n_react = _get_region_size(reaction_map, "reaction_map")
+        n_aff = _get_region_size(affinity_map, "affinity_map")
+        n_velo = _get_region_size(velocity_map, "velocity_map")
+        n_orient = _get_region_size(orientation_map, "orientation_map")
+
+        self.react_slice = slice(0, n_react)
+        self.aff_slice = slice(n_react, n_react + n_aff)
+        self.velo_slice = slice(n_react + n_aff, n_react + n_aff + n_velo)
+        self.orient_slice = slice(
+            n_react + n_aff + n_velo, n_react + n_aff + n_velo + n_orient,
+        )
+
+        self.min_len = n_react + n_aff + n_velo + n_orient
 
     def __call__(self, seq: str) -> _Domain:
-        react = self.reaction_map[seq[0 : self.region_size]]
-        aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
-        velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
-        is_bkwd = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
+        react = self.reaction_map[seq[self.react_slice]]
+        aff = self.affinity_map[seq[self.aff_slice]]
+        velo = self.velocity_map[seq[self.velo_slice]]
+        is_bkwd = self.orientation_map[seq[self.orient_slice]]
         return CatalyticDomain(
             reaction=react, affinity=aff, velocity=velo, is_bkwd=is_bkwd
         )
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(n_regions=%r)" % (clsname, self.n_regions)
+        return "%s(min_len=%r)" % (clsname, self.min_len)
 
 
 class TransporterDomain(_Domain):
@@ -264,12 +304,39 @@ class TransporterFact(_DomainFact):
     """
 
     n_regions = 4
+    region_size = 4
+
+    def __init__(
+        self,
+        molecule_map: dict[str, Molecule],
+        affinity_map: dict[str, float],
+        velocity_map: dict[str, float],
+        orientation_map: dict[str, bool],
+    ):
+        self.molecule_map = molecule_map
+        self.affinity_map = affinity_map
+        self.velocity_map = velocity_map
+        self.orientation_map = orientation_map
+
+        n_mol = _get_region_size(molecule_map, "molecule_map")
+        n_aff = _get_region_size(affinity_map, "affinity_map")
+        n_velo = _get_region_size(velocity_map, "velocity_map")
+        n_orient = _get_region_size(orientation_map, "orientation_map")
+
+        self.mol_slice = slice(0, n_mol)
+        self.aff_slice = slice(n_mol, n_mol + n_aff)
+        self.velo_slice = slice(n_mol + n_aff, n_mol + n_aff + n_velo)
+        self.orient_slice = slice(
+            n_mol + n_aff + n_velo, n_mol + n_aff + n_velo + n_orient,
+        )
+
+        self.min_len = n_mol + n_aff + n_velo + n_orient
 
     def __call__(self, seq: str) -> _Domain:
-        mol = self.molecule_map[seq[0 : self.region_size]]
-        aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
-        velo = self.velocity_map[seq[self.region_size * 2 : self.region_size * 3]]
-        is_bkwd = self.orientation_map[seq[self.region_size * 3 : self.region_size * 4]]
+        mol = self.molecule_map[seq[self.mol_slice]]
+        aff = self.affinity_map[seq[self.aff_slice]]
+        velo = self.velocity_map[seq[self.velo_slice]]
+        is_bkwd = self.orientation_map[seq[self.orient_slice]]
         return TransporterDomain(
             molecule=mol, affinity=aff, velocity=velo, is_bkwd=is_bkwd
         )
@@ -322,17 +389,31 @@ class AllostericFact(_DomainFact):
     """
 
     n_regions = 2
+    region_size = 4
 
     def __init__(
-        self, is_transmembrane=False, is_inhibiting=False,
+        self,
+        molecule_map: dict[str, Molecule],
+        affinity_map: dict[str, float],
+        is_transmembrane=False,
+        is_inhibiting=False,
     ):
-        super().__init__()
         self.is_transmembrane = is_transmembrane
         self.is_inhibiting = is_inhibiting
+        self.molecule_map = molecule_map
+        self.affinity_map = affinity_map
+
+        n_mol = _get_region_size(molecule_map, "molecule_map")
+        n_aff = _get_region_size(affinity_map, "affinity_map")
+
+        self.mol_slice = slice(0, n_mol)
+        self.aff_slice = slice(n_mol, n_mol + n_aff)
+
+        self.min_len = n_mol + n_aff
 
     def __call__(self, seq: str) -> _Domain:
-        mol = self.molecule_map[seq[0 : self.region_size]]
-        aff = self.affinity_map[seq[self.region_size : self.region_size * 2]]
+        mol = self.molecule_map[seq[self.mol_slice]]
+        aff = self.affinity_map[seq[self.aff_slice]]
         return AllostericDomain(
             effector=mol,
             affinity=aff,

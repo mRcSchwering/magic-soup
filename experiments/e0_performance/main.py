@@ -6,7 +6,8 @@ from pathlib import Path
 import torch
 from torch.utils.tensorboard import SummaryWriter
 import magicsoup as ms
-from magicsoup.constants import NOW
+from magicsoup.util import variants, bool_map_fact, weight_map_fact, generic_map_fact
+from magicsoup.constants import NOW, CODON_SIZE
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
 
 _log = logging.getLogger(__name__)
@@ -31,14 +32,30 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
     n_threads = torch.get_num_threads()
     _log.info("torch n threads %i", n_threads)
 
+    n_region_codons = 2
+    max_km = 10.0
+    vmax_range = (1, 10)
+    codons = variants("N" * n_region_codons * CODON_SIZE)
+    reaction_map = generic_map_fact(codons, REACTIONS)
+    molecule_map = generic_map_fact(codons, MOLECULES)
+    affinity_map = weight_map_fact(codons, 1 / max_km, max_km)
+    velocity_map = weight_map_fact(codons, *vmax_range)
+    bool_map = bool_map_fact(codons)
+
     # fmt: off
     domains = {
-        ms.CatalyticFact(): ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),
-        ms.TransporterFact(): ms.variants("ACNAGN") + ms.variants("ACNTAN") + ms.variants("AANTCN"),
-        ms.AllostericFact(is_transmembrane=False, is_inhibiting=False): ms.variants("GGNANN"),
-        ms.AllostericFact(is_transmembrane=False, is_inhibiting=True): ms.variants("GGNTNN"),
-        ms.AllostericFact(is_transmembrane=True, is_inhibiting=False): ms.variants("GGNCNN"),
-        ms.AllostericFact(is_transmembrane=True, is_inhibiting=True): ms.variants("GGNGNN"),
+        ms.CatalyticFact(reaction_map=reaction_map, affinity_map=affinity_map, velocity_map=velocity_map, orientation_map=bool_map):
+            ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),
+        ms.TransporterFact(molecule_map=molecule_map, affinity_map=affinity_map, velocity_map=velocity_map, orientation_map=bool_map):
+            ms.variants("ACNAGN") + ms.variants("ACNTAN") + ms.variants("AANTCN"),
+        ms.AllostericFact(molecule_map=molecule_map, affinity_map=affinity_map, is_transmembrane=False, is_inhibiting=False):
+            ms.variants("GGNANN"),
+        ms.AllostericFact(molecule_map=molecule_map, affinity_map=affinity_map, is_transmembrane=False, is_inhibiting=True):
+            ms.variants("GGNTNN"),
+        ms.AllostericFact(molecule_map=molecule_map, affinity_map=affinity_map, is_transmembrane=True, is_inhibiting=False):
+            ms.variants("GGNCNN"),
+        ms.AllostericFact(molecule_map=molecule_map, affinity_map=affinity_map, is_transmembrane=True, is_inhibiting=True):
+            ms.variants("GGNGNN"),
     }
     # fmt: on
 

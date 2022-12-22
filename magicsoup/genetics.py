@@ -2,11 +2,10 @@ from typing import Optional
 import random
 from multiprocessing import Pool
 import torch
-from magicsoup.util import generic_map_fact, weight_map_fact, bool_map_fact, reverse_complement, variants
+from magicsoup.util import reverse_complement
 from magicsoup.containers import _Domain, _DomainFact, Protein, Molecule
 from magicsoup.constants import ALL_NTS, CODON_SIZE
 
-# TODO: move translate sequences to world
 # TODO: translate into tensors instead of protein/domain classes
 # TODO: collect tensors in matrix to do aggretations and assigning
 #       to kinetics tensors purely in pytorch
@@ -18,8 +17,6 @@ from magicsoup.constants import ALL_NTS, CODON_SIZE
 # TODO: conjugation mechanism
 # TODO: Slipped_strand_mispairing / replication slippage
 # TODO: ectopic recombination
-
-
 
 
 def random_genome(s=100) -> str:
@@ -104,48 +101,87 @@ class Genetics:
         self,
         domain_facts: dict[_DomainFact, list[str]],
         molecules: list[Molecule],
-        reactions: list[tuple[list[Molecule], list[Molecule]]],
         vmax_range: tuple[float, float] = (1, 10),
         max_km: float = 10.0,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-        n_region_codons=2,
         n_workers=4,
     ):
         self.domain_facts = domain_facts
         self.molecules = molecules
-        self.reactions = reactions
         self.vmax_range = vmax_range
         self.max_km = max_km
         self.start_codons = start_codons
         self.stop_codons = stop_codons
-        self.n_region_codons = n_region_codons
         self.n_workers = n_workers
 
-        codons = variants("N" * n_region_codons * CODON_SIZE)
-        self.reaction_map = generic_map_fact(codons, reactions)
-        self.molecule_map = generic_map_fact(codons, molecules)
-        self.affinity_map = weight_map_fact(codons, 1 / max_km, max_km)
-        self.velocity_map = weight_map_fact(codons, *vmax_range)
-        self.bool_map = bool_map_fact(codons)
-
-        for domain_fact in self.domain_facts:
-            domain_fact.region_size = n_region_codons * CODON_SIZE
-            domain_fact.reaction_map = self.reaction_map
-            domain_fact.molecule_map = self.molecule_map
-            domain_fact.affinity_map = self.affinity_map
-            domain_fact.velocity_map = self.velocity_map
-            domain_fact.orientation_map = self.bool_map
-
         self.domain_map = {d: k for k, v in self.domain_facts.items() for d in v}
-        max_n_regions = max(d.n_regions for d in domain_facts)
+        dom_lens = set(len(d) for d in self.domain_map)
+        if len(dom_lens) != 1:
+            raise ValueError(
+                "Not all domain types are defined by the same number of nucleotides."
+                " All sequences in domain_facts must be of equal lengths."
+                f" Now there are multiple lengths: {', '.join(str(d) for d in dom_lens)}"
+            )
 
-        self.n_dom_type_def_nts = n_region_codons * CODON_SIZE
-        self.n_dom_detail_def_nts = max_n_regions * CODON_SIZE * n_region_codons
+        self.n_dom_type_def_nts = dom_lens.pop()
+        if self.n_dom_type_def_nts % CODON_SIZE != 0:
+            raise ValueError(
+                f"Sequences that define domains should be a multiple of {CODON_SIZE}."
+                f" Now sequences in domain_facts have a length of {self.n_dom_type_def_nts}"
+            )
+
+        dfnd_doms = set(dd for d in self.domain_facts.values() for dd in d)
+        act_doms = set(self.domain_map)
+        if act_doms != dfnd_doms:
+            rdff = dfnd_doms - act_doms
+            raise ValueError(
+                "Some sequences for domain definitions were defined multiple times. "
+                f"In domain_facts {len(dfnd_doms)} sequences were defined. "
+                f"But only {len(act_doms)} of them are unqiue. "
+                f"Following sequences are overlapping: {', '.join(rdff)}"
+            )
+        dfnd_nts = set(dd for d in self.domain_map for dd in d)
+        if dfnd_nts > set(ALL_NTS):
+            raise ValueError(
+                "Some unknown nucleotides were defined in domain_fact:"
+                f" {', '.join(dfnd_nts - set(ALL_NTS))}."
+                f" Known nucleotides are: {', '.join(ALL_NTS)}"
+            )
+
+        dfnd_molecules: set[Molecule] = set()
+        for fact in self.domain_facts:
+            if hasattr(fact, "molecule_map"):
+                for mol in fact.molecule_map.values():
+                    dfnd_molecules.add(mol)
+            if hasattr(fact, "reaction_map"):
+                for react_mols in fact.reaction_map.values():
+                    for substrates in react_mols[0]:
+                        dfnd_molecules.add(substrates)
+                    for products in react_mols[1]:
+                        dfnd_molecules.add(products)
+        if dfnd_molecules > set(self.molecules):
+            raise ValueError(
+                "In some domains unknown molecules were defined."
+                " The reaction and/or molecule maps in domain_facts contain some molecules which were not defined as 'molecules'."
+                f" Unknown molecules: {', '.join(str(d) for d in dfnd_molecules - set(self.molecules))}."
+                f" Known molecules: {', '.join(str(d) for d in self.molecules)}."
+            )
+
+        max_region_size = max(d.min_len for d in domain_facts)
+        self.n_dom_detail_def_nts = max_region_size * self.n_dom_type_def_nts
         self.n_dom_def_nts = self.n_dom_type_def_nts + self.n_dom_detail_def_nts
         self.min_n_seq_nts = self.n_dom_def_nts + 2 * CODON_SIZE
 
-        self._validate_init()
+        if any(len(d) != CODON_SIZE for d in self.start_codons):
+            raise ValueError(
+                f"Not all start codons are of length CODON_SIZE={CODON_SIZE}"
+            )
+
+        if any(len(d) != CODON_SIZE for d in self.stop_codons):
+            raise ValueError(
+                f"Not all stop codons are of length CODON_SIZE={CODON_SIZE}"
+            )
 
     def random_genomes(self, n: int, s=100) -> list[str]:
         """
@@ -345,52 +381,6 @@ class Genetics:
 
         print("")
         return None
-
-    def _validate_init(self):
-        lens = set(len(d) for d in self.domain_map)
-        if len(lens) > 1:
-            raise ValueError(
-                "Not all domain types are defined by the same amount of nucleotides. "
-                "All sequences in domain_facts must be of equal lengths. "
-                f"Now there are multiple lengths: {', '.join(lens)}"
-            )
-
-        region_nts = self.n_region_codons * CODON_SIZE
-        if {region_nts} != lens:
-            raise ValueError(
-                f"Domain regions were defined to have n_region_codons={self.n_region_codons} codons ({region_nts} nucleotides). "
-                f"Currently sequences in domain_facts have {', '.join(lens)} nucleotides."
-            )
-
-        if any(len(d) != CODON_SIZE for d in self.start_codons):
-            raise ValueError(
-                f"Not all start codons are of length CODON_SIZE={CODON_SIZE}"
-            )
-
-        if any(len(d) != CODON_SIZE for d in self.stop_codons):
-            raise ValueError(
-                f"Not all stop codons are of length CODON_SIZE={CODON_SIZE}"
-            )
-
-        dfnd_doms = set(dd for d in self.domain_facts.values() for dd in d)
-        act_doms = set(self.domain_map)
-        if act_doms != dfnd_doms:
-            rdff = dfnd_doms - act_doms
-            raise ValueError(
-                "Some sequences for domain definitions were defined multiple times. "
-                f"In domain_facts {len(dfnd_doms)} sequences were defined. "
-                f"But only {len(act_doms)} of them are unqiue. "
-                f"Following sequences are overlapping: {', '.join(rdff)}"
-            )
-
-        exp_nts = set(ALL_NTS)
-        wrng_dom_nts = set(d for d in self.domain_map if set(d) - exp_nts)
-        if len(wrng_dom_nts) > 0:
-            raise ValueError(
-                "Some domain type definitions include unknown nucleotides. "
-                f"These nucleotides were found in domain_facts: {', '.join(wrng_dom_nts)}. "
-                f"Known nucleotides are: {', '.join(exp_nts)}."
-            )
 
     def __repr__(self) -> str:
         clsname = type(self).__name__

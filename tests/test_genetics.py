@@ -1,5 +1,6 @@
 import pytest
 import magicsoup as ms
+from magicsoup.examples.wood_ljungdahl import MOLECULES
 
 
 # (genome, cds)
@@ -39,13 +40,20 @@ DATA = [
     ),
 ]
 
-DOMAIN_FACT = {ms.CatalyticFact(): ["AAAAAA"]}
+DOMAIN_FACT = {
+    ms.CatalyticFact(
+        {"AAA": ([MOLECULES[0]], [MOLECULES[1]])},
+        {"AAA": 1.0},
+        {"AAA": 1.0},
+        {"AAA": True},
+    ): ["AAAAAA"]
+}
 
 
 @pytest.mark.parametrize("seq, exp", DATA)
 def test_get_coding_regions(seq, exp):
     genetics = ms.Genetics(
-        domain_facts=DOMAIN_FACT, molecules=[], reactions=[]
+        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2]
     )
     res = genetics.get_coding_regions(seq="".join(seq.replace("\n", "").split()))
     assert len(res) == len(exp)
