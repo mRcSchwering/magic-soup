@@ -1,9 +1,8 @@
 from typing import Optional
-from itertools import product
 import random
 from multiprocessing import Pool
 import torch
-from magicsoup.util import generic_map_fact, weight_map_fact, bool_map_fact
+from magicsoup.util import generic_map_fact, weight_map_fact, bool_map_fact, reverse_complement, variants
 from magicsoup.containers import _Domain, _DomainFact, Protein, Molecule
 from magicsoup.constants import ALL_NTS, CODON_SIZE
 
@@ -21,18 +20,6 @@ from magicsoup.constants import ALL_NTS, CODON_SIZE
 # TODO: ectopic recombination
 
 
-def variants(seq: str) -> list[str]:
-    """
-    Generate all variants of sequence where
-    'N' can be any nucleotide.
-    """
-    s = seq
-    n = s.count("N")
-    for i in range(n):
-        idx = s.find("N")
-        s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
-    nts = [ALL_NTS] * n
-    return [s.format(*d) for d in product(*nts)]
 
 
 def random_genome(s=100) -> str:
@@ -40,19 +27,6 @@ def random_genome(s=100) -> str:
     Generate a random nucleotide sequence with length `s`
     """
     return "".join(random.choices(ALL_NTS, k=s))
-
-
-def reverse_complement(seq: str) -> str:
-    """Reverse-complement of a nucleotide sequence"""
-    rvsd = seq[::-1]
-    return (
-        rvsd.replace("A", "-")
-        .replace("T", "A")
-        .replace("-", "T")
-        .replace("G", "-")
-        .replace("C", "G")
-        .replace("-", "C")
-    )
 
 
 def substitution(seq: str, idx: int) -> str:

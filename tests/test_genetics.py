@@ -39,11 +39,13 @@ DATA = [
     ),
 ]
 
+DOMAIN_FACT = {ms.CatalyticFact(): ["AAAAAA"]}
+
 
 @pytest.mark.parametrize("seq, exp", DATA)
 def test_get_coding_regions(seq, exp):
     genetics = ms.Genetics(
-        domain_facts={ms.CatalyticFact(): ["AAAAAA"]}, molecules=[], reactions=[]
+        domain_facts=DOMAIN_FACT, molecules=[], reactions=[]
     )
     res = genetics.get_coding_regions(seq="".join(seq.replace("\n", "").split()))
     assert len(res) == len(exp)

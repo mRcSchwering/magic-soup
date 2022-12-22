@@ -8,6 +8,7 @@ from magicsoup.constants import EPS
 from magicsoup.containers import Molecule, Cell, Protein
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
+from magicsoup.genetics import Genetics
 
 
 _log = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ class World:
 
     def __init__(
         self,
-        molecules: list[Molecule],
+        genetics: Genetics,
         map_size=128,
         mol_halflife=100_000,
         mol_diff_coef=1e-8,
@@ -62,9 +63,8 @@ class World:
         abs_temp=310.0,
         device="cpu",
         dtype=torch.float,
-        n_workers=4,
     ):
-        self.molecules = molecules
+        self.genetics = genetics
         self.map_size = map_size
         self.abs_temp = abs_temp
         self.mol_halflife = mol_halflife
@@ -72,11 +72,10 @@ class World:
         self.mol_diff_coef = mol_diff_coef
         self.dtype = dtype
         self.device = device
-        self.n_workers = n_workers
         self.torch_kwargs = {"dtype": dtype, "device": device}
 
-        self.n_molecules = len(molecules)
-        for idx, mol in enumerate(molecules):
+        self.n_molecules = len(self.genetics.molecules)
+        for idx, mol in enumerate(self.genetics.molecules):
             mol.int_idx = idx
             mol.ext_idx = self.n_molecules + idx
         self._int_mol_idxs = list(range(self.n_molecules))
@@ -102,7 +101,7 @@ class World:
         _log.debug(
             "Instantiating world with size %i and %i molecule species",
             map_size,
-            len(molecules),
+            self.n_molecules,
         )
 
     def get_cell(
@@ -119,28 +118,13 @@ class World:
 
         cell = self.cells[idx]
         cell.int_molecules = self.cell_molecules[idx, :]
-        cell.ext_molecules = self._get_cell_ext_molecules(cells=[cell])[0, :]
+        cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]].T
+
         return cell
 
-    def get_cells(self, by_idxs: list[int]) -> list[Cell]:
-        """More performant than calling `get_cell` multiple times"""
-        _log.debug("Getting %i cells by indices", len(by_idxs))
-
-        if len(by_idxs) == 0:
-            return []
-
-        cells = [self.cells[i] for i in by_idxs]
-        ext_molecules = self._get_cell_ext_molecules(cells=cells)
-        for ci, cell in enumerate(cells):
-            cell.int_molecules = self.cell_molecules[cell.idx, :]
-            cell.ext_molecules = ext_molecules[ci, :]
-        return cells
-
-    def add_random_cells(self, cells: list[Cell]):
+    def add_random_cells(self, genomes: list[str]):
         """
-        Add new random cells with new genomes and proteomes.
-
-        - `cells` new cells with new geneomes and proteomes
+        Create new cells to be placed randomly on the map.
 
         Each cell will be placed randomly on the map and receive the molecule
         concentration of the pixel where it was added.
@@ -148,48 +132,44 @@ class World:
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
         """
-        _log.debug("Adding %i random cells", len(cells))
-
-        if len(cells) == 0:
+        _log.debug("Adding %i random cells", len(genomes))
+        if len(genomes) == 0:
             return
 
-        new_idxs = self._place_new_cells_in_random_positions(cells=cells)
+        new_positions = self._place_new_cells_in_random_positions(n_cells=len(genomes))
+        n_new_cells = len(new_positions)
 
-        n_new_cells = len(new_idxs)
         if n_new_cells == 0:
             return
+
+        cells: list[Cell] = []
+        prot_lens = []
+        new_idxs = []
+        new_params: list[tuple[int, int, Protein]] = []
+        run_idx = len(self.cells)
+        for genome, pos in zip(genomes, new_positions):
+            proteome = self.genetics.get_proteome(seq=genome)
+            prot_lens.append(len(proteome))
+            new_idxs.append(run_idx)
+            cell = Cell(idx=run_idx, genome=genome, proteome=proteome, position=pos)
+            cells.append(cell)
+            for prot_i, prot in enumerate(proteome):
+                new_params.append((run_idx, prot_i, prot))
+            run_idx += 1
 
         self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
         self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-
-        new_cells = [self.cells[i] for i in new_idxs]
-        self.kinetics.increase_max_proteins(
-            max_n=max(len(d.proteome) for d in new_cells)
-        )
+        self.kinetics.increase_max_proteins(max_n=max(prot_lens))
+        self.kinetics.set_cell_params(cell_prots=new_params)
 
         # cell is supposed to have the same concentrations as the pxl it lives on
-        new_positions = [self.cells[i].position for i in new_idxs]
-        xs = []
-        ys = []
-        for x, y in new_positions:
-            xs.append(x)
-            ys.append(y)
+        xs, ys = list(map(list, zip(*new_positions)))
         self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T
 
-        set_params: list[tuple[int, int, Protein]] = []
-        for cell in new_cells:
-            for prot_i, prot in enumerate(cell.proteome):
-                set_params.append((cell.idx, prot_i, prot))
-
-        self.kinetics.set_cell_params(cell_prots=set_params)
-
-    def replicate_cells(self, parent_idxs) -> tuple[list[int], list[int]]:
+    def replicate_cells(self, parent_idxs: list[int]) -> tuple[list[int], list[int]]:
         """
-        Replicate existing cells with new genomes and proteomes.
-
-        - `cells` new cells with new geneomes and proteomes, but with parent
-          position and idexes.
+        Replicate existing cells.
 
         Each cell will be placed randomly next to its parent (Moore's neighborhood)
         and will receive the same molecule concentrations as its parent.
@@ -212,38 +192,48 @@ class World:
         self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
         self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
+        self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
 
         # cell is supposed to have the same concentrations as the parent had
         self.cell_molecules[child_idxs, :] = self.cell_molecules[succ_parent_idxs, :]
 
-        self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
-
         return succ_parent_idxs, child_idxs
 
-    def update_cells(self, cells: list[Cell]):
+    def update_cells(self, genomes: list[str], idxs: list[int]):
         """
         Update existing cells with new genomes and proteomes.
 
         - `cells` cells with that need to be updated
         """
-        _log.debug("Updating %i cells", len(cells))
+        _log.debug("Updating %i cells", len(genomes))
+        if len(genomes) != len(idxs):
+            raise ValueError(
+                "Genomes and idxs represent the same list of cells."
+                f" But now they don't have the same length. genomes: {len(genomes)}, idxs: {len(idxs)}."
+            )
 
+        prot_lens: list[int] = []
         set_params: list[tuple[int, int, Protein]] = []
         unset_params: list[tuple[int, int]] = []
-        for new_cell in cells:
-            ci = new_cell.idx
-            oldprot = self.cells[ci].proteome
-            newprot = new_cell.proteome
+        for idx, genome in zip(idxs, genomes):
+            cell = self.cells[idx]
+            newprot = self.genetics.get_proteome(seq=genome)
+            oldprot = cell.proteome
+
             n_new = len(newprot)
             n_old = len(oldprot)
             n = min(n_old, n_new)
             for pi, (np, op) in enumerate(zip(newprot[:n], oldprot[:n])):
                 if np != op:
-                    set_params.append((ci, pi, np))
+                    set_params.append((idx, pi, np))
             if n_old > n_new:
-                unset_params.extend((ci, i) for i in range(n, n_old))
+                unset_params.extend((idx, i) for i in range(n, n_old))
 
-        self.kinetics.increase_max_proteins(max_n=max(len(d.proteome) for d in cells))
+            cell.proteome = newprot
+            cell.genome = genome
+            prot_lens.append(n_new)
+
+        self.kinetics.increase_max_proteins(max_n=max(prot_lens))
         self.kinetics.set_cell_params(cell_prots=set_params)
         self.kinetics.unset_cell_params(cell_prots=unset_params)
 
@@ -253,22 +243,14 @@ class World:
         they used to live on.
         """
         _log.debug("Killing %i cells", len(cell_idxs))
-
         if len(cell_idxs) == 0:
             return
 
-        cells = [self.cells[i] for i in cell_idxs]
-
-        xs = []
-        ys = []
-        for cell in cells:
-            x, y = cell.position
-            xs.append(x)
-            ys.append(y)
+        xs, ys = list(map(list, zip(*[self.cells[i].position for i in cell_idxs])))
         self.cell_map[xs, ys] = False
 
         spillout = self.cell_molecules[cell_idxs, :]
-        self._add_cell_ext_molecules(cells=cells, molecules=spillout)
+        self.molecule_map[:, xs, ys] += spillout.T
 
         keep = torch.ones(self.cell_survival.shape[0], dtype=torch.bool)
         keep[cell_idxs] = False
@@ -327,16 +309,14 @@ class World:
         """Catalyze reactions for 1 time step and update molecule concentrations"""
         _log.debug("Run enzymatic activity with %i cells", len(self.cells))
 
-        ext_molecules = self._get_cell_ext_molecules(cells=self.cells)
-        X = torch.cat([self.cell_molecules, ext_molecules], dim=1)
+        xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
+        X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
 
         Xd = self.kinetics.integrate_signals(X=X)
         X += Xd
 
+        self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
         self.cell_molecules = X[:, self._int_mol_idxs]
-        self._put_cell_ext_molecules(
-            cells=self.cells, molecules=X[:, self._ext_mol_idxs]
-        )
 
     def summary(self, as_dict=False) -> Optional[dict]:
         """Get current world summary"""
@@ -353,7 +333,7 @@ class World:
         cells["avgGenomeSize"] = sum(g_lens) / n_cells if n_cells > 0 else 0.0
 
         mols: dict[str, Any] = {}
-        for idx, mol in enumerate(self.molecules):
+        for idx, mol in enumerate(self.genetics.molecules):
             mols[mol.name] = {
                 "avgExtConc": self.molecule_map[idx].mean().item(),
                 "avgIntConc": self.cell_molecules[:, idx].mean().item(),
@@ -434,10 +414,11 @@ class World:
 
         return successful_parent_idxs, child_idxs
 
-    def _place_new_cells_in_random_positions(self, cells: list[Cell]) -> list[int]:
+    def _place_new_cells_in_random_positions(
+        self, n_cells: int
+    ) -> list[tuple[int, int]]:
         # available spots on map
         pxls = torch.argwhere(~self.cell_map)
-        n_cells = len(cells)
         if n_cells > len(pxls):
             _log.info(
                 "Wanted to add %i new random cells"
@@ -451,57 +432,17 @@ class World:
 
         # place cells on map
         idxs = random.sample(range(len(pxls)), k=n_cells)
-        xs, ys = pxls[idxs].T.tolist()
+        chosen = pxls[idxs]
+        xs, ys = chosen.T.tolist()
         self.cell_map[xs, ys] = True
-
-        new_idx = len(self.cells)
-        new_idxs: list[int] = []
-        for x, y, cell in zip(xs, ys, cells):
-
-            # set new cell position
-            cell.position = (x, y)
-
-            # set new cell index
-            cell.idx = new_idx
-            self.cells.append(cell)
-            new_idxs.append(new_idx)
-            new_idx += 1
-
-        return new_idxs
-
-    def _get_cell_ext_molecules(self, cells: list[Cell]) -> torch.Tensor:
-        xs = []
-        ys = []
-        for cell in cells:
-            x, y = cell.position
-            xs.append(x)
-            ys.append(y)
-        return self.molecule_map[:, xs, ys].T
-
-    def _add_cell_ext_molecules(self, cells: list[Cell], molecules: torch.Tensor):
-        xs = []
-        ys = []
-        for cell in cells:
-            x, y = cell.position
-            xs.append(x)
-            ys.append(y)
-        self.molecule_map[:, xs, ys] += molecules.T
-
-    def _put_cell_ext_molecules(self, cells: list[Cell], molecules: torch.Tensor):
-        xs = []
-        ys = []
-        for cell in cells:
-            x, y = cell.position
-            xs.append(x)
-            ys.append(y)
-        self.molecule_map[:, xs, ys] = molecules.T
+        return [(int(d[0]), int(d[1])) for d in chosen.tolist()]
 
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
         if init == "zeros":
-            return self._tensor(*args)
+            return self._tensor(*args) + EPS
         if init == "randn":
-            return torch.randn(*args, **self.torch_kwargs).abs()
+            return torch.randn(*args, **self.torch_kwargs).abs().clamp(EPS)
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."
@@ -554,10 +495,9 @@ class World:
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(molecules=%r,map_size=%r,mol_halflife=%r,mol_diff_coef=%r,abs_temp=%r,device=%r,dtype=%r)"
+            "%s(map_size=%r,mol_halflife=%r,mol_diff_coef=%r,abs_temp=%r,device=%r,dtype=%r)"
             % (
                 clsname,
-                self.molecules,
                 self.map_size,
                 self.mol_halflife,
                 self.mol_diff_coef,

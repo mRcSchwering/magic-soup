@@ -2,6 +2,7 @@ from typing import TypeVar, Sequence
 from itertools import product
 import string
 import random
+from magicsoup.constants import ALL_NTS
 
 
 def randstr(n: int = 12) -> str:
@@ -17,6 +18,33 @@ def randstr(n: int = 12) -> str:
             string.ascii_uppercase + string.ascii_lowercase + string.digits, k=n
         )
     )
+
+
+def reverse_complement(seq: str) -> str:
+    """Reverse-complement of a nucleotide sequence"""
+    rvsd = seq[::-1]
+    return (
+        rvsd.replace("A", "-")
+        .replace("T", "A")
+        .replace("-", "T")
+        .replace("G", "-")
+        .replace("C", "G")
+        .replace("-", "C")
+    )
+
+
+def variants(seq: str) -> list[str]:
+    """
+    Generate all variants of sequence where
+    'N' can be any nucleotide.
+    """
+    s = seq
+    n = s.count("N")
+    for i in range(n):
+        idx = s.find("N")
+        s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
+    nts = [ALL_NTS] * n
+    return [s.format(*d) for d in product(*nts)]
 
 
 def rad1_nghbrhd(x: int, size: int) -> list[int]:

@@ -47,7 +47,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
     )
     genetics.summary()
 
-    world = ms.World(molecules=MOLECULES)
+    world = ms.World(genetics=genetics)
     world.summary()
 
     idx_ATP = ATP.int_idx
@@ -56,9 +56,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
 
         with timeit("addCells", step_i, writer):
             genomes = genetics.random_genomes(n=n_cells, s=rand_genome_size)
-            proteomes = genetics.get_proteomes(sequences=genomes)
-            cells = [ms.Cell(genome=g, proteome=p) for g, p in zip(genomes, proteomes)]
-            world.add_random_cells(cells=cells)
+            world.add_random_cells(genomes=genomes)
 
         # TODO: takes > 0.4s
         with timeit("activity", step_i, writer):
@@ -81,7 +79,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
                 .tolist()
             )
             succ_parents, children = world.replicate_cells(parent_idxs=rep_idxs)
-            world.cell_molecules[succ_parents + children, idx_ATP] -= 5.0
+            world.cell_molecules[succ_parents + children, idx_ATP] -= 4.0
 
         # TODO: takes > 0.3s
         with timeit("mutateGenomes", step_i, writer):
@@ -91,15 +89,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
 
         # TODO: takes > 2s
         with timeit("getMutatedProteomes", step_i, writer):
-            new_ps = genetics.get_proteomes(sequences=new_gs)
-            mut_cells = [
-                world.cells[i].copy(genome=g, proteome=p)
-                for i, g, p in zip(chgd_idxs, new_gs, new_ps)
-            ]
-
-        # TODO: > 0.4s
-        with timeit("updateMutatedCells", step_i, writer):
-            world.update_cells(mut_cells)
+            world.update_cells(genomes=new_gs, idxs=chgd_idxs)
 
         with timeit("wrapUp", step_i, writer):
             world.degrade_molecules()

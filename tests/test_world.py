@@ -5,6 +5,8 @@ from magicsoup.examples.wood_ljungdahl import MOLECULES
 
 TOLERANCE = 1e-4
 
+DOMAIN_FACT = {ms.CatalyticFact(): ["AAAAAA"]}
+
 
 def test_diffuse():
     # fmt: off
@@ -38,7 +40,10 @@ def test_diffuse():
     ]
     # fmt: on
 
-    world = ms.World(map_size=5, molecules=MOLECULES[:2], mol_diff_coef=0.5 / 1e6)
+    genetics = ms.Genetics(
+        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2], reactions=[]
+    )
+    world = ms.World(genetics=genetics, map_size=5, mol_diff_coef=0.5 / 1e6)
     world.molecule_map = torch.tensor([layer0, layer1])
 
     world.diffuse_molecules()
@@ -59,7 +64,10 @@ def test_degrade():
     ]
     # fmt: on
 
-    world = ms.World(map_size=5, molecules=MOLECULES[:2], mol_halflife=1.0)
+    genetics = ms.Genetics(
+        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2], reactions=[]
+    )
+    world = ms.World(genetics=genetics, map_size=5, mol_halflife=1.0)
     world.mol_degrad = 0.8
     world.molecule_map[0] = torch.tensor([layer0])
 
