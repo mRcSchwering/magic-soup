@@ -47,8 +47,12 @@ def test_diffuse():
     ]
     # fmt: on
 
-    genetics = ms.Genetics(domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2])
-    world = ms.World(genetics=genetics, map_size=5, mol_diff_coef=0.5 / 1e6)
+    world = ms.World(
+        domain_facts=DOMAIN_FACT,
+        molecules=MOLECULES[:2],
+        map_size=5,
+        mol_diff_coef=0.5 / 1e6,
+    )
     world.molecule_map = torch.tensor([layer0, layer1])
 
     world.diffuse_molecules()
@@ -69,8 +73,9 @@ def test_degrade():
     ]
     # fmt: on
 
-    genetics = ms.Genetics(domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2])
-    world = ms.World(genetics=genetics, map_size=5, mol_halflife=1.0)
+    world = ms.World(
+        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2], map_size=5, mol_halflife=1.0
+    )
     world.mol_degrad = 0.8
     world.molecule_map[0] = torch.tensor([layer0])
 

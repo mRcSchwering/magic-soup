@@ -3,9 +3,11 @@ import logging
 import random
 from itertools import product
 import math
+import pickle
+from pathlib import Path
 import torch
 from magicsoup.constants import EPS
-from magicsoup.containers import Cell, Protein
+from magicsoup.containers import Cell, Protein, Molecule, _DomainFact
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
@@ -55,7 +57,10 @@ class World:
 
     def __init__(
         self,
-        genetics: Genetics,
+        domain_facts: dict[_DomainFact, list[str]],
+        molecules: list[Molecule],
+        start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
+        stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         map_size=128,
         mol_halflife=100_000,
         mol_diff_coef=1e-8,
@@ -64,7 +69,6 @@ class World:
         device="cpu",
         dtype=torch.float,
     ):
-        self.genetics = genetics
         self.map_size = map_size
         self.abs_temp = abs_temp
         self.mol_halflife = mol_halflife
@@ -73,6 +77,13 @@ class World:
         self.dtype = dtype
         self.device = device
         self.torch_kwargs = {"dtype": dtype, "device": device}
+
+        self.genetics = Genetics(
+            domain_facts=domain_facts,
+            molecules=molecules,
+            start_codons=start_codons,
+            stop_codons=stop_codons,
+        )
 
         self.n_molecules = len(self.genetics.molecules)
         for idx, mol in enumerate(self.genetics.molecules):
@@ -319,8 +330,22 @@ class World:
         self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
         self.cell_molecules = X[:, self._int_mol_idxs]
 
+    def save(self, outdir: Path, name="world.pkl"):
+        """Write world object to pickle file"""
+        outdir.mkdir(parents=True, exist_ok=True)
+        with open(outdir / name, "wb") as fh:
+            pickle.dump(self, fh)
+
+    @classmethod
+    def from_file(self, filepath: Path) -> "World":
+        """Restore previously saved world object from pickle file"""
+        with open(filepath, "rb") as fh:
+            return pickle.load(fh)
+
     def summary(self, as_dict=False) -> Optional[dict]:
-        """Get current world summary"""
+        """Summarize the current world setups with cells, molecules, and what kind of genomes to expect"""
+        genetics_res = self.genetics.summary(as_dict=False)
+
         n_cells = len(self.cells)
         g_lens = [len(d.genome) for d in self.cells]
         pxls = self.map_size * self.map_size
@@ -341,7 +366,8 @@ class World:
             }
 
         if as_dict:
-            return {"molecules": mols, "cells": cells}
+            kwargs = genetics_res or {}
+            return {"molecules": mols, "cells": cells, **kwargs}
 
         # fmt: off
         print("\nCurrently living cells:")

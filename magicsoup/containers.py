@@ -49,6 +49,8 @@ class Molecule:
     left is the name. Thus, every type of molecule should have a unique name.
     """
 
+    # TODO: index different names...
+
     def __init__(self, name: str, energy: float):
         self.name = name
         self.energy = energy

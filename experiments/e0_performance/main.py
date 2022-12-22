@@ -59,10 +59,7 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
     }
     # fmt: on
 
-    genetics = ms.Genetics(domain_facts=domains, molecules=MOLECULES)
-    genetics.summary()
-
-    world = ms.World(genetics=genetics)
+    world = ms.World(domain_facts=domains, molecules=MOLECULES)
     world.summary()
 
     idx_ATP = ATP.int_idx
