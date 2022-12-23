@@ -97,8 +97,8 @@ $$\Delta G = \Delta G_0 + RT \ln Q$$
 where $\Delta G_0$ is the standard Gibbs free energy of the reaction, $R$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant), $T$ is the absolute temperature,
 $Q$ is the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient).
 The reaction that minimizes $\Delta G$ will occur.
-So, generally the reaction that deconstructs high energy molecules and creates low energy molecules will likely happen ($\Delta G_0$).
-However, not if the ratio of products to substrates is too high ($RT \ln Q$).
+So, generally the reaction that deconstructs high energy molecules and creates low energy molecules will likely happen ( $\Delta G_0$ ).
+However, not if the ratio of products to substrates is too high ( $RT \ln Q$ ).
 
 Each protein can have multiple domains and all domains of the same protein are energetically coupled.
 So, an energetically unfavourable reaction can happen if at the same time another energetically
