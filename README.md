@@ -18,31 +18,8 @@ Time is a step-by-step calculation of updates for each pixel and cell in this wo
 - cell can change molecules by catalyzing reactions
 - cell can transport molecules into or out
 - cell proteins can be regulated by allosteric effectors
-- what proteins a cell has and how exactly they work is defined by its genome
-- genome is a string of ATCG
-- genome is converted into coding regions, each coding region defines a protein
-- each CDS can contain multiple domains
-- domains can be catalytic, transporter, allosteric
-- to what molecule they are specific and/or which reaction they catalyze is defined by genetic details of this domain
-- how high the domains affinity to a certain molecule is and/or how quick it can catalyze a reaction is also defined by details
-- each molecule species has an energetic state, an energy
-- a reaction generally happens if it lowers the [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy)
-- so it depends on the current concentrations and the molecules and stoichiometry involved
-- multiple domains on the same protein are energetically coupled
-- so a reaction that increases Gibbs energy can be driven by another reaction that decreases it a bit more
-- transporters can also drive a reaction and vice versa
-- a reaction can make a transporter work against the concentration gradient
-- additionally the activity of such catalytic domains and transporters can be regulated by additional allosteric domains
-- all kinetics are [Michaelis-Menten-based](https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics)
-- allosteric regulation is [non-competitive](https://en.wikipedia.org/wiki/Non-competitive_inhibition)
-- which reactions and molecule species exist is defined by the user
-- after each step the user can interact with the world and its cells
-- e.g. changing/mutating genomes, killing or replicating cells, changing molecule concetrations somewhere on the map
+- ...
 - thus one can create certain evolutionary pressures and mutation rates
-- the simulation is implemented with millions of time steps in mind
-- [PyTorch](https://pytorch.org/) was used as the main tool for fast computation and allowing calculations to be done on a GPU
-- it is an ongoing effort to make this simualtion faster
-- currently there are still some parts which have to be calculated on CPU, which are usually also the performance bottlenecks
 
 ### Genetics
 
@@ -79,6 +56,7 @@ The exact genetic code for these domains is defined by the user.
 This would be _e.g._ the exact sequence which will encode a catalytic domain for a certain reaction, with certain affinities and velocities.
 As it makes sense to define a multitude of these domain definitions, there are factories
 that help with their creation.
+
 For more details see [magicsoup/genetics.py](./magicsoup/genetics.py).
 Also see [Kinetics](#kinetics) for details about the domain kinetics and aggregations.
 
@@ -98,7 +76,8 @@ where $\Delta G_0$ is the standard Gibbs free energy of the reaction, $R$ is the
 $Q$ is the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient).
 The reaction that minimizes $\Delta G$ will occur.
 So, generally the reaction that deconstructs high energy molecules and creates low energy molecules will likely happen ( $\Delta G_0$ ).
-However, not if the ratio of products to substrates is too high ( $RT \ln Q$ ).
+However, it will turn around if the ratio of products to substrates is too high ( $RT \ln Q$ ).
+There is an equilibrium state were $\Delta G = 0$ and no reaction happens.
 
 Each protein can have multiple domains and all domains of the same protein are energetically coupled.
 So, an energetically unfavourable reaction can happen if at the same time another energetically
@@ -117,9 +96,53 @@ _E.g._ if there are 2 catalytic domains $A \leftrightharpoons B$ and $C \leftrig
 they would become $A + C \leftrightharpoons B + D$ if they have the same orientation,
 and $A + D \leftrightharpoons B + C$ if not.
 
+For more details see [magicsoup/kinetics.py](./magicsoup/kinetics.py) where all the logic
+for translating domains into kinetic parameters lives.
+Also see [Implementation](#implementation) for some implications that arise from implementation details.
+
 ### Kinetics
 
+All reactions in this simulation are based on [Michaelis-Menten-Kinetics](https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics). If a cell has one protein with one catalytic domain that defines $S \leftrightharpoons P$ it will create molecule species $P$ from $S$ with a rate of
+
+$$v = V_{max} \frac{[S]}{[S] + K_m} = \Delta [P] = -\Delta [S]$$
+
+where $V_{max}$ is the maximum velocity of that reaction, $[S]$ is the amount of substrate available,
+$K_m$ is the Michaelis constant.
+When a reaction involves multiple substrate species and/or multiple catalytic domains are
+aggregated this becomes
+
+$$v = V_{max} \prod_{i} \frac{[S_i]^{n_i}}{([S_i] + K_{mi})^{n_i}}$$
+
+where $[S_i]$ is the amount of substrate $i$ available, $n_i$ is the [stoichiometric coefficient](https://en.wikipedia.org/wiki/Chemical_equation#Structure) of substrate $i$, $K_{mi}$ is the Michaelis constant for substrate $i$.
+What exactly these values are is encoded in the domain itself (see [Genetics](#genetics)).
+
+Transporters essentially work in the same way. They are defined as $[A_{int}] \leftrightharpoons [A_{ext}]$ where $A_{int}$ is a molecule species $A$ inside the cell and $A_{ext}$ is the same molecule species outside the cell.
+
+Allosteric domains are also defined by the same kinetic. However, they don't have $V_{max}$.
+Their activity is defined by
+
+$$a = \frac{[E]}{[E] + K_{mE}}$$
+
+where $[E]$ is the amount of effector molecule available, $K_{mE}$ is the Michaelis constant for that effector molecule.
+As with multiple substrates, multiple allosteric domains are combined over a product.
+Depending on whether they are activating or inhibiting, they will be multiplied with $v$ in a different way thus creating a [non-competitive regulation](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
+A protein with allosteric domains will have a regulated velocity of
+
+$$v = a_a (1 - a_i)V_{max} \prod_{i} \frac{[S_i]^{n_i}}{([S_i] + K_{mi})^{n_i}}$$
+
+where $a_a$ is the combined activity of all activating effectors and $a_i$ is the combined activity of all inhibiting effectors.
+As effector activities are $a \in [0;1)$ an allosteric effector cannot increase the maximum
+velocity of a protein.
+Also note that while an unregulated protein can always be active, a protein with an activating
+allosteric domain can only be active if the activating effector is present.
+So, an activating allosteric domain can also switch off a protein.
+
 ### Implementation
+
+- the simulation is implemented with millions of time steps in mind
+- [PyTorch](https://pytorch.org/) was used as the main tool for fast computation and allowing calculations to be done on a GPU
+- it is an ongoing effort to make this simualtion faster
+- currently there are still some parts which have to be calculated on CPU, which are usually also the performance bottlenecks
 
 ```
 python -m experiments.e0_performance.main --n_steps=10
