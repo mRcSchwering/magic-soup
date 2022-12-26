@@ -51,6 +51,8 @@ class Molecule:
 
     # TODO: index different names...
 
+    # TODO: singleton molecules, with warning if name similar
+
     def __init__(self, name: str, energy: float):
         self.name = name
         self.energy = energy

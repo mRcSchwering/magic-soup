@@ -12,6 +12,7 @@ from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
 
+# TODO: no logging in library code, just warnings.wanr?
 
 _log = logging.getLogger(__name__)
 
