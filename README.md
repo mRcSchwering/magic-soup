@@ -96,6 +96,7 @@ for step_i in range(1000):
 - [Genetics](#genetics) explains how genetics work in this simulation
 - [Energy](#energy) explanation for molecule energies and energy coupling
 - [Kinetics](#kintics) explain the protein kinetics in this simulation
+- [Implementation](#implementation) some implementation details worth mentioning
 
 ### Genetics
 
