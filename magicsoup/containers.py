@@ -1,31 +1,14 @@
-from typing import Optional, Any
+from typing import Optional
 import warnings
 import abc
 import torch
-from magicsoup.constants import CODON_SIZE, ALL_NTS
+from magicsoup.constants import CODON_SIZE
+from magicsoup.util import generic_map_fact, bool_map_fact, weight_map_fact, variants
 
 
-def _get_region_size(seqs: dict[str, Any], label: str) -> int:
-    lens = set(len(d) for d in seqs)
-    if len(lens) != 1:
-        raise ValueError(
-            f"Keys of {label} must all have the same length."
-            f" Now there are lengths: {', '.join(str(d) for d in lens)}"
-        )
-    size = lens.pop()
-    if size % CODON_SIZE != 0:
-        raise ValueError(
-            f"Key lengths of {label} must be a multiple of {CODON_SIZE}."
-            f" Now they have lengths {size}"
-        )
-    all_chars = set(dd for d in seqs for dd in d)
-    if all_chars > set(ALL_NTS):
-        raise ValueError(
-            f"Some unknown nucleotides were defined in {label}:"
-            f" {', '.join(all_chars - set(ALL_NTS))}."
-            f" Known nucleotides are: {', '.join(ALL_NTS)}"
-        )
-    return size
+def _check_n(n: int, label: str):
+    if n % CODON_SIZE != 0:
+        raise ValueError(f"{label} must be a multiple of {CODON_SIZE}. Now it is {n}")
 
 
 class Molecule:
@@ -239,8 +222,6 @@ class CatalyticDomain(_Domain):
         return f"CatalyticDomain({ins}->{outs})"
 
 
-# TODO: calculate maps in init with option to give them directly
-#       would only need reactions, number of codons, for each map
 class CatalyticFact(_DomainFact):
     """
     Factory for generating catalytic domains from nucleotide sequences.
@@ -257,29 +238,44 @@ class CatalyticFact(_DomainFact):
 
     def __init__(
         self,
-        reaction_map: dict[str, tuple[list[Molecule], list[Molecule]]],
-        affinity_map: dict[str, float],
-        velocity_map: dict[str, float],
-        orientation_map: dict[str, bool],
+        reactions: list[tuple[list[Molecule], list[Molecule]]],
+        km_range=(0.1, 10.0),
+        vmax_range=(1.0, 10.0),
+        n_reaction_nts=6,
+        n_affinity_nts=6,
+        n_velocity_nts=6,
+        n_orientation_nts=3,
     ):
-        self.reaction_map = reaction_map
-        self.affinity_map = affinity_map
-        self.velocity_map = velocity_map
-        self.orientation_map = orientation_map
+        self.reaction_map = generic_map_fact(variants("N" * n_reaction_nts), reactions)
+        self.affinity_map = weight_map_fact(variants("N" * n_affinity_nts), *km_range)
+        self.velocity_map = weight_map_fact(variants("N" * n_velocity_nts), *vmax_range)
+        self.orientation_map = bool_map_fact(variants("N" * n_orientation_nts))
 
-        n_react = _get_region_size(reaction_map, "reaction_map")
-        n_aff = _get_region_size(affinity_map, "affinity_map")
-        n_velo = _get_region_size(velocity_map, "velocity_map")
-        n_orient = _get_region_size(orientation_map, "orientation_map")
+        _check_n(n_reaction_nts, "n_reaction_nts")
+        _check_n(n_affinity_nts, "n_affinity_nts")
+        _check_n(n_velocity_nts, "n_velocity_nts")
+        _check_n(n_orientation_nts, "n_orientation_nts")
 
-        self.react_slice = slice(0, n_react)
-        self.aff_slice = slice(n_react, n_react + n_aff)
-        self.velo_slice = slice(n_react + n_aff, n_react + n_aff + n_velo)
+        if len(reactions) > 4 ** n_reaction_nts:
+            raise ValueError(
+                f"There are {len(reactions)} reactions."
+                f" But with n_reaction_nts={n_reaction_nts} only {4 ** n_reaction_nts} reactions can be encoded."
+            )
+
+        self.react_slice = slice(0, n_reaction_nts)
+        self.aff_slice = slice(n_reaction_nts, n_reaction_nts + n_affinity_nts)
+        self.velo_slice = slice(
+            n_reaction_nts + n_affinity_nts,
+            n_reaction_nts + n_affinity_nts + n_velocity_nts,
+        )
         self.orient_slice = slice(
-            n_react + n_aff + n_velo, n_react + n_aff + n_velo + n_orient,
+            n_reaction_nts + n_affinity_nts + n_velocity_nts,
+            n_reaction_nts + n_affinity_nts + n_velocity_nts + n_orientation_nts,
         )
 
-        self.min_len = n_react + n_aff + n_velo + n_orient
+        self.min_len = (
+            n_reaction_nts + n_affinity_nts + n_velocity_nts + n_orientation_nts
+        )
 
     def __call__(self, seq: str) -> _Domain:
         react = self.reaction_map[seq[self.react_slice]]
@@ -313,8 +309,6 @@ class TransporterDomain(_Domain):
         return f"TransporterDomain({self.substrates[0]},{d})"
 
 
-# TODO: do maps in init and only provide molecules
-#       and number of codons for each region
 class TransporterFact(_DomainFact):
     """
     Factory for generating transporter domains from nucleotide sequences. Transporters
@@ -335,29 +329,45 @@ class TransporterFact(_DomainFact):
 
     def __init__(
         self,
-        molecule_map: dict[str, Molecule],
-        affinity_map: dict[str, float],
-        velocity_map: dict[str, float],
-        orientation_map: dict[str, bool],
+        molecules: list[Molecule],
+        km_range=(0.1, 10.0),
+        vmax_range=(1.0, 10.0),
+        n_molecule_nts=6,
+        n_affinity_nts=6,
+        n_velocity_nts=6,
+        n_orientation_nts=3,
     ):
-        self.molecule_map = molecule_map
-        self.affinity_map = affinity_map
-        self.velocity_map = velocity_map
-        self.orientation_map = orientation_map
 
-        n_mol = _get_region_size(molecule_map, "molecule_map")
-        n_aff = _get_region_size(affinity_map, "affinity_map")
-        n_velo = _get_region_size(velocity_map, "velocity_map")
-        n_orient = _get_region_size(orientation_map, "orientation_map")
+        self.molecule_map = generic_map_fact(variants("N" * n_molecule_nts), molecules)
+        self.affinity_map = weight_map_fact(variants("N" * n_affinity_nts), *km_range)
+        self.velocity_map = weight_map_fact(variants("N" * n_velocity_nts), *vmax_range)
+        self.orientation_map = bool_map_fact(variants("N" * n_orientation_nts))
 
-        self.mol_slice = slice(0, n_mol)
-        self.aff_slice = slice(n_mol, n_mol + n_aff)
-        self.velo_slice = slice(n_mol + n_aff, n_mol + n_aff + n_velo)
+        _check_n(n_molecule_nts, "n_molecule_nts")
+        _check_n(n_affinity_nts, "n_affinity_nts")
+        _check_n(n_velocity_nts, "n_velocity_nts")
+        _check_n(n_orientation_nts, "n_orientation_nts")
+
+        if len(molecules) > 4 ** n_molecule_nts:
+            raise ValueError(
+                f"There are {len(molecules)} molecules."
+                f" But with n_molecule_nts={n_molecule_nts} only {4 ** n_molecule_nts} molecules can be encoded."
+            )
+
+        self.mol_slice = slice(0, n_molecule_nts)
+        self.aff_slice = slice(n_molecule_nts, n_molecule_nts + n_affinity_nts)
+        self.velo_slice = slice(
+            n_molecule_nts + n_affinity_nts,
+            n_molecule_nts + n_affinity_nts + n_velocity_nts,
+        )
         self.orient_slice = slice(
-            n_mol + n_aff + n_velo, n_mol + n_aff + n_velo + n_orient,
+            n_molecule_nts + n_affinity_nts + n_velocity_nts,
+            n_molecule_nts + n_affinity_nts + n_velocity_nts + n_orientation_nts,
         )
 
-        self.min_len = n_mol + n_aff + n_velo + n_orient
+        self.min_len = (
+            n_molecule_nts + n_affinity_nts + n_velocity_nts + n_orientation_nts
+        )
 
     def __call__(self, seq: str) -> _Domain:
         mol = self.molecule_map[seq[self.mol_slice]]
@@ -398,8 +408,6 @@ class AllostericDomain(_Domain):
         return f"ReceptorDomain({self.substrates[0]},{loc},{eff})"
 
 
-# TODO: do maps in init and only provide molecules
-#       and number of codons for each region
 # TODO: have is_transmembrane and is_inhibiting as map as well
 class AllostericFact(_DomainFact):
     """
@@ -423,23 +431,31 @@ class AllostericFact(_DomainFact):
 
     def __init__(
         self,
-        molecule_map: dict[str, Molecule],
-        affinity_map: dict[str, float],
+        molecules: list[Molecule],
+        km_range=(0.1, 10.0),
+        n_molecule_nts=6,
+        n_affinity_nts=6,
         is_transmembrane=False,
         is_inhibiting=False,
     ):
         self.is_transmembrane = is_transmembrane
         self.is_inhibiting = is_inhibiting
-        self.molecule_map = molecule_map
-        self.affinity_map = affinity_map
+        self.molecule_map = generic_map_fact(variants("N" * n_molecule_nts), molecules)
+        self.affinity_map = weight_map_fact(variants("N" * n_affinity_nts), *km_range)
 
-        n_mol = _get_region_size(molecule_map, "molecule_map")
-        n_aff = _get_region_size(affinity_map, "affinity_map")
+        _check_n(n_molecule_nts, "n_molecule_nts")
+        _check_n(n_affinity_nts, "n_affinity_nts")
 
-        self.mol_slice = slice(0, n_mol)
-        self.aff_slice = slice(n_mol, n_mol + n_aff)
+        if len(molecules) > 4 ** n_molecule_nts:
+            raise ValueError(
+                f"There are {len(molecules)} molecules."
+                f" But with n_molecule_nts={n_molecule_nts} only {4 ** n_molecule_nts} molecules can be encoded."
+            )
 
-        self.min_len = n_mol + n_aff
+        self.mol_slice = slice(0, n_molecule_nts)
+        self.aff_slice = slice(n_molecule_nts, n_molecule_nts + n_affinity_nts)
+
+        self.min_len = n_molecule_nts + n_affinity_nts
 
     def __call__(self, seq: str) -> _Domain:
         mol = self.molecule_map[seq[self.mol_slice]]
