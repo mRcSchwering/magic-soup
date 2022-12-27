@@ -1,6 +1,5 @@
 from argparse import ArgumentParser
 from contextlib import contextmanager
-import logging
 import time
 from pathlib import Path
 import torch
@@ -9,7 +8,6 @@ import magicsoup as ms
 from magicsoup.constants import NOW
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS, ATP
 
-_log = logging.getLogger(__name__)
 _this_dir = Path(__file__).parent
 
 
@@ -20,16 +18,8 @@ def timeit(label: str, step: int, writer: SummaryWriter):
     writer.add_scalar(f"Perf[s]/{label}", time.time() - t0, step)
 
 
-def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
-    logging.basicConfig(
-        level=getattr(logging, loglevel.upper()),
-        format="%(levelname)s::%(asctime)s::%(module)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
+def main(n_cells: int, n_steps: int, rand_genome_size: int):
     writer = SummaryWriter(log_dir=_this_dir / "runs" / NOW)
-    n_threads = torch.get_num_threads()
-    _log.info("torch n threads %i", n_threads)
 
     # fmt: off
     domains = {
@@ -41,10 +31,6 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
 
     world = ms.World(domain_facts=domains, molecules=MOLECULES)
     world.summary()
-
-    # TODO
-    world.save(Path("asd"))
-    world.save_state(Path("asd"), "step0")
 
     for step_i in range(n_steps):
 
@@ -111,16 +97,12 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument(
-        "--log", choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="WARNING",
-    )
     parser.add_argument("--n_cells", default=100, type=int)
     parser.add_argument("--n_steps", default=100, type=int)
     parser.add_argument("--init_genome_size", default=500, type=int)
     args = parser.parse_args()
 
     main(
-        loglevel=args.log,
         n_cells=args.n_cells,
         n_steps=args.n_steps,
         rand_genome_size=args.init_genome_size,

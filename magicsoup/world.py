@@ -1,4 +1,4 @@
-from typing import Optional, Any, cast
+from typing import Optional, Any
 import random
 from itertools import product
 import math
@@ -10,8 +10,6 @@ from magicsoup.containers import Cell, Protein, Molecule, _DomainFact
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
-
-# TODO: save() and save_state() or so for lightweight state saves
 
 # TODO: revise GPU allocation
 
@@ -212,6 +210,9 @@ class World:
                 f" But now they don't have the same length. genomes: {len(genomes)}, idxs: {len(idxs)}."
             )
 
+        if len(genomes) == 0:
+            return
+
         prot_lens: list[int] = []
         set_params: list[tuple[int, int, Protein]] = []
         unset_params: list[tuple[int, int]] = []
@@ -338,15 +339,16 @@ class World:
             fh.write("\n".join(lines))
 
     def load_state(self, statedir: Path):
-        """
-        Restore `world` to a previous state saved with `save_state`
-        """
-        # TODO: types are weird?!
-        # self.cell_molecules = torch.load(statedir / "cell_molecules.pt")
-        # self.cell_map = cast(torch.Tensor, torch.load(statedir / "cell_map.pt"))
-        # self.molecule_map = torch.load(statedir / "molecule_map.pt")
+        """Restore `world` to a state previously saved with `save_state`"""
+        cell_molecules: torch.Tensor = torch.load(statedir / "cell_molecules.pt")
+        self.cell_molecules = cell_molecules.to(self.dtype).to(self.device)
+        cell_map: torch.Tensor = torch.load(statedir / "cell_map.pt")
+        self.cell_map = cell_map.to(torch.bool).to(self.device)
+        molecule_map: torch.Tensor = torch.load(statedir / "molecule_map.pt")
+        self.molecule_map = molecule_map.to(self.dtype).to(self.device)
+
         with open(statedir / "cells.txt", "r") as fh:
-            lines = fh.read().split("\n")
+            lines = [d for d in fh.read().split("\n") if len(d) > 0]
 
         genomes = []
         idxs = []
@@ -358,6 +360,7 @@ class World:
             self.cells.append(Cell(genome="", proteome=[], position=(int(x), int(y))))
             genomes.append(genome)
             idxs.append(int(idx))
+
         self.update_cells(genomes=genomes, idxs=idxs)
 
     @classmethod
