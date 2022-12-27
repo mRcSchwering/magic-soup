@@ -42,6 +42,10 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
     world = ms.World(domain_facts=domains, molecules=MOLECULES)
     world.summary()
 
+    # TODO
+    world.save(Path("asd"))
+    world.save_state(Path("asd"), "step0")
+
     for step_i in range(n_steps):
 
         with timeit("perStep", step_i, writer):

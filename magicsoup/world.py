@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Optional, Any, cast
 import random
 from itertools import product
 import math
@@ -315,6 +315,50 @@ class World:
         outdir.mkdir(parents=True, exist_ok=True)
         with open(outdir / name, "wb") as fh:
             pickle.dump(self, fh)
+
+    def save_state(self, outdir: Path, prefix: str):
+        """
+        Save only current state to files. Use `prefix`
+        with information about current state (e.g. `"step=1000`).
+        
+        Faster and more lightweight than `save`.
+        Only saves the variable parts of `World`.
+        You need one `save` to restore the whole `World` object.
+        """
+        outpath = outdir / prefix
+        outpath.mkdir(parents=True, exist_ok=True)
+        torch.save(self.cell_molecules, outpath / "cell_molecules.pt")
+        torch.save(self.cell_map, outpath / "cell_map.pt")
+        torch.save(self.molecule_map, outpath / "molecule_map.pt")
+        with open(outpath / "cells.txt", "w") as fh:
+            lines = [
+                f"{d.idx}({d.position[0]},{d.position[1]}): {d.genome}"
+                for d in self.cells
+            ]
+            fh.write("\n".join(lines))
+
+    def load_state(self, statedir: Path):
+        """
+        Restore `world` to a previous state saved with `save_state`
+        """
+        # TODO: types are weird?!
+        # self.cell_molecules = torch.load(statedir / "cell_molecules.pt")
+        # self.cell_map = cast(torch.Tensor, torch.load(statedir / "cell_map.pt"))
+        # self.molecule_map = torch.load(statedir / "molecule_map.pt")
+        with open(statedir / "cells.txt", "r") as fh:
+            lines = fh.read().split("\n")
+
+        genomes = []
+        idxs = []
+        self.cells = []
+        for line in lines:
+            prefix, genome = line.split("): ")
+            idx, position = prefix.split("(")
+            x, y = position.split(",")
+            self.cells.append(Cell(genome="", proteome=[], position=(int(x), int(y))))
+            genomes.append(genome)
+            idxs.append(int(idx))
+        self.update_cells(genomes=genomes, idxs=idxs)
 
     @classmethod
     def from_file(self, filepath: Path) -> "World":
