@@ -1,6 +1,89 @@
 import warnings
 import pytest
+from magicsoup.examples.wood_ljungdahl import REACTIONS, MOLECULES
 import magicsoup.containers as cntnrs
+
+
+@pytest.mark.parametrize(
+    "doms1, doms2",
+    [
+        (
+            [
+                cntnrs.CatalyticDomain(REACTIONS[0], 1.0, 1.0, False),
+                cntnrs.CatalyticDomain(REACTIONS[1], 2.0, 2.0, True),
+            ],
+            [
+                cntnrs.CatalyticDomain(REACTIONS[1], 2.0, 2.0, True),
+                cntnrs.CatalyticDomain(REACTIONS[0], 1.0, 1.0, False),
+            ],
+        ),
+        (
+            [
+                cntnrs.CatalyticDomain(REACTIONS[0], 1.0, 1.0, False),
+                cntnrs.TransporterDomain(MOLECULES[0], 1.0, 1.0, False),
+            ],
+            [
+                cntnrs.TransporterDomain(MOLECULES[0], 1.0, 1.0, False),
+                cntnrs.CatalyticDomain(REACTIONS[0], 1.0, 1.0, False),
+            ],
+        ),
+        (
+            [
+                cntnrs.AllostericDomain(MOLECULES[0], 1.0, False, False),
+                cntnrs.TransporterDomain(MOLECULES[0], 1.0, 1.0, False),
+            ],
+            [
+                cntnrs.TransporterDomain(MOLECULES[0], 1.0, 1.0, False),
+                cntnrs.AllostericDomain(MOLECULES[0], 1.0, False, False),
+            ],
+        ),
+    ],
+)
+def test_comparing_same_proteins(doms1, doms2):
+    p1 = cntnrs.Protein(domains=doms1, label="P1")
+    p2 = cntnrs.Protein(domains=doms2, label="P2")
+    assert p1 == p2
+
+
+@pytest.mark.parametrize(
+    "doms1, doms2",
+    [
+        (
+            [
+                cntnrs.CatalyticDomain(REACTIONS[0], 1.0, 2.0, False),
+                cntnrs.CatalyticDomain(REACTIONS[1], 2.0, 2.0, True),
+            ],
+            [
+                cntnrs.CatalyticDomain(REACTIONS[1], 2.0, 2.0, True),
+                cntnrs.CatalyticDomain(REACTIONS[0], 1.0, 1.0, False),
+            ],
+        ),
+        (
+            [
+                cntnrs.CatalyticDomain(REACTIONS[1], 1.0, 1.0, False),
+                cntnrs.TransporterDomain(MOLECULES[0], 1.0, 1.0, False),
+            ],
+            [
+                cntnrs.TransporterDomain(MOLECULES[0], 1.0, 1.0, False),
+                cntnrs.CatalyticDomain(REACTIONS[0], 1.0, 1.0, False),
+            ],
+        ),
+        (
+            [
+                cntnrs.AllostericDomain(MOLECULES[0], 1.0, True, False),
+                cntnrs.TransporterDomain(MOLECULES[0], 1.0, 1.0, False),
+            ],
+            [
+                cntnrs.TransporterDomain(MOLECULES[0], 1.0, 1.0, False),
+                cntnrs.AllostericDomain(MOLECULES[0], 1.0, False, False),
+            ],
+        ),
+    ],
+)
+def test_comparing_different_proteins(doms1, doms2):
+    p1 = cntnrs.Protein(domains=doms1, label="P1")
+    p2 = cntnrs.Protein(domains=doms2, label="P2")
+    assert p1 != p2
 
 
 def test_same_molecules_get_same_instance():

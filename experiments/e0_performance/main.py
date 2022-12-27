@@ -62,64 +62,64 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
     world = ms.World(domain_facts=domains, molecules=MOLECULES)
     world.summary()
 
-    idx_ATP = ATP.int_idx
-
     for step_i in range(n_steps):
 
-        with timeit("addCells", step_i, writer):
-            genomes = [ms.random_genome(rand_genome_size) for _ in range(n_cells)]
-            world.add_random_cells(genomes=genomes)
+        with timeit("perStep", step_i, writer):
+            with timeit("addCells", step_i, writer):
+                genomes = [ms.random_genome(rand_genome_size) for _ in range(n_cells)]
+                world.add_random_cells(genomes=genomes)
 
-        # TODO: takes > 0.4s
-        with timeit("activity", step_i, writer):
-            world.enzymatic_activity()
+            with timeit("activity", step_i, writer):
+                world.enzymatic_activity()
 
-        # TODO: takes > 0.15s
-        with timeit("kill", step_i, writer):
-            kill_idxs = (
-                torch.argwhere(world.cell_molecules[:, idx_ATP] < 1.0)
-                .flatten()
-                .tolist()
+            with timeit("kill", step_i, writer):
+                kill_idxs = (
+                    torch.argwhere(world.cell_molecules[:, ATP.idx] < 1.0)
+                    .flatten()
+                    .tolist()
+                )
+                world.kill_cells(cell_idxs=kill_idxs)
+
+            with timeit("replicate", step_i, writer):
+                rep_idxs = (
+                    torch.argwhere(world.cell_molecules[:, ATP.idx] > 5.0)
+                    .flatten()
+                    .tolist()
+                )
+                succ_parents, children = world.replicate_cells(parent_idxs=rep_idxs)
+                world.cell_molecules[succ_parents + children, ATP.idx] -= 4.0
+
+            with timeit("mutateGenomes", step_i, writer):
+                new_gs, chgd_idxs = ms.point_mutations(
+                    seqs=[d.genome for d in world.cells]
+                )
+
+            with timeit("getMutatedProteomes", step_i, writer):
+                world.update_cells(genomes=new_gs, idxs=chgd_idxs)
+
+            with timeit("wrapUp", step_i, writer):
+                world.degrade_molecules()
+                world.diffuse_molecules()
+                world.increment_cell_survival()
+
+            writer.add_scalar("Cells/total", len(world.cells), step_i)
+            writer.add_scalar(
+                "Cells/MeanSurv", world.cell_survival.mean().item(), step_i
             )
-            world.kill_cells(cell_idxs=kill_idxs)
-
-        # TODO: takes > 3s
-        with timeit("replicate", step_i, writer):
-            rep_idxs = (
-                torch.argwhere(world.cell_molecules[:, idx_ATP] > 5.0)
-                .flatten()
-                .tolist()
+            writer.add_scalar("Cells/MaxSurv", world.cell_survival.max().item(), step_i)
+            writer.add_scalar("Other/MaxProteins", world.kinetics.Km.shape[1], step_i)
+            writer.add_scalar(
+                "Other/AvgATPint", world.cell_molecules[:, ATP.idx].mean(), step_i
             )
-            succ_parents, children = world.replicate_cells(parent_idxs=rep_idxs)
-            world.cell_molecules[succ_parents + children, idx_ATP] -= 4.0
-
-        # TODO: takes > 0.3s
-        with timeit("mutateGenomes", step_i, writer):
-            new_gs, chgd_idxs = ms.point_mutations(seqs=[d.genome for d in world.cells])
-
-        # TODO: takes > 2s
-        with timeit("getMutatedProteomes", step_i, writer):
-            world.update_cells(genomes=new_gs, idxs=chgd_idxs)
-
-        with timeit("wrapUp", step_i, writer):
-            world.degrade_molecules()
-            world.diffuse_molecules()
-            world.increment_cell_survival()
-
-        writer.add_scalar("Cells/total", len(world.cells), step_i)
-        writer.add_scalar("Cells/MeanSurv", world.cell_survival.mean().item(), step_i)
-        writer.add_scalar("Cells/MaxSurv", world.cell_survival.max().item(), step_i)
-        writer.add_scalar("Other/MaxProteins", world.kinetics.Km.shape[1], step_i)
-        writer.add_scalar(
-            "Other/AvgATPint", world.cell_molecules[:, idx_ATP].mean(), step_i
-        )
-        writer.add_scalar("Other/AvgATPext", world.molecule_map[idx_ATP].mean(), step_i)
-
-        if step_i % 5 == 0:
-            writer.add_image("Maps/Cells", world.cell_map, step_i, dataformats="HW")
-            writer.add_image(
-                "Maps/ATP", world.molecule_map[idx_ATP], step_i, dataformats="HW"
+            writer.add_scalar(
+                "Other/AvgATPext", world.molecule_map[ATP.idx].mean(), step_i
             )
+
+            if step_i % 5 == 0:
+                writer.add_image("Maps/Cells", world.cell_map, step_i, dataformats="HW")
+                writer.add_image(
+                    "Maps/ATP", world.molecule_map[ATP.idx], step_i, dataformats="HW"
+                )
 
     writer.close()
 

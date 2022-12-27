@@ -13,6 +13,8 @@ from magicsoup.genetics import Genetics
 
 # TODO: save() and save_state() or so for lightweight state saves
 
+# TODO: revise GPU allocation
+
 
 class World:
     """

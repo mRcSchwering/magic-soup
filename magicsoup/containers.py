@@ -5,9 +5,6 @@ import torch
 from magicsoup.constants import CODON_SIZE, ALL_NTS
 
 
-# TODO: tests for containers, e.g. comparisons
-
-
 def _get_region_size(seqs: dict[str, Any], label: str) -> int:
     lens = set(len(d) for d in seqs)
     if len(lens) != 1:
@@ -163,9 +160,13 @@ class _Domain:
                 self.is_catalytic,
                 self.is_transporter,
                 self.is_allosteric,
+                self.is_inhibiting,
                 self.is_transmembrane,
             )
         )
+
+    def __lt__(self, other: "_Domain") -> bool:
+        return hash(self) < hash(other)
 
     def __hash__(self) -> int:
         return self._hash
@@ -473,7 +474,7 @@ class Protein:
         self.label = label
         self.n_domains = len(domains)
 
-        self._hash = hash(tuple(self.domains))
+        self._hash = hash(tuple(sorted(self.domains)))
 
     def __hash__(self) -> int:
         return self._hash
