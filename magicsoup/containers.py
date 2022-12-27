@@ -1,4 +1,5 @@
 from typing import Optional, Any
+import warnings
 import abc
 import torch
 from magicsoup.constants import CODON_SIZE, ALL_NTS
@@ -49,7 +50,26 @@ class Molecule:
     left is the name. Thus, every type of molecule should have a unique name.
     """
 
-    # TODO: singleton molecules, with warning if name similar
+    _instances: dict[str, "Molecule"] = {}
+
+    def __new__(cls, name: str, energy: float):
+        if name in cls._instances:
+            if cls._instances[name].energy != energy:
+                raise ValueError(
+                    f"Trying to instantiate Molecule {name} with energy {energy}."
+                    f" But {name} already exists with energy {cls._instances[name].energy}"
+                )
+        else:
+            name_ = name.lower()
+            matches = [k for k in cls._instances if k.lower() == name_]
+            if len(matches) > 0:
+                warnings.warn(
+                    f"Creating new molecule {name}."
+                    f" There are molecues with similar names: {', '.join(matches)}."
+                    " Give them identical names if these are the same molecules."
+                )
+            cls._instances[name] = super().__new__(cls)
+        return cls._instances[name]
 
     def __init__(self, name: str, energy: float):
         self.name = name
