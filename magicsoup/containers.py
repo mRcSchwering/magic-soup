@@ -193,6 +193,10 @@ class _DomainFact(abc.ABC):
         """Instantiate domain object from encoding nucleotide sequence"""
         raise NotImplementedError("Implement __call__")
 
+    def __repr__(self) -> str:
+        clsname = type(self).__name__
+        return "%s(min_len=%r)" % (clsname, self.min_len)
+
 
 class CatalyticDomain(_Domain):
     def __init__(
@@ -286,10 +290,6 @@ class CatalyticFact(_DomainFact):
             reaction=react, affinity=aff, velocity=velo, is_bkwd=is_bkwd
         )
 
-    def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(min_len=%r)" % (clsname, self.min_len)
-
 
 class TransporterDomain(_Domain):
     def __init__(
@@ -324,9 +324,6 @@ class TransporterFact(_DomainFact):
     for each type of molecule.
     """
 
-    n_regions = 4
-    region_size = 4
-
     def __init__(
         self,
         molecules: list[Molecule],
@@ -337,7 +334,6 @@ class TransporterFact(_DomainFact):
         n_velocity_nts=6,
         n_orientation_nts=3,
     ):
-
         self.molecule_map = generic_map_fact(variants("N" * n_molecule_nts), molecules)
         self.affinity_map = weight_map_fact(variants("N" * n_affinity_nts), *km_range)
         self.velocity_map = weight_map_fact(variants("N" * n_velocity_nts), *vmax_range)
@@ -378,10 +374,6 @@ class TransporterFact(_DomainFact):
             molecule=mol, affinity=aff, velocity=velo, is_bkwd=is_bkwd
         )
 
-    def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(n_regions=%r)" % (clsname, self.n_regions)
-
 
 class AllostericDomain(_Domain):
     def __init__(
@@ -408,7 +400,6 @@ class AllostericDomain(_Domain):
         return f"ReceptorDomain({self.substrates[0]},{loc},{eff})"
 
 
-# TODO: have is_transmembrane and is_inhibiting as map as well
 class AllostericFact(_DomainFact):
     """
     Factory for generating allosteric domains from nucleotide sequences. These domains
@@ -426,25 +417,24 @@ class AllostericFact(_DomainFact):
     the effector molecule.
     """
 
-    n_regions = 2
-    region_size = 4
-
     def __init__(
         self,
         molecules: list[Molecule],
         km_range=(0.1, 10.0),
         n_molecule_nts=6,
         n_affinity_nts=6,
-        is_transmembrane=False,
-        is_inhibiting=False,
+        n_transmembrane_nts=3,
+        n_inhibit_nts=3,
     ):
-        self.is_transmembrane = is_transmembrane
-        self.is_inhibiting = is_inhibiting
         self.molecule_map = generic_map_fact(variants("N" * n_molecule_nts), molecules)
         self.affinity_map = weight_map_fact(variants("N" * n_affinity_nts), *km_range)
+        self.transmembrane_map = bool_map_fact(variants("N" * n_transmembrane_nts))
+        self.inhibit_map = bool_map_fact(variants("N" * n_inhibit_nts))
 
         _check_n(n_molecule_nts, "n_molecule_nts")
         _check_n(n_affinity_nts, "n_affinity_nts")
+        _check_n(n_transmembrane_nts, "n_transmembrane_nts")
+        _check_n(n_inhibit_nts, "n_inhibit_nts")
 
         if len(molecules) > 4 ** n_molecule_nts:
             raise ValueError(
@@ -454,26 +444,26 @@ class AllostericFact(_DomainFact):
 
         self.mol_slice = slice(0, n_molecule_nts)
         self.aff_slice = slice(n_molecule_nts, n_molecule_nts + n_affinity_nts)
+        self.trans_slice = slice(
+            n_molecule_nts + n_affinity_nts,
+            n_molecule_nts + n_affinity_nts + n_transmembrane_nts,
+        )
+        self.inh_slice = slice(
+            n_molecule_nts + n_affinity_nts + n_transmembrane_nts,
+            n_molecule_nts + n_affinity_nts + n_transmembrane_nts + n_inhibit_nts,
+        )
 
-        self.min_len = n_molecule_nts + n_affinity_nts
+        self.min_len = (
+            n_molecule_nts + n_affinity_nts + n_transmembrane_nts + n_inhibit_nts
+        )
 
     def __call__(self, seq: str) -> _Domain:
         mol = self.molecule_map[seq[self.mol_slice]]
         aff = self.affinity_map[seq[self.aff_slice]]
+        trans = self.transmembrane_map[seq[self.inh_slice]]
+        inh = self.inhibit_map[seq[self.inh_slice]]
         return AllostericDomain(
-            effector=mol,
-            affinity=aff,
-            is_inhibiting=self.is_inhibiting,
-            is_transmembrane=self.is_transmembrane,
-        )
-
-    def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(n_regions?%r,is_transmembrane=%r,is_inhibiting=%r)" % (
-            clsname,
-            self.n_regions,
-            self.is_transmembrane,
-            self.is_inhibiting,
+            effector=mol, affinity=aff, is_inhibiting=inh, is_transmembrane=trans,
         )
 
 
