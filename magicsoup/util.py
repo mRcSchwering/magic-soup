@@ -101,33 +101,18 @@ def variants(seq: str) -> list[str]:
     - `R` refers to purines (A or G)
     - `Y` refers to pyrimidines (C or T)
     """
-    s = seq
 
-    n_ns = s.count("N")
-    for i in range(n_ns):
-        idx = s.find("N")
-        s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
-    ns = [ALL_NTS] * n_ns
-    seqs = [s.format(*d) for d in product(*ns)]
-
-    seqs2: list[str] = []
-    for s in seqs:
-        n_rs = s.count("R")
-        for i in range(n_rs):
-            idx = s.find("R")
+    def apply(s: str, char: str, nts: tuple[str, ...]):
+        n = s.count(char)
+        for i in range(n):
+            idx = s.find(char)
             s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
-        rs = [("A", "G")] * n_rs
-        seqs2.extend([s.format(*d) for d in product(*rs)])
+        ns = [nts] * n
+        return [s.format(*d) for d in product(*ns)]
 
-    seqs3: list[str] = []
-    for s in seqs2:
-        n_ys = s.count("Y")
-        for i in range(n_ys):
-            idx = s.find("Y")
-            s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
-        ys = [("C", "T")] * n_ys
-        seqs3.extend([s.format(*d) for d in product(*ys)])
-
+    seqs1 = apply(seq, "N", ("T", "C", "G", "A"))
+    seqs2 = [ss for s in seqs1 for ss in apply(s, "R", ("A", "G"))]
+    seqs3 = [ss for s in seqs2 for ss in apply(s, "Y", ("C", "T"))]
     return seqs3
 
 
