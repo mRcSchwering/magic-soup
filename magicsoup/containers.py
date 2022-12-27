@@ -75,7 +75,7 @@ class Molecule:
         self.name = name
         self.energy = energy
         self.idx = -1
-        self._idx2 = -1
+        self.idx_ext = -1
 
         self._hash = hash((self.name, self.energy))
 

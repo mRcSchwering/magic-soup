@@ -1,9 +1,7 @@
-import logging
 import torch
 from magicsoup.constants import EPS, GAS_CONSTANT
 from magicsoup.containers import Protein
 
-_log = logging.getLogger(__name__)
 
 # TODO: a molecule can be created by one domain and at the same time deconstructed
 #       by another. Currently, this results in N = 0 for that molecule. With the current
@@ -211,10 +209,6 @@ class Kinetics:
         Returns `delta X`, the molecules deconstructed or constructed during
         this time step.
         """
-        _log.debug(
-            "Integrate signals with (c, p, s)=(%i, %i, %i)", *list(self.Km.shape),
-        )
-
         inh_V = self._get_inhibitor_activity(X=X)  # (c, p)
         act_V = self._get_activator_activity(X=X)  # (c, p)
 
@@ -322,7 +316,7 @@ class Kinetics:
             if dom.is_allosteric:
                 mol = dom.substrates[0]
                 if dom.is_transmembrane:
-                    mol_i = mol._idx2
+                    mol_i = mol.idx_ext
                 else:
                     mol_i = mol.idx
                 Km[mol_i].append(dom.affinity)
@@ -333,11 +327,11 @@ class Kinetics:
                 mol = dom.substrates[0]
 
                 if dom.is_bkwd:
-                    sub_i = mol._idx2
+                    sub_i = mol.idx_ext
                     prod_i = mol.idx
                 else:
                     sub_i = mol.idx
-                    prod_i = mol._idx2
+                    prod_i = mol.idx_ext
 
                 Km[sub_i].append(dom.affinity)
                 N[sub_i] -= 1.0

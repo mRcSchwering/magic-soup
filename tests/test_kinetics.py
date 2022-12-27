@@ -21,7 +21,7 @@ md = Molecule("d", energy=5)
 
 for idx, mol in enumerate([ma, mb, mc, md]):
     mol.idx = idx
-    mol._idx2 = 4 + idx
+    mol.idx_ext = 4 + idx
 
 r_a_b = ([ma], [mb])
 r_b_c = ([mb], [mc])

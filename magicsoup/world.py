@@ -1,5 +1,4 @@
 from typing import Optional, Any
-import logging
 import random
 from itertools import product
 import math
@@ -12,9 +11,7 @@ from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
 
-# TODO: no logging in library code, just warnings.wanr?
-
-_log = logging.getLogger(__name__)
+# TODO: save() and save_state() or so for lightweight state saves
 
 
 class World:
@@ -89,7 +86,7 @@ class World:
         self.n_molecules = len(self.genetics.molecules)
         for idx, mol in enumerate(self.genetics.molecules):
             mol.idx = idx
-            mol._idx2 = self.n_molecules + idx
+            mol.idx_ext = self.n_molecules + idx
         self._int_mol_idxs = list(range(self.n_molecules))
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
 
@@ -107,13 +104,6 @@ class World:
         self.cell_molecules = self._tensor(0, self.n_molecules)
         self.molecule_map = self._get_molecule_map(
             n=self.n_molecules, size=self.map_size, init=mol_map_init
-        )
-
-        _log.info("Major world tensors are running on %s as %s", device, dtype)
-        _log.debug(
-            "Instantiating world with size %i and %i molecule species",
-            map_size,
-            self.n_molecules,
         )
 
     def get_cell(
@@ -144,7 +134,6 @@ class World:
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
         """
-        _log.debug("Adding %i random cells", len(genomes))
         if len(genomes) == 0:
             return
 
@@ -188,7 +177,6 @@ class World:
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not replicate.
         """
-        _log.debug("Replicating %i cells", len(parent_idxs))
         if len(parent_idxs) == 0:
             return [], []
 
@@ -216,7 +204,6 @@ class World:
 
         - `cells` cells with that need to be updated
         """
-        _log.debug("Updating %i cells", len(genomes))
         if len(genomes) != len(idxs):
             raise ValueError(
                 "Genomes and idxs represent the same list of cells."
@@ -253,7 +240,6 @@ class World:
         Remove cells and spill out their molecule contents onto the pixels
         they used to live on.
         """
-        _log.debug("Killing %i cells", len(cell_idxs))
         if len(cell_idxs) == 0:
             return
 
@@ -285,8 +271,6 @@ class World:
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not be moved.
         """
-        _log.debug("Moving %i cells", len(cell_idxs))
-
         if len(cell_idxs) == 0:
             return
 
@@ -296,29 +280,22 @@ class World:
     @torch.no_grad()
     def diffuse_molecules(self):
         """Let molecules in world map diffuse by 1 time step"""
-        _log.debug("Diffusing %i molecule species", int(self.molecule_map.shape[0]))
-
         before = self.molecule_map.unsqueeze(1)
         after = self._diffuse(before)
         self.molecule_map = torch.squeeze(after, 1)
 
     def degrade_molecules(self):
         """Degrade molecules in world map and cells by 1 time step"""
-        _log.debug("Degrading %i molecule species", int(self.molecule_map.shape[0]))
-
         self.molecule_map = self.molecule_map * self.mol_degrad
         self.cell_molecules = self.cell_molecules * self.mol_degrad
 
     def increment_cell_survival(self):
         """Increment number of currently living cells' time steps by 1"""
-        _log.debug("Incrementing cell survival of %i cells", len(self.cells))
-
         idxs = list(range(len(self.cells)))
         self.cell_survival[idxs] += 1
 
     def enzymatic_activity(self):
         """Catalyze reactions for 1 time step and update molecule concentrations"""
-        _log.debug("Run enzymatic activity with %i cells", len(self.cells))
         if len(self.cells) == 0:
             return
 
@@ -392,13 +369,6 @@ class World:
             n = len(pxls)
 
             if n == 0:
-                _log.info(
-                    "Wanted to move cell at %i, %i"
-                    " but no pixel in the Moore neighborhood was free."
-                    " So, cell wasn't moved.",
-                    x,
-                    y,
-                )
                 continue
 
             # move cells
@@ -422,13 +392,6 @@ class World:
             n = len(pxls)
 
             if n == 0:
-                _log.info(
-                    "Wanted to replicate cell next to %i, %i"
-                    " but no pixel in the neighborhood was available."
-                    " So, cell wasn't able to replicate.",
-                    x,
-                    y,
-                )
                 continue
 
             new_x, new_y = pxls[random.randint(0, n - 1)].tolist()
@@ -448,14 +411,6 @@ class World:
         # available spots on map
         pxls = torch.argwhere(~self.cell_map)
         if n_cells > len(pxls):
-            _log.info(
-                "Wanted to add %i new random cells"
-                " but only %i pixels left on map."
-                " So, only %i cells were added.",
-                n_cells,
-                len(pxls),
-                len(pxls),
-            )
             n_cells = len(pxls)
 
         # place cells on map
