@@ -322,9 +322,9 @@ class Kinetics:
             if dom.is_allosteric:
                 mol = dom.substrates[0]
                 if dom.is_transmembrane:
-                    mol_i = mol.ext_idx
+                    mol_i = mol._idx2
                 else:
-                    mol_i = mol.int_idx
+                    mol_i = mol.idx
                 Km[mol_i].append(dom.affinity)
                 A[mol_i] += -1.0 if dom.is_inhibiting else 1.0
 
@@ -333,11 +333,11 @@ class Kinetics:
                 mol = dom.substrates[0]
 
                 if dom.is_bkwd:
-                    sub_i = mol.ext_idx
-                    prod_i = mol.int_idx
+                    sub_i = mol._idx2
+                    prod_i = mol.idx
                 else:
-                    sub_i = mol.int_idx
-                    prod_i = mol.ext_idx
+                    sub_i = mol.idx
+                    prod_i = mol._idx2
 
                 Km[sub_i].append(dom.affinity)
                 N[sub_i] -= 1.0
@@ -357,13 +357,13 @@ class Kinetics:
 
                 for mol in subs:
                     energy -= mol.energy
-                    mol_i = mol.int_idx
+                    mol_i = mol.idx
                     Km[mol_i].append(dom.affinity)
                     N[mol_i] -= 1.0
 
                 for mol in prods:
                     energy += mol.energy
-                    mol_i = mol.int_idx
+                    mol_i = mol.idx
                     Km[mol_i].append(1 / dom.affinity)
                     N[mol_i] += 1.0
 

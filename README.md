@@ -79,7 +79,7 @@ To actually start the simulation we repetitively apply `world.enzymatic_activity
 and run our functions to generate new genomes and apply evolutionary pressure.
 
 ```python
-idx_NADPH = NADPH.int_idx
+idx_NADPH = NADPH.idx
 
 for step_i in range(1000):
     add_random_cells()

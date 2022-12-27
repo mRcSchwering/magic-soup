@@ -20,8 +20,8 @@ mc = Molecule("c", energy=10)
 md = Molecule("d", energy=5)
 
 for idx, mol in enumerate([ma, mb, mc, md]):
-    mol.int_idx = idx
-    mol.ext_idx = 4 + idx
+    mol.idx = idx
+    mol._idx2 = 4 + idx
 
 r_a_b = ([ma], [mb])
 r_b_c = ([mb], [mc])

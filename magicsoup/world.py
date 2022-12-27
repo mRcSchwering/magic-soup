@@ -88,8 +88,8 @@ class World:
 
         self.n_molecules = len(self.genetics.molecules)
         for idx, mol in enumerate(self.genetics.molecules):
-            mol.int_idx = idx
-            mol.ext_idx = self.n_molecules + idx
+            mol.idx = idx
+            mol._idx2 = self.n_molecules + idx
         self._int_mol_idxs = list(range(self.n_molecules))
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
 

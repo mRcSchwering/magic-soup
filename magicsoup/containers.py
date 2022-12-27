@@ -49,15 +49,13 @@ class Molecule:
     left is the name. Thus, every type of molecule should have a unique name.
     """
 
-    # TODO: index different names...
-
     # TODO: singleton molecules, with warning if name similar
 
     def __init__(self, name: str, energy: float):
         self.name = name
         self.energy = energy
-        self.int_idx = -1
-        self.ext_idx = -1
+        self.idx = -1
+        self._idx2 = -1
 
         self._hash = hash((self.name, self.energy))
 
@@ -220,6 +218,8 @@ class CatalyticDomain(_Domain):
         return f"CatalyticDomain({ins}->{outs})"
 
 
+# TODO: calculate maps in init with option to give them directly
+#       would only need reactions, number of codons, for each map
 class CatalyticFact(_DomainFact):
     """
     Factory for generating catalytic domains from nucleotide sequences.
@@ -292,6 +292,8 @@ class TransporterDomain(_Domain):
         return f"TransporterDomain({self.substrates[0]},{d})"
 
 
+# TODO: do maps in init and only provide molecules
+#       and number of codons for each region
 class TransporterFact(_DomainFact):
     """
     Factory for generating transporter domains from nucleotide sequences. Transporters
@@ -375,6 +377,9 @@ class AllostericDomain(_Domain):
         return f"ReceptorDomain({self.substrates[0]},{loc},{eff})"
 
 
+# TODO: do maps in init and only provide molecules
+#       and number of codons for each region
+# TODO: have is_transmembrane and is_inhibiting as map as well
 class AllostericFact(_DomainFact):
     """
     Factory for generating allosteric domains from nucleotide sequences. These domains
