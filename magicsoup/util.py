@@ -9,7 +9,7 @@ from magicsoup.constants import ALL_NTS
 def randstr(n: int = 12) -> str:
     """
     Generate random string of length `n`
-    
+
     With `n=12` and the string consisting of 62 different characters,
     there's a 50% chance of encountering one collision after 5e10 draws.
     (birthday paradox)
@@ -22,9 +22,7 @@ def randstr(n: int = 12) -> str:
 
 
 def random_genome(s=100) -> str:
-    """
-    Generate a random nucleotide sequence with length `s`
-    """
+    """Generate a random nucleotide sequence of length `s`"""
     return "".join(random.choices(ALL_NTS, k=s))
 
 
@@ -46,10 +44,10 @@ def point_mutations(
     seqs: list[str], p=1e-3, p_indel=0.1
 ) -> tuple[list[str], list[int]]:
     """
-    Mutate sequences with point mutations.
+    Return new sequences mutated with point mutations.
 
     - `seqs` nucleotide sequences
-    - `p` probability of a point per nucleotide
+    - `p` probability of a mutation per nucleotide
     - `p_indel` probability of any point mutation being a deletion or insertion
       (inverse probability of it being a substitution)
     
@@ -96,16 +94,41 @@ def reverse_complement(seq: str) -> str:
 
 def variants(seq: str) -> list[str]:
     """
-    Generate all variants of sequence where
-    'N' can be any nucleotide.
+    Generate all possible nucleotide sequences from a template string.
+    
+    Apart from nucleotides, the template string can include special characters:
+    - `N` refers to any nucleotide
+    - `R` refers to purines (A or G)
+    - `Y` refers to pyrimidines (C or T)
     """
     s = seq
-    n = s.count("N")
-    for i in range(n):
+
+    n_ns = s.count("N")
+    for i in range(n_ns):
         idx = s.find("N")
         s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
-    nts = [ALL_NTS] * n
-    return [s.format(*d) for d in product(*nts)]
+    ns = [ALL_NTS] * n_ns
+    seqs = [s.format(*d) for d in product(*ns)]
+
+    seqs2: list[str] = []
+    for s in seqs:
+        n_rs = s.count("R")
+        for i in range(n_rs):
+            idx = s.find("R")
+            s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
+        rs = [("A", "G")] * n_rs
+        seqs2.extend([s.format(*d) for d in product(*rs)])
+
+    seqs3: list[str] = []
+    for s in seqs2:
+        n_ys = s.count("Y")
+        for i in range(n_ys):
+            idx = s.find("Y")
+            s = s[:idx] + "{" + str(i) + "}" + s[idx + 1 :]
+        ys = [("C", "T")] * n_ys
+        seqs3.extend([s.format(*d) for d in product(*ys)])
+
+    return seqs3
 
 
 def rad1_nghbrhd(x: int, size: int) -> list[int]:
@@ -127,9 +150,10 @@ def moore_nghbrhd(x: int, y: int, size: int) -> list[tuple[int, int]]:
 
 def weight_map_fact(seqs: list[str], min_w: float, max_w: float) -> dict[str, float]:
     """
-    Generate codon-to-weight mapping with uniformly distributed weights
+    Generate random mapping where each single string in `seqs` maps to a weight,
+    a float between `min_w` and `max_w`.
     
-    - `seqs` nucleotides sequences that are used as keys for mapping
+    - `seqs` strings that are used as keys
     - `min_w` minimum weight
     - `max_w` maximum weight
     """
@@ -138,10 +162,11 @@ def weight_map_fact(seqs: list[str], min_w: float, max_w: float) -> dict[str, fl
 
 def bool_map_fact(seqs: list[str], p: float = 0.5) -> dict[str, bool]:
     """
-    Generate weighted codon-to-bool mapping 
+    Generate weighted random mapping where each single string of `seqs`
+    maps to either `True` or `False`.
     
-    - `seqs` nucleotides sequences that are used as keys for mapping
-    - `p` chance of `True` between 0.0 and 1.0
+    - `seqs` strings that are used as keys
+    - `p` chance of `True`, must be between 0.0 and 1.0
     """
     bls = random.choices((True, False), weights=(p, 1 - p), k=len(seqs))
     return {d: b for d, b in zip(seqs, bls)}
@@ -152,10 +177,11 @@ _Tv = TypeVar("_Tv")
 
 def generic_map_fact(seqs: list[str], choices: Sequence[_Tv]) -> dict[str, _Tv]:
     """
-    Generate mapping from nucleotide sequence to objects
+    Generate a random mapping where each single string of `seqs` maps to one
+    item in `choices`. Items in `choices` can appear multiple times.
     
-    - `seqs` nucleotides sequences that are used as keys for mapping
-    - `choices` objects to be mapped to
+    - `seqs` strings that are used as keys
+    - `choices` objects that are used as values
     """
     n = len(choices)
     if n < 1:

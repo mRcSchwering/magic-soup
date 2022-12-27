@@ -1,4 +1,23 @@
+import pytest
 import magicsoup.util as util
+
+
+# fmt: off
+@pytest.mark.parametrize("tmp, exp", [
+    ("ANC", ["ATC", "ACC", "AGC", "AAC"]),
+    ("ANN", ["ATT", "ACT", "AGT", "AAT",
+             "ATC", "ACC", "AGC", "AAC",
+             "ATG", "ACG", "AGG", "AAG",
+             "ATA", "ACA", "AGA", "AAA"]),
+    ("ARC", ["AGC", "AAC"]),
+    ("AYC", ["ATC", "ACC"]),
+    ("AYN", ["ATC", "ATT", "ATG", "ATA",
+             "ACC", "ACT", "ACG", "ACA"]),
+])
+def test_variants(tmp, exp):
+    res = util.variants(seq=tmp)
+    assert set(res) == set(exp)
+# fmt: on
 
 
 def test_moores_ngbrhd():
