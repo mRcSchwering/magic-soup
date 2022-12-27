@@ -3,22 +3,6 @@ from magicsoup.constants import EPS, GAS_CONSTANT
 from magicsoup.containers import Protein
 
 
-# TODO: a molecule can be created by one domain and at the same time deconstructed
-#       by another. Currently, this results in N = 0 for that molecule. With the current
-#       implementation, the molecule will not be part of X_sub and X_prod, i.e. not part
-#       of the MM equiation. Does this make sense???
-#       Shouldn't that molecule then act more like an allosteric activator?
-
-# TODO: Currently, I cant handle high Vmax. Even with Vmax >= 50, if there are proteins
-#       with many substrates and/or effectors, the effectors will multiply to Inf, which
-#       in turn will create NaNs down the line. These NaNs then propagate. The problem
-#       is X.pow(N).prod(2) which can explode. This doesn't seem to happen with small Vmax.
-#       One explanation might be my heuristic that is supposed to prevent negative concentrations.
-#       This heuristic becomes more unstable with large Vmax, and it might thereby create
-#       more possibilities for proteins to create more of a molecule that physically possible.
-
-
-# TODO: proper docstring
 class Kinetics:
     """
     Class holding logic for simulating protein work. There are `c` cells, `p` proteins, `s` signals.

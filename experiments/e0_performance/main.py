@@ -102,7 +102,6 @@ def main(loglevel: str, n_cells: int, n_steps: int, rand_genome_size: int):
                 )
 
     writer.close()
-
     world.summary()
 
 

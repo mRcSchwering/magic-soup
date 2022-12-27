@@ -3,18 +3,6 @@ from magicsoup.util import reverse_complement, random_genome
 from magicsoup.containers import _Domain, _DomainFact, Protein, Molecule
 from magicsoup.constants import ALL_NTS, CODON_SIZE
 
-# TODO: translate into tensors instead of protein/domain classes
-# TODO: collect tensors in matrix to do aggretations and assigning
-#       to kinetics tensors purely in pytorch
-# TODO: then chek whether I can have a CNN or RNN instead of these
-#       weight/bool/domain maps, so that the whole mapping process
-#       can be expressed purely in a pytorch NN
-
-# TODO: Transformation mechanism
-# TODO: conjugation mechanism
-# TODO: Slipped_strand_mispairing / replication slippage
-# TODO: ectopic recombination
-
 
 class Genetics:
     """
