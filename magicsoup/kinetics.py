@@ -126,19 +126,12 @@ class Kinetics:
     """
 
     def __init__(
-        self,
-        n_signals: int,
-        abs_temp=310.0,
-        dtype=torch.float,
-        device="cpu",
-        n_workers=4,
+        self, n_signals: int, abs_temp=310.0, dtype=torch.float, device="cpu",
     ):
         self.n_signals = n_signals
         self.abs_temp = abs_temp
         self.dtype = dtype
         self.device = device
-        self.n_workers = n_workers
-        self.torch_kwargs = {"dtype": dtype, "device": device}
 
         self.Km = self._tensor(0, 0, n_signals)
         self.Vmax = self._tensor(0, 0)
@@ -355,5 +348,5 @@ class Kinetics:
         zeros = self._tensor(*pre, n, *post)
         return torch.cat([t, zeros], dim=d)
 
-    def _tensor(self, *args, **kwargs) -> torch.Tensor:
-        return torch.zeros(*args, **{**self.torch_kwargs, **kwargs})
+    def _tensor(self, *args) -> torch.Tensor:
+        return torch.zeros(*args, dtype=self.dtype).to(self.device)

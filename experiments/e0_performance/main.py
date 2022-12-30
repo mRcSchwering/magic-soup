@@ -15,7 +15,7 @@ _this_dir = Path(__file__).parent
 def timeit(label: str, step: int, writer: SummaryWriter):
     t0 = time.time()
     yield
-    writer.add_scalar(f"Perf[s]/{label}", time.time() - t0, step)
+    writer.add_scalar(f"Time[s]/{label}", time.time() - t0, step)
 
 
 def main(n_cells: int, n_steps: int, rand_genome_size: int):
@@ -32,7 +32,12 @@ def main(n_cells: int, n_steps: int, rand_genome_size: int):
     world = ms.World(domain_facts=domains, molecules=MOLECULES)
     world.summary()
 
+    world.save(outdir=_this_dir / "runs" / NOW)
+
     for step_i in range(n_steps):
+
+        if step_i % 100 == 0:
+            world.save_state(statedir=_this_dir / "runs" / NOW / f"step={step_i}")
 
         with timeit("perStep", step_i, writer):
             with timeit("addCells", step_i, writer):

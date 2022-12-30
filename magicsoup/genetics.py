@@ -283,13 +283,3 @@ class Genetics:
         print("")
         return None
 
-    def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(domain_map=%r,molecules=%r,start_codons=%r,stop_codons=%r)" % (
-            clsname,
-            self.domain_map,
-            self.molecules,
-            self.start_codons,
-            self.stop_codons,
-        )
-

@@ -11,59 +11,63 @@ from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
 
-# TODO: revise GPU allocation
-
 
 class World:
     """
-    World definition with map that stores molecule/signal concentrations and cell
-    positions. It also defines how all proteins of all cells integrate signals
-    of their respective environments.
+    This object holds all information about the world the cells live in including
+    the map, molecular diffusion and half-life, protein kinetic parameters, how genes
+    are defined, and what molecules and reactions exist.
 
-    - `molecules` list of all molecules that are part of this simulation
-    - `map_size` number of pixels in x- and y-direction
-    - `mol_halflife` Half life of all molecules. Assuming each time step is a second, values around 1e5 are realistic.
-      Must be > 0.0.
-    - `mol_diff_coef` Diffusion coefficient for all molecules. Assuming one time step is a second and one pixel
-      has a size of 10um, values around 1e-8 are realistic. 0.0 would mean no diffusion at all. Diffusion rate reaches
-      its maximum at around 1e-6 where all molecules are equally spread out around the pixels' Moor's neighborhood with
+    - `domain_facts` dict mapping available domain factories to all possible nucleotide sequences
+      by which they are encoded. During translation if any such nucleotide sequence appears
+      (in-frame) in the coding sequence it will create the mapped domain.
+    - `molecules` list of all molecule species that are part of this simulation
+    - `map_size` size of world map as number of pixels in x- and y-direction
+    - `mol_halflife` Half life of all molecules. Assuming one time step represents one second, values around 1e5
+      would be reasonable for small molecules. Must be > 0.0.
+    - `mol_diff_coef` Diffusion coefficient for all molecules. Assuming one time step is one second and one pixel
+      has a size of 10um, values around 1e-8 are reasonable for small molecules. 0.0 would mean no diffusion at all.
+      Diffusion rate reaches its maximum at around 1e-6 where all molecules are equally spread out around the pixels' Moor's neighborhood with
       each time step.
+    - `abs_temp` Absolute temperature (K). Affects entropy term of reaction energy.
     - `mol_map_init` How to initialize molecule maps (`randn` or `zeros`). `zeros` are not actually 0.0 but a small positive
-      value instead.
-    - `abs_temp` Absolute temperature (K). Affects entropy term of reaction energy (i.e. in which direction a reaction will occur)
-    - `dtype` pytorch dtype to use for tensors (see pytorch docs)
-    - `device` pytorch device to use for tensors (e.g. `cpu` or `gpu`, see pytorch docs)
+      value epsilon instead. 
+    - `start_codons` start codons which start a coding sequence (translation only happens within coding sequences)
+    - `stop_codons` stop codons which stop a coding sequence (translation only happens within coding sequences)
+    - `dtype` pytorch dtype to use for (most) tensors. Use `float16` to speed up calculation at the expense of accuracy
+      (if your hardware supports it). Beware of higher chance of overflow when using single precision.
+    - `device` pytorch device to use for tensors. E.g. `cuda` to use CUDA on GPU.
+      See https://pytorch.org/docs/stable/notes/cuda.html for pytorch CUDA semantics.
 
     The world map (for cells and molecules) is a square map with `map_size` pixels in both
     directions. But it is "circular" in that when you move over the border to the left, you re-appear
     on the right and vice versa (same for top and bottom). Each cell occupies one pixel. The cell
-    experiences molecule concentrations on that pixel as external molecule concentrations. Additionally,
-    it has its internal molecule concentrations.
+    experiences molecules on on that pixel as extracellular molecules. Additionally,
+    the cell has its intracellular molecules.
 
-    There are different tensors representing the environment of the world and its cells:
+    This object holds several tensors representing the environment of the world and its cells:
 
     - `cell_map` Map referencing which pixels are occupied by a cell (bool 2d tensor)
-    - `molecule_map` Map referencing molecule concentrations (3d tensor with molecules in dimension 0)
-    - `cell_molecules` Intracellular molecule concentrations (2d tensor with cells in dimension 0, molecules in dimension 1)
-    - `cell_survival` Numbe of survived time steps for every living cell (1d tensor)
+    - `molecule_map` Map referencing molecule abundances (3d float tensor with molecules in dimension 0)
+    - `cell_molecules` Intracellular molecule abundances (2d float tensor with cells in dimension 0, molecules in dimension 1)
+    - `cell_survival` Number of survived time steps for every living cell (1d float tensor)
 
-    To gather all information for a particular cell use `get_cell` or `get_cells`.
-
-    For `dtype` and `device` see pytorch's documentation. You can speed up computation by moving calculations
-    to a GPU. If available you can use `dtype=torch.float16` which can speed up computations further.
+    Furthermore, there is a list `cells` which holds all currently living cells with their position, genome,
+    proteome and more. To gather all information for a particular cell use `get_cell`. Some attributes like
+    intra- and extracellular molecule abundances will be added to the cell object when using `get_cell`.
     """
 
     def __init__(
         self,
         domain_facts: dict[_DomainFact, list[str]],
         molecules: list[Molecule],
-        start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
-        stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         map_size=128,
         mol_halflife=100_000,
         mol_diff_coef=1e-8,
-        mol_map_init="randn",
         abs_temp=310.0,
+        mol_map_init="randn",
+        start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
+        stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         device="cpu",
         dtype=torch.float,
     ):
@@ -73,8 +77,11 @@ class World:
         self.mol_degrad = math.exp(-math.log(2) / mol_halflife)
         self.mol_diff_coef = mol_diff_coef
         self.dtype = dtype
+
+        if not torch.cuda.is_available():
+            device = "cpu"
+
         self.device = device
-        self.torch_kwargs = {"dtype": dtype, "device": device}
 
         self.genetics = Genetics(
             domain_facts=domain_facts,
@@ -97,11 +104,16 @@ class World:
         }
 
         self.cells: list[Cell] = []
-        self.kinetics = Kinetics(n_signals=2 * self.n_molecules)
+        self.kinetics = Kinetics(
+            n_signals=2 * self.n_molecules,
+            abs_temp=abs_temp,
+            device=self.device,
+            dtype=self.dtype,
+        )
 
-        self.cell_map = self._tensor(self.map_size, self.map_size, dtype=torch.bool)
-        self.cell_survival = self._tensor(0)
-        self.cell_molecules = self._tensor(0, self.n_molecules)
+        self.cell_map = torch.zeros(map_size, map_size, dtype=torch.bool).to(device)
+        self.cell_survival = torch.zeros(0, dtype=dtype).to(device)
+        self.cell_molecules = torch.zeros(0, self.n_molecules, dtype=dtype).to(device)
         self.molecule_map = self._get_molecule_map(
             n=self.n_molecules, size=self.map_size, init=mol_map_init
         )
@@ -109,7 +121,16 @@ class World:
     def get_cell(
         self, by_idx: Optional[int] = None, by_label: Optional[str] = None
     ) -> Cell:
-        """Get a cell with information about its current environment"""
+        """
+        Get a cell with information about its current environment
+        
+        - `by_idx` get cell by cell index (`cell.idx`)
+        - `by_label` get cell by cell label (`cell.label`)
+
+        When using `get_cell` instead of accessing `cells` directly the returned cell
+        object contains more information. E.g. extra- and intracellular molecule
+        abundances are added.
+        """
         if by_idx is not None:
             idx = by_idx
         if by_label is not None:
@@ -121,15 +142,16 @@ class World:
         cell = self.cells[idx]
         cell.int_molecules = self.cell_molecules[idx, :]
         cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]].T
+        cell.n_survived_steps = int(self.cell_survival[idx].item())
 
         return cell
 
     def add_random_cells(self, genomes: list[str]):
         """
-        Create new cells to be placed randomly on the map.
+        Create new cells from `genomes` to be placed randomly on the map.
 
         Each cell will be placed randomly on the map and receive the molecule
-        concentration of the pixel where it was added.
+        abundances of the pixel where it was added.
 
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
@@ -163,16 +185,18 @@ class World:
         self.kinetics.increase_max_proteins(max_n=max(prot_lens))
         self.kinetics.set_cell_params(cell_prots=new_params)
 
-        # cell is supposed to have the same concentrations as the pxl it lives on
+        # TODO: half the concentrations
+        # cell is supposed to have the same molecules as the pxl it lives on
         xs, ys = list(map(list, zip(*new_positions)))
         self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T
 
     def replicate_cells(self, parent_idxs: list[int]) -> tuple[list[int], list[int]]:
         """
-        Replicate existing cells.
+        Replicate existing cells by their parents cell indexes (`cell.idx`).
 
-        Each cell will be placed randomly next to its parent (Moore's neighborhood)
-        and will receive the same molecule concentrations as its parent.
+        Each cell will be placed randomly next to its parent (Moore's neighborhood).
+        It shares all molecules with its parent. So both will have have the molecule
+        abundances the parent had before replicating.
 
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not replicate.
@@ -193,16 +217,23 @@ class World:
         self.kinetics.increase_max_cells(by_n=n_new_cells)
         self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
 
-        # cell is supposed to have the same concentrations as the parent had
-        self.cell_molecules[child_idxs, :] = self.cell_molecules[succ_parent_idxs, :]
+        # TODO: check if correct
+        # cell shares molecules with parent
+        self.cell_molecules[child_idxs, :] = (
+            self.cell_molecules[succ_parent_idxs, :] / 2
+        )
+        self.cell_molecules[succ_parent_idxs, :] = (
+            self.cell_molecules[succ_parent_idxs, :] / 2
+        )
 
         return succ_parent_idxs, child_idxs
 
     def update_cells(self, genomes: list[str], idxs: list[int]):
         """
-        Update existing cells with new genomes and proteomes.
+        Update existing cells with new genomes.
 
-        - `cells` cells with that need to be updated
+        - `genomes` (new) genomes of cells to be updated
+        - `idcs` cell indexes (`cell.idx`) of cells to be updated
         """
         if len(genomes) != len(idxs):
             raise ValueError(
@@ -240,8 +271,8 @@ class World:
 
     def kill_cells(self, cell_idxs: list[int]):
         """
-        Remove cells and spill out their molecule contents onto the pixels
-        they used to live on.
+        Remove cells by their indexes (`cell.idx`) and spill out their molecule
+        contents onto the pixels they used to live on.
         """
         if len(cell_idxs) == 0:
             return
@@ -270,6 +301,8 @@ class World:
     def move_cells(self, cell_idxs: list[int]):
         """
         Move cells to a random position in their Moore neighborhood
+
+        - `cell_idxs` cell indexes (`cell.idx`)
         
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not be moved.
@@ -298,7 +331,7 @@ class World:
         self.cell_survival[idxs] += 1
 
     def enzymatic_activity(self):
-        """Catalyze reactions for 1 time step and update molecule concentrations"""
+        """Catalyze reactions for 1 time step and update all molecule abudances"""
         if len(self.cells) == 0:
             return
 
@@ -312,26 +345,30 @@ class World:
         self.cell_molecules = X[:, self._int_mol_idxs]
 
     def save(self, outdir: Path, name="world.pkl"):
-        """Write world object to pickle file"""
+        """Write whole world object to pickle file"""
         outdir.mkdir(parents=True, exist_ok=True)
         with open(outdir / name, "wb") as fh:
             pickle.dump(self, fh)
 
-    def save_state(self, outdir: Path, prefix: str):
+    @classmethod
+    def from_file(self, filepath: Path) -> "World":
+        """Restore previously saved world object from pickle file"""
+        with open(filepath, "rb") as fh:
+            return pickle.load(fh)
+
+    def save_state(self, statedir: Path):
         """
-        Save only current state to files. Use `prefix`
-        with information about current state (e.g. `"step=1000`).
+        Save current state only. Will write a few files.
         
         Faster and more lightweight than `save`.
-        Only saves the variable parts of `World`.
-        You need one `save` to restore the whole `World` object.
+        Only saves the variable parts of `world`.
+        You need one `save` to restore the whole `world` object though.
         """
-        outpath = outdir / prefix
-        outpath.mkdir(parents=True, exist_ok=True)
-        torch.save(self.cell_molecules, outpath / "cell_molecules.pt")
-        torch.save(self.cell_map, outpath / "cell_map.pt")
-        torch.save(self.molecule_map, outpath / "molecule_map.pt")
-        with open(outpath / "cells.txt", "w") as fh:
+        statedir.mkdir(parents=True, exist_ok=True)
+        torch.save(self.cell_molecules, statedir / "cell_molecules.pt")
+        torch.save(self.cell_map, statedir / "cell_map.pt")
+        torch.save(self.molecule_map, statedir / "molecule_map.pt")
+        with open(statedir / "cells.txt", "w") as fh:
             lines = [
                 f"{d.idx}({d.position[0]},{d.position[1]}): {d.genome}"
                 for d in self.cells
@@ -363,14 +400,8 @@ class World:
 
         self.update_cells(genomes=genomes, idxs=idxs)
 
-    @classmethod
-    def from_file(self, filepath: Path) -> "World":
-        """Restore previously saved world object from pickle file"""
-        with open(filepath, "rb") as fh:
-            return pickle.load(fh)
-
     def summary(self, as_dict=False) -> Optional[dict]:
-        """Summarize the current world setups with cells, molecules, and what kind of genomes to expect"""
+        """Summarize the current world setup with cells, molecules, and what kind of genomes to expect"""
         genetics_res = self.genetics.summary(as_dict=False)
 
         n_cells = len(self.cells)
@@ -472,9 +503,9 @@ class World:
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
         if init == "zeros":
-            return self._tensor(*args) + EPS
+            return (torch.zeros(*args, dtype=self.dtype) + EPS).to(self.device)
         if init == "randn":
-            return torch.randn(*args, **self.torch_kwargs).abs().clamp(EPS)
+            return torch.randn(*args, dtype=self.dtype).abs().clamp(EPS).to(self.device)
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."
@@ -510,7 +541,8 @@ class World:
             padding=1,
             padding_mode="circular",
             bias=False,
-            **self.torch_kwargs,
+            dtype=self.dtype,
+            device=self.device,
         )
         conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
         return conv
@@ -518,23 +550,16 @@ class World:
     def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
         pre = t.shape[slice(d)]
         post = t.shape[slice(d + 1, t.dim())]
-        zeros = self._tensor(*pre, n, *post)
+        zeros = torch.zeros(*pre, n, *post, dtype=self.dtype).to(self.device)
         return torch.cat([t, zeros], dim=d)
-
-    def _tensor(self, *args, **kwargs) -> torch.Tensor:
-        return torch.zeros(*args, **{**self.torch_kwargs, **kwargs})
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return (
-            "%s(map_size=%r,mol_halflife=%r,mol_diff_coef=%r,abs_temp=%r,device=%r,dtype=%r)"
-            % (
-                clsname,
-                self.map_size,
-                self.mol_halflife,
-                self.mol_diff_coef,
-                self.abs_temp,
-                self.device,
-                self.dtype,
-            )
+        return "%s(map_size=%r,mol_halflife=%r,mol_diff_coef=%r,abs_temp=%r)" % (
+            clsname,
+            self.map_size,
+            self.mol_halflife,
+            self.mol_diff_coef,
+            self.abs_temp,
         )
+
