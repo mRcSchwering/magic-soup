@@ -337,27 +337,36 @@ class Genetics:
         chemistry: Chemistry,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-        dom_type_size=6,
         p_catal_dom=0.1,
         p_transp_dom=0.1,
         p_allo_dom=0.1,
+        n_dom_type_nts=6,
+        n_reaction_nts=6,
+        n_molecule_nts=6,
+        n_affinity_nts=6,
+        n_velocity_nts=6,
+        n_orientation_nts=3,
+        n_transmembrane_nts=3,
+        n_inhibit_nts=3,
     ):
         if any(len(d) != CODON_SIZE for d in start_codons):
             raise ValueError(f"Not all start codons are of length {CODON_SIZE}")
         if any(len(d) != CODON_SIZE for d in stop_codons):
             raise ValueError(f"Not all stop codons are of length {CODON_SIZE}")
+        if n_dom_type_nts % CODON_SIZE != 0:
+            raise ValueError(f"n_dom_type_nts should be a multiple of {CODON_SIZE}.")
 
         self.chemistry = chemistry
         self.start_codons = start_codons
         self.stop_codons = stop_codons
-        self.dom_type_size = dom_type_size
+        self.dom_type_size = n_dom_type_nts
 
         if p_catal_dom + p_transp_dom + p_allo_dom > 1.0:
             raise ValueError(
                 "p_catal_dom, p_transp_dom, p_allo_dom together must not be greater 1.0"
             )
 
-        sets = variants("N" * dom_type_size)
+        sets = variants("N" * n_dom_type_nts)
         random.shuffle(sets)
         n = len(sets)
 
@@ -365,9 +374,27 @@ class Genetics:
         n_transp_doms = _get_n(p=p_transp_dom, s=n, name="transporter domains")
         n_allo_doms = _get_n(p=p_allo_dom, s=n, name="allosteric domains")
 
-        catal_dom_fact = CatalyticFact(reactions=chemistry.reactions)
-        transp_dom_fact = TransporterFact(molecules=chemistry.molecules)
-        allo_dom_fact = RegulatoryFact(molecules=chemistry.molecules)
+        catal_dom_fact = CatalyticFact(
+            reactions=chemistry.reactions,
+            n_reaction_nts=n_reaction_nts,
+            n_affinity_nts=n_affinity_nts,
+            n_velocity_nts=n_velocity_nts,
+            n_orientation_nts=n_orientation_nts,
+        )
+        transp_dom_fact = TransporterFact(
+            molecules=chemistry.molecules,
+            n_molecule_nts=n_molecule_nts,
+            n_affinity_nts=n_affinity_nts,
+            n_velocity_nts=n_velocity_nts,
+            n_orientation_nts=n_orientation_nts,
+        )
+        allo_dom_fact = RegulatoryFact(
+            molecules=chemistry.molecules,
+            n_molecule_nts=n_molecule_nts,
+            n_affinity_nts=n_affinity_nts,
+            n_transmembrane_nts=n_transmembrane_nts,
+            n_inhibit_nts=n_inhibit_nts,
+        )
 
         domain_facts: dict[_DomainFact, list[str]] = {}
         domain_facts[catal_dom_fact] = sets[:n_catal_doms]
@@ -378,12 +405,6 @@ class Genetics:
         del sets[:n_allo_doms]
 
         self.domain_map = {d: k for k, v in domain_facts.items() for d in v}
-
-        if self.dom_type_size % CODON_SIZE != 0:
-            raise ValueError(
-                f"Sequences that define domains should be a multiple of {CODON_SIZE}."
-                f" Now sequences in domain_facts have a length of {self.dom_type_size}"
-            )
 
         self.dom_details_size = max(d.min_len for d in domain_facts)
         self.dom_size = self.dom_type_size + self.dom_details_size

@@ -5,10 +5,6 @@ from magicsoup.examples.wood_ljungdahl import MOLECULES
 
 TOLERANCE = 1e-4
 
-DOMAIN_FACT = {
-    ms.CatalyticFact(reactions=[([MOLECULES[0]], [MOLECULES[1]])]): ["AAAAAA"]
-}
-
 
 def test_diffuse():
     # fmt: off
@@ -42,12 +38,8 @@ def test_diffuse():
     ]
     # fmt: on
 
-    world = ms.World(
-        domain_facts=DOMAIN_FACT,
-        molecules=MOLECULES[:2],
-        map_size=5,
-        mol_diff_coef=0.5 / 1e6,
-    )
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=5, mol_diff_coef=0.5 / 1e6)
     world.molecule_map = torch.tensor([layer0, layer1])
 
     world.diffuse_molecules()
@@ -68,9 +60,9 @@ def test_degrade():
     ]
     # fmt: on
 
-    world = ms.World(
-        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2], map_size=5, mol_halflife=1.0
-    )
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=5, mol_halflife=1.0)
+
     world.mol_degrad = 0.8
     world.molecule_map[0] = torch.tensor([layer0])
 
@@ -82,9 +74,8 @@ def test_degrade():
 
 
 def test_add_cells():
-    world = ms.World(
-        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2], map_size=5, mol_halflife=1.0
-    )
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=5, mol_halflife=1.0)
     old_molmap = world.molecule_map.clone()
 
     world.add_random_cells(genomes=["A" * 50] * 3)
@@ -101,9 +92,8 @@ def test_add_cells():
 
 
 def test_replicate_cells():
-    world = ms.World(
-        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2], map_size=5, mol_halflife=1.0
-    )
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=5, mol_halflife=1.0)
 
     cell_idxs = world.add_random_cells(genomes=["A" * 50] * 3)
     parent_idxs, child_idxs = world.replicate_cells(parent_idxs=cell_idxs)

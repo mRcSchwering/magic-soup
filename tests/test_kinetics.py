@@ -1,13 +1,8 @@
 import pytest
 import torch
-from magicsoup.containers import (
-    Protein,
-    Molecule,
-    CatalyticDomain,
-    AllostericDomain,
-    TransporterDomain,
-)
 from magicsoup.constants import EPS
+from magicsoup.containers import Protein, Molecule
+from magicsoup.genetics import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.kinetics import Kinetics
 
 TOLERANCE = 1e-4
@@ -175,25 +170,25 @@ def test_cell_params_with_allosteric_domains():
 
     p0 = Protein(domains=[
         CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        AllostericDomain(mc, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
-        AllostericDomain(md, affinity=2.0, is_transmembrane=False, is_inhibiting=True),
+        RegulatoryDomain(mc, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
+        RegulatoryDomain(md, affinity=2.0, is_transmembrane=False, is_inhibiting=True),
     ])
     p1 = Protein(domains=[
         CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        AllostericDomain(ma, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
-        AllostericDomain(ma, affinity=1.5, is_transmembrane=True, is_inhibiting=False),
+        RegulatoryDomain(ma, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
+        RegulatoryDomain(ma, affinity=1.5, is_transmembrane=True, is_inhibiting=False),
     ])
     c0 = [p0, p1]
 
     p0 = Protein(domains=[
         CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        AllostericDomain(mb, affinity=1.0, is_transmembrane=False, is_inhibiting=True),
-        AllostericDomain(mb, affinity=1.5, is_transmembrane=True, is_inhibiting=True),
+        RegulatoryDomain(mb, affinity=1.0, is_transmembrane=False, is_inhibiting=True),
+        RegulatoryDomain(mb, affinity=1.5, is_transmembrane=True, is_inhibiting=True),
     ])
     p1 = Protein(domains=[
         CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        AllostericDomain(md, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
-        AllostericDomain(md, affinity=1.5, is_transmembrane=False, is_inhibiting=False),
+        RegulatoryDomain(md, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
+        RegulatoryDomain(md, affinity=1.5, is_transmembrane=False, is_inhibiting=False),
     ])
     c1 = [p0, p1]
 
