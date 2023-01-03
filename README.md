@@ -8,8 +8,9 @@ Then run and see what random mutations can create over time.
 ### Example
 
 The complexity of each cell is essentially limited by
-the molecules and protein domains you define.
-These domains can be combined and energetically coupled in proteins in any number and orientation.
+the chemistry defined; molecules and reactions that is.
+Reactions and molecule transport can be coupled energetically in proteins.
+Together with regulatory domains this allows for complex metabolic and transduction pathways even from simple initial conditions.
 
 ```python
 NADPH = Molecule("NADPH", 200.0)
@@ -146,7 +147,6 @@ $Q$ is the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient).
 The reaction that minimizes $\Delta G$ will occur.
 So, generally the reaction that deconstructs high energy molecules and synthesizes low energy molecules will likely happen ( $\Delta G_0$ ).
 However, it will turn around if the ratio of products to substrates is too high ( $RT \ln Q$ ).
-An equilibrium state can be reached where $\Delta G = 0$ and no reaction happens (# TODO: realy?).
 
 Each protein can have multiple domains and all domains of the same protein are energetically coupled.
 So, an energetically unfavourable reaction can happen if at the same time another energetically
@@ -279,7 +279,7 @@ A similar problem arises with $K_M$: multiple domains can attempt to each give a
 
 #### Energetic Equilibrium
 
-Theoretically, a reaction should occur in one direction according to its free Gibbs energy $\Delta G$. At some point $\Delta G$ should reach zero
+Theoretically, a reaction should occur in one direction according to its free Gibbs energy $\Delta G$. At some point $\Delta G = 0$ is approached
 and the reaction should be in an equilibrium state where no appreciable difference in substrates and products is measurable anymore.
 
 As of now, this equilibrium state is not explicitly programmed into the simulation. As the simulation moves in discrete time steps towards the equilibrium state it is only slowed down by substrate activities according to its $K_M$ value(s). For proteins with high $V_{Max}$ and low $K_M$ this means the reaction will at some point shoot over the equilibrium state. So, at one point in time the reaction moves in one direction, and at the next in the other; both times with high velocity. This would mean a reaction never reaches an equilibrium state but instead flickers back and forth around it.
