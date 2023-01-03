@@ -6,12 +6,7 @@ from magicsoup.examples.wood_ljungdahl import MOLECULES
 TOLERANCE = 1e-4
 
 DOMAIN_FACT = {
-    ms.CatalyticFact(
-        {"AAA": ([MOLECULES[0]], [MOLECULES[1]])},
-        {"AAA": 1.0},
-        {"AAA": 1.0},
-        {"AAA": True},
-    ): ["AAAAAA"]
+    ms.CatalyticFact(reactions=[([MOLECULES[0]], [MOLECULES[1]])]): ["AAAAAA"]
 }
 
 
@@ -84,3 +79,35 @@ def test_degrade():
     layer0[2][2] = 0.8
     assert world.molecule_map.shape == (2, 5, 5)
     assert (world.molecule_map[0] == torch.tensor(layer0)).all()
+
+
+def test_add_cells():
+    world = ms.World(
+        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2], map_size=5, mol_halflife=1.0
+    )
+    old_molmap = world.molecule_map.clone()
+
+    world.add_random_cells(genomes=["A" * 50] * 3)
+
+    xs = []
+    ys = []
+    for cell in world.cells:
+        x, y = cell.position
+        xs.append(x)
+        ys.append(y)
+
+    assert torch.all(old_molmap[:, xs, ys] / 2 == world.molecule_map[:, xs, ys])
+    assert torch.all(old_molmap[:, xs, ys] / 2 == world.cell_molecules.T)
+
+
+def test_replicate_cells():
+    world = ms.World(
+        domain_facts=DOMAIN_FACT, molecules=MOLECULES[:2], map_size=5, mol_halflife=1.0
+    )
+
+    cell_idxs = world.add_random_cells(genomes=["A" * 50] * 3)
+    parent_idxs, child_idxs = world.replicate_cells(parent_idxs=cell_idxs)
+
+    assert torch.all(
+        world.cell_molecules[parent_idxs] == world.cell_molecules[child_idxs]
+    )

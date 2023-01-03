@@ -18,7 +18,7 @@ class Kinetics:
     amount of this molecule is being used up by the protein. Numbers > 0.0 indicate this amount of this
     molecule is being created by the protein. 0.0 means this molecule is not part of the reaction of
     this protein.
-    - `A` allosteric control of all proteins for each molecule (c, p, s). Numbers > 0.0 mean these molecules
+    - `A` regulatory control of all proteins for each molecule (c, p, s). Numbers > 0.0 mean these molecules
     act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
     
     Everything is based on Michaelis Menten kinetics where protein velocity
@@ -290,7 +290,7 @@ class Kinetics:
 
         for dom in protein.domains:
 
-            if dom.is_allosteric:
+            if dom.is_regulatory:
                 mol = dom.substrates[0]
                 if dom.is_transmembrane:
                     mol_i = mol.idx_ext

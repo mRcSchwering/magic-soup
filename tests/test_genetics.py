@@ -4,10 +4,11 @@ from magicsoup.examples.wood_ljungdahl import MOLECULES
 
 DOMAIN_FACT = {
     ms.CatalyticFact(
-        {"AAA": ([MOLECULES[0]], [MOLECULES[1]])},
-        {"AAA": 1.0},
-        {"AAA": 1.0},
-        {"AAA": True},
+        reactions=[([MOLECULES[0]], [MOLECULES[1]])],
+        n_reaction_nts=3,
+        n_affinity_nts=3,
+        n_velocity_nts=3,
+        n_orientation_nts=3,
     ): ["AAAAAA"]
 }
 # min domain size is 2 + 4 codons = 18 nucleotides

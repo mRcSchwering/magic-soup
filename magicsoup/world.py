@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Optional
 import random
 from itertools import product
 import math
@@ -6,7 +6,7 @@ import pickle
 from pathlib import Path
 import torch
 from magicsoup.constants import EPS
-from magicsoup.containers import Cell, Protein, Molecule, _DomainFact
+from magicsoup.containers import Cell, Protein, Chemistry
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
@@ -59,8 +59,7 @@ class World:
 
     def __init__(
         self,
-        domain_facts: dict[_DomainFact, list[str]],
-        molecules: list[Molecule],
+        chemistry: Chemistry,
         map_size=128,
         mol_halflife=100_000,
         mol_diff_coef=1e-8,
@@ -84,14 +83,11 @@ class World:
         self.device = device
 
         self.genetics = Genetics(
-            domain_facts=domain_facts,
-            molecules=molecules,
-            start_codons=start_codons,
-            stop_codons=stop_codons,
+            chemistry=chemistry, start_codons=start_codons, stop_codons=stop_codons,
         )
 
-        self.n_molecules = len(self.genetics.molecules)
-        for idx, mol in enumerate(self.genetics.molecules):
+        self.n_molecules = len(chemistry.molecules)
+        for idx, mol in enumerate(chemistry.molecules):
             mol.idx = idx
             mol.idx_ext = self.n_molecules + idx
         self._int_mol_idxs = list(range(self.n_molecules))
@@ -146,24 +142,25 @@ class World:
 
         return cell
 
-    def add_random_cells(self, genomes: list[str]):
+    def add_random_cells(self, genomes: list[str]) -> list[int]:
         """
         Create new cells from `genomes` to be placed randomly on the map.
+        Returns the `cell.idx`s of these newly added cells.
 
-        Each cell will be placed randomly on the map and receive the molecule
-        abundances of the pixel where it was added.
+        Each cell will be placed randomly on the map and receive half the molecules
+        of the pixel where it was added.
 
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
         """
         if len(genomes) == 0:
-            return
+            return []
 
         new_positions = self._place_new_cells_in_random_positions(n_cells=len(genomes))
         n_new_cells = len(new_positions)
 
         if n_new_cells == 0:
-            return
+            return []
 
         prot_lens = []
         new_idxs = []
@@ -185,17 +182,20 @@ class World:
         self.kinetics.increase_max_proteins(max_n=max(prot_lens))
         self.kinetics.set_cell_params(cell_prots=new_params)
 
-        # TODO: half the concentrations
-        # cell is supposed to have the same molecules as the pxl it lives on
+        # cell is picking up half the molecules of the pxl it is born on
         xs, ys = list(map(list, zip(*new_positions)))
-        self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T
+        self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T / 2
+        self.molecule_map[:, xs, ys] /= 2
+
+        return new_idxs
 
     def replicate_cells(self, parent_idxs: list[int]) -> tuple[list[int], list[int]]:
         """
         Replicate existing cells by their parents cell indexes (`cell.idx`).
+        Returns `cell.idx`s of the cells which successfully replicated and their descendants.
 
         Each cell will be placed randomly next to its parent (Moore's neighborhood).
-        It shares all molecules with its parent. So both will have have the molecule
+        It shares all molecules with its parent. So both will have half the molecule
         abundances the parent had before replicating.
 
         If every pixel in the cells' Moore neighborhood is taken
@@ -217,14 +217,9 @@ class World:
         self.kinetics.increase_max_cells(by_n=n_new_cells)
         self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
 
-        # TODO: check if correct
         # cell shares molecules with parent
-        self.cell_molecules[child_idxs, :] = (
-            self.cell_molecules[succ_parent_idxs, :] / 2
-        )
-        self.cell_molecules[succ_parent_idxs, :] = (
-            self.cell_molecules[succ_parent_idxs, :] / 2
-        )
+        self.cell_molecules[child_idxs, :] = self.cell_molecules[succ_parent_idxs, :]
+        self.cell_molecules[child_idxs + succ_parent_idxs] /= 2
 
         return succ_parent_idxs, child_idxs
 
@@ -400,47 +395,6 @@ class World:
 
         self.update_cells(genomes=genomes, idxs=idxs)
 
-    def summary(self, as_dict=False) -> Optional[dict]:
-        """Summarize the current world setup with cells, molecules, and what kind of genomes to expect"""
-        genetics_res = self.genetics.summary(as_dict=False)
-
-        n_cells = len(self.cells)
-        g_lens = [len(d.genome) for d in self.cells]
-        pxls = self.map_size * self.map_size
-
-        cells: dict[str, Any] = {}
-        cells["nCells"] = n_cells
-        cells["pctMapOccupied"] = n_cells / pxls * 100
-        cells["maxSurvival"] = self.cell_survival.max().item() if n_cells > 0 else 0.0
-        cells["avgSurvival"] = self.cell_survival.mean().item() if n_cells > 0 else 0.0
-        cells["maxGenomeSize"] = max(g_lens) if n_cells > 0 else 0.0
-        cells["avgGenomeSize"] = sum(g_lens) / n_cells if n_cells > 0 else 0.0
-
-        mols: dict[str, Any] = {}
-        for idx, mol in enumerate(self.genetics.molecules):
-            mols[mol.name] = {
-                "avgExtConc": self.molecule_map[idx].mean().item(),
-                "avgIntConc": self.cell_molecules[:, idx].mean().item(),
-            }
-
-        if as_dict:
-            kwargs = genetics_res or {}
-            return {"molecules": mols, "cells": cells, **kwargs}
-
-        # fmt: off
-        print("\nCurrently living cells:")
-        print(f"- {n_cells} cells occupying {cells['pctMapOccupied']:.0f}% of the map")
-        print(f"- {cells['avgSurvival']:.0f} average cell survival, the oldest cell is {cells['maxSurvival']:.0f} old")
-        print(f"- {cells['avgGenomeSize']:.0f} average genome size, the largest genome is {cells['maxGenomeSize']:.0f} large")
-
-        print("\nCurrent average molecule concentrations:")
-        for name, item in mols.items():
-            print(f"- {name}: {item['avgIntConc']:.2f} intracellular, {item['avgExtConc']:.2f} extracellular")
-        # fmt: on
-
-        print("")
-        return None
-
     def _randomly_move_cells(self, cells: list[Cell]):
         for cell in cells:
             x, y = cell.position
@@ -515,6 +469,8 @@ class World:
         if mol_diff_rate < 0.0:
             mol_diff_rate = -mol_diff_rate
 
+        # TODO: mol_diff_rate > 1.0 could also mean expanding the kernel
+        #       so that molecules can diffuse more than just 1 pxl per round
         if mol_diff_rate > 1.0:
             mol_diff_rate = 1.0
 

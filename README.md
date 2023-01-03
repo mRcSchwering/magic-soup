@@ -20,72 +20,58 @@ co2 = Molecule("CO2", 10.0)
 molecules = [NADPH, NADP, formiat, co2]
 reactions = [([co2, NADPH], [formiat, NADP])]
 
-reaction_map = generic_map_fact("NNNNNN", reactions)
-molecule_map = generic_map_fact("NNNNNN", molecules)
-affinity_map = weight_map_fact("NNNNNN", 0.1, 10.0)
-velocity_map = weight_map_fact("NNNNNN", 1.0, 10.0)
-bool_map = bool_map_fact("NNNNNN")
-
-domains = {
-    ms.CatalyticFact(reaction_map=reaction_map, affinity_map=affinity_map, velocity_map=velocity_map, orientation_map=bool_map):
-        ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),
-    ms.TransporterFact(molecule_map=molecule_map, affinity_map=affinity_map, velocity_map=velocity_map, orientation_map=bool_map):
-        ms.variants("ACNAGN") + ms.variants("ACNTAN") + ms.variants("AANTCN"),
-}
-
-world = ms.World(domain_facts=domains, molecules=molecules)
-world.summary()
+chemistry = ms.Chemistry(reactions=reactions, molecules=molecules)
+world = ms.World(chemistry=chemistry)
 ```
 
 Cells discover proteins by chance through transcription and translation of their genome.
-To promote odds of this happening you might want to add new cells with new random genomes to the world.
-Or you mutate genomes of already existing cells.
+Whether the cells' genomes actually encode anything useful is complete luck.
+Here, I am randomly adding 100 cells.
 
 ```python
-def add_random_cells():
-    genomes = [ms.random_genome(s=100) for _ in range(100)]
-    world.add_random_cells(genomes=genomes)
+genomes = [ms.random_genome(s=500) for _ in range(100)]
+world.add_random_cells(genomes=genomes)
+```
 
+During the simulation I want to give all cells the ability to change.
+So, below I am defining a procedure by which to mutate the genomes of all living cells.
+
+```python
 def mutate_cells():
     gs, idxs = ms.point_mutations(seqs=[d.genome for d in world.cells])
     world.update_cells(genomes=gs, idxs=idxs)
 ```
 
-To create evolutionary pressure we can decide to kill certain cells,
-and let certain other cells replicate.
-In the example below, the condition for each is simply based on the intracellular concentrations
-of a molecule species.
+To create evolutionary pressure we can decide to kill certain cells and let certain other cells replicate.
+In the example below, the condition for each is simply based on the intracellular NADPH activity.
 
 ```python
-def kill_cells(mol_idx: int):
+def kill_cells():
     idxs = (
-        torch.argwhere(world.cell_molecules[:, mol_idx] < 1.0)
+        torch.argwhere(world.cell_molecules[:, NADPH.idx] < 1.0)
         .flatten()
         .tolist()
     )
     world.kill_cells(cell_idxs=idxs)
 
-def replicate_cells(mol_idx: int):
+def replicate_cells():
     idxs = (
-        torch.argwhere(world.cell_molecules[:, mol_idx] > 5.0)
+        torch.argwhere(world.cell_molecules[:, NADPH.idx] > 5.0)
         .flatten()
         .tolist()
     )
-    succ_parents, children = world.replicate_cells(parent_idxs=idxs)
-    world.cell_molecules[succ_parents + children, mol_idx] -= 4.0
+    world.cell_molecules[idxs, NADPH.idx] -= 4.0
+    world.replicate_cells(parent_idxs=idxs)
 ```
 
 To actually start the simulation we repetitively apply `world.enzymatic_activity()`
 and run our functions to generate new genomes and apply evolutionary pressure.
 
 ```python
-idx_NADPH = NADPH.idx
-
 for step_i in range(1000):
-    add_random_cells()
     world.enzymatic_activity()  # catalyze reactions
-    kill_cells(idx_NADPH)
-    replicate_cells(idx_NADPH)
+    kill_cells()
+    replicate_cells()
     mutate_cells()
     world.diffuse_molecules()
     world.increment_cell_survival()

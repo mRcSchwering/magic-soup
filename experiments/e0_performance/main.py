@@ -21,17 +21,8 @@ def timeit(label: str, step: int, writer: SummaryWriter):
 def main(n_cells: int, n_steps: int, rand_genome_size: int):
     writer = SummaryWriter(log_dir=_this_dir / "runs" / NOW)
 
-    # fmt: off
-    domains = {
-        ms.CatalyticFact(reactions=REACTIONS): ms.variants("ACNTGN") + ms.variants("AGNTGN") + ms.variants("CCNTTN"),
-        ms.TransporterFact(molecules=MOLECULES): ms.variants("ACNAGN") + ms.variants("ACNTAN") + ms.variants("AANTCN"),
-        ms.AllostericFact(molecules=MOLECULES): ms.variants("GGNANN") + ms.variants("GGNTNN") + ms.variants("GGNCNN"),
-    }
-    # fmt: on
-
-    world = ms.World(domain_facts=domains, molecules=MOLECULES)
-    world.summary()
-
+    chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
+    world = ms.World(chemistry=chemistry)
     world.save(outdir=_this_dir / "runs" / NOW)
 
     for step_i in range(n_steps):
@@ -61,8 +52,8 @@ def main(n_cells: int, n_steps: int, rand_genome_size: int):
                     .flatten()
                     .tolist()
                 )
-                succ_parents, children = world.replicate_cells(parent_idxs=rep_idxs)
-                world.cell_molecules[succ_parents + children, ATP.idx] -= 4.0
+                world.cell_molecules[rep_idxs, ATP.idx] -= 4.0
+                world.replicate_cells(parent_idxs=rep_idxs)
 
             with timeit("mutateGenomes", step_i, writer):
                 new_gs, chgd_idxs = ms.point_mutations(
@@ -97,7 +88,6 @@ def main(n_cells: int, n_steps: int, rand_genome_size: int):
                 )
 
     writer.close()
-    world.summary()
 
 
 if __name__ == "__main__":
