@@ -80,7 +80,7 @@ for step_i in range(1000):
 ## Details
 
 - [Genetics](#genetics) explains how genetics work in this simulation
-- [Energy](#energy) explanation for molecule energies and energy coupling
+- [Chemistry](#chemistry) explanation for molecules, reactions and energy coupling
 - [Kinetics](#kintics) explain the protein kinetics in this simulation
 - [Implementation](#implementation) some implementation details worth mentioning
 
@@ -95,7 +95,7 @@ CDSs without stop codon are not considered [[James NR 2016](https://pubmed.ncbi.
 Each CDS will then be translated into one protein, giving each cell a certain [proteome](https://en.wikipedia.org/wiki/Proteome).
 What each protein can do is defined by its [domains](https://en.wikipedia.org/wiki/Protein_domain).
 
-Currently, there are three domain types: _catalytic, transporter, allosteric_.
+Currently, there are three domain types: _catalytic, transporter, regulatory_.
 Each domain consists of a region of genetic code that defines the domain type itself
 and several regions that define its details.
 What these details are depends on the domain type.
@@ -108,9 +108,9 @@ _Transporter_ domains can move a molecule species across the cell membrane,
 _i.e._ from the outside world into the cell and _vice versa_.
 Details are the molecule species, maximum velocity, its orientation (see [Energy](#energy)).
 
-_Allosteric_ domains can regulare a protein through an effector molecule.
-A protein with only an allosteric domain has no function.
-But if the protein also has a catalytic or transporter domain, the allosteric
+_Regulatory_ domains can regulare a protein through an effector molecule.
+A protein with only a regulatory domain has no function.
+But if the protein also has a catalytic or transporter domain, the regulatory
 domain can up- or down-regulate this domain.
 Details are the effector molecule species, whether it is an activating or inhibiting
 effector, the affinity to that effector.
@@ -123,7 +123,13 @@ that help with their creation.
 For more details see [magicsoup/genetics.py](./magicsoup/genetics.py).
 Also see [Kinetics](#kinetics) for details about the domain kinetics and aggregations.
 
-### Energy
+### Chemistry
+
+At the basis of this simulation one has to define which molecule species exist
+and which reactions are possible.
+These two attributes essentially define the rule by which the cells are allowed to play.
+It defines which molecules are available, how to change between them,
+and eventually how metabolic and transduction networks can be built from them.
 
 Every defined reaction can occur in both directions ($substrates \rightleftharpoons products$).
 In which direction it will occur at a particular time step in a particular cell depends
@@ -187,18 +193,18 @@ Their activity is defined by
 $$a = \frac{[E]}{[E] + K_{mE}}$$
 
 where $[E]$ is the amount of effector molecule available, $K_{mE}$ is the Michaelis constant for that effector molecule.
-As with multiple substrates, multiple allosteric domains are combined over a product.
+As with multiple substrates, multiple regulatory domains are combined over a product.
 Depending on whether they are activating or inhibiting, they will be multiplied with $v$ in a different way thus creating a [non-competitive regulation](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
-A protein with allosteric domains will have a regulated velocity of
+A protein with regulatory domains will have a regulated velocity of
 
 $$v = a_a (1 - a_i)V_{max} \prod_{i} \frac{[S_i]^{n_i}}{([S_i] + K_{mi})^{n_i}}$$
 
 where $a_a$ is the combined activity of all activating effectors and $a_i$ is the combined activity of all inhibiting effectors.
-As effector activities are $a \in [0;1)$ an allosteric effector cannot increase the maximum
+As effector activities are $a \in [0;1)$ a regulatory effector cannot increase the maximum
 velocity of a protein.
 Also note that while an unregulated protein can always be active, a protein with an activating
-allosteric domain can only be active if the activating effector is present.
-So, an activating allosteric domain can also switch off a protein.
+regulatory domain can only be active if the activating effector is present.
+So, an activating regulatory domain can also switch off a protein.
 
 ### Implementation
 
@@ -261,3 +267,21 @@ If one wants to increase protein $V_{max}$ beyond that, it is better to rather d
 `integrate_signals` steps. _E.g._ calling `integrate_signals` 10 times in every time step
 effectively multiplies the proteins $V_{max}$ by 10 without generating numerical instability.
 This strategy would also give `integrate_signals` more continuous and realistic bahavior.
+
+#### Integrating multiple domains
+
+I had to make a decision with $V_{Max}$ and $K_M$ when having proteins with multiple domains.
+When there are multiple _e.g._ catalytic domains, it might make sense to each give them a seperate
+$V_{Max}$. But then I would need to consider that different domains within the same protein
+work at different rates. Thus, the whole energy coupling would become more tricky. _E.g._ should the protein be allowed to do 10x reaction 1 with $\Delta G = -1.1$ to power 1x reaction 2 with $\Delta G = 10$? To avoid such problems I decided to give any protein at most only a single $V_{Max}$. All $V_{Max}$ that might come from multiple domains are averaged to a single value. That means proteins with many domains tend to have less extreme values for $V_{Max}$.
+
+A similar problem arises with $K_M$: multiple domains can attempt to each give a different $K_M$ value to the same molecule species. _E.g._ there could be a catalytic domain that has molecule A as a substrate and a regulatory domain with molecule A as effector. In these cases I decided to also only have 1 value for $K_M$ for each molecule species. All $K_M$ values for the same molecule species in the same protein are averaged.
+
+#### Energetic Equilibrium
+
+Theoretically, a reaction should occur in one direction according to its free Gibbs energy $\Delta G$. At some point $\Delta G$ should reach zero
+and the reaction should be in an equilibrium state where no appreciable difference in substrates and products is measurable anymore.
+
+As of now, this equilibrium state is not explicitly programmed into the simulation. As the simulation moves in discrete time steps towards the equilibrium state it is only slowed down by substrate activities according to its $K_M$ value(s). For proteins with high $V_{Max}$ and low $K_M$ this means the reaction will at some point shoot over the equilibrium state. So, at one point in time the reaction moves in one direction, and at the next in the other; both times with high velocity. This would mean a reaction never reaches an equilibrium state but instead flickers back and forth around it.
+
+To avoid that (or reduce it) I decided to give every catalytic domain its affinity $K_M$ in one direction, and $K_M^{-1}$ in the other. So, if a reaction shoots well over its equilibrium state in one time step, it will approach the equilibrium state from the other side much more slowly in the next time step. This should reduce heavy flickering around the equilibrium state. However, it also has the side effect of giving all catalytic proteins a type of directionality. Reactions can always happen in any direction, but there will be one direction in which a catalytic domain will be more sensitive.
