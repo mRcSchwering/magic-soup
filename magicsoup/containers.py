@@ -14,7 +14,7 @@ class Molecule:
       This amount of energy is released is the molecule would be deconstructed.
       Molecule concentrations and energies involved in a reaction decide
       whether the reaction can occur. Catalytic domains in a protein can
-      couple multiple reactions.
+      couple multiple reactions energetically.
     
     Each type of molecule which is supposed to be unique should have a unique `name`.
     Molecule types are compared based on `name` and `energy`. And since `energy` levels
@@ -24,12 +24,22 @@ class Molecule:
 
     _instances: dict[str, "Molecule"] = {}
 
-    def __new__(cls, name: str, energy: float):
+    def __new__(cls, name: str, energy: float, half_life=100_000, diff_coef=1e-8):
         if name in cls._instances:
             if cls._instances[name].energy != energy:
                 raise ValueError(
                     f"Trying to instantiate Molecule {name} with energy {energy}."
                     f" But {name} already exists with energy {cls._instances[name].energy}"
+                )
+            if cls._instances[name].half_life != half_life:
+                raise ValueError(
+                    f"Trying to instantiate Molecule {name} with half_life {half_life}."
+                    f" But {name} already exists with half_life {cls._instances[name].half_life}"
+                )
+            if cls._instances[name].energy != energy:
+                raise ValueError(
+                    f"Trying to instantiate Molecule {name} with diff_coef {diff_coef}."
+                    f" But {name} already exists with diff_coef {cls._instances[name].diff_coef}"
                 )
         else:
             name_ = name.lower()
@@ -43,9 +53,11 @@ class Molecule:
             cls._instances[name] = super().__new__(cls)
         return cls._instances[name]
 
-    def __init__(self, name: str, energy: float):
+    def __init__(self, name: str, energy: float, half_life=100_000, diff_coef=1e-8):
         self.name = name
         self.energy = energy
+        self.half_life = half_life
+        self.diff_coef = diff_coef
         self.idx = -1
         self.idx_ext = -1
 

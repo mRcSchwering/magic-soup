@@ -61,8 +61,6 @@ class World:
         self,
         chemistry: Chemistry,
         map_size=128,
-        mol_halflife=100_000,
-        mol_diff_coef=1e-8,
         abs_temp=310.0,
         mol_map_init="randn",
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
@@ -72,9 +70,6 @@ class World:
     ):
         self.map_size = map_size
         self.abs_temp = abs_temp
-        self.mol_halflife = mol_halflife
-        self.mol_degrad = math.exp(-math.log(2) / mol_halflife)
-        self.mol_diff_coef = mol_diff_coef
         self.dtype = dtype
 
         if not torch.cuda.is_available():
@@ -87,13 +82,20 @@ class World:
         )
 
         self.n_molecules = len(chemistry.molecules)
+
+        mol_degrads: list[float] = []
+        diffusion: list[torch.nn.Conv2d] = []
         for idx, mol in enumerate(chemistry.molecules):
             mol.idx = idx
             mol.idx_ext = self.n_molecules + idx
+            mol_degrads.append(math.exp(-math.log(2) / mol.half_life))
+            diffusion.append(self._get_conv(mol_diff_rate=mol.diff_coef * 1e6))
+
         self._int_mol_idxs = list(range(self.n_molecules))
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
+        self._mol_degrads = mol_degrads
+        self._diffusion = diffusion
 
-        self._diffuse = self._get_conv(mol_diff_rate=mol_diff_coef * 1e6)
         self._nghbrhd_map = {
             (x, y): torch.tensor(moore_nghbrhd(x, y, map_size))
             for x, y in product(range(map_size), range(map_size))
@@ -311,14 +313,16 @@ class World:
     @torch.no_grad()
     def diffuse_molecules(self):
         """Let molecules in world map diffuse by 1 time step"""
-        before = self.molecule_map.unsqueeze(1)
-        after = self._diffuse(before)
-        self.molecule_map = torch.squeeze(after, 1)
+        for mol_i, diffuse in enumerate(self._diffusion):
+            before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
+            after = diffuse(before)
+            self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0)
 
     def degrade_molecules(self):
         """Degrade molecules in world map and cells by 1 time step"""
-        self.molecule_map = self.molecule_map * self.mol_degrad
-        self.cell_molecules = self.cell_molecules * self.mol_degrad
+        for mol_i, degrad in enumerate(self._mol_degrads):
+            self.molecule_map[mol_i] *= degrad
+            self.cell_molecules[:, mol_i] *= degrad
 
     def increment_cell_survival(self):
         """Increment number of currently living cells' time steps by 1"""
@@ -511,11 +515,5 @@ class World:
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(map_size=%r,mol_halflife=%r,mol_diff_coef=%r,abs_temp=%r)" % (
-            clsname,
-            self.map_size,
-            self.mol_halflife,
-            self.mol_diff_coef,
-            self.abs_temp,
-        )
+        return "%s(map_size=%r,abs_temp=%r)" % (clsname, self.map_size, self.abs_temp,)
 
