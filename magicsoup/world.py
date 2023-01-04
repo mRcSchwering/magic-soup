@@ -23,12 +23,6 @@ class World:
       (in-frame) in the coding sequence it will create the mapped domain.
     - `molecules` list of all molecule species that are part of this simulation
     - `map_size` size of world map as number of pixels in x- and y-direction
-    - `mol_halflife` Half life of all molecules. Assuming one time step represents one second, values around 1e5
-      would be reasonable for small molecules. Must be > 0.0.
-    - `mol_diff_coef` Diffusion coefficient for all molecules. Assuming one time step is one second and one pixel
-      has a size of 10um, values around 1e-8 are reasonable for small molecules. 0.0 would mean no diffusion at all.
-      Diffusion rate reaches its maximum at around 1e-6 where all molecules are equally spread out around the pixels' Moor's neighborhood with
-      each time step.
     - `abs_temp` Absolute temperature (K). Affects entropy term of reaction energy.
     - `mol_map_init` How to initialize molecule maps (`randn` or `zeros`). `zeros` are not actually 0.0 but a small positive
       value epsilon instead. 
