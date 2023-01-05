@@ -117,6 +117,9 @@ class Molecule:
     def __hash__(self) -> int:
         return self._hash
 
+    def __lt__(self, other) -> bool:
+        return hash(self) < hash(other)
+
     def __eq__(self, other) -> bool:
         return hash(self) == hash(other)
 
@@ -144,18 +147,21 @@ class Chemistry:
 
     `molecules` should include at least all molecule species that are mentioned in `reactions`.
     As any reaction can take place in both directions, it is not necessary to define both directions.
-    """
 
-    # TODO: remove duplicate reactions and molecules
-    # TODO: maybe way to add multiple chemistries
+    Duplicate reactions and molecules will be removed on initialization. To combine multiple chemistries
+    you can do `both = chemistry1 & chemistry2` which will combine all molecules and reactions.
+    """
 
     def __init__(
         self,
         molecules: list[Molecule],
         reactions: list[tuple[list[Molecule], list[Molecule]]],
     ):
-        self.molecules = molecules
-        self.reactions = reactions
+        # remove duplicates while keeping order
+        self.molecules = list(dict.fromkeys(molecules))
+        hash_reacts = [(tuple(sorted(s)), tuple(sorted(p))) for s, p in reactions]
+        unq_reacts = list(dict.fromkeys(hash_reacts))
+        self.reactions = [(list(s), list(p)) for s, p in unq_reacts]
 
         dfnd_mols = set(molecules)
         react_mols = set()
@@ -171,9 +177,15 @@ class Chemistry:
                 "Please define all molecules."
             )
 
+    def __and__(self, other: "Chemistry") -> "Chemistry":
+        return Chemistry(
+            molecules=self.molecules + other.molecules,
+            reactions=self.reactions + other.reactions,
+        )
+
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(molecules=%reactions=%r)" % (
+        return "%s(molecules=%r,eactions=%r)" % (
             clsname,
             self.molecules,
             self.reactions,
