@@ -353,6 +353,11 @@ class Genetics:
             raise ValueError(f"Not all start codons are of length {CODON_SIZE}")
         if any(len(d) != CODON_SIZE for d in stop_codons):
             raise ValueError(f"Not all stop codons are of length {CODON_SIZE}")
+        if len(set(start_codons) & set(stop_codons)) > 0:
+            raise ValueError(
+                "Overlapping start and stop codons:"
+                f" {','.join(str(d) for d in set(start_codons) & set(stop_codons))}"
+            )
         if n_dom_type_nts % CODON_SIZE != 0:
             raise ValueError(f"n_dom_type_nts should be a multiple of {CODON_SIZE}.")
 

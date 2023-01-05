@@ -87,7 +87,7 @@ class Molecule:
                     f"Trying to instantiate Molecule {name} with half_life {half_life}."
                     f" But {name} already exists with half_life {cls._instances[name].half_life}"
                 )
-            if cls._instances[name].energy != energy:
+            if cls._instances[name].diff_coef != diff_coef:
                 raise ValueError(
                     f"Trying to instantiate Molecule {name} with diff_coef {diff_coef}."
                     f" But {name} already exists with diff_coef {cls._instances[name].diff_coef}"

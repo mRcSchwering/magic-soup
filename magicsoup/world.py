@@ -453,6 +453,7 @@ class World:
         return [(int(d[0]), int(d[1])) for d in chosen.tolist()]
 
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
+        # TODO: need to get rid of eps
         args = [n, size, size]
         if init == "zeros":
             return (torch.zeros(*args, dtype=self.dtype) + EPS).to(self.device)
