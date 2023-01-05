@@ -315,6 +315,7 @@ class World:
         """Increment number of currently living cells' time steps by 1"""
         idxs = list(range(len(self.cells)))
         self.cell_survival[idxs] += 1
+        # TODO: do cell survival directly on cells?
 
     def enzymatic_activity(self):
         """Catalyze reactions for 1 time step and update all molecule abudances"""
@@ -422,7 +423,7 @@ class World:
             new_x, new_y = pxls[random.randint(0, n - 1)].tolist()
             self.cell_map[new_x, new_y] = True
 
-            child = parent.copy(idx=idx, position=(new_x, new_y))
+            child = parent.copy(idx=idx, position=(new_x, new_y), n_survived_steps=0)
             successful_parent_idxs.append(parent_idx)
             child_idxs.append(idx)
             self.cells.append(child)
