@@ -5,7 +5,6 @@ import math
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.constants import EPS
 from magicsoup.containers import Cell, Protein, Chemistry
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
@@ -339,6 +338,8 @@ class World:
 
     def save(self, outdir: Path, name="world.pkl"):
         """Write whole world object to pickle file"""
+        # TODO: make this JSON, txt, (except for tensors), to make it possible
+        #       to continue using a different language
         outdir.mkdir(parents=True, exist_ok=True)
         with open(outdir / name, "wb") as fh:
             pickle.dump(self, fh)
@@ -453,12 +454,11 @@ class World:
         return [(int(d[0]), int(d[1])) for d in chosen.tolist()]
 
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
-        # TODO: need to get rid of eps
         args = [n, size, size]
         if init == "zeros":
-            return (torch.zeros(*args, dtype=self.dtype) + EPS).to(self.device)
+            return torch.zeros(*args, dtype=self.dtype).to(self.device)
         if init == "randn":
-            return torch.randn(*args, dtype=self.dtype).abs().clamp(EPS).to(self.device)
+            return torch.randn(*args, dtype=self.dtype).abs().to(self.device)
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."

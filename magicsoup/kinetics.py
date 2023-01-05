@@ -1,5 +1,5 @@
 import torch
-from magicsoup.constants import EPS, GAS_CONSTANT
+from magicsoup.constants import GAS_CONSTANT
 from magicsoup.containers import Protein
 
 
@@ -111,10 +111,6 @@ class Kinetics:
     To avoid this there is a correction term that limits the velocity of any protein to the actual
     abundance of the substrates. If there are multiple proteins in a cell all using up the same
     substrate, these limiting substrate abundances are shared equally among these proteins.
-    Furthermore, instead of allowing the proteins to reduce substrates to exactly `0.0`, they will
-    actually only be allowed to reduce any substrate to a small number `eps > 0.0`. This is to
-    avoid creating infinite reaction quotients and it is another mitigation for the problem of
-    overshooting the equilibirum state.
 
     Limitations:
     - all based on Michaelis-Menten kinetics, no cooperativity
@@ -199,14 +195,14 @@ class Kinetics:
         V = self.Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
 
         # get limiting velocities (substrate would be empty)
-        X_max = torch.einsum("cs,cps->cps", -X + EPS, 1 / N_adj)
+        X_max = torch.einsum("cs,cps->cps", -X, 1 / N_adj)
         V_limit = X_max.max(dim=2).values.clamp(0.0)
 
         Xd = torch.einsum("cps,cp->cs", N_adj, V.clamp(max=V_limit).nan_to_num())
 
         # low float precision can still drive X below 0
         # final lazy correction
-        Xd = Xd.clamp(-X + EPS)
+        Xd = Xd.clamp(-X)
 
         return Xd
 

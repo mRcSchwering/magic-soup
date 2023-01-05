@@ -242,15 +242,8 @@ If a protein in any cell would by its normal kinetics deconstruct more substrate
 If there are multiple proteins deconstructing the same molecule in a cell, all of these proteins are slowed down
 by the same factor (accounting for the stoichiometric coefficient).
 Thus, a protein would never be able to create negative substrate abundances.
+In general, the closer overall molecule abundances are to zero, the more reactions are dominated by this cutoff.
 See `Kinetics.integrate_signals` in [magicsoup/kinetics.py](./magicsoup/kinetics.py) for more information.
-
-In fact, proteins are slowed down a bit more so that a small amount of substrate $\epsilon > 0$ if left.
-This small value $\epsilon$ is set in [magicsoup/constants.py](./magicsoup/constants.py).
-Molecule abundances should not reach exact $0.0$ since this would create infinite values during $Q$ calculation.
-$\epsilon$ exists to avoid that.
-As a side effect, $\epsilon$ also serves as a hint for world molecule setups.
-_Normal molecule_ abundances should be a few orders of magnitude greater than $\epsilon$.
-Otherwise kinetics would be dominated by this cutoff.
 
 #### High molecule abundances
 

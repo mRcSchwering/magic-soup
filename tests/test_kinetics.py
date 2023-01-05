@@ -1,6 +1,5 @@
 import pytest
 import torch
-from magicsoup.constants import EPS
 from magicsoup.containers import Protein, Molecule
 from magicsoup.genetics import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.kinetics import Kinetics
@@ -820,7 +819,7 @@ def test_mm_kinetic_with_allosteric_action():
     assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
 
 
-def test_reduce_velocity_to_avoid_zero_concentrations():
+def test_reduce_velocity_to_avoid_negative_concentrations():
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
     # cell 0: P0: a -> b, P1: b -> d
     # cell 1: P0: 2c -> d
@@ -873,9 +872,9 @@ def test_reduce_velocity_to_avoid_zero_concentrations():
     # expected outcome
     v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
     # but this would lead to Xd + X0 = -0.0615 (for a)
-    assert X0[0, 0] - v0_c0 < EPS
+    assert X0[0, 0] - v0_c0 < 0.0
     # so velocity should be reduced to a (it will be eps afterwards)
-    v0_c0 = X0[0, 0] - EPS
+    v0_c0 = X0[0, 0]
     # the other protein was unaffected
     v1_c1 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1])
     dx_c0_a = -v0_c0
@@ -885,9 +884,9 @@ def test_reduce_velocity_to_avoid_zero_concentrations():
 
     v0_c1 = mm(x=X0[1, 2], v=Vmax[1, 0], k=Km[1, 0, 2], n=2)
     # but this would lead to Xd + X0 = -0.0722 (for c)
-    assert X0[1, 2] - 2 * v0_c1 < EPS
+    assert X0[1, 2] - 2 * v0_c1 < 0.0
     # so velocity should be reduced to c (it will be 0 afterwards)
-    v0_c1 = (X0[1, 2] - EPS) / 2
+    v0_c1 = X0[1, 2] / 2
     dx_c1_a = 0.0
     dx_c1_b = 0.0
     dx_c1_c = -2 * v0_c1
@@ -913,7 +912,7 @@ def test_reduce_velocity_to_avoid_zero_concentrations():
     assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
 
     X1 = X0 + Xd
-    assert not torch.any(X1 < EPS)
+    assert not torch.any(X1 < 0.0)
 
 
 def test_reactions_are_turned_around():
@@ -1033,5 +1032,40 @@ def test_substrate_concentrations_never_get_too_low():
     for _ in range(n_steps):
         Xd = kinetics.integrate_signals(X=X)
         X = X + Xd
-        assert not torch.any(X + TOLERANCE < EPS)
+        assert not torch.any(X < 0.0)
         assert not torch.any(X.isnan())
+
+
+def test_substrate_concentrations_are_always_finite():
+    n_cells = 1000
+    n_prots = 100
+    n_mols = 20
+    n_steps = 10
+
+    kinetics = Kinetics(n_signals=n_mols)
+
+    # concentrations (c, s)
+    X = torch.zeros(n_cells, n_mols).abs()
+
+    # reactions (c, p, s)
+    kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
+
+    # affinities (c, p, s)
+    kinetics.Km = torch.randn(n_cells, n_prots, n_mols).abs()
+
+    # max velocities (c, p)
+    kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 10
+
+    # allosterics (c, p, s)
+    kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
+
+    # reaction energies (c, p)
+    kinetics.E = torch.randn(n_cells, n_prots)
+
+    # test
+    for _ in range(n_steps):
+        Xd = kinetics.integrate_signals(X=X)
+        X = X + Xd
+        assert not torch.any(X < 0.0)
+        assert not torch.any(X.isnan())
+        assert torch.all(X.isfinite())
