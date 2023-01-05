@@ -184,7 +184,7 @@ class World:
 
         return new_idxs
 
-    def replicate_cells(self, parent_idxs: list[int]) -> tuple[list[int], list[int]]:
+    def replicate_cells(self, parent_idxs: list[int]) -> list[tuple[int, int]]:
         """
         Replicate existing cells by their parents cell indexes (`cell.idx`).
         Returns `cell.idx`s of the cells which successfully replicated and their descendants.
@@ -197,7 +197,7 @@ class World:
         the cell will not replicate.
         """
         if len(parent_idxs) == 0:
-            return [], []
+            return []
 
         succ_parent_idxs, child_idxs = self._replicate_cells_as_possible(
             parent_idxs=parent_idxs
@@ -205,7 +205,7 @@ class World:
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
-            return [], []
+            return []
 
         self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
         self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
@@ -216,29 +216,22 @@ class World:
         self.cell_molecules[child_idxs, :] = self.cell_molecules[succ_parent_idxs, :]
         self.cell_molecules[child_idxs + succ_parent_idxs] /= 2
 
-        return succ_parent_idxs, child_idxs
+        return list(zip(succ_parent_idxs, child_idxs))
 
-    def update_cells(self, genomes: list[str], idxs: list[int]):
+    def update_cells(self, genome_idx_pairs: list[tuple[str, int]]):
         """
         Update existing cells with new genomes.
 
         - `genomes` (new) genomes of cells to be updated
         - `idcs` cell indexes (`cell.idx`) of cells to be updated
         """
-        if len(genomes) != len(idxs):
-            raise ValueError(
-                "Genomes and idxs represent the same list of cells."
-                f" But now they don't have the same length. genomes: {len(genomes)}, idxs: {len(idxs)}."
-            )
-        # TODO: have list of tuples instead?!
-
-        if len(genomes) == 0:
+        if len(genome_idx_pairs) == 0:
             return
 
         prot_lens: list[int] = []
         set_params: list[tuple[int, int, Protein]] = []
         unset_params: list[tuple[int, int]] = []
-        for idx, genome in zip(idxs, genomes):
+        for genome, idx in genome_idx_pairs:
             cell = self.cells[idx]
             newprot = self.genetics.get_proteome(seq=genome)
             oldprot = cell.proteome
@@ -382,18 +375,16 @@ class World:
         with open(statedir / "cells.txt", "r") as fh:
             lines = [d for d in fh.read().split("\n") if len(d) > 0]
 
-        genomes = []
-        idxs = []
+        genome_idx_pairs: list[tuple[str, int]] = []
         self.cells = []
         for line in lines:
             prefix, genome = line.split("): ")
             idx, position = prefix.split("(")
             x, y = position.split(",")
             self.cells.append(Cell(genome="", proteome=[], position=(int(x), int(y))))
-            genomes.append(genome)
-            idxs.append(int(idx))
+            genome_idx_pairs.append((genome, int(idx)))
 
-        self.update_cells(genomes=genomes, idxs=idxs)
+        self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
     def _randomly_move_cells(self, cells: list[Cell]):
         for cell in cells:

@@ -102,8 +102,7 @@ def test_replicate_cells():
     world = ms.World(chemistry=chemistry, map_size=5)
 
     cell_idxs = world.add_random_cells(genomes=["A" * 50] * 3)
-    parent_idxs, child_idxs = world.replicate_cells(parent_idxs=cell_idxs)
+    parent_child_idxs = world.replicate_cells(parent_idxs=cell_idxs)
 
-    assert torch.all(
-        world.cell_molecules[parent_idxs] == world.cell_molecules[child_idxs]
-    )
+    parents, children = list(map(list, zip(*parent_child_idxs)))
+    assert torch.all(world.cell_molecules[parents] == world.cell_molecules[children])
