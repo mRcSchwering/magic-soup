@@ -329,9 +329,6 @@ class Genetics:
     class. Then, all cells use the same rules for transscribing and translating their genomes.
     """
 
-    # TODO: function to generate desired genome
-    #       e.g. specify proteome, get genome
-
     def __init__(
         self,
         chemistry: Chemistry,

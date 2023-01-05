@@ -56,12 +56,11 @@ def main(n_cells: int, n_steps: int, rand_genome_size: int):
                 world.replicate_cells(parent_idxs=rep_idxs)
 
             with timeit("mutateGenomes", step_i, writer):
-                new_gs, chgd_idxs = ms.point_mutations(
-                    seqs=[d.genome for d in world.cells]
-                )
+                chgd_genomes = ms.point_mutations(seqs=[d.genome for d in world.cells])
+                new_gs, chgd_idxs = list(map(list, zip(*chgd_genomes)))
 
             with timeit("getMutatedProteomes", step_i, writer):
-                world.update_cells(genomes=new_gs, idxs=chgd_idxs)
+                world.update_cells(genomes=new_gs, idxs=chgd_idxs)  # type: ignore
 
             with timeit("wrapUp", step_i, writer):
                 world.degrade_molecules()

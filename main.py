@@ -19,12 +19,10 @@ def main(n_cells: int, n_steps: int, init_genome_size: int):
     world = ms.World(chemistry=chemistry)
 
     genomes = [ms.random_genome(s=init_genome_size) for _ in range(n_cells)]
-    world.add_random_cells(genomes=genomes)
+    genome_pairs = [(d, d) for d in genomes]
 
-    with timeit(f"wrap up {n_steps} steps"):
-        for _ in range(n_steps):
-            world.diffuse_molecules()
-            world.degrade_molecules()
+    with timeit(f"recombinations for {n_cells} genomes of size {init_genome_size}"):
+        _ = ms.recombinations(seq_pairs=genome_pairs)
 
     return
 

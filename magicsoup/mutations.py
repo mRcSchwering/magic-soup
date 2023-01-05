@@ -10,25 +10,24 @@ def substitution(seq: str, idx: int) -> str:
 
 
 def indel(seq: str, idx: int) -> str:
-    """Create a 1 nucleotide insertion or deletion at index"""
+    """Create a 1 nucleotide insertion or deletion (1:1 chances) at index"""
     if random.choice([True, False]):
         return seq[:idx] + seq[idx + 1 :]
     nt = random.choice(ALL_NTS)
     return seq[:idx] + nt + seq[idx:]
 
 
-def point_mutations(
-    seqs: list[str], p=1e-3, p_indel=0.1
-) -> tuple[list[str], list[int]]:
+def point_mutations(seqs: list[str], p=1e-3, p_indel=0.1) -> list[tuple[str, int]]:
     """
-    Return new sequences mutated with point mutations.
+    Add point mutations to a list of nucleotide sequences.
 
     - `seqs` nucleotide sequences
     - `p` probability of a mutation per nucleotide
     - `p_indel` probability of any point mutation being a deletion or insertion
       (inverse probability of it being a substitution)
     
-    Returns all sequences (muated or not).
+    Returns list of mutated sequences and their indices; which sequences of `seqs`
+    got muated.
     """
     n = len(seqs)
     lens = [len(d) for d in seqs]
@@ -53,4 +52,48 @@ def point_mutations(
             tmps[seq_i] = substitution(seq=tmps[seq_i], idx=pos_i)
 
     idxs = list(set(d[0] for d in mut_idxs))
-    return [tmps[i] for i in idxs], idxs
+    return [(tmps[i], i) for i in idxs]
+
+
+def recombinations(
+    seq_pairs: list[tuple[str, str]], p=1e-3
+) -> list[tuple[str, str, int]]:
+    """
+    Add random recombinations to pairs of nucleotide sequences
+
+    - `seqs` nucleotide sequences
+    - `p` probability of a strand break per nucleotide
+    
+    Returns list of mutated sequence pairs and their indices; which sequences of `seq_pairs`
+    got muated.
+    """
+    n = len(seq_pairs)
+    combined_seqs = [(a + b, len(a)) for a, b in seq_pairs]
+    lens = [len(d) for d in combined_seqs]
+    s_max = max(lens)
+
+    mask = torch.zeros(n, s_max)
+    for i, s in enumerate(lens):
+        mask[i, :s] = True
+
+    probs = torch.full((n, s_max), p)
+    muts = torch.bernoulli(probs)
+    mut_idxs = torch.argwhere(muts * mask)
+    mut_rows = set(mut_idxs[:, 0].tolist())
+
+    tmps: list[tuple[str, str, int]] = []
+    for row_i in mut_rows:
+        seq, cut = combined_seqs[row_i]
+
+        cuts = mut_idxs[mut_idxs[:, 0] == row_i, 1].tolist()
+        l = [0] + sorted(cuts + [cut]) + [len(seq)]
+        parts = [seq[a:b] for a, b in zip(l, l[1:])]
+
+        random.shuffle(parts)
+        split = random.randint(0, len(parts))
+        lft_new = "".join(parts[:split])
+        rght_new = "".join(parts[split:])
+        tmps.append((lft_new, rght_new, row_i))
+
+    return tmps
+

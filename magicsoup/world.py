@@ -230,6 +230,7 @@ class World:
                 "Genomes and idxs represent the same list of cells."
                 f" But now they don't have the same length. genomes: {len(genomes)}, idxs: {len(idxs)}."
             )
+        # TODO: have list of tuples instead?!
 
         if len(genomes) == 0:
             return
