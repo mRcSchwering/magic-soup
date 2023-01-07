@@ -68,6 +68,9 @@ def recombinations(
     got muated.
     """
     n = len(seq_pairs)
+    if n == 0:
+        return []
+
     combined_seqs = [(a + b, len(a)) for a, b in seq_pairs]
     lens = [len(d) for d in combined_seqs]
     s_max = max(lens)

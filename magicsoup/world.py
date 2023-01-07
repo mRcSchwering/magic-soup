@@ -44,6 +44,7 @@ class World:
     - `molecule_map` Map referencing molecule abundances (3d float tensor with molecules in dimension 0)
     - `cell_molecules` Intracellular molecule abundances (2d float tensor with cells in dimension 0, molecules in dimension 1)
     - `cell_survival` Number of survived time steps for every living cell (1d float tensor)
+    - `cell_divisions` Number of times this cell successfully replicated (1d float tensor)
 
     Furthermore, there is a list `cells` which holds all currently living cells with their position, genome,
     proteome and more. To gather all information for a particular cell use `get_cell`. Some attributes like
@@ -104,6 +105,7 @@ class World:
 
         self.cell_map = torch.zeros(map_size, map_size, dtype=torch.bool).to(device)
         self.cell_survival = torch.zeros(0, dtype=dtype).to(device)
+        self.cell_divisions = torch.zeros(0, dtype=dtype).to(device)
         self.cell_molecules = torch.zeros(0, self.n_molecules, dtype=dtype).to(device)
         self.molecule_map = self._get_molecule_map(
             n=self.n_molecules, size=self.map_size, init=mol_map_init
@@ -134,7 +136,7 @@ class World:
         cell.int_molecules = self.cell_molecules[idx, :]
         cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]].T
         cell.n_survived_steps = int(self.cell_survival[idx].item())
-
+        cell.n_replications = int(self.cell_divisions[idx].item())
         return cell
 
     def add_random_cells(self, genomes: list[str]) -> list[int]:
@@ -172,6 +174,7 @@ class World:
             run_idx += 1
 
         self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
+        self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
         self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
         self.kinetics.increase_max_proteins(max_n=max(prot_lens))
@@ -202,12 +205,14 @@ class World:
         succ_parent_idxs, child_idxs = self._replicate_cells_as_possible(
             parent_idxs=parent_idxs
         )
+        self.cell_divisions[succ_parent_idxs] += 1
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
             return []
 
         self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
+        self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
         self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
         self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
@@ -267,9 +272,10 @@ class World:
         spillout = self.cell_molecules[cell_idxs, :]
         self.molecule_map[:, xs, ys] += spillout.T
 
-        keep = torch.ones(self.cell_survival.shape[0], dtype=torch.bool)
+        keep = torch.ones(self.cell_survival.size(0), dtype=torch.bool)
         keep[cell_idxs] = False
         self.cell_survival = self.cell_survival[keep]
+        self.cell_divisions = self.cell_divisions[keep]
         self.cell_molecules = self.cell_molecules[keep]
         self.kinetics.remove_cell_params(keep=keep)
 
@@ -315,7 +321,6 @@ class World:
         """Increment number of currently living cells' time steps by 1"""
         idxs = list(range(len(self.cells)))
         self.cell_survival[idxs] += 1
-        # TODO: do cell survival directly on cells?
 
     def enzymatic_activity(self):
         """Catalyze reactions for 1 time step and update all molecule abudances"""

@@ -3,7 +3,7 @@
 This is a dummy experiment for monitoring simulation performance in a realistic setting.
 
 ```
-python -m performance.main --n_steps=10
+python -m experiments.e0_performance.main --n_steps=10
 ...
-tensorboard --logdir=./performance/runs
+tensorboard --logdir=./experiments/e0_performance/runs
 ```

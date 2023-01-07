@@ -353,7 +353,8 @@ class Cell:
         position: tuple[int, int] = (-1, -1),
         idx=-1,
         label="C",
-        n_survived_steps=0,
+        n_survived_steps=-1,
+        n_replications=-1,
     ):
         self.genome = genome
         self.proteome = proteome
@@ -361,6 +362,7 @@ class Cell:
         self.position = position
         self.idx = idx
         self.n_survived_steps = n_survived_steps
+        self.n_replications = n_replications
         self.int_molecules: Optional[torch.Tensor] = None
         self.ext_molecules: Optional[torch.Tensor] = None
 
@@ -378,13 +380,14 @@ class Cell:
             "idx": self.idx,
             "label": self.label,
             "n_survived_steps": self.n_survived_steps,
+            "n_replications": self.n_replications,
         }
         return Cell(**{**old_kwargs, **kwargs})
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
         return (
-            "%s(genome=%r,proteome=%r,position=%r,idx=%r,label=%r,n_survived_steps=%r)"
+            "%s(genome=%r,proteome=%r,position=%r,idx=%r,label=%r,n_survived_steps=%r,n_replications=%r)"
             % (
                 clsname,
                 self.genome,
@@ -393,5 +396,6 @@ class Cell:
                 self.idx,
                 self.label,
                 self.n_survived_steps,
+                self.n_replications,
             )
         )
