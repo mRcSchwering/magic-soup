@@ -50,14 +50,15 @@ def test_get_coding_regions(seq, exp):
 
     # min domain size is 2 + 4 codons = 18 nucleotides
     # min CDS is 24 nucleotides (with start and stop codons)
-    genetics = ms.Genetics(
-        chemistry=chemistry,
-        n_dom_type_nts=3,
-        n_reaction_nts=3,
-        n_affinity_nts=3,
-        n_velocity_nts=3,
-        n_orientation_nts=3,
-    )
+    with pytest.warns(UserWarning):
+        genetics = ms.Genetics(
+            chemistry=chemistry,
+            n_dom_type_nts=3,
+            n_reaction_nts=3,
+            n_affinity_nts=3,
+            n_velocity_nts=3,
+            n_orientation_nts=3,
+        )
     res = genetics.get_coding_regions(seq="".join(seq.replace("\n", "").split()))
     assert len(res) == len(exp)
     assert set(res) == set(exp)

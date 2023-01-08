@@ -14,9 +14,16 @@ from magicsoup.examples.wood_ljungdahl import (
     HSCoA,
     acetylCoA,
     co2,
+    FH4,
+    NiACS,
 )
 
 _this_dir = Path(__file__).parent
+
+# TODO: mol concentrations drop to 2.5?!
+# TODO: does mol diffusion change molecule content?
+# TODO: does adding/killing replicating cells change molecule content?
+# TODO: do reactions change molecule content in a way that molecules are lost overall?
 
 
 def sign_sample(t: torch.Tensor, k=1.0, rev=False) -> list[int]:
@@ -27,14 +34,16 @@ def sign_sample(t: torch.Tensor, k=1.0, rev=False) -> list[int]:
     return idxs.flatten().tolist()
 
 
-def add_co2(world: ms.World, co2_idx: int):
+def add_co2(world: ms.World):
     # keep CO2 on a constant high level
-    if world.molecule_map[co2_idx].mean() < 10.0:
-        world.molecule_map[co2_idx] += 1.0
+    if world.molecule_map[co2.idx].mean() < 10.0:
+        world.molecule_map[co2.idx] += 1.0
 
 
-def add_energy(world: ms.World, high_idxs: list[int], low_idxs: list[int]):
+def add_energy(world: ms.World):
     # keep energy carriers in their high energy state
+    high_idxs = [ATP.idx, NADPH.idx]
+    low_idxs = [ADP.idx, NADP.idx]
     world.molecule_map[high_idxs] += world.molecule_map[low_idxs] * 0.5
     world.molecule_map[low_idxs] *= 0.5
 
@@ -47,18 +56,21 @@ def add_random_cells(world: ms.World, s: int, n: int):
         world.add_random_cells(genomes=seqs)
 
 
-def kill_cells(world: ms.World, acoa_idx: int):
+def kill_cells(world: ms.World):
     # kill cells with low Acetyl-CoA, and cells that never replicate
-    acoa_idxs = sign_sample(t=world.cell_molecules[:, acoa_idx], k=0.5, rev=True)
+    acoa_idx = acetylCoA.idx
+    acoa_idxs = sign_sample(t=world.cell_molecules[:, acoa_idx], k=1.0, rev=True)
     surv_idxs = sign_sample(t=world.cell_survival - world.cell_divisions, k=250.0)
     unq_idxs = set(acoa_idxs + surv_idxs)
     world.kill_cells(cell_idxs=list(unq_idxs))
 
 
-def replicate_cells(world: ms.World, acoa_idx: int, coa_idx: int):
+def replicate_cells(world: ms.World):
     # cells must have enough Acetyl-CoA to replicate
     # more AcetylCoA will increase their chances of replicating
-    idxs1 = sign_sample(t=world.cell_molecules[:, acoa_idx], k=5.0)
+    acoa_idx = acetylCoA.idx
+    coa_idx = HSCoA.idx
+    idxs1 = sign_sample(t=world.cell_molecules[:, acoa_idx], k=2.5)
     idxs2 = torch.argwhere(world.cell_molecules[:, acoa_idx] > 2.0).flatten().tolist()
     idxs = list(set(idxs1) & set(idxs2))
     world.cell_molecules[idxs, acoa_idx] -= 2.0
@@ -84,62 +96,53 @@ def random_mutations(world: ms.World):
 
 
 def write_scalars(world: ms.World, writer: SummaryWriter, step: int, td: float):
+    # fmt: off
     writer.add_scalar("Other/TimePerStep[s]", td, step)
 
     writer.add_scalar("Cells/total", len(world.cells), step)
-    writer.add_scalar("Cells/SurvMean", world.cell_survival.mean().item(), step)
+    writer.add_scalar("Cells/SurvAvg", world.cell_survival.mean().item(), step)
     writer.add_scalar("Cells/SurvMax", world.cell_survival.max().item(), step)
-    writer.add_scalar("Cells/DivisMean", world.cell_divisions.mean().item(), step)
+    writer.add_scalar("Cells/DivisAvg", world.cell_divisions.mean().item(), step)
     writer.add_scalar("Cells/DivisMax", world.cell_divisions.max().item(), step)
+    writer.add_scalar("Cells/ReplSurvAvg", world.cell_survival[world.cell_divisions > 0].mean().item(), step)
+    writer.add_scalar("Cells/ReplSurvMax", world.cell_survival[world.cell_divisions > 0].max().item(), step)
 
-    writer.add_scalar("Molecules/ATP[i]", world.cell_molecules[:, ATP.idx].mean(), step)
-    writer.add_scalar("Molecules/ATP[e]", world.molecule_map[ATP.idx].mean(), step)
-    writer.add_scalar(
-        "Molecules/NADPH[i]", world.cell_molecules[:, NADPH.idx].mean(), step
-    )
-    writer.add_scalar("Molecules/NADPH[e]", world.molecule_map[NADPH.idx].mean(), step)
-    writer.add_scalar(
-        "Molecules/AcetylCoA[i]", world.cell_molecules[:, acetylCoA.idx].mean(), step,
-    )
-    writer.add_scalar(
-        "Molecules/AcetylCoA[e]", world.molecule_map[acetylCoA.idx].mean(), step
-    )
-    writer.add_scalar("Molecules/CO2[i]", world.cell_molecules[:, co2.idx].mean(), step)
-    writer.add_scalar("Molecules/CO2[e]", world.molecule_map[co2.idx].mean(), step)
+    writer.add_scalar("MoleculeMap/ATP", world.cell_molecules[:, ATP.idx].mean(), step)
+    writer.add_scalar("MoleculeMap/NADPH", world.cell_molecules[:, NADPH.idx].mean(), step)
+    writer.add_scalar("MoleculeMap/CO2", world.cell_molecules[:, co2.idx].mean(), step)
+    writer.add_scalar("MoleculeMap/HSCoA", world.cell_molecules[:, HSCoA.idx].mean(), step)
+    writer.add_scalar("MoleculeMap/FH4", world.cell_molecules[:, FH4.idx].mean(), step)
+    writer.add_scalar("MoleculeMap/NiACS", world.cell_molecules[:, NiACS.idx].mean(), step)
+
+    writer.add_scalar("CellMolecules/CO2", world.cell_molecules[:, co2.idx].mean(), step)
+    writer.add_scalar("CellMolecules/AcetylCoA", world.cell_molecules[:, acetylCoA.idx].mean(), step)
+    # fmt: on
 
 
 def write_images(world: ms.World, writer: SummaryWriter, step: int):
-    writer.add_image("Other/Cells", world.cell_map, step, dataformats="HW")
+    if step % 10 == 0:
+        writer.add_image("Other/Cells", world.cell_map, step, dataformats="HW")
 
 
 def main(n_cells: int, n_steps: int, genome_size: int):
     writer = SummaryWriter(log_dir=_this_dir / "runs" / NOW)
 
     world = ms.World(chemistry=CHEMISTRY)
-    world.molecule_map *= 5.0
+    world.molecule_map += 10.0
+    world.molecule_map *= 10.0
     world.save(outdir=_this_dir / "runs" / NOW)
-
-    CO2_IDX = co2.idx
-    ATP_IDX = ATP.idx
-    ADP_IDX = ADP.idx
-    NADPH_IDX = NADPH.idx
-    NADP_IDX = NADP.idx
-    ACOA_IDX = acetylCoA.idx
-    COA_IDX = HSCoA.idx
 
     for step_i in range(n_steps):
         t0 = time.time()
 
-        add_co2(world=world, co2_idx=CO2_IDX)
-        add_energy(
-            world=world, high_idxs=[ATP_IDX, NADPH_IDX], low_idxs=[ADP_IDX, NADP_IDX]
-        )
+        add_co2(world=world)
+        add_energy(world=world)
 
         add_random_cells(world=world, s=genome_size, n=n_cells)
         world.enzymatic_activity()
 
-        kill_cells(world=world, acoa_idx=ACOA_IDX)
-        replicate_cells(world=world, acoa_idx=ACOA_IDX, coa_idx=COA_IDX)
+        kill_cells(world=world)
+        replicate_cells(world=world)
         random_mutations(world=world)
 
         # world.degrade_molecules()
@@ -147,8 +150,7 @@ def main(n_cells: int, n_steps: int, genome_size: int):
         world.increment_cell_survival()
 
         write_scalars(world=world, writer=writer, step=step_i, td=time.time() - t0)
-        if step_i % 10 == 0:
-            write_images(world=world, writer=writer, step=step_i)
+        write_images(world=world, writer=writer, step=step_i)
 
         if step_i % 100 == 0:
             print(f"Finished step {step_i:,}")
@@ -160,7 +162,7 @@ def main(n_cells: int, n_steps: int, genome_size: int):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--n_cells", default=1000, type=int)
-    parser.add_argument("--n_steps", default=10, type=int)
+    parser.add_argument("--n_steps", default=100_000, type=int)
     parser.add_argument("--genome_size", default=500, type=int)
     args = parser.parse_args()
 

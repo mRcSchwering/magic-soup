@@ -195,10 +195,13 @@ class Kinetics:
         V = self.Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
 
         # get limiting velocities (substrate would be empty)
-        X_max = torch.einsum("cs,cps->cps", -X, 1 / N_adj)
-        V_limit = X_max.max(dim=2).values.clamp(0.0)
+        X_max = -X / N_adj.sum(1)  # (c, s)
+        XV = torch.einsum("cs,cps->cps", X_max, N_adj < 0.0)  # (c, p, s)
+        XV[XV.isnan()] = torch.inf
+        XV[XV <= 0.0] = torch.inf
+        V_limit = XV.min(2).values  # (c, p)
 
-        Xd = torch.einsum("cps,cp->cs", N_adj, V.clamp(max=V_limit).nan_to_num())
+        Xd = torch.einsum("cps,cp->cs", N_adj, V.clamp(max=V_limit))
 
         # low float precision can still drive X below 0
         # final lazy correction
@@ -346,3 +349,4 @@ class Kinetics:
 
     def _tensor(self, *args) -> torch.Tensor:
         return torch.zeros(*args, dtype=self.dtype).to(self.device)
+

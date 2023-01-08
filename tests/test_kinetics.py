@@ -873,7 +873,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
     # but this would lead to Xd + X0 = -0.0615 (for a)
     assert X0[0, 0] - v0_c0 < 0.0
-    # so velocity should be reduced to a (it will be eps afterwards)
+    # so velocity should be reduced to a (it will be zero afterwards)
     v0_c0 = X0[0, 0]
     # the other protein was unaffected
     v1_c1 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1])
@@ -885,12 +885,105 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     v0_c1 = mm(x=X0[1, 2], v=Vmax[1, 0], k=Km[1, 0, 2], n=2)
     # but this would lead to Xd + X0 = -0.0722 (for c)
     assert X0[1, 2] - 2 * v0_c1 < 0.0
-    # so velocity should be reduced to c (it will be 0 afterwards)
+    # so velocity should be reduced to c (it will be zero afterwards)
     v0_c1 = X0[1, 2] / 2
     dx_c1_a = 0.0
     dx_c1_b = 0.0
     dx_c1_c = -2 * v0_c1
     dx_c1_d = v0_c1
+
+    # test
+    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics.N = N
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.A = A
+    Xd = kinetics.integrate_signals(X=X0)
+
+    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
+    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
+    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
+    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+
+    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
+    assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
+    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
+    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+
+    X1 = X0 + Xd
+    assert not torch.any(X1 < 0.0)
+
+
+def test_reduce_velocity_in_multiple_proteins():
+    # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
+    # cell 0: P0: a -> b, P1: 2a -> d
+    # cell 1: P0: a -> b
+
+    # fmt: off
+
+    # concentrations (c, s)
+    X0 = torch.tensor([
+        [2.0, 1.2, 2.9, 1.5],
+        [2.9, 3.1, 0.1, 1.0],
+    ])
+
+    # reactions (c, p, s)
+    N = torch.tensor([
+        [   [-1.0, 1.0, 0.0, 0.0],
+            [-2.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+        [   [-1.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+    ])
+
+    # affinities (c, p, s)
+    Km = torch.tensor([
+        [   [0.5, 1.5, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 3.5],
+            [0.0, 0.0, 0.0, 0.0] ],
+        [   [0.5, 1.5, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0] ],
+    ])
+
+    # max velocities (c, p)
+    Vmax = torch.tensor([
+        [3.1, 2.0, 0.0],
+        [3.1, 0.0, 0.0],
+    ])
+
+    # allosterics (c, p, s)
+    A = torch.zeros(2, 3, 4)
+
+    # reaction energies (c, p)
+    E = torch.full((2, 3), -99999.9)
+
+    # fmt: on
+
+    def mm(x, k, v, n=1):
+        return v * x ** n / (k + x) ** n
+
+    # expected outcome
+    v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
+    v1_c0 = mm(x=X0[0, 0], v=Vmax[0, 1], k=Km[0, 1, 0])
+    # but this would lead to a < 0.0
+    assert X0[0, 0] - v0_c0 - 2 * v1_c0 < 0.0
+    # so velocity should be reduced to a for both proteins deconstructing 3a
+    v0_c0 = X0[0, 0] / 3
+    v1_c0 = v0_c0
+    dx_c0_a = -v0_c0 - v1_c0 * 2
+    dx_c0_b = v0_c0
+    dx_c0_c = 0.0
+    dx_c0_d = v1_c0
+
+    # cell1 is business as usual
+    v0_c0 = mm(x=X0[1, 0], v=Vmax[1, 0], k=Km[1, 0, 0])
+    dx_c1_a = -v0_c0
+    dx_c1_b = v0_c0
+    dx_c1_c = 0.0
+    dx_c1_d = 0.0
 
     # test
     kinetics = Kinetics(n_signals=X0.shape[1])
@@ -924,7 +1017,7 @@ def test_reactions_are_turned_around():
 
     # concentrations (c, s)
     X0 = torch.tensor([
-        [0.9, 2.1, 2.9, 0.8],
+        [0.9, 3.1, 2.9, 0.8],
         [1.0, 3.1, 2.1, 2.9],
     ])
 
@@ -959,7 +1052,7 @@ def test_reactions_are_turned_around():
 
     # reaction energies (c, p)
     E = torch.full((2, 3), -99999.9)
-    E[0, 0] = -2000 # b/a = 2.3, so b -> a
+    E[0, 0] = -2000 # b/a = 3.4, so b -> a
     E[1, 1] = -2000 # d/a = 2.9, so d -> a
 
     # fmt: on
@@ -1002,7 +1095,8 @@ def test_reactions_are_turned_around():
     assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
 
 
-def test_substrate_concentrations_never_get_too_low():
+@pytest.mark.parametrize("gen", [torch.zeros, torch.randn])
+def test_substrate_concentrations_are_always_finite_and_positive(gen):
     n_cells = 1000
     n_prots = 100
     n_mols = 20
@@ -1011,7 +1105,7 @@ def test_substrate_concentrations_never_get_too_low():
     kinetics = Kinetics(n_signals=n_mols)
 
     # concentrations (c, s)
-    X = torch.randn(n_cells, n_mols).abs()
+    X = gen(n_cells, n_mols).abs()
 
     # reactions (c, p, s)
     kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
@@ -1032,40 +1126,6 @@ def test_substrate_concentrations_never_get_too_low():
     for _ in range(n_steps):
         Xd = kinetics.integrate_signals(X=X)
         X = X + Xd
-        assert not torch.any(X < 0.0)
-        assert not torch.any(X.isnan())
-
-
-def test_substrate_concentrations_are_always_finite():
-    n_cells = 1000
-    n_prots = 100
-    n_mols = 20
-    n_steps = 10
-
-    kinetics = Kinetics(n_signals=n_mols)
-
-    # concentrations (c, s)
-    X = torch.zeros(n_cells, n_mols).abs()
-
-    # reactions (c, p, s)
-    kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols))
-
-    # affinities (c, p, s)
-    kinetics.Km = torch.randn(n_cells, n_prots, n_mols).abs()
-
-    # max velocities (c, p)
-    kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 10
-
-    # allosterics (c, p, s)
-    kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
-
-    # reaction energies (c, p)
-    kinetics.E = torch.randn(n_cells, n_prots)
-
-    # test
-    for _ in range(n_steps):
-        Xd = kinetics.integrate_signals(X=X)
-        X = X + Xd
-        assert not torch.any(X < 0.0)
-        assert not torch.any(X.isnan())
-        assert torch.all(X.isfinite())
+        assert not torch.any(X < 0.0), X[X < 0.0]
+        assert not torch.any(X.isnan()), X.isnan().sum()
+        assert torch.all(X.isfinite()), ~X.isfinite().sum()

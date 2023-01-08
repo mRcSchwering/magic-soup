@@ -1,6 +1,6 @@
 import torch
 import magicsoup as ms
-from magicsoup.examples.wood_ljungdahl import MOLECULES
+from magicsoup.examples.wood_ljungdahl import MOLECULES, co2, formiat, NADPH, NADP
 
 
 TOLERANCE = 1e-4
@@ -106,3 +106,93 @@ def test_replicate_cells():
 
     parents, children = list(map(list, zip(*parent_child_idxs)))
     assert torch.all(world.cell_molecules[parents] == world.cell_molecules[children])
+
+
+def test_molecule_amount_integrity_when_changing_cells():
+    tolerance = 1e-2
+
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=128)
+    exp = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
+
+    cell_idxs = world.add_random_cells(genomes=["A" * 50] * 1000)
+    res0 = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
+    assert torch.all(torch.abs(res0 - exp) < tolerance)
+
+    replicated = world.replicate_cells(parent_idxs=cell_idxs)
+    res1 = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
+    assert torch.all(torch.abs(res1 - exp) < tolerance)
+
+    world.kill_cells(cell_idxs=cell_idxs + [d[1] for d in replicated])
+    res2 = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
+    assert torch.all(torch.abs(res2 - exp) < tolerance)
+
+
+def test_cell_index_integrity_when_changing_cells():
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=128)
+
+    n = len(world.cells)
+    assert n == 0
+    assert world.cell_map.sum().item() == n
+
+    cell_idxs = world.add_random_cells(genomes=["A" * 50] * 1000)
+    n = len(world.cells)
+    assert len(cell_idxs) == 1000
+    assert len(world.cells) == 1000
+    assert set(cell_idxs) == set(d.idx for d in world.cells)
+    assert set(d.idx for d in world.cells) == set(range(len(cell_idxs)))
+    assert world.cell_map.sum().item() == n
+
+    replicated = world.replicate_cells(parent_idxs=cell_idxs)
+    n = len(world.cells)
+    new_idxs = [d[1] for d in replicated]
+    assert len(replicated) > 1
+    assert n == len(replicated) + len(cell_idxs)
+    assert set(d.idx for d in world.cells) == set(cell_idxs) | set(new_idxs)
+    assert set(d.idx for d in world.cells) == set(range(n))
+    assert world.cell_map.sum().item() == n
+
+    world.kill_cells(cell_idxs=cell_idxs)
+    n = len(world.cells)
+    assert n == len(replicated)
+    assert set(d.idx for d in world.cells) == set(range(n))
+    assert world.cell_map.sum().item() == n
+
+    world.kill_cells(cell_idxs=list(range(n)))
+    n = len(world.cells)
+    assert n == 0
+    assert world.cell_map.sum().item() == n
+
+
+def test_molecule_amount_integrity_during_diffusion():
+    tolerance = 1e-2
+
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=128)
+    exp = world.molecule_map.sum(dim=[1, 2])
+
+    for _ in range(10):
+        world.diffuse_molecules()
+        res = world.molecule_map.sum(dim=[1, 2])
+        assert torch.all(torch.abs(res - exp) < tolerance)
+
+
+def test_molecule_amount_integrity_during_reactions():
+    tolerance = 1e-2
+
+    # 2 molecules react to 2 other molecules, total count should be constant
+    reactions = [([co2, NADPH], [formiat, NADP])]
+    molecules = [co2, NADPH, NADP, formiat]
+
+    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
+    world = ms.World(chemistry=chemistry, map_size=128)
+    genomes = [ms.random_genome(s=500) for _ in range(1)]
+    world.add_random_cells(genomes=genomes)
+    exp = world.molecule_map.sum() + world.cell_molecules.sum()
+
+    for _ in range(10):
+        world.enzymatic_activity()
+        res = world.molecule_map.sum() + world.cell_molecules.sum()
+        assert torch.all(torch.abs(res - exp) < tolerance)
+

@@ -182,8 +182,8 @@ class World:
 
         # cell is picking up half the molecules of the pxl it is born on
         xs, ys = list(map(list, zip(*new_positions)))
-        self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T / 2
-        self.molecule_map[:, xs, ys] /= 2
+        self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T * 0.5
+        self.molecule_map[:, xs, ys] *= 0.5
 
         return new_idxs
 
@@ -218,8 +218,8 @@ class World:
         self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
 
         # cell shares molecules with parent
-        self.cell_molecules[child_idxs, :] = self.cell_molecules[succ_parent_idxs, :]
-        self.cell_molecules[child_idxs + succ_parent_idxs] /= 2
+        self.cell_molecules[child_idxs] = self.cell_molecules[succ_parent_idxs]
+        self.cell_molecules[child_idxs + succ_parent_idxs] *= 0.5
 
         return list(zip(succ_parent_idxs, child_idxs))
 
@@ -411,7 +411,7 @@ class World:
     def _replicate_cells_as_possible(
         self, parent_idxs: list[int]
     ) -> tuple[list[int], list[int]]:
-        idx = 0
+        idx = len(self.cells)
         child_idxs = []
         successful_parent_idxs = []
         for parent_idx in parent_idxs:
