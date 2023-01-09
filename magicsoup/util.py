@@ -2,6 +2,7 @@ from typing import TypeVar, Sequence
 from itertools import product
 import string
 import random
+import math
 from magicsoup.constants import ALL_NTS
 
 
@@ -62,6 +63,11 @@ def variants(seq: str) -> list[str]:
     return seqs3
 
 
+def nt_seqs(n: int) -> list[str]:
+    """Return all possible nucleotide sequences of length `n`"""
+    return variants("N" * n)
+
+
 def rad1_nghbrhd(x: int, size: int) -> list[int]:
     """Radial 1D neigborhood of `x` with radius 1 in a circular map of size `size`"""
     if x == 0:
@@ -81,14 +87,30 @@ def moore_nghbrhd(x: int, y: int, size: int) -> list[tuple[int, int]]:
 
 def weight_map_fact(seqs: list[str], min_w: float, max_w: float) -> dict[str, float]:
     """
-    Generate random mapping where each single string in `seqs` maps to a weight,
-    a float between `min_w` and `max_w`.
+    Generate random mapping where each single string in `seqs` maps to a uniformly distributed
+    float between `min_w` and `max_w`.
     
     - `seqs` strings that are used as keys
     - `min_w` minimum weight
     - `max_w` maximum weight
     """
     return {d: random.uniform(min_w, max_w) for d in seqs}
+
+
+def log_weight_map_fact(
+    seqs: list[str], min_w: float, max_w: float
+) -> dict[str, float]:
+    """
+    Generate random mapping where each single string in `seqs` maps to a log uniformly
+    distributed float between`min_w` and `max_w`.
+    
+    - `seqs` strings that are used as keys
+    - `min_w` minimum weight (must be > 0.0)
+    - `max_w` maximum weight (must be > 0.0)
+    """
+    l_min_w = math.log(min_w)
+    l_max_w = math.log(max_w)
+    return {d: math.exp(random.uniform(l_min_w, l_max_w)) for d in seqs}
 
 
 def bool_map_fact(seqs: list[str], p: float = 0.5) -> dict[str, bool]:

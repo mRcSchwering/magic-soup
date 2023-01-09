@@ -14,22 +14,22 @@ CO dehydrogenase / acetyl-CoA synthetase: CO2 + HS-CoA + methyl-Ni-ACS -> Ni-ACS
 """
 from magicsoup.containers import Molecule, Chemistry
 
-NADPH = Molecule("NADPH", 200.0)
-NADP = Molecule("NADP", 100.0)
-ATP = Molecule("ATP", 100.0)
-ADP = Molecule("ADP", 70.0)
+NADPH = Molecule("NADPH", 200.0 * 1e3)
+NADP = Molecule("NADP", 100.0 * 1e3)
+ATP = Molecule("ATP", 100.0 * 1e3)
+ADP = Molecule("ADP", 70.0 * 1e3)
 
-methylFH4 = Molecule("methyl-FH4", 360.0)
-methylenFH4 = Molecule("methylen-FH4", 300.0)
-formylFH4 = Molecule("formyl-FH4", 240.0)
-FH4 = Molecule("FH4", 200.0)
-formiat = Molecule("formiat", 20.0)
-co2 = Molecule("CO2", 10.0)
+methylFH4 = Molecule("methyl-FH4", 360.0 * 1e3)
+methylenFH4 = Molecule("methylen-FH4", 300.0 * 1e3)
+formylFH4 = Molecule("formyl-FH4", 240.0 * 1e3)
+FH4 = Molecule("FH4", 200.0 * 1e3)
+formiat = Molecule("formiat", 20.0 * 1e3)
+co2 = Molecule("CO2", 10.0 * 1e3)
 
-NiACS = Molecule("Ni-ACS", 200.0)
-methylNiACS = Molecule("methyl-Ni-ACS", 300.0)
-HSCoA = Molecule("HS-CoA", 200.0)
-acetylCoA = Molecule("acetyl-CoA", 260.0)
+NiACS = Molecule("Ni-ACS", 200.0 * 1e3)
+methylNiACS = Molecule("methyl-Ni-ACS", 300.0 * 1e3)
+HSCoA = Molecule("HS-CoA", 200.0 * 1e3)
+acetylCoA = Molecule("acetyl-CoA", 260.0 * 1e3)
 
 
 MOLECULES = [
@@ -59,3 +59,5 @@ REACTIONS = [
 ]
 
 CHEMISTRY = Chemistry(molecules=MOLECULES, reactions=REACTIONS)
+# TODO: better energies https://en.wikipedia.org/wiki/Standard_Gibbs_free_energy_of_formation
+

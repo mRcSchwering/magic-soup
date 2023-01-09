@@ -3,9 +3,9 @@ import random
 import abc
 from magicsoup.util import (
     reverse_complement,
-    variants,
+    nt_seqs,
     generic_map_fact,
-    weight_map_fact,
+    log_weight_map_fact,
     bool_map_fact,
 )
 from magicsoup.containers import Domain, Protein, Chemistry, Molecule
@@ -77,17 +77,17 @@ class CatalyticFact(_DomainFact):
     def __init__(
         self,
         reactions: list[tuple[list[Molecule], list[Molecule]]],
-        km_range=(0.1, 5.0),
-        vmax_range=(1.0, 10.0),
+        km_range=(1e-5, 1.0),
+        vmax_range=(0.01, 10.0),
         n_reaction_nts=6,
         n_affinity_nts=6,
         n_velocity_nts=6,
         n_orientation_nts=3,
     ):
-        self.reaction_map = generic_map_fact(variants("N" * n_reaction_nts), reactions)
-        self.affinity_map = weight_map_fact(variants("N" * n_affinity_nts), *km_range)
-        self.velocity_map = weight_map_fact(variants("N" * n_velocity_nts), *vmax_range)
-        self.orientation_map = bool_map_fact(variants("N" * n_orientation_nts))
+        self.reaction_map = generic_map_fact(nt_seqs(n_reaction_nts), reactions)
+        self.affinity_map = log_weight_map_fact(nt_seqs(n_affinity_nts), *km_range)
+        self.velocity_map = log_weight_map_fact(nt_seqs(n_velocity_nts), *vmax_range)
+        self.orientation_map = bool_map_fact(nt_seqs(n_orientation_nts))
 
         _check_n(n_reaction_nts, "n_reaction_nts")
         _check_n(n_affinity_nts, "n_affinity_nts")
@@ -161,17 +161,17 @@ class TransporterFact(_DomainFact):
     def __init__(
         self,
         molecules: list[Molecule],
-        km_range=(0.1, 5.0),
-        vmax_range=(1.0, 10.0),
+        km_range=(1e-5, 1.0),
+        vmax_range=(0.01, 10.0),
         n_molecule_nts=6,
         n_affinity_nts=6,
         n_velocity_nts=6,
         n_orientation_nts=3,
     ):
-        self.molecule_map = generic_map_fact(variants("N" * n_molecule_nts), molecules)
-        self.affinity_map = weight_map_fact(variants("N" * n_affinity_nts), *km_range)
-        self.velocity_map = weight_map_fact(variants("N" * n_velocity_nts), *vmax_range)
-        self.orientation_map = bool_map_fact(variants("N" * n_orientation_nts))
+        self.molecule_map = generic_map_fact(nt_seqs(n_molecule_nts), molecules)
+        self.affinity_map = log_weight_map_fact(nt_seqs(n_affinity_nts), *km_range)
+        self.velocity_map = log_weight_map_fact(nt_seqs(n_velocity_nts), *vmax_range)
+        self.orientation_map = bool_map_fact(nt_seqs(n_orientation_nts))
 
         _check_n(n_molecule_nts, "n_molecule_nts")
         _check_n(n_affinity_nts, "n_affinity_nts")
@@ -254,16 +254,16 @@ class RegulatoryFact(_DomainFact):
     def __init__(
         self,
         molecules: list[Molecule],
-        km_range=(0.1, 5.0),
+        km_range=(1e-5, 1.0),
         n_molecule_nts=6,
         n_affinity_nts=6,
         n_transmembrane_nts=3,
         n_inhibit_nts=3,
     ):
-        self.molecule_map = generic_map_fact(variants("N" * n_molecule_nts), molecules)
-        self.affinity_map = weight_map_fact(variants("N" * n_affinity_nts), *km_range)
-        self.transmembrane_map = bool_map_fact(variants("N" * n_transmembrane_nts))
-        self.inhibit_map = bool_map_fact(variants("N" * n_inhibit_nts))
+        self.molecule_map = generic_map_fact(nt_seqs(n_molecule_nts), molecules)
+        self.affinity_map = log_weight_map_fact(nt_seqs(n_affinity_nts), *km_range)
+        self.transmembrane_map = bool_map_fact(nt_seqs(n_transmembrane_nts))
+        self.inhibit_map = bool_map_fact(nt_seqs(n_inhibit_nts))
 
         _check_n(n_molecule_nts, "n_molecule_nts")
         _check_n(n_affinity_nts, "n_affinity_nts")
@@ -368,7 +368,7 @@ class Genetics:
                 "p_catal_dom, p_transp_dom, p_allo_dom together must not be greater 1.0"
             )
 
-        sets = variants("N" * n_dom_type_nts)
+        sets = nt_seqs(n_dom_type_nts)
         random.shuffle(sets)
         n = len(sets)
 
