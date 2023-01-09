@@ -3,6 +3,7 @@ import random
 from itertools import product
 import math
 import pickle
+import json
 from pathlib import Path
 import torch
 from magicsoup.containers import Cell, Protein, Chemistry
@@ -75,14 +76,13 @@ class World:
             chemistry=chemistry, start_codons=start_codons, stop_codons=stop_codons,
         )
 
-        self.n_molecules = len(chemistry.molecules)
-
         mol_degrads: list[float] = []
         diffusion: list[torch.nn.Conv2d] = []
         for mol in chemistry.molecules:
             mol_degrads.append(math.exp(-math.log(2) / mol.half_life))
             diffusion.append(self._get_conv(mol_diff_rate=mol.diff_coef * 1e6))
 
+        self.n_molecules = len(chemistry.molecules)
         self._int_mol_idxs = list(range(self.n_molecules))
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
         self._mol_degrads = mol_degrads
@@ -334,18 +334,24 @@ class World:
         self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
         self.cell_molecules = X[:, self._int_mol_idxs]
 
-    def save(self, outdir: Path, name="world.pkl"):
+    def save(self, outdir: Path):
         """Write whole world object to pickle file"""
         # TODO: make this JSON, txt, (except for tensors), to make it possible
         #       to continue using a different language
+        #       would need to organize domain factories differently to do that
         outdir.mkdir(parents=True, exist_ok=True)
-        with open(outdir / name, "wb") as fh:
+        with open(outdir / "chemistry.json", "w") as fh:
+            json.dump(self.genetics.chemistry.to_dict(), fh)
+        with open(outdir / "world.pkl", "wb") as fh:
             pickle.dump(self, fh)
 
     @classmethod
-    def from_file(self, filepath: Path) -> "World":
+    def from_file(self, statedir: Path) -> "World":
         """Restore previously saved world object from pickle file"""
-        with open(filepath, "rb") as fh:
+        with open(statedir / "chemistry.json", "r") as fh:
+            chem_dct = json.load(fh)
+        Chemistry.from_dict(chem_dct)  # initializes molecules
+        with open(statedir / "world.pkl", "rb") as fh:
             return pickle.load(fh)
 
     def save_state(self, statedir: Path):

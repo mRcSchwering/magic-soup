@@ -104,6 +104,10 @@ class Molecule:
             cls._instances[name] = super().__new__(cls)
         return cls._instances[name]
 
+    def __getnewargs__(self):
+        # so that pickle can load instances
+        return self.name, self.energy
+
     def __init__(self, name: str, energy: float, half_life=100_000, diff_coef=1e-8):
         self.name = name
         self.energy = energy
