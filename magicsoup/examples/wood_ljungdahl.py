@@ -59,5 +59,4 @@ REACTIONS = [
 ]
 
 CHEMISTRY = Chemistry(molecules=MOLECULES, reactions=REACTIONS)
-# TODO: better energies https://en.wikipedia.org/wiki/Standard_Gibbs_free_energy_of_formation
 

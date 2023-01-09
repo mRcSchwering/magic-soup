@@ -4,23 +4,23 @@ https://en.wikipedia.org/wiki/Reverse_Krebs_cycle
 """
 from magicsoup.containers import Molecule, Chemistry
 
-NADPH = Molecule("NADPH", 200.0)
-NADP = Molecule("NADP", 100.0)
-ATP = Molecule("ATP", 100.0)
-ADP = Molecule("ADP", 70.0)
-co2 = Molecule("CO2", 10.0)
+NADPH = Molecule("NADPH", 200.0 * 1e3)
+NADP = Molecule("NADP", 100.0 * 1e3)
+ATP = Molecule("ATP", 100.0 * 1e3)
+ADP = Molecule("ADP", 70.0 * 1e3)
+co2 = Molecule("CO2", 10.0 * 1e3)
 
-oxalalcetate = Molecule("oxalalcetate", 200.0)
-malate = Molecule("malate", 250.0)
-fumarate = Molecule("fumarate", 240.0)
-sucinate = Molecule("sucinate", 300.0)
-sucinylCoA = Molecule("sucinyl-CoA", 500.0)
-oxoglutarate = Molecule("oxoglutarate", 300.0)
-isocitrate = Molecule("isocitrate", 350.0)
-citrate = Molecule("citrate", 340.0)
+oxalalcetate = Molecule("oxalalcetate", 200.0 * 1e3)
+malate = Molecule("malate", 250.0 * 1e3)
+fumarate = Molecule("fumarate", 240.0 * 1e3)
+sucinate = Molecule("sucinate", 300.0 * 1e3)
+sucinylCoA = Molecule("sucinyl-CoA", 500.0 * 1e3)
+oxoglutarate = Molecule("oxoglutarate", 300.0 * 1e3)
+isocitrate = Molecule("isocitrate", 350.0 * 1e3)
+citrate = Molecule("citrate", 340.0 * 1e3)
 
-HSCoA = Molecule("HS-CoA", 200.0)
-acetylCoA = Molecule("acetyl-CoA", 260.0)
+HSCoA = Molecule("HS-CoA", 200.0 * 1e3)
+acetylCoA = Molecule("acetyl-CoA", 260.0 * 1e3)
 
 MOLECULES = [
     NADPH,
