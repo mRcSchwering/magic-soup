@@ -340,18 +340,13 @@ class World:
         #       to continue using a different language
         #       would need to organize domain factories differently to do that
         outdir.mkdir(parents=True, exist_ok=True)
-        with open(outdir / "chemistry.json", "w") as fh:
-            json.dump(self.genetics.chemistry.to_dict(), fh)
         with open(outdir / "world.pkl", "wb") as fh:
             pickle.dump(self, fh)
 
     @classmethod
-    def from_file(self, statedir: Path) -> "World":
+    def from_file(self, statedir: Path, name="world.pkl") -> "World":
         """Restore previously saved world object from pickle file"""
-        with open(statedir / "chemistry.json", "r") as fh:
-            chem_dct = json.load(fh)
-        Chemistry.from_dict(chem_dct)  # initializes molecules
-        with open(statedir / "world.pkl", "rb") as fh:
+        with open(statedir / name, "rb") as fh:
             return pickle.load(fh)
 
     def save_state(self, statedir: Path):

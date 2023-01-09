@@ -43,10 +43,9 @@ def add_energy(
     # restore energy carriers in some places
     xs = [48, 48, 80, 80]
     ys = [48, 80, 48, 80]
-    high = [atp_idx, nadph_idx]
-    low = [adp_idx, nadp_idx]
-    world.molecule_map[high, xs, ys] += world.molecule_map[low, xs, ys] * 0.2
-    world.molecule_map[low, xs, ys] *= 0.8
+    for high, low in [(atp_idx, adp_idx), (nadph_idx, nadp_idx)]:
+        world.molecule_map[high, xs, ys] += world.molecule_map[low, xs, ys] * 0.2
+        world.molecule_map[low, xs, ys] *= 0.8
 
 
 def add_random_cells(world: ms.World, s: int, n: int):
