@@ -1,6 +1,6 @@
 import torch
 from magicsoup.constants import GAS_CONSTANT
-from magicsoup.containers import Protein
+from magicsoup.containers import Protein, Molecule
 
 
 class Kinetics:
@@ -121,19 +121,29 @@ class Kinetics:
     - proteins can catalyze reactions in a way that they overshoot their equilibirum state (heuristics try to avoid that, see text above)
     """
 
+    # TODO: use torch.amax everywhere....
+
     def __init__(
-        self, n_signals: int, abs_temp=310.0, dtype=torch.float, device="cpu",
+        self,
+        molecules: list[Molecule],
+        abs_temp=310.0,
+        dtype=torch.float,
+        device="cpu",
     ):
-        self.n_signals = n_signals
+        n = len(molecules)
+        self.n_signals = 2 * n
+        self.int_mol_map = {d.name: i for i, d in enumerate(molecules)}
+        self.ext_mol_map = {d.name: i + n for i, d in enumerate(molecules)}
+
         self.abs_temp = abs_temp
         self.dtype = dtype
         self.device = device
 
-        self.Km = self._tensor(0, 0, n_signals)
+        self.Km = self._tensor(0, 0, self.n_signals)
         self.Vmax = self._tensor(0, 0)
         self.E = self._tensor(0, 0)
-        self.N = self._tensor(0, 0, n_signals)
-        self.A = self._tensor(0, 0, n_signals)
+        self.N = self._tensor(0, 0, self.n_signals)
+        self.A = self._tensor(0, 0, self.n_signals)
 
     def unset_cell_params(self, cell_prots: list[tuple[int, int]]):
         """Set cell params for these proteins to 0.0"""
@@ -292,9 +302,9 @@ class Kinetics:
             if dom.is_regulatory:
                 mol = dom.substrates[0]
                 if dom.is_transmembrane:
-                    mol_i = mol.idx_ext
+                    mol_i = self.ext_mol_map[mol.name]
                 else:
-                    mol_i = mol.idx
+                    mol_i = self.int_mol_map[mol.name]
                 Km[mol_i].append(dom.affinity)
                 A[mol_i] += -1.0 if dom.is_inhibiting else 1.0
 
@@ -303,11 +313,11 @@ class Kinetics:
                 mol = dom.substrates[0]
 
                 if dom.is_bkwd:
-                    sub_i = mol.idx_ext
-                    prod_i = mol.idx
+                    sub_i = self.ext_mol_map[mol.name]
+                    prod_i = self.int_mol_map[mol.name]
                 else:
-                    sub_i = mol.idx
-                    prod_i = mol.idx_ext
+                    sub_i = self.int_mol_map[mol.name]
+                    prod_i = self.ext_mol_map[mol.name]
 
                 Km[sub_i].append(dom.affinity)
                 N[sub_i] -= 1.0
@@ -327,13 +337,13 @@ class Kinetics:
 
                 for mol in subs:
                     energy -= mol.energy
-                    mol_i = mol.idx
+                    mol_i = self.int_mol_map[mol.name]
                     Km[mol_i].append(dom.affinity)
                     N[mol_i] -= 1.0
 
                 for mol in prods:
                     energy += mol.energy
-                    mol_i = mol.idx
+                    mol_i = self.int_mol_map[mol.name]
                     Km[mol_i].append(1 / dom.affinity)
                     N[mol_i] += 1.0
 

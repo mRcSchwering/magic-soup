@@ -79,9 +79,7 @@ class World:
 
         mol_degrads: list[float] = []
         diffusion: list[torch.nn.Conv2d] = []
-        for idx, mol in enumerate(chemistry.molecules):
-            mol.idx = idx
-            mol.idx_ext = self.n_molecules + idx
+        for mol in chemistry.molecules:
             mol_degrads.append(math.exp(-math.log(2) / mol.half_life))
             diffusion.append(self._get_conv(mol_diff_rate=mol.diff_coef * 1e6))
 
@@ -97,7 +95,7 @@ class World:
 
         self.cells: list[Cell] = []
         self.kinetics = Kinetics(
-            n_signals=2 * self.n_molecules,
+            molecules=chemistry.molecules,
             abs_temp=abs_temp,
             device=self.device,
             dtype=self.dtype,

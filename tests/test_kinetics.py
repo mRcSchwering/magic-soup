@@ -12,10 +12,7 @@ ma = Molecule("a", energy=15)
 mb = Molecule("b", energy=10)
 mc = Molecule("c", energy=10)
 md = Molecule("d", energy=5)
-
-for idx, mol in enumerate([ma, mb, mc, md]):
-    mol.idx = idx
-    mol.idx_ext = 4 + idx
+MOLECULES = [ma, mb, mc, md]
 
 r_a_b = ([ma], [mb])
 r_b_c = ([mb], [mc])
@@ -40,7 +37,7 @@ def test_unsetting_cell_params():
     cell_prots1 = [(1, i) for i in range(3)]
 
     # test
-    kinetics = Kinetics(n_signals=8)
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
@@ -91,7 +88,7 @@ def test_cell_params_with_transporter_domains():
     cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
 
     # test
-    kinetics = Kinetics(n_signals=8)
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
@@ -203,7 +200,7 @@ def test_cell_params_with_allosteric_domains():
     cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
 
     # test
-    kinetics = Kinetics(n_signals=8)
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
@@ -360,7 +357,7 @@ def test_cell_params_with_catalytic_domains():
     cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
 
     # test
-    kinetics = Kinetics(n_signals=8)
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
@@ -518,7 +515,7 @@ def test_simple_mm_kinetic():
     dx_c1_d = dx_c1_d_1 + dx_c1_d_2
 
     # test
-    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -600,7 +597,7 @@ def test_mm_kinetic_with_proportions():
     dx_c1_d = 0.0
 
     # test
-    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -683,7 +680,7 @@ def test_mm_kinetic_with_multiple_substrates():
     dx_c1_d = -c1_v0
 
     # test
-    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -800,7 +797,7 @@ def test_mm_kinetic_with_allosteric_action():
     dx_c1_d = v1_c1
 
     # test
-    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -893,7 +890,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     dx_c1_d = v0_c1
 
     # test
-    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -986,7 +983,7 @@ def test_reduce_velocity_in_multiple_proteins():
     dx_c1_d = 0.0
 
     # test
-    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -1076,7 +1073,7 @@ def test_reactions_are_turned_around():
     dx_c1_d = v0_c1 - v1_c1
 
     # test
-    kinetics = Kinetics(n_signals=X0.shape[1])
+    kinetics = Kinetics(molecules=MOLECULES)
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -1099,10 +1096,10 @@ def test_reactions_are_turned_around():
 def test_substrate_concentrations_are_always_finite_and_positive(gen):
     n_cells = 1000
     n_prots = 100
-    n_mols = 20
     n_steps = 10
 
-    kinetics = Kinetics(n_signals=n_mols)
+    kinetics = Kinetics(molecules=MOLECULES)
+    n_mols = len(MOLECULES) * 2
 
     # concentrations (c, s)
     X = gen(n_cells, n_mols).abs()

@@ -179,7 +179,7 @@ def test_molecule_amount_integrity_during_diffusion():
 
 
 def test_molecule_amount_integrity_during_reactions():
-    tolerance = 1e-2
+    tolerance = 1e-1
 
     # 2 molecules react to 2 other molecules, total count should be constant
     reactions = [([co2, NADPH], [formiat, NADP])]

@@ -109,9 +109,6 @@ class Molecule:
         self.energy = energy
         self.half_life = half_life
         self.diff_coef = diff_coef
-        self.idx = -1
-        self.idx_ext = -1
-
         self._hash = hash(self.name)
 
     def __hash__(self) -> int:
@@ -135,6 +132,14 @@ class Molecule:
 
     def __str__(self) -> str:
         return self.name
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "energy": self.energy,
+            "half_life": self.half_life,
+            "diff_coef": self.diff_coef,
+        }
 
 
 class Chemistry:
@@ -182,6 +187,25 @@ class Chemistry:
             molecules=self.molecules + other.molecules,
             reactions=self.reactions + other.reactions,
         )
+
+    def to_dict(self) -> dict:
+        return {
+            "molecules": [d.to_dict() for d in self.molecules],
+            "reactions": [
+                ([d.name for d in a], [d.name for d in b]) for a, b in self.reactions
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, dct: dict) -> "Chemistry":
+        mols = [Molecule(**d) for d in dct["molecules"]]
+        name_2_mol = {d.name: d for d in mols}
+        reacts = []
+        for subs, prods in dct["reactions"]:
+            reacts.append(
+                ([name_2_mol[d] for d in subs], [name_2_mol[d] for d in prods])
+            )
+        return cls(molecules=mols, reactions=reacts)
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
