@@ -334,19 +334,19 @@ class World:
         self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
         self.cell_molecules = X[:, self._int_mol_idxs]
 
-    def save(self, outdir: Path):
+    def save(self, rundir: Path, name="world.pkl"):
         """Write whole world object to pickle file"""
         # TODO: make this JSON, txt, (except for tensors), to make it possible
         #       to continue using a different language
         #       would need to organize domain factories differently to do that
-        outdir.mkdir(parents=True, exist_ok=True)
-        with open(outdir / "world.pkl", "wb") as fh:
+        rundir.mkdir(parents=True, exist_ok=True)
+        with open(rundir / name, "wb") as fh:
             pickle.dump(self, fh)
 
     @classmethod
-    def from_file(self, statedir: Path, name="world.pkl") -> "World":
+    def from_file(self, rundir: Path, name="world.pkl") -> "World":
         """Restore previously saved world object from pickle file"""
-        with open(statedir / name, "rb") as fh:
+        with open(rundir / name, "rb") as fh:
             return pickle.load(fh)
 
     def save_state(self, statedir: Path):
