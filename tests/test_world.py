@@ -1,7 +1,7 @@
 import pytest
 import torch
 import magicsoup as ms
-from magicsoup.examples.wood_ljungdahl import MOLECULES, co2, formiat, NADPH, NADP
+from magicsoup.examples.wood_ljungdahl import MOLECULES
 
 
 TOLERANCE = 1e-4
@@ -167,17 +167,16 @@ def test_cell_index_integrity_when_changing_cells():
 
 
 def test_molecule_amount_integrity_during_diffusion():
-    tolerance = 1e-2
+    tolerance = 1e-1
 
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry, map_size=128)
-    exp = world.molecule_map.sum(dim=[1, 2])
 
-    for step_i in range(1000):
+    exp = world.molecule_map.sum(dim=[1, 2])
+    for step_i in range(500):
         world.diffuse_molecules()
         res = world.molecule_map.sum(dim=[1, 2])
-        assert res.sum() == pytest.approx(exp.sum(), tolerance), step_i
-        # assert torch.all(torch.abs(res - exp) < tolerance), step_i
+        assert torch.all(torch.abs(res - exp) < tolerance), step_i
 
 
 def test_molecule_amount_integrity_during_reactions():

@@ -327,9 +327,7 @@ class World:
 
         xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
         X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
-
-        Xd = self.kinetics.integrate_signals(X=X)
-        X += Xd
+        X = self.kinetics.integrate_signals(X=X)
 
         self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
         self.cell_molecules = X[:, self._int_mol_idxs]

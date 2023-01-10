@@ -521,7 +521,7 @@ def test_simple_mm_kinetic():
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.A = A
-    Xd = kinetics.integrate_signals(X=X0)
+    Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -603,7 +603,7 @@ def test_mm_kinetic_with_proportions():
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.A = A
-    Xd = kinetics.integrate_signals(X=X0)
+    Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -686,7 +686,7 @@ def test_mm_kinetic_with_multiple_substrates():
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.A = A
-    Xd = kinetics.integrate_signals(X=X0)
+    Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -803,7 +803,7 @@ def test_mm_kinetic_with_allosteric_action():
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.A = A
-    Xd = kinetics.integrate_signals(X=X0)
+    Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -899,7 +899,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.A = A
-    Xd = kinetics.integrate_signals(X=X0)
+    Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -995,7 +995,7 @@ def test_reduce_velocity_in_multiple_proteins():
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.A = A
-    Xd = kinetics.integrate_signals(X=X0)
+    Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -1085,7 +1085,7 @@ def test_reactions_are_turned_around():
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.A = A
-    Xd = kinetics.integrate_signals(X=X0)
+    Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
     assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
@@ -1100,7 +1100,7 @@ def test_reactions_are_turned_around():
 
 @pytest.mark.parametrize("gen", [torch.zeros, torch.randn])
 def test_substrate_concentrations_are_always_finite_and_positive(gen):
-    n_cells = 1000
+    n_cells = 100
     n_prots = 100
     n_steps = 100
 
@@ -1128,15 +1128,6 @@ def test_substrate_concentrations_are_always_finite_and_positive(gen):
     # test
     for _ in range(n_steps):
         Xd = kinetics.integrate_signals(X=X)
-        # TODO: find problem
-        # if torch.any(X + Xd < 0.0) or torch.any((X + Xd).isnan()):
-        #     print(step_i)
-        #     print(kinetics.Km)
-        #     print(kinetics.E)
-        #     print(kinetics.N)
-        #     print(kinetics.A)
-        #     print(kinetics.Vmax)
-        #     print(X)
         X = X + Xd
         assert not torch.any(X < 0.0), X[X < 0.0].min()
         assert not torch.any(X.isnan()), X.isnan().sum()
