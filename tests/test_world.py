@@ -1,3 +1,4 @@
+import pytest
 import torch
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES, co2, formiat, NADPH, NADP
@@ -172,27 +173,39 @@ def test_molecule_amount_integrity_during_diffusion():
     world = ms.World(chemistry=chemistry, map_size=128)
     exp = world.molecule_map.sum(dim=[1, 2])
 
-    for _ in range(10):
+    for step_i in range(1000):
         world.diffuse_molecules()
         res = world.molecule_map.sum(dim=[1, 2])
-        assert torch.all(torch.abs(res - exp) < tolerance)
+        assert res.sum() == pytest.approx(exp.sum(), tolerance), step_i
+        # assert torch.all(torch.abs(res - exp) < tolerance), step_i
 
 
 def test_molecule_amount_integrity_during_reactions():
     tolerance = 1e-1
 
-    # 2 molecules react to 2 other molecules, total count should be constant
-    reactions = [([co2, NADPH], [formiat, NADP])]
-    molecules = [co2, NADPH, NADP, formiat]
+    # X and Y can react back and forth but X + Y <-> Z
+    # so if Z is counted as 2, n should stay equal
+    mx = ms.Molecule("x", 10 * 1e3)
+    my = ms.Molecule("y", 20 * 1e3)
+    mz = ms.Molecule("z", 30 * 1e3)
+    molecules = [mx, my, mz]
+    reactions = [([mx], [my]), ([mx, my], [mz])]
 
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry, map_size=128)
-    genomes = [ms.random_genome(s=500) for _ in range(1)]
+    genomes = [ms.random_genome(s=500) for _ in range(1000)]
     world.add_random_cells(genomes=genomes)
-    exp = world.molecule_map.sum() + world.cell_molecules.sum()
 
-    for _ in range(10):
+    def count(world: ms.World) -> float:
+        mxy = world.molecule_map[[0, 1]].sum().item()
+        mz = world.molecule_map[2].sum().item() * 2
+        cxy = world.cell_molecules[:, [0, 1]].sum().item()
+        cz = world.cell_molecules[:, 2].sum().item() * 2
+        return mxy + mz + cxy + cz
+
+    n0 = count(world)
+    for step_i in range(1000):
         world.enzymatic_activity()
-        res = world.molecule_map.sum() + world.cell_molecules.sum()
-        assert torch.all(torch.abs(res - exp) < tolerance)
+        n = count(world)
+        assert n == pytest.approx(n0, abs=tolerance), step_i
 

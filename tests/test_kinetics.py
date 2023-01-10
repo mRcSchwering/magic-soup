@@ -868,12 +868,15 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
 
     # expected outcome
     v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
+    v1_c0 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1])
     # but this would lead to Xd + X0 = -0.0615 (for a)
     assert X0[0, 0] - v0_c0 < 0.0
-    # so velocity should be reduced to a (it will be zero afterwards)
-    v0_c0 = X0[0, 0]
-    # the other protein was unaffected
-    v1_c1 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1])
+    # so velocity should be reduced by a factor depending on current a
+    # all other proteins in this cell are reduce by the same factor
+    # to avoid follow up problems with other molecules being destroyed by other proteins
+    f = X0[0, 0] * 0.99 / v0_c0
+    v0_c0 = f * v0_c0
+    v1_c1 = f * v1_c0
     dx_c0_a = -v0_c0
     dx_c0_b = v0_c0 - v1_c1
     dx_c0_c = 0.0
@@ -882,8 +885,8 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     v0_c1 = mm(x=X0[1, 2], v=Vmax[1, 0], k=Km[1, 0, 2], n=2)
     # but this would lead to Xd + X0 = -0.0722 (for c)
     assert X0[1, 2] - 2 * v0_c1 < 0.0
-    # so velocity should be reduced to c (it will be zero afterwards)
-    v0_c1 = X0[1, 2] / 2
+    # as above, velocities are reduced. here its only this protein
+    v0_c1 = X0[1, 2] * 0.99 / 2
     dx_c1_a = 0.0
     dx_c1_b = 0.0
     dx_c1_c = -2 * v0_c1
@@ -964,12 +967,15 @@ def test_reduce_velocity_in_multiple_proteins():
 
     # expected outcome
     v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
-    v1_c0 = mm(x=X0[0, 0], v=Vmax[0, 1], k=Km[0, 1, 0])
+    v1_c0 = mm(x=X0[0, 0], v=Vmax[0, 1], k=Km[0, 1, 0], n=2)
     # but this would lead to a < 0.0
-    assert X0[0, 0] - v0_c0 - 2 * v1_c0 < 0.0
-    # so velocity should be reduced to a for both proteins deconstructing 3a
-    v0_c0 = X0[0, 0] / 3
-    v1_c0 = v0_c0
+    naive_dx_c0_a = -v0_c0 - 2 * v1_c0
+    assert X0[0, 0] + naive_dx_c0_a < 0.0
+    # so velocity should be reduced to by a factor to not deconstruct too much a
+    # all other proteins have to be reduced by the same factor to not cause downstream problems
+    f = X0[0, 0] * 0.99 / -naive_dx_c0_a
+    v0_c0 = v0_c0 * f
+    v1_c0 = v1_c0 * f
     dx_c0_a = -v0_c0 - v1_c0 * 2
     dx_c0_b = v0_c0
     dx_c0_c = 0.0
@@ -1096,7 +1102,7 @@ def test_reactions_are_turned_around():
 def test_substrate_concentrations_are_always_finite_and_positive(gen):
     n_cells = 1000
     n_prots = 100
-    n_steps = 10
+    n_steps = 100
 
     kinetics = Kinetics(molecules=MOLECULES)
     n_mols = len(MOLECULES) * 2
@@ -1122,7 +1128,16 @@ def test_substrate_concentrations_are_always_finite_and_positive(gen):
     # test
     for _ in range(n_steps):
         Xd = kinetics.integrate_signals(X=X)
+        # TODO: find problem
+        # if torch.any(X + Xd < 0.0) or torch.any((X + Xd).isnan()):
+        #     print(step_i)
+        #     print(kinetics.Km)
+        #     print(kinetics.E)
+        #     print(kinetics.N)
+        #     print(kinetics.A)
+        #     print(kinetics.Vmax)
+        #     print(X)
         X = X + Xd
-        assert not torch.any(X < 0.0), X[X < 0.0]
+        assert not torch.any(X < 0.0), X[X < 0.0].min()
         assert not torch.any(X.isnan()), X.isnan().sum()
         assert torch.all(X.isfinite()), ~X.isfinite().sum()
