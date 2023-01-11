@@ -139,8 +139,7 @@ class TransporterDomain(Domain):
         )
 
     def __str__(self) -> str:
-        d = "outwards" if self.is_bkwd else "inwards"
-        return f"TransporterDomain({self.substrates[0]},{d})"
+        return f"TransporterDomain({self.substrates[0]})"
 
 
 class TransporterFact(_DomainFact):
