@@ -3,6 +3,7 @@ import torch
 from magicsoup.containers import Protein, Molecule
 from magicsoup.genetics import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.kinetics import Kinetics
+from magicsoup.constants import GAS_CONSTANT
 
 TOLERANCE = 1e-4
 
@@ -1011,17 +1012,17 @@ def test_reduce_velocity_in_multiple_proteins():
     assert not torch.any(X1 < 0.0)
 
 
-def test_reactions_are_turned_around():
+def test_equilibrium_constants():
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
-    # cell 0: P0: a -> b (but b/a > Ke), P1: b -> d
-    # cell 1: P0: c -> d, P1: a -> d (but d/a > Ke)
+    # cell 0: P0: a -> b (but b/a > Ke), P1: b -> d (but Q almost Ke)
+    # cell 1: P0: c -> d (but Q ~= Ke), P1: a -> d (but d/a > Ke, and Q almost Ke)
 
     # fmt: off
 
     # concentrations (c, s)
     X0 = torch.tensor([
-        [0.9, 3.1, 2.9, 0.8],
-        [1.0, 3.1, 2.1, 2.9],
+        [2.0, 20.0, 2.9, 20.0],
+        [1.0, 3.1, 1.3, 2.9],
     ])
 
     # reactions (c, p, s)
@@ -1046,8 +1047,8 @@ def test_reactions_are_turned_around():
 
     # max velocities (c, p)
     Vmax = torch.tensor([
-        [2.1, 1.0, 0.0],
-        [1.1, 2.0, 0.0],
+        [2.1, 4.0, 0.0],
+        [1.1, 3.0, 0.0],
     ])
 
     # allosterics (c, p, s)
@@ -1055,8 +1056,12 @@ def test_reactions_are_turned_around():
 
     # reaction energies (c, p)
     E = torch.full((2, 3), -99999.9)
-    E[0, 0] = -2000 # b/a = 3.4, so b -> a
-    E[1, 1] = -2000 # d/a = 2.9, so d -> a
+    # E = -2000 ^= # ln(Ke) = 0.77
+    E[0, 0] = -2000 # ln(Q) - ln(Ke) = 1.53 (switch N)
+    E[0, 1] = -2000 # ln(Q) - ln(Ke) = -0.76 (reduce V)
+    E[1, 0] = -2000 # ln(Q) - ln(Ke) = 0.02 (switch off)
+    E[1, 1] = -2000 # ln(Q) - ln(Ke) = 0.28 (switch N, reduce V)
+    lKe = -E / 310.0 / GAS_CONSTANT
 
     # fmt: on
 
@@ -1064,22 +1069,24 @@ def test_reactions_are_turned_around():
         return v * x / (k + x)
 
     # expected outcome
-    v0_c0 = mm(x=X0[0, 1], v=Vmax[0, 0], k=Km[0, 0, 1])
-    v1_c0 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1])
-    dx_c0_a = v0_c0
-    dx_c0_b = -v0_c0 - v1_c0
+    # v0 is turned around, v1 is reduced by a factor of around 0.37
+    v0_c0 = mm(x=X0[0, 1], v=Vmax[0, 0], k=Km[0, 0, 1]) * -1.0
+    v1_c0 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1]) * 0.76
+    dx_c0_a = -v0_c0
+    dx_c0_b = v0_c0 - v1_c0
     dx_c0_c = 0.0
     dx_c0_d = v1_c0
 
-    v0_c1 = mm(x=X0[1, 2], v=Vmax[1, 0], k=Km[1, 0, 2])
-    v1_c1 = mm(x=X0[1, 3], v=Vmax[1, 1], k=Km[1, 1, 3])
-    dx_c1_a = v1_c1
+    # v0 is switched off, v1 is reduced by 0.28 and turned around
+    v0_c1 = 0.0
+    v1_c1 = mm(x=X0[1, 3], v=Vmax[1, 1], k=Km[1, 1, 3]) * -0.28
+    dx_c1_a = -v1_c1
     dx_c1_b = 0.0
     dx_c1_c = -v0_c1
-    dx_c1_d = v0_c1 - v1_c1
+    dx_c1_d = v0_c1 + v1_c1
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = Kinetics(molecules=MOLECULES, abs_temp=310.0)
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -1087,15 +1094,16 @@ def test_reactions_are_turned_around():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
+    tolerance = 1e-1  # floating point problems
     assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
-    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
+    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=tolerance)
     assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
-    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=tolerance)
 
-    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
+    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=tolerance)
     assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
     assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
-    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=tolerance)
 
 
 @pytest.mark.parametrize("gen", [torch.zeros, torch.randn])

@@ -121,6 +121,9 @@ class Kinetics:
     - proteins can catalyze reactions in a way that they overshoot their equilibirum state (heuristics try to avoid that, see text above)
     """
 
+    # TODO: I could use some native torch functions in some places, e.g. ReLU
+    #       might be faster than matrix multiplications
+
     def __init__(
         self,
         molecules: list[Molecule],
@@ -194,13 +197,17 @@ class Kinetics:
         act_V = self._get_activator_activity(X=X)  # (c, p)
 
         # adjust direction
-        Ke = torch.exp(-self.E / self.abs_temp / GAS_CONSTANT)
-        Q = self._get_reaction_quotients(X=X)  # (c, p)
-        adj_N = torch.where(Q > Ke, -1.0, 1.0)  # (c, p)
+        lKe = -self.E / self.abs_temp / GAS_CONSTANT  # (c, p)
+        lQ = self._get_ln_reaction_quotients(X=X)  # (c, p)
+        adj_N = torch.where(lQ > lKe, -1.0, 1.0)  # (c, p)
         N_adj = torch.einsum("cps,cp->cps", self.N, adj_N)
 
+        # trim velocities when approaching equilibrium
+        trim = (lQ - lKe).abs().clamp(max=1.0)  # (c, p)
+        trim[trim.abs() <= 0.1] = 0.0
+
         prot_V = self._get_protein_activity(X=X, N=N_adj)  # (c, p)
-        V = self.Vmax * prot_V * (1 - inh_V) * act_V  # (c, p)
+        V = self.Vmax * prot_V * (1 - inh_V) * act_V * trim  # (c, p)
         Xd = torch.einsum("cps,cp->cs", N_adj, V)  # (c, s)
 
         # if I want to reduce specific protein velocities only
@@ -251,23 +258,28 @@ class Kinetics:
             self.N = self._expand(t=self.N, n=by_n, d=1)
             self.A = self._expand(t=self.A, n=by_n, d=1)
 
-    def _get_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
+    def _get_ln_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
+        # TODO: better use epsilon for log?
+
         # substrates
         sub_mask = self.N < 0.0  # (c, p, s)
         sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
+        sub_X[sub_X > 0.0] = torch.log(sub_X[sub_X > 0.0])
         sub_N = sub_mask * -self.N  # (c, p, s)
 
         # products
         pro_mask = self.N > 0.0  # (c, p s)
         pro_X = torch.einsum("cps,cs->cps", pro_mask, X)  # (c, p, s)
+        pro_X[pro_X > 0.0] = torch.log(pro_X[pro_X > 0.0])
         pro_N = pro_mask * self.N  # (c, p, s)
 
         # quotients
-        nom = torch.pow(pro_X, pro_N).prod(2)  # (c, p)
-        denom = torch.pow(sub_X, sub_N).prod(2)  # (c, p)
-        return nom / denom  # (c, p)
+        prods = (pro_X * pro_N).sum(2)  # (c, p)
+        subs = (sub_X * sub_N).sum(2)  # (c, p)
+        return prods - subs  # (c, p)
 
     def _get_protein_activity(self, X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
+        # TODO: calculate with ln instead of pow,prod
         mask = N < 0.0  # (c, p s)
         sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
         sub_N = mask * -N  # (c, p, s)
