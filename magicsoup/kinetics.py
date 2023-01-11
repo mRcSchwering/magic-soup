@@ -2,6 +2,8 @@ import torch
 from magicsoup.constants import GAS_CONSTANT
 from magicsoup.containers import Protein, Molecule
 
+_EPS = 1e-5
+
 
 class Kinetics:
     """
@@ -193,31 +195,38 @@ class Kinetics:
         Returns `delta X`, the molecules deconstructed or constructed during
         this time step.
         """
-        inh_V = self._get_inhibitor_activity(X=X)  # (c, p)
-        act_V = self._get_activator_activity(X=X)  # (c, p)
-
         # adjust direction
         lKe = -self.E / self.abs_temp / GAS_CONSTANT  # (c, p)
         lQ = self._get_ln_reaction_quotients(X=X)  # (c, p)
         adj_N = torch.where(lQ > lKe, -1.0, 1.0)  # (c, p)
         N_adj = torch.einsum("cps,cp->cps", self.N, adj_N)
 
-        # trim velocities when approaching equilibrium
+        # activations
+        a_inh = self._get_inhibitor_activity(X=X)  # (c, p)
+        a_act = self._get_activator_activity(X=X)  # (c, p)
+        a_cat = self._get_catalytic_activity(X=X, N=N_adj)  # (c, p)
+
+        # trim velocities when approaching equilibrium Q -> Ke
+        # and stop reaction if Q ~= Ke
+        # f(x) = {1.0 if x > 1.0; 0.0 if x <= 0.1; x otherwise}
+        # with x being the abs(ln(Q) - ln(Ke))
         trim = (lQ - lKe).abs().clamp(max=1.0)  # (c, p)
         trim[trim.abs() <= 0.1] = 0.0
 
-        prot_V = self._get_protein_activity(X=X, N=N_adj)  # (c, p)
-        V = self.Vmax * prot_V * (1 - inh_V) * act_V * trim  # (c, p)
+        # velocity and naive Xd
+        V = self.Vmax * a_cat * (1 - a_inh) * a_act * trim  # (c, p)
         Xd = torch.einsum("cps,cp->cs", N_adj, V)  # (c, s)
 
-        # if I want to reduce specific protein velocities only
-        # I also have to account for the interaction of protein:
-        # e.g. I might reduce protein 0 which destroyed too much molecule A
-        # but it also produced molecule B, which is now produced less
-        # and now molecule B destroying protein 1, which was not an issue
-        # before, now also has to be reduced
-        # here I am taking the easy route and just reduce all proteins in the cell
-        # by the same value
+        # proteins can deconstruct more of a molecule than available in a cell
+        # Here, I am reducing the velocity of all proteins in a cell by the same
+        # amount to just not deconstruct more of any molecule species than
+        # available in this cell
+        # One can also reduce only the velocity of the proteins which are part
+        # of deconstructing the molecule species that is becomming the problem
+        # but these reduced protein speeds could also have a downstream effect
+        # on the construction of another molecule species, which could then
+        # create the same problem again.
+        # By reducing all proteins by the same factor, this cannot happen.
         fact = torch.where(X + Xd < 0.0, X * 0.99 / -Xd, 1.0)  # (c, s)
         Xd = torch.einsum("cs,c->cs", Xd, fact.amin(1))
 
@@ -259,42 +268,40 @@ class Kinetics:
             self.A = self._expand(t=self.A, n=by_n, d=1)
 
     def _get_ln_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
-        # TODO: better use epsilon for log?
-
         # substrates
-        sub_mask = self.N < 0.0  # (c, p, s)
-        sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
-        sub_X[sub_X > 0.0] = torch.log(sub_X[sub_X > 0.0])
-        sub_N = sub_mask * -self.N  # (c, p, s)
+        smask = self.N < 0.0
+        sub_X = torch.einsum("cps,cs->cps", smask, X)  # (c, p, s)
+        sub_N = smask * -self.N  # (c, p, s)
 
         # products
-        pro_mask = self.N > 0.0  # (c, p s)
-        pro_X = torch.einsum("cps,cs->cps", pro_mask, X)  # (c, p, s)
-        pro_X[pro_X > 0.0] = torch.log(pro_X[pro_X > 0.0])
-        pro_N = pro_mask * self.N  # (c, p, s)
+        pmask = self.N > 0.0
+        pro_X = torch.einsum("cps,cs->cps", pmask, X)  # (c, p, s)
+        pro_N = pmask * self.N  # (c, p, s)
 
         # quotients
-        prods = (pro_X * pro_N).sum(2)  # (c, p)
-        subs = (sub_X * sub_N).sum(2)  # (c, p)
+        prods = (torch.log(pro_X + _EPS) * pro_N).sum(2)  # (c, p)
+        subs = (torch.log(sub_X + _EPS) * sub_N).sum(2)  # (c, p)
         return prods - subs  # (c, p)
 
-    def _get_protein_activity(self, X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
-        # TODO: calculate with ln instead of pow,prod
-        mask = N < 0.0  # (c, p s)
+    def _get_catalytic_activity(self, X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
+        mask = N < 0.0
         sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
         sub_N = mask * -N  # (c, p, s)
-        return torch.pow(sub_X / (self.Km + sub_X), sub_N).prod(2)  # (c, p)
+        lact = torch.log(sub_X + _EPS) - torch.log(self.Km + sub_X + _EPS)  # (c, p, s)
+        return (lact * sub_N).sum(2).exp()
 
     def _get_inhibitor_activity(self, X: torch.Tensor) -> torch.Tensor:
         inh_N = (-self.A).clamp(0)  # (c, p, s)
         inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
-        V = torch.pow(inh_X / (self.Km + inh_X), inh_N).prod(2)  # (c, p)
+        lact = torch.log(inh_X + _EPS) - torch.log(self.Km + inh_X + _EPS)  # (c, p, s)
+        V = (lact * inh_N).sum(2).exp()  # (c, p)
         return torch.where(torch.any(self.A < 0.0, dim=2), V, 0.0)  # (c, p)
 
     def _get_activator_activity(self, X: torch.Tensor) -> torch.Tensor:
         act_N = self.A.clamp(0)  # (c, p, s)
         act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
-        V = torch.pow(act_X / (self.Km + act_X), act_N).prod(2)  # (c, p)
+        lact = torch.log(act_X + _EPS) - torch.log(self.Km + act_X + _EPS)  # (c, p, s)
+        V = (lact * act_N).sum(2).exp()  # (c, p)
         return torch.where(torch.any(self.A > 0.0, dim=2), V, 1.0)  # (c, p)
 
     def _get_protein_params(
