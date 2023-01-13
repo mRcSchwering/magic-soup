@@ -30,6 +30,9 @@ def point_mutations(seqs: list[str], p=1e-3, p_indel=0.1) -> list[tuple[str, int
     got muated.
     """
     n = len(seqs)
+    if n == 0:
+        return []
+
     lens = [len(d) for d in seqs]
     s_max = max(lens)
 
