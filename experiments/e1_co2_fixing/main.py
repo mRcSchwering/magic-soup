@@ -53,8 +53,8 @@ def add_energy(
         high_avg = world.molecule_map[high].mean().item()
         low_avg = world.molecule_map[low].mean().item()
         if high_avg / low_avg < 5.0:
-            world.molecule_map[high] += world.molecule_map[low] * 0.5
-            world.molecule_map[low] *= 0.5
+            world.molecule_map[high] += world.molecule_map[low] * 0.9
+            world.molecule_map[low] *= 0.1
 
 
 def add_random_cells(world: ms.World, s: int, n: int):
@@ -65,12 +65,12 @@ def add_random_cells(world: ms.World, s: int, n: int):
 
 
 def kill_cells(world: ms.World, aca_idx: int):
-    idxs = kill_sample(t=world.cell_molecules[:, aca_idx], k=0.001)
+    idxs = kill_sample(t=world.cell_molecules[:, aca_idx], k=0.01)
     world.kill_cells(cell_idxs=idxs)
 
 
 def replicate_cells(world: ms.World, x_idx: int):
-    idxs1 = replicate_sample(t=world.cell_molecules[:, x_idx], k=15.0)
+    idxs1 = replicate_sample(t=world.cell_molecules[:, x_idx], k=20.0)
 
     # successful cells will share their n(X), which will then be reduced by 1.0
     # so a cell must have n(X)>=2.0 to replicate
@@ -85,7 +85,7 @@ def replicate_cells(world: ms.World, x_idx: int):
     parents, children = list(map(list, zip(*replicated)))
     world.cell_molecules[parents + children, x_idx] -= 1.0
 
-    # add random recombination
+    # add random recombinations
     genomes = [(world.cells[p].genome, world.cells[c].genome) for p, c in replicated]
     mutated = ms.recombinations(seq_pairs=genomes)
 
@@ -115,11 +115,23 @@ def write_scalars(
     if n_cells > 0:
         writer.add_scalar("Cells/total[n]", n_cells, step)
         writer.add_scalar("Cells/Survival[avg]", world.cell_survival.mean(), step)
+        writer.add_scalar("Cells/Survival[max]", world.cell_survival.max(), step)
         writer.add_scalar("Cells/Divisions[avg]", world.cell_divisions.mean(), step)
+        writer.add_scalar("Cells/Divisions[max]", world.cell_divisions.max(), step)
 
-    writer.add_scalar("Map/X[avg]", world.molecule_map[x_idx].mean(), step)
-    writer.add_scalar("Map/Acetyl-CoA[avg]", world.molecule_map[aca_idx].mean(), step)
-    writer.add_scalar("Map/CO2[avg]", world.molecule_map[co2_idx].mean(), step)
+    writer.add_scalar("MolMap/X[avg]", world.molecule_map[x_idx].mean(), step)
+    writer.add_scalar(
+        "MolMap/Acetyl-CoA[avg]", world.molecule_map[aca_idx].mean(), step
+    )
+    writer.add_scalar("MolMap/CO2[avg]", world.molecule_map[co2_idx].mean(), step)
+
+    writer.add_scalar("CellMols/X[avg]", world.cell_molecules[:, x_idx].mean(), step)
+    writer.add_scalar(
+        "CellMols/Acetyl-CoA[avg]", world.cell_molecules[:, aca_idx].mean(), step
+    )
+    writer.add_scalar(
+        "CellMols/CO2[avg]", world.cell_molecules[:, co2_idx].mean(), step
+    )
 
     writer.add_scalar("Other/TimePerStep[s]", dtime, step)
 
