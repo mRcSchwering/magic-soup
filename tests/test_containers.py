@@ -68,3 +68,38 @@ def test_domain_comparisons():
     d2 = _get_domain(is_bkwd=True)
     assert d1 != d2
 
+
+def test_protein_comparisons():
+    p1 = cntnrs.Protein(domains=[_get_domain()])
+    p2 = cntnrs.Protein(domains=[_get_domain()])
+    assert p1 == p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(), _get_domain()])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(affinity=0.2)])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(velocity=2.0)])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(is_transmembrane=True)])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(is_transporter=True)])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(is_regulatory=True)])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(is_inhibiting=True)])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(products=[])])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(substrates=[])])
+    assert p1 != p2
+
+    p2 = cntnrs.Protein(domains=[_get_domain(is_bkwd=True)])
+    assert p1 != p2
