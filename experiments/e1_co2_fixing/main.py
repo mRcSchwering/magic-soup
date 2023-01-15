@@ -52,9 +52,9 @@ def add_energy(
     for high, low in [(atp_idx, adp_idx), (nadph_idx, nadp_idx)]:
         high_avg = world.molecule_map[high].mean().item()
         low_avg = world.molecule_map[low].mean().item()
-        if high_avg / low_avg < 0.6:
-            world.molecule_map[high] += world.molecule_map[low] * 0.2
-            world.molecule_map[low] *= 0.8
+        if high_avg / low_avg < 5.0:
+            world.molecule_map[high] += world.molecule_map[low] * 0.5
+            world.molecule_map[low] *= 0.5
 
 
 def add_random_cells(world: ms.World, s: int, n: int):
@@ -126,7 +126,7 @@ def write_scalars(
 
 def write_images(world: ms.World, writer: SummaryWriter, step: int):
     if step % 10 == 0:
-        writer.add_image("Maps/Cells", world.cell_map, step, dataformats="HW")
+        writer.add_image("Maps/Cells", world.cell_map.T, step, dataformats="HW")
 
 
 def save_state(world: ms.World, step: int, n: int):

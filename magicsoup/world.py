@@ -122,6 +122,7 @@ class World:
         object contains more information. E.g. extra- and intracellular molecule
         abundances are added.
         """
+        # TODO: by position
         if by_idx is not None:
             idx = by_idx
         if by_label is not None:
@@ -235,6 +236,9 @@ class World:
         set_params: list[tuple[int, int, Protein]] = []
         unset_params: list[tuple[int, int]] = []
         for genome, idx in genome_idx_pairs:
+            # TODO: recombination could have created cells without genome
+            #       or cells without viable genome
+            #       these should be removed before doing set_cell_params
             cell = self.cells[idx]
             newprot = self.genetics.get_proteome(seq=genome)
             oldprot = cell.proteome
@@ -374,6 +378,8 @@ class World:
         self.cell_map = cell_map.to(torch.bool).to(self.device)
         molecule_map: torch.Tensor = torch.load(statedir / "molecule_map.pt")
         self.molecule_map = molecule_map.to(self.dtype).to(self.device)
+
+        # TODO: cell survival not in state (also others?)
 
         with open(statedir / "cells.txt", "r") as fh:
             lines = [d for d in fh.read().split("\n") if len(d) > 0]
