@@ -114,31 +114,30 @@ def write_scalars(
     n_cells = len(world.cells)
     if n_cells > 0:
         writer.add_scalar("Cells/total[n]", n_cells, step)
-        writer.add_scalar("Cells/Survival[avg]", world.cell_survival.mean(), step)
-        writer.add_scalar("Cells/Survival[max]", world.cell_survival.max(), step)
-        writer.add_scalar("Cells/Divisions[avg]", world.cell_divisions.mean(), step)
-        writer.add_scalar("Cells/Divisions[max]", world.cell_divisions.max(), step)
+        cell_surv = world.cell_survival.float()
+        writer.add_scalar("Cells/Survival[avg]", cell_surv.mean(), step)
+        writer.add_scalar("Cells/Survival[max]", cell_surv.max(), step)
+        cell_divis = world.cell_divisions.float()
+        writer.add_scalar("Cells/Divisions[avg]", cell_divis.mean(), step)
+        writer.add_scalar("Cells/Divisions[max]", cell_divis.max(), step)
 
-    writer.add_scalar("MolMap/X[avg]", world.molecule_map[x_idx].mean(), step)
-    writer.add_scalar(
-        "MolMap/Acetyl-CoA[avg]", world.molecule_map[aca_idx].mean(), step
-    )
-    writer.add_scalar("MolMap/CO2[avg]", world.molecule_map[co2_idx].mean(), step)
-
-    writer.add_scalar("CellMols/X[avg]", world.cell_molecules[:, x_idx].mean(), step)
-    writer.add_scalar(
-        "CellMols/Acetyl-CoA[avg]", world.cell_molecules[:, aca_idx].mean(), step
-    )
-    writer.add_scalar(
-        "CellMols/CO2[avg]", world.cell_molecules[:, co2_idx].mean(), step
-    )
+    mol_scalars = {
+        "MolMap/X[avg]": world.molecule_map[x_idx].mean(),
+        "MolMap/Acetyl-CoA[avg]": world.molecule_map[aca_idx].mean(),
+        "MolMap/CO2[avg]": world.molecule_map[co2_idx].mean(),
+        "CellMols/X[avg]": world.cell_molecules[:, x_idx].mean(),
+        "CellMols/Acetyl-CoA[avg]": world.cell_molecules[:, aca_idx].mean(),
+        "CellMols/CO2[avg]": world.cell_molecules[:, co2_idx].mean(),
+    }
+    for tag, value in mol_scalars.items():
+        writer.add_scalar(tag, value, step)
 
     writer.add_scalar("Other/TimePerStep[s]", dtime, step)
 
 
 def write_images(world: ms.World, writer: SummaryWriter, step: int):
     if step % 10 == 0:
-        writer.add_image("Maps/Cells", world.cell_map.T, step, dataformats="HW")
+        writer.add_image("Maps/Cells", world.cell_map, step, dataformats="WH")
 
 
 def save_state(world: ms.World, step: int, n: int):
@@ -147,6 +146,7 @@ def save_state(world: ms.World, step: int, n: int):
         world.save_state(statedir=THIS_DIR / "runs" / NOW / f"step={step}")
         return
     if step % 1000 == 0:
+        print(f"Finished step {step:,}")
         world.save_state(statedir=THIS_DIR / "runs" / NOW / f"step={step}")
 
 
