@@ -60,16 +60,13 @@ class World:
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         device="cpu",
-        dtype=torch.float,
     ):
-        self.map_size = map_size
-        self.abs_temp = abs_temp
-        self.dtype = dtype
-
         if not torch.cuda.is_available():
             device = "cpu"
 
         self.device = device
+        self.map_size = map_size
+        self.abs_temp = abs_temp
 
         self.genetics = Genetics(
             chemistry=chemistry, start_codons=start_codons, stop_codons=stop_codons,
@@ -97,19 +94,16 @@ class World:
 
         self.cells: list[Cell] = []
         self.kinetics = Kinetics(
-            molecules=chemistry.molecules,
-            abs_temp=abs_temp,
-            device=self.device,
-            dtype=self.dtype,
+            molecules=chemistry.molecules, abs_temp=abs_temp, device=self.device,
         )
 
-        self.cell_map = torch.zeros(map_size, map_size, dtype=torch.bool).to(device)
-        self.cell_survival = torch.zeros(0, dtype=dtype).to(device)
-        self.cell_divisions = torch.zeros(0, dtype=dtype).to(device)
-        self.cell_molecules = torch.zeros(0, self.n_molecules, dtype=dtype).to(device)
+        self.cell_map = torch.zeros(map_size, map_size).to(device).bool()
+        self.cell_survival = torch.zeros(0).to(device).int()
+        self.cell_divisions = torch.zeros(0).to(device).int()
+        self.cell_molecules = torch.zeros(0, self.n_molecules).to(device)
         self.molecule_map = self._get_molecule_map(
             n=self.n_molecules, size=self.map_size, init=mol_map_init
-        )
+        ).to(self.device)
 
     def get_cell(
         self,
@@ -146,8 +140,8 @@ class World:
         cell = self.cells[idx]
         cell.int_molecules = self.cell_molecules[idx, :]
         cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]].T
-        cell.n_survived_steps = int(self.cell_survival[idx].item())
-        cell.n_replications = int(self.cell_divisions[idx].item())
+        cell.n_survived_steps = self.cell_survival[idx].item()
+        cell.n_replications = self.cell_divisions[idx].item()
         return cell
 
     def add_random_cells(self, genomes: list[str]) -> list[int]:
@@ -212,8 +206,9 @@ class World:
         self.cell_map[new_xs, new_ys] = True
 
         # cell is picking up half the molecules of the pxl it is born on
-        self.cell_molecules[new_idxs, :] = self.molecule_map[:, new_xs, new_ys].T * 0.5
-        self.molecule_map[:, new_xs, new_ys] *= 0.5
+        pickup = self.molecule_map[:, new_xs, new_ys] * 0.5
+        self.cell_molecules[new_idxs, :] += pickup.T
+        self.molecule_map[:, new_xs, new_ys] -= pickup
 
         return new_idxs
 
@@ -345,21 +340,31 @@ class World:
     @torch.no_grad()
     def diffuse_molecules(self):
         """Let molecules in world map and through membranes diffuse by 1 time step"""
+        # TODO: switching back and forth between double and float can't be very
+        #       efficient. I need double precision for the convollution step, otherwise
+        #       molecules will systematically be added or removed depending on their half life
+        #       (conv step doesnt add up to exactly 1.0)
+        #       weirdly though, if I make all molecule_map (and cell_molecules) permanently double
+        #       there is also a systematic adding/removing of molecule (with other rates though)
+        #       I guess the reason diffusion below works correctly is not double precision alone
+        #       but the fact that the doubles get truncated back to float after the convolution
         for mol_i, diffuse in enumerate(self._diffusion):
             before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
-            after = diffuse(before)
-            self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0)
+            after = diffuse(before.double())
+            self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0).float()
 
         if len(self.cells) == 0:
             return
 
         xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
         X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
+
         for mol_i, permeate in enumerate(self._permeation):
             d_int = X[:, mol_i] * permeate
             d_ext = X[:, mol_i + self.n_molecules] * permeate
             X[:, mol_i] += d_ext - d_int
             X[:, mol_i + self.n_molecules] += d_int - d_ext
+
         self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
         self.cell_molecules = X[:, self._int_mol_idxs]
 
@@ -426,15 +431,15 @@ class World:
     def load_state(self, statedir: Path):
         """Restore `world` to a state previously saved with `save_state`"""
         cell_molecules: torch.Tensor = torch.load(statedir / "cell_molecules.pt")
-        self.cell_molecules = cell_molecules.to(self.dtype).to(self.device)
+        self.cell_molecules = cell_molecules.to(self.device)
         cell_map: torch.Tensor = torch.load(statedir / "cell_map.pt")
         self.cell_map = cell_map.to(torch.bool).to(self.device)
         molecule_map: torch.Tensor = torch.load(statedir / "molecule_map.pt")
-        self.molecule_map = molecule_map.to(self.dtype).to(self.device)
+        self.molecule_map = molecule_map.to(self.device)
         cell_survival: torch.Tensor = torch.load(statedir / "cell_survival.pt")
-        self.cell_survival = cell_survival.to(self.dtype).to(self.device)
+        self.cell_survival = cell_survival.to(self.device).int()
         cell_divisions: torch.Tensor = torch.load(statedir / "cell_divisions.pt")
-        self.cell_divisions = cell_divisions.to(self.dtype).to(self.device)
+        self.cell_divisions = cell_divisions.to(self.device).int()
 
         with open(statedir / "cells.fasta", "r") as fh:
             text: str = fh.read()
@@ -513,12 +518,11 @@ class World:
         return xs, ys
 
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
-        # TODO: makes more sense to just have zeros and set molecule manually
         args = [n, size, size]
         if init == "zeros":
-            return torch.zeros(*args, dtype=self.dtype).to(self.device)
+            return torch.zeros(*args)
         if init == "randn":
-            return torch.randn(*args, dtype=self.dtype).abs().to(self.device)
+            return torch.abs(torch.randn(*args) + 10.0)
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."
@@ -553,13 +557,14 @@ class World:
             d = 1 / mol_diff_rate
             a = 1 / (d + 8)
             b = d * a
+            b = b + 1.0 - (8 * a + b)  # try correcting inaccuracy
 
         # fmt: off
         kernel = torch.tensor([[[
             [a, a, a],
             [a, b, a],
             [a, a, a],
-        ]]])
+        ]]], dtype=torch.double)
         # fmt: on
 
         conv = torch.nn.Conv2d(
@@ -569,7 +574,7 @@ class World:
             padding=1,
             padding_mode="circular",
             bias=False,
-            dtype=self.dtype,
+            dtype=torch.double,
             device=self.device,
         )
         conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
@@ -578,7 +583,7 @@ class World:
     def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
         pre = t.shape[slice(d)]
         post = t.shape[slice(d + 1, t.dim())]
-        zeros = torch.zeros(*pre, n, *post, dtype=self.dtype).to(self.device)
+        zeros = torch.zeros(*pre, n, *post, dtype=t.dtype).to(self.device)
         return torch.cat([t, zeros], dim=d)
 
     def __repr__(self) -> str:

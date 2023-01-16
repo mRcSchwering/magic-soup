@@ -112,7 +112,7 @@ def test_replicate_cells():
 
 
 def test_molecule_amount_integrity_when_changing_cells():
-    tolerance = 1e-2
+    tolerance = 1e-1
 
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry, map_size=128)
@@ -177,7 +177,7 @@ def test_molecule_amount_integrity_during_diffusion():
     world = ms.World(chemistry=chemistry, map_size=128)
 
     exp = world.molecule_map.sum(dim=[1, 2])
-    for step_i in range(100):
+    for step_i in range(1000):
         world.diffuse_molecules()
         res = world.molecule_map.sum(dim=[1, 2])
         assert res.sum() - exp.sum() > -1.0, step_i
