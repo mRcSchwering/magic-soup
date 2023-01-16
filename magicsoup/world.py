@@ -350,16 +350,18 @@ class World:
             after = diffuse(before)
             self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0)
 
-        if len(self.cells) > 0:
-            xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
-            X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
-            for mol_i, permeate in enumerate(self._permeation):
-                d_int = X[:, mol_i] * permeate
-                d_ext = X[:, mol_i + self.n_molecules] * permeate
-                X[:, mol_i] += d_ext - d_int
-                X[:, mol_i + self.n_molecules] += d_int - d_ext
-            self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
-            self.cell_molecules = X[:, self._int_mol_idxs]
+        if len(self.cells) == 0:
+            return
+
+        xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
+        X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
+        for mol_i, permeate in enumerate(self._permeation):
+            d_int = X[:, mol_i] * permeate
+            d_ext = X[:, mol_i + self.n_molecules] * permeate
+            X[:, mol_i] += d_ext - d_int
+            X[:, mol_i + self.n_molecules] += d_int - d_ext
+        self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
+        self.cell_molecules = X[:, self._int_mol_idxs]
 
     def degrade_molecules(self):
         """Degrade molecules in world map and cells by 1 time step"""

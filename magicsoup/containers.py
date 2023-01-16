@@ -63,7 +63,7 @@ class Molecule:
         name: str,
         energy: float,
         half_life=100_000,
-        diffusivity=1e-2,
+        diffusivity=0.1,
         permeability=0.0,
     ):
         if name in cls._instances:
@@ -108,7 +108,7 @@ class Molecule:
         name: str,
         energy: float,
         half_life=100_000,
-        diffusivity=1e-2,
+        diffusivity=0.1,
         permeability=0.0,
     ):
         self.name = name
@@ -117,14 +117,6 @@ class Molecule:
         self.diffusivity = diffusivity
         self.permeability = permeability
         self._hash = hash(self.name)
-
-        # TODO:
-        #       permeability coefficient = diff coeff / membrane with
-        #       P_CO2 = 0.35 cm/s   D[cm2/s], P[cm/s]
-        #       D_CO2 in water = 0.0016 mm2/s = 16 um2/s
-        #       cell membrane thickness = 10nm
-        #       P_CO2 in membrane * 10nm = D_CO2 in membrane = 3500 um/s * 0.01 um = 35 um2/s
-        #       membrane area 100 um2
 
     def __hash__(self) -> int:
         return self._hash

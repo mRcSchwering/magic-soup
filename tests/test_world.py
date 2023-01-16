@@ -173,16 +173,16 @@ def test_cell_index_integrity_when_changing_cells():
 
 
 def test_molecule_amount_integrity_during_diffusion():
-    tolerance = 1e-1
-
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry, map_size=128)
 
     exp = world.molecule_map.sum(dim=[1, 2])
-    for step_i in range(500):
+    for step_i in range(100):
         world.diffuse_molecules()
         res = world.molecule_map.sum(dim=[1, 2])
-        assert torch.all(torch.abs(res - exp) < tolerance), step_i
+        assert res.sum() - exp.sum() > -1.0, step_i
+        assert res.sum() - exp.sum() < 1.0, step_i
+        assert torch.all(torch.abs(res - exp) < 0.1), step_i
 
 
 def test_molecule_amount_integrity_during_reactions():

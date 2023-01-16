@@ -8,7 +8,7 @@ NADPH = Molecule("NADPH", 200.0 * 1e3)
 NADP = Molecule("NADP", 100.0 * 1e3)
 ATP = Molecule("ATP", 100.0 * 1e3)
 ADP = Molecule("ADP", 70.0 * 1e3)
-co2 = Molecule("CO2", 10.0 * 1e3)
+co2 = Molecule("CO2", 10.0 * 1e3, diffusivity=1.0, permeability=1.0)
 
 oxalalcetate = Molecule("oxalalcetate", 200.0 * 1e3)
 malate = Molecule("malate", 250.0 * 1e3)
