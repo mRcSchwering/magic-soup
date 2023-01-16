@@ -39,8 +39,8 @@ def test_diffuse():
     ]
     # fmt: on
 
-    m0 = ms.Molecule("m0", 10, diff_coef=0.0)
-    m1 = ms.Molecule("m1", 10, diff_coef=0.5 / 1e6)
+    m0 = ms.Molecule("m0", 10, diffusivity=0.0)
+    m1 = ms.Molecule("m1", 10, diffusivity=0.5)
 
     chemistry = ms.Chemistry(molecules=[m0, m1], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=5)
@@ -141,8 +141,8 @@ def test_cell_index_integrity_when_changing_cells():
     assert world.cell_map.sum().item() == n
 
     # there can be unviable genomes
-    # with with s=500 most genomes should be viable
-    genomes = [ms.random_genome(s=500) for _ in range(1000)]
+    # with with s=1000 almost all genomes should be viable
+    genomes = [ms.random_genome(s=1000) for _ in range(1000)]
     cell_idxs = world.add_random_cells(genomes=genomes)
     n = len(world.cells)
     assert n > 900

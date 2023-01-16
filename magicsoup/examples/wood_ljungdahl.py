@@ -24,7 +24,7 @@ methylenFH4 = Molecule("methylen-FH4", 300.0 * 1e3)
 formylFH4 = Molecule("formyl-FH4", 240.0 * 1e3)
 FH4 = Molecule("FH4", 200.0 * 1e3)
 formiat = Molecule("formiat", 20.0 * 1e3)
-co2 = Molecule("CO2", 10.0 * 1e3)
+co2 = Molecule("CO2", 10.0 * 1e3)  # 0.35 cm/s passive diffusion
 
 NiACS = Molecule("Ni-ACS", 200.0 * 1e3)
 methylNiACS = Molecule("methyl-Ni-ACS", 300.0 * 1e3)

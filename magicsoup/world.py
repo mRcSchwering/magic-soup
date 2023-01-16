@@ -3,7 +3,6 @@ import random
 from itertools import product
 import math
 import pickle
-import json
 from pathlib import Path
 import torch
 from magicsoup.containers import Cell, Protein, Chemistry
@@ -78,15 +77,18 @@ class World:
 
         mol_degrads: list[float] = []
         diffusion: list[torch.nn.Conv2d] = []
+        permeation: list[float] = []
         for mol in chemistry.molecules:
             mol_degrads.append(math.exp(-math.log(2) / mol.half_life))
-            diffusion.append(self._get_conv(mol_diff_rate=mol.diff_coef * 1e6))
+            diffusion.append(self._get_diffuse(mol_diff_rate=mol.diffusivity))
+            permeation.append(self._get_permeate(mol_perm_rate=mol.permeability))
 
         self.n_molecules = len(chemistry.molecules)
         self._int_mol_idxs = list(range(self.n_molecules))
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
         self._mol_degrads = mol_degrads
         self._diffusion = diffusion
+        self._permeation = permeation
 
         self._nghbrhd_map = {
             (x, y): torch.tensor(moore_nghbrhd(x, y, map_size))
@@ -342,11 +344,22 @@ class World:
 
     @torch.no_grad()
     def diffuse_molecules(self):
-        """Let molecules in world map diffuse by 1 time step"""
+        """Let molecules in world map and through membranes diffuse by 1 time step"""
         for mol_i, diffuse in enumerate(self._diffusion):
             before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
             after = diffuse(before)
             self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0)
+
+        if len(self.cells) > 0:
+            xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
+            X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
+            for mol_i, permeate in enumerate(self._permeation):
+                d_int = X[:, mol_i] * permeate
+                d_ext = X[:, mol_i + self.n_molecules] * permeate
+                X[:, mol_i] += d_ext - d_int
+                X[:, mol_i + self.n_molecules] += d_int - d_ext
+            self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
+            self.cell_molecules = X[:, self._int_mol_idxs]
 
     def degrade_molecules(self):
         """Degrade molecules in world map and cells by 1 time step"""
@@ -498,7 +511,20 @@ class World:
             " Should be one of: 'zeros', 'randn'."
         )
 
-    def _get_conv(self, mol_diff_rate: float) -> torch.nn.Conv2d:
+    def _get_permeate(self, mol_perm_rate: float) -> float:
+        if mol_perm_rate < 0.0:
+            mol_perm_rate = -mol_perm_rate
+
+        if mol_perm_rate > 1.0:
+            mol_perm_rate = 1.0
+
+        if mol_perm_rate == 0.0:
+            return 0.0
+
+        d = 1 / mol_perm_rate
+        return 1 / (d + 1)
+
+    def _get_diffuse(self, mol_diff_rate: float) -> torch.nn.Conv2d:
         if mol_diff_rate < 0.0:
             mol_diff_rate = -mol_diff_rate
 

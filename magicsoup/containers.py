@@ -54,28 +54,18 @@ class Molecule:
     diffuse only around Moore's neighborhood and `diff_coef` is essentially multiplied with 1e6 and then used
     as a factor to determine the kernel. This means values greater than 1e-6 don't increase diffusion. At that
     point all molecules are already equally spread out in Moore's neighborhood at each call.
-
-    There is another attribute `idx` on molecules worth mentioning. Initially it is `-1`. Once `World` is
-    instantiated with a chemistry object, all unique molecules get an unique index `idx`. This index can
-    be used to access molecule concentrations in `world.molecule_map` or `world.cell_molecules`.
-
-    ```
-        atp = Molecule("ATP", 10)
-        ...  # define other molecules and reactions
-        
-        chemistry = Chemistry(molecules=molecules, reactions=reactions)
-        world = World(chemistry=chemistry)  # now molecule indexes are set
-
-        world.molecule_map[atp.idx]  # current world map for ATP activites
-        world.cell_molecules[0, atp.idx]  # current ATP activity in cell 0
-    ```
-
-    You can use this to measure or change molecules in cells or generally anywhere on the map.
     """
 
     _instances: dict[str, "Molecule"] = {}
 
-    def __new__(cls, name: str, energy: float, half_life=100_000, diff_coef=1e-8):
+    def __new__(
+        cls,
+        name: str,
+        energy: float,
+        half_life=100_000,
+        diffusivity=1e-2,
+        permeability=0.0,
+    ):
         if name in cls._instances:
             if cls._instances[name].energy != energy:
                 raise ValueError(
@@ -87,10 +77,15 @@ class Molecule:
                     f"Trying to instantiate Molecule {name} with half_life {half_life}."
                     f" But {name} already exists with half_life {cls._instances[name].half_life}"
                 )
-            if cls._instances[name].diff_coef != diff_coef:
+            if cls._instances[name].diffusivity != diffusivity:
                 raise ValueError(
-                    f"Trying to instantiate Molecule {name} with diff_coef {diff_coef}."
-                    f" But {name} already exists with diff_coef {cls._instances[name].diff_coef}"
+                    f"Trying to instantiate Molecule {name} with diffusivity {diffusivity}."
+                    f" But {name} already exists with diffusivity {cls._instances[name].diffusivity}"
+                )
+            if cls._instances[name].permeability != permeability:
+                raise ValueError(
+                    f"Trying to instantiate Molecule {name} with permeability {permeability}."
+                    f" But {name} already exists with permeability {cls._instances[name].permeability}"
                 )
         else:
             name_ = name.lower()
@@ -108,12 +103,28 @@ class Molecule:
         # so that pickle can load instances
         return self.name, self.energy
 
-    def __init__(self, name: str, energy: float, half_life=100_000, diff_coef=1e-8):
+    def __init__(
+        self,
+        name: str,
+        energy: float,
+        half_life=100_000,
+        diffusivity=1e-2,
+        permeability=0.0,
+    ):
         self.name = name
         self.energy = energy
         self.half_life = half_life
-        self.diff_coef = diff_coef
+        self.diffusivity = diffusivity
+        self.permeability = permeability
         self._hash = hash(self.name)
+
+        # TODO:
+        #       permeability coefficient = diff coeff / membrane with
+        #       P_CO2 = 0.35 cm/s   D[cm2/s], P[cm/s]
+        #       D_CO2 in water = 0.0016 mm2/s = 16 um2/s
+        #       cell membrane thickness = 10nm
+        #       P_CO2 in membrane * 10nm = D_CO2 in membrane = 3500 um/s * 0.01 um = 35 um2/s
+        #       membrane area 100 um2
 
     def __hash__(self) -> int:
         return self._hash
@@ -126,12 +137,13 @@ class Molecule:
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(name=%r,energy=%rhalf_life=%r,diff_coef=%r)" % (
+        return "%s(name=%r,energy=%rhalf_life=%r,diffusivity=%r,permeability=%r)" % (
             clsname,
             self.name,
             self.energy,
             self.half_life,
-            self.diff_coef,
+            self.diffusivity,
+            self.permeability,
         )
 
     def __str__(self) -> str:
@@ -142,7 +154,7 @@ class Molecule:
             "name": self.name,
             "energy": self.energy,
             "half_life": self.half_life,
-            "diff_coef": self.diff_coef,
+            "diffusivity": self.diffusivity,
         }
 
 
