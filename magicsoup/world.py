@@ -413,9 +413,12 @@ class World:
         torch.save(self.cell_molecules, statedir / "cell_molecules.pt")
         torch.save(self.cell_map, statedir / "cell_map.pt")
         torch.save(self.molecule_map, statedir / "molecule_map.pt")
-        with open(statedir / "cells.txt", "w") as fh:
+        torch.save(self.cell_survival, statedir / "cell_survival.pt")
+        torch.save(self.cell_divisions, statedir / "cell_divisions.pt")
+
+        with open(statedir / "cells.fasta", "w") as fh:
             lines = [
-                f"{d.idx}({d.position[0]},{d.position[1]}): {d.genome}"
+                f">{d.idx} {d.label} ({d.position[0]},{d.position[1]})\n{d.genome}"
                 for d in self.cells
             ]
             fh.write("\n".join(lines))
@@ -428,20 +431,28 @@ class World:
         self.cell_map = cell_map.to(torch.bool).to(self.device)
         molecule_map: torch.Tensor = torch.load(statedir / "molecule_map.pt")
         self.molecule_map = molecule_map.to(self.dtype).to(self.device)
+        cell_survival: torch.Tensor = torch.load(statedir / "cell_survival.pt")
+        self.cell_survival = cell_survival.to(self.dtype).to(self.device)
+        cell_divisions: torch.Tensor = torch.load(statedir / "cell_divisions.pt")
+        self.cell_divisions = cell_divisions.to(self.dtype).to(self.device)
 
-        # TODO: cell survival not in state (also others?)
-
-        with open(statedir / "cells.txt", "r") as fh:
-            lines = [d for d in fh.read().split("\n") if len(d) > 0]
+        with open(statedir / "cells.fasta", "r") as fh:
+            text: str = fh.read()
+            entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
         genome_idx_pairs: list[tuple[str, int]] = []
         self.cells = []
-        for line in lines:
-            prefix, genome = line.split("): ")
-            idx, position = prefix.split("(")
-            x, y = position.split(",")
-            self.cells.append(Cell(genome="", proteome=[], position=(int(x), int(y))))
-            genome_idx_pairs.append((genome, int(idx)))
+        for entry in entries:
+            descr, seq = entry.split("\n")
+            names_part, pos_part = descr.split("(")
+            x, y = pos_part.split(")")[0].split(",")
+            names = names_part.split()
+            idx = int(names[0].strip())
+            pos = (int(x.strip()), int(y.strip()))
+            label = names[1].strip() if len(names) > 1 else ""
+            cell = Cell(idx=idx, label=label, genome=seq, proteome=[], position=pos)
+            self.cells.append(cell)
+            genome_idx_pairs.append((seq, idx))
 
         self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
