@@ -184,11 +184,11 @@ def test_molecule_amount_integrity_during_reactions():
 
     # X and Y can react back and forth but X + Y <-> Z
     # so if Z is counted as 2, n should stay equal
-    mx = ms.Molecule("x", 10 * 1e3)
-    my = ms.Molecule("y", 20 * 1e3)
-    mz = ms.Molecule("z", 30 * 1e3)
-    molecules = [mx, my, mz]
-    reactions = [([mx], [my]), ([mx, my], [mz])]
+    mi = ms.Molecule("i", 10 * 1e3)
+    mj = ms.Molecule("j", 20 * 1e3)
+    mk = ms.Molecule("k", 30 * 1e3)
+    molecules = [mi, mj, mk]
+    reactions = [([mi], [mj]), ([mi, mj], [mk])]
 
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry, map_size=128)
@@ -196,11 +196,11 @@ def test_molecule_amount_integrity_during_reactions():
     world.add_random_cells(genomes=genomes)
 
     def count(world: ms.World) -> float:
-        mxy = world.molecule_map[[0, 1]].sum().item()
-        mz = world.molecule_map[2].sum().item() * 2
-        cxy = world.cell_molecules[:, [0, 1]].sum().item()
-        cz = world.cell_molecules[:, 2].sum().item() * 2
-        return mxy + mz + cxy + cz
+        mij = world.molecule_map[[0, 1]].sum().item()
+        mk = world.molecule_map[2].sum().item() * 2
+        cij = world.cell_molecules[:, [0, 1]].sum().item()
+        ck = world.cell_molecules[:, 2].sum().item() * 2
+        return mij + mk + cij + ck
 
     n0 = count(world)
     for step_i in range(1000):

@@ -232,17 +232,22 @@ class World:
         if len(genome_idx_pairs) == 0:
             return
 
+        kill_idxs: list[int] = []
         prot_lens: list[int] = []
         set_params: list[tuple[int, int, Protein]] = []
         unset_params: list[tuple[int, int]] = []
         for genome, idx in genome_idx_pairs:
-            # TODO: recombination could have created cells without genome
-            #       or cells without viable genome
-            #       these should be removed before doing set_cell_params
+            if len(genome) == 0:
+                kill_idxs.append(idx)
+                continue
+
             cell = self.cells[idx]
             newprot = self.genetics.get_proteome(seq=genome)
-            oldprot = cell.proteome
+            if len(newprot) == 0:
+                kill_idxs.append(idx)
+                continue
 
+            oldprot = cell.proteome
             n_new = len(newprot)
             n_old = len(oldprot)
             n = min(n_old, n_new)
@@ -259,6 +264,7 @@ class World:
         self.kinetics.increase_max_proteins(max_n=max(prot_lens))
         self.kinetics.set_cell_params(cell_prots=set_params)
         self.kinetics.unset_cell_params(cell_prots=unset_params)
+        self.kill_cells(cell_idxs=kill_idxs)
 
     def kill_cells(self, cell_idxs: list[int]):
         """
