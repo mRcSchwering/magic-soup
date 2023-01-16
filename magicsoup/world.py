@@ -110,26 +110,36 @@ class World:
         )
 
     def get_cell(
-        self, by_idx: Optional[int] = None, by_label: Optional[str] = None
+        self,
+        by_idx: Optional[int] = None,
+        by_label: Optional[str] = None,
+        by_position: Optional[tuple[int, int]] = None,
     ) -> Cell:
         """
         Get a cell with information about its current environment
         
         - `by_idx` get cell by cell index (`cell.idx`)
         - `by_label` get cell by cell label (`cell.label`)
+        - `by_position` get cell by position (x, y)
 
         When using `get_cell` instead of accessing `cells` directly the returned cell
         object contains more information. E.g. extra- and intracellular molecule
         abundances are added.
         """
-        # TODO: by position
         if by_idx is not None:
             idx = by_idx
         if by_label is not None:
             cell_labels = [d.label for d in self.cells]
-            idx = cell_labels.index(by_label)
-            if idx < 0:
-                raise ValueError(f"Cell {by_label} not found")
+            try:
+                idx = cell_labels.index(by_label)
+            except ValueError as err:
+                raise ValueError(f"Cell {by_label} not found") from err
+        if by_position is not None:
+            cell_positions = [d.position for d in self.cells]
+            try:
+                idx = cell_positions.index(by_position)
+            except ValueError as err:
+                raise ValueError(f"Cell at {by_position} not found") from err
 
         cell = self.cells[idx]
         cell.int_molecules = self.cell_molecules[idx, :]
@@ -149,28 +159,45 @@ class World:
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
         """
+        genomes = [d for d in genomes if len(d) > 0]
         if len(genomes) == 0:
             return []
 
-        new_positions = self._place_new_cells_in_random_positions(n_cells=len(genomes))
-        n_new_cells = len(new_positions)
-
-        if n_new_cells == 0:
+        xs, ys = self._find_free_random_positions(n_cells=len(genomes))
+        if len(xs) == 0:
             return []
 
         prot_lens = []
         new_idxs = []
         new_params: list[tuple[int, int, Protein]] = []
-        run_idx = len(self.cells)
-        for genome, pos in zip(genomes, new_positions):
+        next_idx = len(self.cells)
+        n_new_cells = 0
+        new_xs = []
+        new_ys = []
+        for genome in genomes:
             proteome = self.genetics.get_proteome(seq=genome)
-            prot_lens.append(len(proteome))
-            new_idxs.append(run_idx)
-            cell = Cell(idx=run_idx, genome=genome, proteome=proteome, position=pos)
-            self.cells.append(cell)
+            n_proteins = len(proteome)
+            if n_proteins == 0:
+                continue
+
+            prot_lens.append(n_proteins)
+            new_idxs.append(next_idx)
             for prot_i, prot in enumerate(proteome):
-                new_params.append((run_idx, prot_i, prot))
-            run_idx += 1
+                new_params.append((next_idx, prot_i, prot))
+
+            x = xs[n_new_cells]
+            y = ys[n_new_cells]
+            new_xs.append(x)
+            new_ys.append(y)
+
+            cell = Cell(idx=next_idx, genome=genome, proteome=proteome, position=(x, y))
+            self.cells.append(cell)
+
+            next_idx += 1
+            n_new_cells += 1
+
+        if n_new_cells == 0:
+            return []
 
         self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
         self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
@@ -179,10 +206,12 @@ class World:
         self.kinetics.increase_max_proteins(max_n=max(prot_lens))
         self.kinetics.set_cell_params(cell_prots=new_params)
 
+        # occupy positions
+        self.cell_map[new_xs, new_ys] = True
+
         # cell is picking up half the molecules of the pxl it is born on
-        xs, ys = list(map(list, zip(*new_positions)))
-        self.cell_molecules[new_idxs, :] = self.molecule_map[:, xs, ys].T * 0.5
-        self.molecule_map[:, xs, ys] *= 0.5
+        self.cell_molecules[new_idxs, :] = self.molecule_map[:, new_xs, new_ys].T * 0.5
+        self.molecule_map[:, new_xs, new_ys] *= 0.5
 
         return new_idxs
 
@@ -445,9 +474,7 @@ class World:
 
         return successful_parent_idxs, child_idxs
 
-    def _place_new_cells_in_random_positions(
-        self, n_cells: int
-    ) -> list[tuple[int, int]]:
+    def _find_free_random_positions(self, n_cells: int) -> tuple[list[int], list[int]]:
         # available spots on map
         pxls = torch.argwhere(~self.cell_map)
         if n_cells > len(pxls):
@@ -457,8 +484,7 @@ class World:
         idxs = random.sample(range(len(pxls)), k=n_cells)
         chosen = pxls[idxs]
         xs, ys = chosen.T.tolist()
-        self.cell_map[xs, ys] = True
-        return [(int(d[0]), int(d[1])) for d in chosen.tolist()]
+        return xs, ys
 
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         # TODO: makes more sense to just have zeros and set molecule manually

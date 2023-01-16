@@ -398,8 +398,9 @@ class Genetics:
         )
 
         domain_facts: dict[_DomainFact, list[str]] = {}
-        domain_facts[catal_dom_fact] = sets[:n_catal_doms]
-        del sets[:n_catal_doms]
+        if len(self.chemistry.reactions) > 0:
+            domain_facts[catal_dom_fact] = sets[:n_catal_doms]
+            del sets[:n_catal_doms]
         domain_facts[transp_dom_fact] = sets[:n_transp_doms]
         del sets[:n_transp_doms]
         domain_facts[allo_dom_fact] = sets[:n_allo_doms]

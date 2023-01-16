@@ -85,7 +85,8 @@ def test_add_cells():
     world = ms.World(chemistry=chemistry, map_size=5)
     old_molmap = world.molecule_map.clone()
 
-    world.add_random_cells(genomes=["A" * 50] * 3)
+    genomes = [ms.random_genome(s=500) for _ in range(3)]
+    world.add_random_cells(genomes=genomes)
 
     xs = []
     ys = []
@@ -102,7 +103,8 @@ def test_replicate_cells():
     chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=5)
 
-    cell_idxs = world.add_random_cells(genomes=["A" * 50] * 3)
+    genomes = [ms.random_genome(s=500) for _ in range(3)]
+    cell_idxs = world.add_random_cells(genomes=genomes)
     parent_child_idxs = world.replicate_cells(parent_idxs=cell_idxs)
 
     parents, children = list(map(list, zip(*parent_child_idxs)))
@@ -116,7 +118,8 @@ def test_molecule_amount_integrity_when_changing_cells():
     world = ms.World(chemistry=chemistry, map_size=128)
     exp = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
 
-    cell_idxs = world.add_random_cells(genomes=["A" * 50] * 1000)
+    genomes = [ms.random_genome(s=500) for _ in range(1000)]
+    cell_idxs = world.add_random_cells(genomes=genomes)
     res0 = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
     assert torch.all(torch.abs(res0 - exp) < tolerance)
 
@@ -137,10 +140,13 @@ def test_cell_index_integrity_when_changing_cells():
     assert n == 0
     assert world.cell_map.sum().item() == n
 
-    cell_idxs = world.add_random_cells(genomes=["A" * 50] * 1000)
+    # there can be unviable genomes
+    # with with s=500 most genomes should be viable
+    genomes = [ms.random_genome(s=500) for _ in range(1000)]
+    cell_idxs = world.add_random_cells(genomes=genomes)
     n = len(world.cells)
-    assert len(cell_idxs) == 1000
-    assert len(world.cells) == 1000
+    assert n > 900
+    assert len(cell_idxs) == n
     assert set(cell_idxs) == set(d.idx for d in world.cells)
     assert set(d.idx for d in world.cells) == set(range(len(cell_idxs)))
     assert world.cell_map.sum().item() == n
