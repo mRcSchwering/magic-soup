@@ -6,33 +6,27 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import magicsoup as ms
 from magicsoup.constants import NOW
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY as wl_chem, HSCoA, acetylCoA
+from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 THIS_DIR = Path(__file__).parent
 
-X = ms.Molecule("X", 50.0 * 1e3)
-CHEMISTRY = ms.Chemistry(
-    molecules=wl_chem.molecules + [X],
-    reactions=wl_chem.reactions + [([acetylCoA], [HSCoA, X])],
-)
 
-
-def replicate_sample(t: torch.Tensor, k: float) -> list[int]:
-    p = t ** 3 / (t ** 3 + k ** 3)
+def replicate_sample(t: torch.Tensor, k=15.0) -> list[int]:
+    p = t ** 5 / (t ** 5 + k ** 5)
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
 
-def kill_sample(t: torch.Tensor, k: float) -> list[int]:
-    p = k / (t + k)
+def kill_sample(t: torch.Tensor, k=0.5) -> list[int]:
+    p = k ** 4 / (t ** 4 + k ** 4)
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
 
-def init_map(world: ms.World, x_idx: int, co2_idx: int):
-    init_molecules = torch.randn(world.molecule_map.size()) + 10.0
-    world.molecule_map = init_molecules.clamp(min=1.0)
-    world.molecule_map[x_idx] = 1.0
+def init_map(world: ms.World, co2_idx: int, add_mol_idxs: list[int]):
+    world.molecule_map += 1.5
+    world.molecule_map = world.molecule_map.clamp(min=0.5)
+    world.molecule_map[add_mol_idxs] += 10.0
 
     n = int(world.map_size / 2)
     map_ones = torch.ones((world.map_size, world.map_size))
@@ -52,9 +46,9 @@ def add_energy(
     for high, low in [(atp_idx, adp_idx), (nadph_idx, nadp_idx)]:
         high_avg = world.molecule_map[high].mean().item()
         low_avg = world.molecule_map[low].mean().item()
-        if high_avg / low_avg < 5.0:
-            world.molecule_map[high] += world.molecule_map[low] * 0.9
-            world.molecule_map[low] *= 0.1
+        if high_avg / (low_avg + 1e-4) < 5.0:
+            world.molecule_map[high] += world.molecule_map[low] * 0.99
+            world.molecule_map[low] *= 0.01
 
 
 def add_random_cells(world: ms.World, s: int, n: int):
@@ -64,17 +58,19 @@ def add_random_cells(world: ms.World, s: int, n: int):
         world.add_random_cells(genomes=seqs)
 
 
-def kill_cells(world: ms.World, aca_idx: int):
-    idxs = kill_sample(t=world.cell_molecules[:, aca_idx], k=0.01)
+def kill_cells(world: ms.World, nadph_idx: int, atp_idx: int):
+    low_atp = kill_sample(t=world.cell_molecules[:, atp_idx])
+    low_nadph = kill_sample(t=world.cell_molecules[:, nadph_idx])
+    idxs = list(set(low_atp + low_nadph))
     world.kill_cells(cell_idxs=idxs)
 
 
-def replicate_cells(world: ms.World, x_idx: int):
-    idxs1 = replicate_sample(t=world.cell_molecules[:, x_idx], k=20.0)
+def replicate_cells(world: ms.World, aca_idx: int):
+    idxs1 = replicate_sample(t=world.cell_molecules[:, aca_idx])
 
     # successful cells will share their n(X), which will then be reduced by 1.0
     # so a cell must have n(X)>=2.0 to replicate
-    idxs2 = torch.argwhere(world.cell_molecules[:, x_idx] > 2.5).flatten().tolist()
+    idxs2 = torch.argwhere(world.cell_molecules[:, aca_idx] > 2.2).flatten().tolist()
     idxs = list(set(idxs1) & set(idxs2))
 
     replicated = world.replicate_cells(parent_idxs=idxs)
@@ -83,7 +79,7 @@ def replicate_cells(world: ms.World, x_idx: int):
 
     # these cells have successfully divided and shared n(X)
     parents, children = list(map(list, zip(*replicated)))
-    world.cell_molecules[parents + children, x_idx] -= 1.0
+    world.cell_molecules[parents + children, aca_idx] -= 1.0
 
     # add random recombinations
     genomes = [(world.cells[p].genome, world.cells[c].genome) for p, c in replicated]
@@ -107,36 +103,35 @@ def write_scalars(
     writer: SummaryWriter,
     step: int,
     dtime: float,
-    x_idx: int,
-    aca_idx: int,
-    co2_idx: int,
+    mol_name_idx_list: list[tuple[str, int]],
 ):
+    if step % 10 != 0:
+        return
+
     n_cells = len(world.cells)
-    if n_cells > 0:
+    molecules = {f"Molecules/{s}": i for s, i in mol_name_idx_list}
+
+    if n_cells == 0:
+        for scalar, idx in molecules.items():
+            writer.add_scalar(scalar, world.molecule_map[idx].mean().item(), step)
+    else:
         writer.add_scalar("Cells/total[n]", n_cells, step)
         cell_surv = world.cell_survival.float()
         writer.add_scalar("Cells/Survival[avg]", cell_surv.mean(), step)
-        writer.add_scalar("Cells/Survival[max]", cell_surv.max(), step)
         cell_divis = world.cell_divisions.float()
         writer.add_scalar("Cells/Divisions[avg]", cell_divis.mean(), step)
-        writer.add_scalar("Cells/Divisions[max]", cell_divis.max(), step)
 
-    mol_scalars = {
-        "MolMap/X[avg]": world.molecule_map[x_idx].mean(),
-        "MolMap/Acetyl-CoA[avg]": world.molecule_map[aca_idx].mean(),
-        "MolMap/CO2[avg]": world.molecule_map[co2_idx].mean(),
-        "CellMols/X[avg]": world.cell_molecules[:, x_idx].mean(),
-        "CellMols/Acetyl-CoA[avg]": world.cell_molecules[:, aca_idx].mean(),
-        "CellMols/CO2[avg]": world.cell_molecules[:, co2_idx].mean(),
-    }
-    for tag, value in mol_scalars.items():
-        writer.add_scalar(tag, value, step)
+        n = world.map_size ** 2 + n_cells
+        for scalar, idx in molecules.items():
+            mm = world.molecule_map[idx].sum().item()
+            cm = world.cell_molecules[:, idx].sum().item()
+            writer.add_scalar(scalar, (mm + cm) / n, step)
 
     writer.add_scalar("Other/TimePerStep[s]", dtime, step)
 
 
 def write_images(world: ms.World, writer: SummaryWriter, step: int):
-    if step % 10 == 0:
+    if step % 100 == 0:
         writer.add_image("Maps/Cells", world.cell_map, step, dataformats="WH")
 
 
@@ -158,15 +153,24 @@ def main(args: Namespace):
     NADPH_IDX = mol_2_idx["NADPH"]
     NADP_IDX = mol_2_idx["NADP"]
     ACA_IDX = mol_2_idx["acetyl-CoA"]
-    X_IDX = mol_2_idx["X"]
+    HCA_IDX = mol_2_idx["HS-CoA"]
+    ACS_IDX = mol_2_idx["Ni-ACS"]
+    FH4_IDX = mol_2_idx["FH4"]
+
+    observe_molecules = ["CO2", "ATP", "NADPH", "FH4", "HS-CoA", "Ni-ACS"]
+    mol_name_idx_list = [(d, mol_2_idx[d]) for d in observe_molecules]
 
     writer = SummaryWriter(log_dir=THIS_DIR / "runs" / NOW)
     with open(THIS_DIR / "runs" / NOW / "hparams.json", "w") as fh:
         json.dump(vars(args), fh)
 
-    world = ms.World(chemistry=CHEMISTRY, map_size=args.map_size)
+    world = ms.World(chemistry=CHEMISTRY, map_size=args.map_size, mol_map_init="zeros")
     world.save(rundir=THIS_DIR / "runs" / NOW)
-    init_map(world=world, co2_idx=CO2_IDX, x_idx=X_IDX)
+    init_map(
+        world=world,
+        co2_idx=CO2_IDX,
+        add_mol_idxs=[ATP_IDX, NADPH_IDX, FH4_IDX, HCA_IDX, ACS_IDX],
+    )
 
     for step_i in range(args.n_steps):
         t0 = time.time()
@@ -183,8 +187,8 @@ def main(args: Namespace):
         add_random_cells(world=world, s=args.genome_size, n=args.n_cells)
         world.enzymatic_activity()
 
-        kill_cells(world=world, aca_idx=ACA_IDX)
-        replicate_cells(world=world, x_idx=X_IDX)
+        kill_cells(world=world, nadph_idx=NADPH_IDX, atp_idx=ATP_IDX)
+        replicate_cells(world=world, aca_idx=ACA_IDX)
         random_mutations(world=world)
 
         world.degrade_molecules()
@@ -197,9 +201,7 @@ def main(args: Namespace):
             writer=writer,
             step=step_i,
             dtime=time.time() - t0,
-            x_idx=X_IDX,
-            co2_idx=CO2_IDX,
-            aca_idx=ACA_IDX,
+            mol_name_idx_list=mol_name_idx_list,
         )
 
         write_images(world=world, writer=writer, step=step_i)
@@ -211,7 +213,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--n_cells", default=1_000, type=int)
     parser.add_argument("--n_steps", default=100_000, type=int)
-    parser.add_argument("--genome_size", default=300, type=int)
+    parser.add_argument("--genome_size", default=500, type=int)
     parser.add_argument("--map_size", default=128, type=int)
     args = parser.parse_args()
     main(args)

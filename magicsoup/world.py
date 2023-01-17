@@ -139,7 +139,7 @@ class World:
 
         cell = self.cells[idx]
         cell.int_molecules = self.cell_molecules[idx, :]
-        cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]].T
+        cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]]
         cell.n_survived_steps = self.cell_survival[idx].item()
         cell.n_replications = self.cell_divisions[idx].item()
         return cell

@@ -101,7 +101,13 @@ class Molecule:
 
     def __getnewargs__(self):
         # so that pickle can load instances
-        return self.name, self.energy
+        return (
+            self.name,
+            self.energy,
+            self.half_life,
+            self.diffusivity,
+            self.permeability,
+        )
 
     def __init__(
         self,
@@ -129,7 +135,7 @@ class Molecule:
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(name=%r,energy=%rhalf_life=%r,diffusivity=%r,permeability=%r)" % (
+        return "%s(name=%r,energy=%r,half_life=%r,diffusivity=%r,permeability=%r)" % (
             clsname,
             self.name,
             self.energy,
