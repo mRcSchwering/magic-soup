@@ -224,6 +224,8 @@ class World:
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not replicate.
         """
+        # TODO: maybe give child the same survived steps and replicated values?
+        #       then average survived steps and replications are more meaningful
         if len(parent_idxs) == 0:
             return []
 
@@ -340,18 +342,10 @@ class World:
     @torch.no_grad()
     def diffuse_molecules(self):
         """Let molecules in world map and through membranes diffuse by 1 time step"""
-        # TODO: switching back and forth between double and float can't be very
-        #       efficient. I need double precision for the convollution step, otherwise
-        #       molecules will systematically be added or removed depending on their half life
-        #       (conv step doesnt add up to exactly 1.0)
-        #       weirdly though, if I make all molecule_map (and cell_molecules) permanently double
-        #       there is also a systematic adding/removing of molecule (with other rates though)
-        #       I guess the reason diffusion below works correctly is not double precision alone
-        #       but the fact that the doubles get truncated back to float after the convolution
         for mol_i, diffuse in enumerate(self._diffusion):
             before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
-            after = diffuse(before.double())
-            self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0).float()
+            after = diffuse(before)
+            self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0)
 
         if len(self.cells) == 0:
             return
@@ -564,7 +558,7 @@ class World:
             [a, a, a],
             [a, b, a],
             [a, a, a],
-        ]]], dtype=torch.double)
+        ]]])
         # fmt: on
 
         conv = torch.nn.Conv2d(
@@ -574,7 +568,6 @@ class World:
             padding=1,
             padding_mode="circular",
             bias=False,
-            dtype=torch.double,
             device=self.device,
         )
         conv.weight = torch.nn.Parameter(kernel, requires_grad=False)

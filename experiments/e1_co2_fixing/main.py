@@ -1,3 +1,9 @@
+"""
+Simulation to teach cells to fix CO2.
+
+  python -m experiments.e1_co2_fixing.main --help
+
+"""
 from argparse import ArgumentParser, Namespace
 import time
 import json
@@ -23,10 +29,8 @@ def kill_sample(t: torch.Tensor, k=0.5) -> list[int]:
     return idxs.flatten().tolist()
 
 
-def init_map(world: ms.World, co2_idx: int, add_mol_idxs: list[int]):
-    world.molecule_map += 1.5
-    world.molecule_map = world.molecule_map.clamp(min=0.5)
-    world.molecule_map[add_mol_idxs] += 10.0
+def init_map(world: ms.World, init_n: float, co2_idx: int):
+    world.molecule_map += init_n
 
     n = int(world.map_size / 2)
     map_ones = torch.ones((world.map_size, world.map_size))
@@ -65,11 +69,11 @@ def kill_cells(world: ms.World, nadph_idx: int, atp_idx: int):
     world.kill_cells(cell_idxs=idxs)
 
 
-def replicate_cells(world: ms.World, aca_idx: int):
+def replicate_cells(world: ms.World, aca_idx: int, hca_idx: int):
     idxs1 = replicate_sample(t=world.cell_molecules[:, aca_idx])
 
-    # successful cells will share their n(X), which will then be reduced by 1.0
-    # so a cell must have n(X)>=2.0 to replicate
+    # successful cells will share their n molecules, which will then be reduced by 1.0
+    # so a cell must have n >= 2.0 to replicate
     idxs2 = torch.argwhere(world.cell_molecules[:, aca_idx] > 2.2).flatten().tolist()
     idxs = list(set(idxs1) & set(idxs2))
 
@@ -77,9 +81,10 @@ def replicate_cells(world: ms.World, aca_idx: int):
     if len(replicated) == 0:
         return
 
-    # these cells have successfully divided and shared n(X)
+    # these cells have successfully divided and shared their molecules
     parents, children = list(map(list, zip(*replicated)))
     world.cell_molecules[parents + children, aca_idx] -= 1.0
+    world.cell_molecules[parents + children, hca_idx] += 1.0
 
     # add random recombinations
     genomes = [(world.cells[p].genome, world.cells[c].genome) for p, c in replicated]
@@ -98,16 +103,20 @@ def random_mutations(world: ms.World):
     world.update_cells(genome_idx_pairs=mutated)
 
 
+def split_cells(world: ms.World, ratio: float):
+    n_cells = len(world.cells)
+    idxs = torch.randint(n_cells, (int(n_cells * ratio),)).tolist()
+    world.kill_cells(cell_idxs=idxs)
+
+
 def write_scalars(
     world: ms.World,
     writer: SummaryWriter,
     step: int,
     dtime: float,
+    n_splits: int,
     mol_name_idx_list: list[tuple[str, int]],
 ):
-    if step % 10 != 0:
-        return
-
     n_cells = len(world.cells)
     molecules = {f"Molecules/{s}": i for s, i in mol_name_idx_list}
 
@@ -121,31 +130,27 @@ def write_scalars(
         cell_divis = world.cell_divisions.float()
         writer.add_scalar("Cells/Divisions[avg]", cell_divis.mean(), step)
 
-        n = world.map_size ** 2 + n_cells
+        n = world.map_size ** 2
         for scalar, idx in molecules.items():
             mm = world.molecule_map[idx].sum().item()
             cm = world.cell_molecules[:, idx].sum().item()
             writer.add_scalar(scalar, (mm + cm) / n, step)
 
     writer.add_scalar("Other/TimePerStep[s]", dtime, step)
+    writer.add_scalar("Other/NSplits[s]", n_splits, step)
 
 
 def write_images(world: ms.World, writer: SummaryWriter, step: int):
-    if step % 100 == 0:
-        writer.add_image("Maps/Cells", world.cell_map, step, dataformats="WH")
+    writer.add_image("Maps/Cells", world.cell_map, step, dataformats="WH")
 
 
-def save_state(world: ms.World, step: int, n: int):
-    if len(world.cells) >= n and step % 100 == 0:
-        print(f"Finished step {step:,}")
-        world.save_state(statedir=THIS_DIR / "runs" / NOW / f"step={step}")
-        return
-    if step % 1000 == 0:
-        print(f"Finished step {step:,}")
+def save_state(world: ms.World, step: int, thresh: int):
+    print(f"Finished step {step:,}")
+    if len(world.cells) >= thresh:
         world.save_state(statedir=THIS_DIR / "runs" / NOW / f"step={step}")
 
 
-def main(args: Namespace):
+def main(args: Namespace, writer: SummaryWriter):
     mol_2_idx = {d.name: i for i, d in enumerate(CHEMISTRY.molecules)}
     CO2_IDX = mol_2_idx["CO2"]
     ATP_IDX = mol_2_idx["ATP"]
@@ -154,27 +159,21 @@ def main(args: Namespace):
     NADP_IDX = mol_2_idx["NADP"]
     ACA_IDX = mol_2_idx["acetyl-CoA"]
     HCA_IDX = mol_2_idx["HS-CoA"]
-    ACS_IDX = mol_2_idx["Ni-ACS"]
-    FH4_IDX = mol_2_idx["FH4"]
 
     observe_molecules = ["CO2", "ATP", "NADPH", "FH4", "HS-CoA", "Ni-ACS"]
     mol_name_idx_list = [(d, mol_2_idx[d]) for d in observe_molecules]
 
-    writer = SummaryWriter(log_dir=THIS_DIR / "runs" / NOW)
-    with open(THIS_DIR / "runs" / NOW / "hparams.json", "w") as fh:
-        json.dump(vars(args), fh)
-
     world = ms.World(chemistry=CHEMISTRY, map_size=args.map_size, mol_map_init="zeros")
     world.save(rundir=THIS_DIR / "runs" / NOW)
-    init_map(
-        world=world,
-        co2_idx=CO2_IDX,
-        add_mol_idxs=[ATP_IDX, NADPH_IDX, FH4_IDX, HCA_IDX, ACS_IDX],
-    )
+    split_thresh = int(world.map_size ** 2 * args.split_at_p)
 
+    init_map(world=world, init_n=10.0, co2_idx=CO2_IDX)
+
+    n_splits = 0
     for step_i in range(args.n_steps):
         t0 = time.time()
 
+        add_random_cells(world=world, s=args.genome_size, n=args.n_cells)
         add_co2(world=world, co2_idx=CO2_IDX)
         add_energy(
             world=world,
@@ -184,27 +183,35 @@ def main(args: Namespace):
             nadp_idx=NADP_IDX,
         )
 
-        add_random_cells(world=world, s=args.genome_size, n=args.n_cells)
         world.enzymatic_activity()
 
         kill_cells(world=world, nadph_idx=NADPH_IDX, atp_idx=ATP_IDX)
-        replicate_cells(world=world, aca_idx=ACA_IDX)
+        replicate_cells(world=world, aca_idx=ACA_IDX, hca_idx=HCA_IDX)
         random_mutations(world=world)
 
         world.degrade_molecules()
         world.diffuse_molecules()
         world.increment_cell_survival()
-        save_state(world=world, step=step_i, n=2 * args.n_cells)
 
-        write_scalars(
-            world=world,
-            writer=writer,
-            step=step_i,
-            dtime=time.time() - t0,
-            mol_name_idx_list=mol_name_idx_list,
-        )
+        if step_i % 100 == 0:
+            save_state(world=world, step=step_i, thresh=2 * args.n_cells)
 
-        write_images(world=world, writer=writer, step=step_i)
+        if len(world.cells) > split_thresh:
+            split_cells(world=world, ratio=args.split_ratio)
+            n_splits += 1
+
+        if step_i % 10 == 0:
+            write_scalars(
+                world=world,
+                writer=writer,
+                step=step_i,
+                dtime=time.time() - t0,
+                n_splits=n_splits,
+                mol_name_idx_list=mol_name_idx_list,
+            )
+
+            if step_i % 100 == 0:
+                write_images(world=world, writer=writer, step=step_i)
 
     writer.close()
 
@@ -215,6 +222,13 @@ if __name__ == "__main__":
     parser.add_argument("--n_steps", default=100_000, type=int)
     parser.add_argument("--genome_size", default=500, type=int)
     parser.add_argument("--map_size", default=128, type=int)
-    args = parser.parse_args()
-    main(args)
+    parser.add_argument("--split_at_p", default=0.3, type=float)
+    parser.add_argument("--split_ratio", default=0.2, type=float)
+    parsed_args = parser.parse_args()
 
+    summary_writer = SummaryWriter(log_dir=THIS_DIR / "runs" / NOW)
+    with open(THIS_DIR / "runs" / NOW / "hparams.json", "w") as fh:
+        json.dump(vars(parsed_args), fh)
+
+    main(args=parsed_args, writer=summary_writer)
+    print("finished")

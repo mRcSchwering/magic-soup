@@ -34,7 +34,7 @@ Cells which divide can undergo a random recombination of the ancestor and descen
 
 ```
 # short test run:
-python -m experiments.e1_co2_fixing.main --n_steps=10
+python -m experiments.e1_co2_fixing.main --n_steps=20
 ...
 # watch progress on tensorboard
 tensorboard --logdir=./experiments/e1_co2_fixing/runs
