@@ -33,6 +33,20 @@ class _DomainFact(abc.ABC):
 
 
 class CatalyticDomain(Domain):
+    """
+    Container holding the specification for a catalytic domain.
+    Usually, you don't need to manually instantiate domains.
+    During the simulation they are automatically instantiated through factories.
+
+    - `reaction` Tuple of substrate and product molecule species that describe the
+      reaction catalyzed by this domain. For stoichiometric coefficients > 1, list
+      the molecule species multiple times.
+    - `affinity` Michaelis Menten constant of the reaction (in mol).
+    - `velocity` Maximum velocity of the reaction (in mol per time step).
+    - `is_bkwd` Flag indicating whether in which orientation this reaction will be
+      coupled with other domains.
+    """
+
     def __init__(
         self,
         reaction: tuple[list[Molecule], list[Molecule]],
@@ -64,14 +78,35 @@ class CatalyticFact(_DomainFact):
     """
     Factory for generating catalytic domains from nucleotide sequences.
 
-    - `reaction_map` Map nucleotide sequences to reactions. Reactions are defined
-      by a tuple of `(substrates, products)`.
-    - `affinity_map` Map nucleotide sequences to affinity values (Km in MM. kinetic)
-    - `velocity_map` Map nucleotide sequences to maximum velocity values (Vmax in MM. kinetic)
+    - `reactions` All reactions that can be catalyzed by domains. Each reaction is a
+      tuple of substrate and product molecule species. For stoichiometric coefficients > 1, list
+      the molecule species multiple times.
+    - `km_range` The range from which to sample Michaelis Menten constants for this reaction (in mol).
+      The sampling will happen in the log transformed intervall, so all values must be > 0.
+    - `vmax_range` The range from which to sample maximum velocities for this reaction (in mol per time step).
+      The sampling will happen in the log transformed intervall, so all values must be > 0.
+    - `n_reaction_nts` The number of nucleotides that should encode the reaction.
+    - `n_affinity_nts` The number of nucleotides that should encode the Michaelis Menten constant.
+    - `n_velocity_nts` The number of nucleotides that should encode the maximum Velocity.
+    - `n_orientation_nts` The number of nucleotides that should encode the orientation of the reaction.
 
-    Depending on molecule concentrations and energies each reaction can take place
-    in both directions (substrates -> products or products -> substrates). Thus, it
-    is not necessary to additionally define the reverse reaction.
+    This factory randomly assigns nucleotide sequences to reactions, Michaelis Menten constants, maximum
+    velocities, and domain orientations on initialization. When calling the instantiated factory with a
+    nucleotide sequence, it will return the encoded domain. How many nucleotides encode which part of the
+    domain is defined by the `n_*_nts` arguments. The overall length of this domain type in nucleotides
+    is the sum of all these. These domain factories are instantiated when initializing `Genetics`, which
+    also happens when initializing `World`. They are used during translation to map nucleotide sequences
+    to domains.
+
+    ```
+        DomainFact = CatalyticFact(reactions=[([A], [B])])
+        DomainFact("ATCGATATATTTGCAAATTGA")
+    ```
+
+    Any reaction can happen in both directions, so it is not necessary to define the reverse reaction again.
+    The orientation of a reaction only matters in combination with other domains in the way how a protein
+    energetically couples multiple actions. This orientation is defined by an attribute `is_bkwd` on the domain.
+    That attribute will be sampled during initialization of this factory and there is a 1:1 chance for any orientation.
     """
 
     def __init__(
@@ -126,6 +161,19 @@ class CatalyticFact(_DomainFact):
 
 
 class TransporterDomain(Domain):
+    """
+    Container holding the specification for a transporter domain.
+    Usually, you don't need to manually instantiate domains.
+    During the simulation they are automatically instantiated through factories.
+
+    - `molecule` The molecule species which can be transported into or out of the cell
+      by this domain.
+    - `affinity` Michaelis Menten constant of the transport (in mol).
+    - `velocity` Maximum velocity of the transport (in mol per time step).
+    - `is_bkwd` Flag indicating whether in which orientation this transporter will be
+      coupled with other domains.
+    """
+
     def __init__(
         self, molecule: Molecule, affinity: float, velocity: float, is_bkwd: bool
     ):
@@ -144,17 +192,35 @@ class TransporterDomain(Domain):
 
 class TransporterFact(_DomainFact):
     """
-    Factory for generating transporter domains from nucleotide sequences. Transporters
-    essentially convert a type of molecule from their intracellular version to their
-    extracellular version and/or vice versa.
+    Factory for generating transporter domains from nucleotide sequences.
 
-    - `molecule_map` Map nucleotide sequences to transported molecules.
-    - `affinity_map` Map nucleotide sequences to affinity values (Km in MM. kinetic)
-    - `velocity_map` Map nucleotide sequences to maximum velocity values (Vmax in MM. kinetic)
+    - `molecules` All molecule species that can be transported into or out of the cell.
+    - `km_range` The range from which to sample Michaelis Menten constants for this transport (in mol).
+      The sampling will happen in the log transformed intervall, so all values must be > 0.
+    - `vmax_range` The range from which to sample maximum velocities for this transport (in mol per time step).
+      The sampling will happen in the log transformed intervall, so all values must be > 0.
+    - `n_molecule_nts` The number of nucleotides that should encode the molecule species.
+    - `n_affinity_nts` The number of nucleotides that should encode the Michaelis Menten constant.
+    - `n_velocity_nts` The number of nucleotides that should encode the maximum Velocity.
+    - `n_orientation_nts` The number of nucleotides that should encode the orientation of the transport.
 
-    Depending on molecule concentrations the transporter can work in both directions.
-    Thus it is not necessary to define both the intracellular and extracellular version
-    for each type of molecule.
+    This factory randomly assigns nucleotide sequences to molecule species, Michaelis Menten constants, maximum
+    velocities, and domain orientations on initialization. When calling the instantiated factory with a
+    nucleotide sequence, it will return the encoded domain. How many nucleotides encode which part of the
+    domain is defined by the `n_*_nts` arguments. The overall length of this domain type in nucleotides
+    is the sum of all these. These domain factories are instantiated when initializing `Genetics`, which
+    also happens when initializing `World`. They are used during translation to map nucleotide sequences
+    to domains.
+
+    ```
+        DomainFact = TransporterFact(molecules=[A])
+        DomainFact("ATCGATATATTTGCAAATTGA")
+    ```
+
+    Any transporter works in both directions.
+    The orientation only matters in combination with other domains in the way how a protein energetically
+    couples multiple actions. This orientation is defined by an attribute `is_bkwd` on the domain.
+    That attribute will be sampled during initialization of this factory and there is a 1:1 chance for any orientation.
     """
 
     def __init__(
@@ -209,6 +275,22 @@ class TransporterFact(_DomainFact):
 
 
 class RegulatoryDomain(Domain):
+    """
+    Container holding the specification for a regulatory domain.
+    Usually, you don't need to manually instantiate domains.
+    During the simulation they are automatically instantiated through factories.
+
+    - `effector` The molecule species which will be the effector molecule.
+    - `affinity` Michaelis Menten constant of the transport (in mol).
+    - `is_inhibiting` Whether this is an inhibiting regulatory domain (otherwise activating).
+    - `is_transmembrane` Whether this is also a transmembrane domain. If true, the
+      domain will react to extracellular molecules instead of intracellular ones.
+
+    I think the term Michaelis Menten constant in a regulatory domain is a bit off
+    since there is no product being created. However, the kinetics of the amount of
+    activation or inhibition are the same.
+    """
+
     def __init__(
         self,
         effector: Molecule,
@@ -235,19 +317,36 @@ class RegulatoryDomain(Domain):
 
 class RegulatoryFact(_DomainFact):
     """
-    Factory for generating regulatory domains from nucleotide sequences. These domains
-    can activate or inhibit the protein non-competitively.
+    Factory for generating regulatory domains from nucleotide sequences.
 
-    - `molecule_map` Map nucleotide sequences to effector molecules.
-    - `affinity_map` Map nucleotide sequences to affinity values (Km in MM. kinetic)
-    - `is_transmembrane` whether this factory creates transmembrane receptors or not
-      (=intracellular receptors)
-    - `is_inhibitor` whether the domain will be inhibiting or not (=activating)
+    - `molecules` All molecule species that can be inhibiting or activating effectors.
+    - `km_range` The range from which to sample Michaelis Menten constants for the strength 
+      of inhibition or activation (in mol). The sampling will happen in the log transformed intervall,
+      so all values must be > 0.
+    - `n_molecule_nts` The number of nucleotides that should encode the molecule species.
+    - `n_affinity_nts` The number of nucleotides that should encode the Michaelis Menten constant.
+    - `n_transmembrane_nts` The number of nucleotides that should encode whether the domain also is
+      a transmembrane domain (which will make it react to extracellular molecules instead).
+    - `n_inhibit_nts` The number of nucleotides that should encode whether it is an activating or
+      inhibiting regulatory domain.
 
-    In case of a transmembrane receptor (`is_transmembrane=True`) the regulatory region
-    reacts to the extracellular version of the effector molecule. In case of an intracellular
-    receptor (`is_transmembrane=False`) the region reacts to the intracellular version of
-    the effector molecule.
+    This factory randomly assigns nucleotide sequences to molecule species, Michaelis Menten constants,
+    whether the domain is transmembrane, and whether the domain is inhibiting on initialization.
+    When calling the instantiated factory with a nucleotide sequence, it will return the encoded domain.
+    How many nucleotides encode which part of the domain is defined by the `n_*_nts` arguments.
+    The overall length of this domain type in nucleotides is the sum of all these.
+    These domain factories are instantiated when initializing `Genetics`, which
+    also happens when initializing `World`. They are used during translation to map nucleotide sequences
+    to domains.
+
+    ```
+        DomainFact = RegulatoryFact(molecules=[A])
+        DomainFact("ATCGATATATTTGCAAAT")
+    ```
+
+    I think the term Michaelis Menten constant in a regulatory domain is a bit off
+    since there is no product being created. However, the kinetics of the amount of
+    activation or inhibition are the same.
     """
 
     def __init__(
