@@ -7,131 +7,52 @@ _EPS = 1e-5
 
 class Kinetics:
     """
-    Class holding logic for simulating protein work. There are `c` cells, `p` proteins, `s` signals.
-    Signals are basically molecules, but we have to differentiate between the molecule species
-    inside and outside of the cell. So, there are twice as many signals as molecule species.
+    Class holding logic for simulating protein work.
+    Usually this class is instantiated automatically when initializing `world`.
+    You can access it on `world.kinetics`.
 
-    - `X` Signal/molecule concentrations (c, s). Must all be >= 0.0.
-    - `Km` Domain affinities of all proteins for each molecule (c, p, s). Must all be >= 0.0.
-    - `Vmax` Maximum velocities of all proteins (c, p). Must all be >= 0.0.
-    - `Ke` Equilibrium constants of all proteins (c, p). If the current reaction quotient of a protein
-    exceeds its equilibrium constant, it will work in the other direction. Must all be >= 0.0.
-    - `N` Reaction stoichiometry of all proteins for each molecule (c, p, s). Numbers < 0.0 indicate this
-    amount of this molecule is being used up by the protein. Numbers > 0.0 indicate this amount of this
-    molecule is being created by the protein. 0.0 means this molecule is not part of the reaction of
-    this protein.
-    - `A` regulatory control of all proteins for each molecule (c, p, s). Numbers > 0.0 mean these molecules
-    act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
+    - `molecules` List of molecule species. They have to be in the same order as
+      they are on `chemistry.molecules`.
+    - `abs_temp` Absolute temperature in Kelvin will influence the free Gibbs energy calculation
+      of reactions. Higher temperature will give the reaction quotient term higher importance.
+    - `device` Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
+      This has to be the same device that is used by `world`.
     
-    Everything is based on Michaelis Menten kinetics where protein velocity
-    depends on substrate concentration:
-
-    ```
-        v = Vmax * x / (Km + x)
-    ```
-
-    `Vmax` is the maximum velocity of the protein and `Km` the substrate affinity. Multiple
-    substrates create interaction terms such as:
-
-    ```
-        v = Vmax * x1 * / (Km1 + x1) * x2 / (Km2 + x2)
-    ```
-
-    Allosteric effectors work non-competitively such that they reduce or raise `Vmax` but
-    leave any `Km` unaffected. Effectors themself also use Michaelis Menten kinteics.
-    Here is substrate `x` with inhibitor `i`:
+    There are `c` cells, `p` proteins, `s` signals.
+    Signals are basically molecule species, but we have to differentiate between intra- and extracellular
+    molecule species. So, there are twice as many signals as molecule species.
+    The order of molecule species is always the same as in `chemistry.molecules`.
+    First, all intracellular molecule species are listed, then all extracellular.
+    The order of cells is always the same as in `world.cells` and the order of proteins
+    for every cell is always the same as the order of proteins in a cell object `cell.proteome`.
     
-    ```
-        v = Vmax * x / (Kmx + x) * (1 - Vi)
-        Vi = i / (Kmi + i)
-    ```
+    Attributes on this class describe cell parameters:
 
-    Activating effectors effectively make the protein dependent on that activator:
-
-    ```
-        v = Vmax * x / (Kmx + x) * Va
-        Va = a / (Kma + a)
-    ```
-
-    Multiple inhibitors and activators are each integrated with each other as if they
-    were interacting with each other. I.e. they are multiplied when calculating their
-    activity. Each term is clamped to `[0; 1]` before it is multiplied with `Vmax`.
-    So a protein can never exceed `Vmax`.
-
-    ```
-        v = Vmax * x / (Km + x) * Va * (1 - Vi)
-        Va = a1 * a2 / ((Kma1 + a1) * (Kma2 + a2))
-        Vi = i1 * i2 / ((Kmi1 + i1) * (Kmi2 + i2))
-    ```
-
-    Equilibrium constants `Ke` define whether the reaction of a protein (as defined in `N`)
-    can take place. If the reaction quotient (the combined concentrations of all products
-    devided by all substrates) is smaller than its `Ke` the reaction proceeds. If it is
-    greater than `Ke` the reverse reaction will take place (`N * -1.0` for this protein).
-    The idea is to link signal integration to energy conversion.
-
-    ```
-        -dG0 = R * T * ln(Ke)
-        Ke = exp(-dG0 / R / T)
-    ```
-
-    where `dG0` is the standard Gibb's free energy of this reaction, `R` is gas constant,
-    `T` is absolute temperature.
-
-    While the reaction quotient `Q` is well below _Ke_ the protein will proceed with the reaction
-    in forward direction with a velocity as defined by the above equiations in each time step.
-    However, as `Q` approaches `Ke` there is a chance that in one time step `Q` surpasses `Ke`.
-    In the next time step the reaction would turn around and `Q` might possibly jump again below
-    `Ke`. Thus, in a sensitive protein (low `Km`, high `Vmax`, no inhibition) `Q` might jump
-    above and below `Ke` with every time step, i.e. always overshootig the equilibrium state.
+    - `Km` Affinities to every signal that is processed by each protein in every cell (c, p, s).
+    - `Vmax` Maximum velocities of every protein in every cell (c, p).
+    - `E` Standard reaction Gibbs free energy of every protein in every cell (c, p).
+    - `N` Stoichiometric number for every signal that is processed by each protein in every cell (c, p, s).
+    - `A` Regulatory effect for each signal in every protein in every cell (c, p, s).
+      This is looks similar to a stoichiometric number. Numbers > 0.0 mean these molecules
+      act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
     
-    One would have to solve for `v` given `Ke` and the stoichiometry in order to limit `v`
-    to reach the exact equilibrium state. The equiation has this form:
+    The main method is `kinetics.integrate_signals()`. When calling `world.enzymatic_activity()`,
+    a matrix `X` of signals (c, s) is prepared and then `kinetics.integrate_signals(X)` is called.
+    Updated signals are returned and `world` writes them back to `world.cell_molecules` and
+    `world.molecule_map`.
 
-    ```
-        ([P] + m * v)^m / ([S] + n * v)^n = Ke
-    ```
-
-    Where `[P]` and `[S]` are product and substrate concentrations and `m` and `n` are their
-    stoichiometric coefficients (extends as product with multiple substrate and product species).
-
-    I can't solve this in general. Thus, to limit the extend of such a flickering around the
-    equilibrium state `Km`s of the backwards reaction should the inverse of the forward reaction.
-    E.g. if the forward reaction was very sensitive and tends to overshoot the equilibrium state,
-    the backward reaction will be very unsensitive and only slowly approach the equilibrium state
-    from the other side. As transporters also work with this mechanism, they tend to have a
-    direction. So, if a transporter has a high affinity in one direction, it will have a low
-    affinity in the other.
-
-    Somehwat related: As reactions can overshoot their equilibriums state, they can also
-    overshoot the actual substrate concentrations. I.e. it can happen that a protein tries to
-    react with more substrate than actually available (e.g. very low `Km`, high `Vmax`). In
-    addition, each protein in the cell is not aware of the other proteins. So, 2 proteins could
-    both try to react with substrate `S`. And while each of them would have had enough `S`, both
-    of them together actually reduce `S` to a negative concentration.
-
-    To avoid this there is a correction term that limits the velocity of any protein to the actual
-    abundance of the substrates. If there are multiple proteins in a cell all using up the same
-    substrate, these limiting substrate abundances are shared equally among these proteins.
-
-    Limitations:
-    - all based on Michaelis-Menten kinetics, no cooperativity
-    - all allosteric control is non-competitive (activating or inhibiting)
-    - there are substrate-substrate interactions but no interactions among effectors
-    - 1 protein can have multiple substrates and products but there is only 1 Km for each type of molecule
-    - there can only be 1 effector per molecule (e.g. not 2 different allosteric controls for the same type of molecule)
-    - proteins can catalyze reactions in a way that they overshoot their equilibirum state (heuristics try to avoid that, see text above)
+    Another method, which ended up here, is `kinetics.set_cell_params()` (and `kinetics.unset_cell_params()`)
+    which reads proteomes and updates cell parameters accordingly. This is called whenever the proteomes
+    of some cells changed. Currently, this is also the main bottleneck in performance.
     """
 
     # TODO: I could use some native torch functions in some places, e.g. ReLU
     #       might be faster than matrix multiplications
 
+    # TODO: are the molecule maps faster if molecule2idx (instead of molecule name)?
+
     def __init__(
-        self,
-        molecules: list[Molecule],
-        abs_temp=310.0,
-        dtype=torch.float,
-        device="cpu",
+        self, molecules: list[Molecule], abs_temp=310.0, device="cpu",
     ):
         n = len(molecules)
         self.n_signals = 2 * n
@@ -139,7 +60,6 @@ class Kinetics:
         self.ext_mol_map = {d.name: i + n for i, d in enumerate(molecules)}
 
         self.abs_temp = abs_temp
-        self.dtype = dtype
         self.device = device
 
         self.Km = self._tensor(0, 0, self.n_signals)
@@ -149,7 +69,13 @@ class Kinetics:
         self.A = self._tensor(0, 0, self.n_signals)
 
     def unset_cell_params(self, cell_prots: list[tuple[int, int]]):
-        """Set cell params for these proteins to 0.0"""
+        """
+        Set cell params for these proteins to 0.0
+        
+        - `cell_prots` list of tuples of cell indexes and protein indexes
+
+        This is useful for cells that lost some of their proteins.
+        """
         if len(cell_prots) == 0:
             return
         cells, prots = list(map(list, zip(*cell_prots)))
@@ -160,7 +86,18 @@ class Kinetics:
         self.N[cells, prots] = 0.0
 
     def set_cell_params(self, cell_prots: list[tuple[int, int, Protein]]):
-        """Set cell params for these proteins accordingly"""
+        """
+        Set cell params for these proteins accordingly
+        
+        - `cell_prots` list of tuples of cell indexes, protein indexes, and the protein itself
+
+        You can compare proteins within a cell and only update the ones that changed.
+        The comparison (`protein0 == protein1`) will note a difference in any of the proteins
+        attributes.
+
+        Indexes for proteins are the same as in a cell's object `cell.proteome` and indexes for
+        cells are the same as in `world.cells` or `cell.idx`.
+        """
         if len(cell_prots) == 0:
             return
 
@@ -190,10 +127,18 @@ class Kinetics:
         """
         Simulate protein work by integrating all signals.
 
-        - `X` Signal/molecule concentrations (c, s). Must all be >= 0.0.
+        - `X` Tensor of every signal in every cell (c, s). Must all be >= 0.0.
         
-        Returns `delta X`, the molecules deconstructed or constructed during
-        this time step.
+        Returns a new tensor of the same shape which represents the updated
+        signals for every cell.
+
+        The order of cells in `X` is the same as in `world.cells` and the order
+        of signals is first all intracellular molecule species in the same order
+        as `chemistry.molecules`, then again all molecule species in the same order
+        but this time describing extracellular molecule species. The number of
+        intracellular molecules comes from `world.cell_molecules` for any particular
+        cell. The number of extracellular molecules comes from `world.molecule_map`
+        from the pixel the particular cell currently lives on.
         """
         # adjust direction
         lKe = -self.E / self.abs_temp / GAS_CONSTANT  # (c, p)
@@ -233,7 +178,15 @@ class Kinetics:
         return (X + Xd).clamp(min=0.0)
 
     def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
-        """Copy paremeters from a list of cells to another list of cells"""
+        """
+        Copy paremeters from a list of cells to another list of cells
+        
+        - `from_idxs` list of cell indexes to copy from
+        - `to_idxs` list of cell indexes to copy to
+        
+        `from_idxs` and `to_idxs` must have the same length.
+        They refer to the same cell indexes as in `world.cells`.
+        """
         self.Km[to_idxs] = self.Km[from_idxs]
         self.Vmax[to_idxs] = self.Vmax[from_idxs]
         self.E[to_idxs] = self.E[from_idxs]
@@ -241,7 +194,16 @@ class Kinetics:
         self.A[to_idxs] = self.A[from_idxs]
 
     def remove_cell_params(self, keep: torch.Tensor):
-        """Filter cell params for cells in `keep`"""
+        """
+        Remove cells from cell params
+
+        - `keep` Bool tensor (c,) which is true for every
+          cell that should not be removed and false for every
+          cell that should be removed.
+        
+        `keep` must have the same length as `world.cells`. The
+        indexes on `keep` reflect the indexes in `world.cells`.
+        """
         self.Km = self.Km[keep]
         self.Vmax = self.Vmax[keep]
         self.E = self.E[keep]
@@ -249,7 +211,11 @@ class Kinetics:
         self.A = self.A[keep]
 
     def increase_max_cells(self, by_n: int):
-        """Increase the cell dimension by `by_n`"""
+        """
+        Increase the cell dimension of all cell parameters
+
+        - `by_n` By how many rows to increase the cell dimension
+        """
         self.Km = self._expand(t=self.Km, n=by_n, d=0)
         self.Vmax = self._expand(t=self.Vmax, n=by_n, d=0)
         self.E = self._expand(t=self.E, n=by_n, d=0)
@@ -257,7 +223,11 @@ class Kinetics:
         self.A = self._expand(t=self.A, n=by_n, d=0)
 
     def increase_max_proteins(self, max_n: int):
-        """Increase the protein dimension to `max_n`"""
+        """
+        Increase the protein dimension of all cell parameters
+
+        - `max_n` The maximum number of rows required in the protein dimension
+        """
         n_prots = int(self.Km.shape[1])
         if max_n > n_prots:
             by_n = max_n - n_prots
@@ -374,5 +344,5 @@ class Kinetics:
         return torch.cat([t, zeros], dim=d)
 
     def _tensor(self, *args) -> torch.Tensor:
-        return torch.zeros(*args, dtype=self.dtype).to(self.device)
+        return torch.zeros(*args).to(self.device)
 
