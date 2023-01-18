@@ -183,6 +183,11 @@ def main(args: Namespace, writer: SummaryWriter):
             nadp_idx=NADP_IDX,
         )
 
+        # TODO: 3 steps where only 1 proc is 100% active total about 25s
+        #       then 1 step where all procs are 50% active (probably enzymatic_activity())
+        #       total about 7k cells (avg genome size?)
+        #       should at least be multiprocessing
+
         world.enzymatic_activity()
 
         kill_cells(world=world, nadph_idx=NADPH_IDX, atp_idx=ATP_IDX)
