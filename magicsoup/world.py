@@ -160,6 +160,8 @@ class World:
         Each cell will be placed randomly on the map and receive half the molecules
         of the pixel where it was added. If there are less pixels left on the cell map
         than cells you want to add, only the remaining pixels will be filled with new cells.
+
+        All lists and tensors that reference cells will be updated.
         """
         genomes = [d for d in genomes if len(d) > 0]
         if len(genomes) == 0:
@@ -235,6 +237,8 @@ class World:
 
         Each child will be placed randomly next to its parent (Moore's neighborhood).
         If every pixel in the parent's Moore's neighborhood is taken the cell will not replicate.
+
+        All lists and tensors that reference cells will be updated.
         """
         # TODO: maybe give child the same survived steps and replicated values?
         #       then average survived steps and replications are more meaningful
@@ -268,9 +272,9 @@ class World:
 
         - `genome_idx_pairs` list of tuples of genomes and cell indexes
 
-        The indexes refer to the index of the cell that is changed.
-        The genomes are the new genomes. They will be transcribed and translated
-        and the cells' proteomes updated.
+        The indexes refer to the index of each cell that is changed.
+        The genomes refer to the genome of each cell that is changed.
+        `world.cells` will be updated with new genomes and proteomes.
         """
         if len(genome_idx_pairs) == 0:
             return
@@ -356,6 +360,7 @@ class World:
         
         If every pixel in the cells' Moore neighborhood is taken
         the cell will not be moved.
+        `world.cell_map` will be updated.
         """
         if len(cell_idxs) == 0:
             return
@@ -369,8 +374,11 @@ class World:
         Let molecules in molecule map diffuse and permeate through cell membranes
         by one time step.
 
-        ...
-        
+        By how much each molcule species diffuses around the world map and permeates
+        into or out of cells if defined on the `Molecule` objects itself.
+        See `Molecule` for more information.
+
+        `world.molecule_map` and `cell_molecules` are updated.
         """
         for mol_i, diffuse in enumerate(self._diffusion):
             before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
@@ -393,18 +401,32 @@ class World:
         self.cell_molecules = X[:, self._int_mol_idxs]
 
     def degrade_molecules(self):
-        """Degrade molecules in world map and cells by 1 time step"""
+        """
+        Degrade molecules in world map and cells by one time step.
+        How quickly each molecule species degrades depends on its half life
+        which is defined on the `Molecule` object of that species.
+        
+        `world.molecule_map` and `cell_molecules` are updated.
+        """
         for mol_i, degrad in enumerate(self._mol_degrads):
             self.molecule_map[mol_i] *= degrad
             self.cell_molecules[:, mol_i] *= degrad
 
     def increment_cell_survival(self):
-        """Increment number of currently living cells' time steps by 1"""
+        """
+        Increment number of currently living cells' time steps by 1.
+        `world.cell_survival` is updated.
+        """
         idxs = list(range(len(self.cells)))
         self.cell_survival[idxs] += 1
 
     def enzymatic_activity(self):
-        """Catalyze reactions for 1 time step and update all molecule abudances"""
+        """
+        Catalyze reactions for one time step
+
+        This includes molecule transport into or out of the cell.
+        `world.molecule_map` and `cell_molecules` are updated.
+        """
         if len(self.cells) == 0:
             return
 
@@ -416,7 +438,18 @@ class World:
         self.cell_molecules = X[:, self._int_mol_idxs]
 
     def save(self, rundir: Path, name="world.pkl"):
-        """Write whole world object to pickle file"""
+        """
+        Write whole world object to pickle file
+
+        - `rundir` directory of the pickle file
+        - `name` name of the pickle file
+        
+        This is a big and slow save.
+        It saves everything needed to restore the world with its
+        chemistry and genetics.
+        Use `World.from_file()` to restore it.
+        For a small and quick save use `world.save_state()`.
+        """
         # TODO: make this JSON, txt, (except for tensors), to make it possible
         #       to continue using a different language
         #       would need to organize domain factories differently to do that
@@ -426,17 +459,29 @@ class World:
 
     @classmethod
     def from_file(self, rundir: Path, name="world.pkl") -> "World":
-        """Restore previously saved world object from pickle file"""
+        """
+        Restore previously saved world from pickle file.
+
+        - `rundir` directory of the pickle file
+        - `name` name of the pickle file
+
+        The file had to be saved with `world.save()`.
+        """
         with open(rundir / name, "rb") as fh:
             return pickle.load(fh)
 
     def save_state(self, statedir: Path):
         """
-        Save current state only. Will write a few files.
+        Save current state only
+
+        - `statedir` directory to store files in (there are multiple files per state)
         
-        Faster and more lightweight than `save`.
-        Only saves the variable parts of `world`.
-        You need one `save` to restore the whole `world` object though.
+        This is a small and quick save.
+        It only saves things which change during the simulation.
+        Restore a certain state with `world.load_state()`.
+        
+        To restore a world object you need to save it at least once with `world.save()`.
+        Then, `world.save_state()` can be used to save different states of that world object.
         """
         statedir.mkdir(parents=True, exist_ok=True)
         torch.save(self.cell_molecules, statedir / "cell_molecules.pt")
@@ -453,7 +498,13 @@ class World:
             fh.write("\n".join(lines))
 
     def load_state(self, statedir: Path):
-        """Restore `world` to a state previously saved with `save_state`"""
+        """
+        Load a saved world state.
+
+        - `statedir` directory that contains all files of that state
+
+        The state had to be saved with `world.save_state()` previously.
+        """
         cell_molecules: torch.Tensor = torch.load(statedir / "cell_molecules.pt")
         self.cell_molecules = cell_molecules.to(self.device)
         cell_map: torch.Tensor = torch.load(statedir / "cell_map.pt")
