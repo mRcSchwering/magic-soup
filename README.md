@@ -1,17 +1,17 @@
 ## Magicsoup
 
 This is a game that simulates cell metabolic and transduction pathway evolution.
-Define a 2D world with certain molecules and possible reactions.
+Define a 2D world with certain molecules and reactions.
 Add a few cells and create evolutionary pressure by selectively replicating and killing them.
-Then run and see where random mutations get you.
+Then run and see what random mutations can do.
 
 ### Example
 
 The basic building blocks of what a cell can do is essentially defined by the chemistry.
-There are molecules and reactions that can convert bewteen these molecules.
+There are molecules and reactions that can convert these molecules.
 Cells can develop proteins with domains that can transport these molecules,
 catalyze the reactions, and be regulated by molecules.
-Any reaction or transport happens only in the energetically favourable direction.
+Any reaction or transport happens only if energetically favourable.
 Below, I am defining the reaction $CO2 + NADPH \rightleftharpoons formiat + NADP$.
 The molecules are defined with a fictional standard Gibbs free energy of formation.
 
@@ -31,20 +31,19 @@ chemistry = ms.Chemistry(reactions=reactions, molecules=molecules)
 world = ms.World(chemistry=chemistry)
 ```
 
-By energetically coupling multiple domains within the same protein
-energetically unfavourable actions can be performed with the energy of energetically
-favourable ones.
+By coupling multiple domains within the same protein energetically unfavourable actions
+can be performed with the energy of energetically favourable ones.
 These domains, their specifications, and how they are coupled in proteins, is all encoded in the cell's genome.
-Here, I am generating 100 cells with random genomes of 500 basepairs and place them
-onto random pixels of the 2D map.
+Here, I am generating 100 cells with random genomes of 500 basepairs each and place them
+in random places of a 2D world map.
 
 ```python
 genomes = [ms.random_genome(s=500) for _ in range(100)]
 world.add_random_cells(genomes=genomes)
 ```
 
-Cells discover these proteins by chance through mutations.
-In the function below all cells experience 1E-3 point mutations per nucleotide.
+Cells discover new proteins by chance through mutations.
+In the function below all cells experience 1E-3 random point mutations per nucleotide.
 10% of them will be indels.
 
 ```python
@@ -62,7 +61,7 @@ def sample(p: torch.Tensor) -> list[int]:
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
-def kill_cells(world: ms.World, aca_idx: int):
+def kill_cells():
     x = world.cell_molecules[:, 2]
     idxs = sample(.01 / (.01 + x))
     world.kill_cells(cell_idxs=idxs)
@@ -73,14 +72,14 @@ def replicate_cells():
     world.replicate_cells(parent_idxs=idxs)
 ```
 
-Finally, the simulation itself is just run in a python loop by repetitively calling the different steps.
-with `world.enzymatic_activity()` chemical reactions and molecule transport
-in cells advances by one step.
-`world.diffuse_molecules()` diffuses molecule on the world map
-and permeates molecules through cell membranes (if they can) by one step.
+Finally, the simulation itself is run in a python loop by repetitively calling the different steps.
+With `world.enzymatic_activity()` chemical reactions and molecule transport
+in cells advance by one time step.
+`world.diffuse_molecules()` lets molecules on the world map diffuse and permeate through cell membranes
+(if they can) by one time step.
 
 ```python
-for step_i in range(1000):
+for _ in range(1000):
     world.enzymatic_activity()
     kill_cells()
     replicate_cells()
@@ -89,37 +88,61 @@ for step_i in range(1000):
     world.increment_cell_survival()
 ```
 
-## Documentation
+### Documentation
 
-User documentation are the docstrings.
-Please read them to understand what each function or object is doing.
-The main object is [magicsoup.world.World](./magicsoup/world.py).
-Please see its docstring for interesting attributes and methods.
-In [magicsoup/containers.py](./magicsoup/containers.py) are `Molecule` and `Chemistry`
-which are used to setup the simulation chemistry.
-There are some example chemistries under [magicsoup/examples/](./magicsoup/examples/).
-Finally, there is [magicsoup/mutations.py](./magicsoup/mutations.py) with some functions for mutating sequences.
+The user documentation is in the code.
+All important classes and methods have docstrings explaining what they do,
+how they work, and what they are used for.
+For an explanation of the mechanics in this simulation please see [Concepts](#concepts) below.
+
+In general, you create a `Chemistry` object with reactions and molecule species.
+For molecules you can define things like energy, permeability, diffusivity.
+See the [Molecule](./magicsoup/containers.py) docstring for more information.
+
+Then, you create a `World` object which defines things like world map and genetics.
+It carries all data that describes the world at this time step with cells, molecule distributions and so on.
+On this object there are also methods that are used to advance the world by one time step.
+Read the [World](./magicsoup.world.py) docstring for more information.
+
+Usually, you would only adjust `Molecule`s and `World`.
+However, in some cases you might want to change the way how genetics work,
+_e.g._ change the way how certain domains are encoded, or change how coding regions are defined.
+In that case you can override the default `Genetics` object.
+See the [Genetics](./magicsoup/genetics.py) docstring for more information.
+
+Apart from that, you create the simulation to your own likings.
+From the `World` object you can read molecule abundances within cells and use that
+to kill or replicate them (like in the example above).
+You can also alter parts of the world, like creating concentration gradients
+or regularly supplying the world with certain molecules/energy.
 
 All major work is done by [PyTorch](https://pytorch.org/) and can be moved to a GPU.
-`ms.World` has an argument `device` to control that.
+The `World` object has an argument `device` to control that.
 Please see [CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html) on how to use it.
 And since this simulation already requires [PyTorch](https://pytorch.org/), it makes sense
-to use [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html).
-You to interactively monitor your ongoing simulation with it.
+to use [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html) to interactively monitor your ongoing simulation.
 
-### Technical Details
+## Concepts
 
-This simulation is implemented with millions of time steps in mind.
-I believe that for interesting behavior to emerge many time steps and cells are more important than
-a high degree of complexity for each cell.
-Thus, this simulation is a tradeoff between a reasonable amount of reality and performance.
+The simulation is an agent-based 2D spatio-temporal simulation.
+Cells are agents. Each cell has a string, the genome, which unambigously encodes a set or proteins, the proteome.
+These proteins can change molecules in and around the cell.
+Through that each cell can process information.
+Each cell's proteome can form complex networks with feedback loops, cascades, and oscillators.
+When randomly changing the cell's genome, this network changes randomly, too.
+By selectively replicating certain cells while killing others, cells can be brought to evolve.
+
+I believe that most interesting behaviors take many time steps to evolve.
+That's why this simulation is implemented with millions of time steps in mind.
+Genetics, chemistry, physics in this simulation is simplified a lot.
+It is a tradeoff between a reasonable amount of complexity and performance.
 
 - [Genetics](#genetics) explains how genetics work in this simulation
 - [Chemistry](#chemistry) explanation for molecules, reactions and energy coupling
 - [Kinetics](#kintics) explain the protein kinetics in this simulation
 - [Implementation](#implementation) some implementation details worth mentioning
 
-#### Genetics
+### Genetics
 
 All mechanisms are based on bacterial [transcription](<https://en.wikipedia.org/wiki/Transcription_(biology)>)
 and [translation](<https://en.wikipedia.org/wiki/Translation_(biology)>).
@@ -159,7 +182,7 @@ oscillators, and cascades.
 For more details see [magicsoup/genetics.py](./magicsoup/genetics.py).
 Also see [Kinetics](#kinetics) for details about the domain kinetics and aggregations.
 
-#### Chemistry
+### Chemistry
 
 At the basis of this simulation one has to define which molecule species exist
 and which reactions are possible.
@@ -207,7 +230,7 @@ For more details see [magicsoup/kinetics.py](./magicsoup/kinetics.py) where all 
 for translating domains into kinetic parameters lives.
 Also see [Implementation](#implementation) for some implications that arise from implementation details.
 
-#### Kinetics
+### Kinetics
 
 All reactions in this simulation are based on [Michaelis-Menten-Kinetics](https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics).
 If a cell has one protein with one _catalytic domain_ that defines $S \rightleftharpoons P$ it will create molecule species $P$ from $S$ with a rate of
@@ -245,7 +268,7 @@ Also note that while an unregulated protein can always be active, a protein with
 regulatory domain can only be active if the activating effector is present.
 So, an activating regulatory domain can also switch off a protein.
 
-#### Implementation
+### Implementation
 
 Making the simulation more performant is an oingoing effort.
 I want to get the frequency up to a thousand time steps per second for a simulation with around 100k cells.
@@ -255,7 +278,7 @@ However, there are still parts which are calculated in plain python.
 As of now, these are the operations concerned with creating/mutating genomes, transcription and translation.
 These parts are usually the performance bottlenecks.
 
-##### Low molecule abundances
+#### Low molecule abundances
 
 Changes in molecule abundances are calculated for every step based on protein velocities.
 These protein velocities depend in one part on substrate abundances
@@ -289,7 +312,7 @@ It would create molecules and energy from nothing.
 This sounds like an unlikely event, but the cells will exploit this (personal experience).
 See `Kinetics.integrate_signals` in [magicsoup/kinetics.py](./magicsoup/kinetics.py) for more information.
 
-##### Integrating multiple domains
+#### Integrating multiple domains
 
 I had to make a decision with $V_{Max}$ and $K_M$ when having proteins with multiple domains.
 When there are multiple _e.g._ catalytic domains, it might make sense to each give them a seperate
@@ -298,7 +321,7 @@ work at different rates. Thus, the whole energy coupling would become more trick
 
 A similar problem arises with $K_M$: multiple domains can attempt to each give a different $K_M$ value to the same molecule species. _E.g._ there could be a catalytic domain that has molecule A as a substrate and a regulatory domain with molecule A as effector. In these cases I decided to also only have 1 value for $K_M$ for each molecule species. All $K_M$ values for the same molecule species in the same protein are averaged.
 
-##### Energetic Equilibrium
+#### Energetic Equilibrium
 
 Theoretically, a reaction should occur in one direction according to its free Gibbs energy $\Delta G$. At some point $\Delta G = 0$ is approached
 and the reaction should be in an equilibrium state where no appreciable difference in substrates and products is measurable anymore.

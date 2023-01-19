@@ -478,6 +478,21 @@ class Genetics:
     Each CDS represents one protein.
     All domains found within a CDS will be added as domains to that protein. Unviable proteins, like
     proteins without domains or proteins with only regulatory domains, are discarded.
+
+    If you want to use your own `genetics` object for the simulation you can just assign it after creating `world`:
+
+    ```
+        world = World(chemistry=chemistry)
+        my_genetics = Genetics(chemistry=chemistry, p_transp_dom=0.1, stop_codons=("TGA", ))
+        world.genetics = my_genetics
+    ```
+
+    Changing these attributes has a large effect on the information content of genomes.
+    E.g. how many CDSs per nucleotide, i.e. how many proteins per nucleotide;
+    how long are the average CDSs, i.e. how many domains per protein;
+    how likely is it to encounter a domain; how many domains does each nucleotide encode, i.e.
+    how likely is it for a single substitution to change the proteome, how likely is it that this mutation
+    will only slightly change a domain or completely change it.
     """
 
     def __init__(
