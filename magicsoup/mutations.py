@@ -26,8 +26,7 @@ def point_mutations(seqs: list[str], p=1e-3, p_indel=0.1) -> list[tuple[str, int
     - `p_indel` probability of any point mutation being a deletion or insertion
       (inverse probability of it being a substitution)
     
-    Returns list of mutated sequences and their indices; which sequences of `seqs`
-    got muated.
+    Returns list of mutated sequences and their indices; which sequences of `seqs` got muated.
 
     If an indel occurs, there is a 1:1 chance of it being a deletion or insertion.
     """
@@ -69,13 +68,12 @@ def recombinations(
     - `seq_pairs` nucleotide sequence pairs
     - `p` probability of a strand break per nucleotide
     
-    Returns list of mutated sequence pairs and their indices. The index describes
-    the index of `seq_pairs`. E.g. if it's 5, it means `seq_pairs[5]` was mutated
-    and the resulting sequences are in this 3-tuple.
+    Returns list of mutated sequence pairs and their indices.
+    The index describes the index of `seq_pairs`.
+    E.g. if it's 5, it means `seq_pairs[5]` was mutated and the resulting sequences are in this 3-tuple.
 
-    The recombination happens by creating random strand breaks in both sequences
-    (with likelihood `p`), then randomly shuffling the strands and randomly
-    re-joining them.
+    The recombination happens by creating random strand breaks in both sequences (with likelihood `p`),
+    then randomly shuffling the strands and randomly re-joining them.
     """
     n = len(seq_pairs)
     if n == 0:

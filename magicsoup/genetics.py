@@ -38,13 +38,11 @@ class CatalyticDomain(Domain):
     Usually, you don't need to manually instantiate domains.
     During the simulation they are automatically instantiated through factories.
 
-    - `reaction` Tuple of substrate and product molecule species that describe the
-      reaction catalyzed by this domain. For stoichiometric coefficients > 1, list
-      the molecule species multiple times.
+    - `reaction` Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
+      For stoichiometric coefficients > 1, list the molecule species multiple times.
     - `affinity` Michaelis Menten constant of the reaction (in mol).
     - `velocity` Maximum velocity of the reaction (in mol per time step).
-    - `is_bkwd` Flag indicating whether in which orientation this reaction will be
-      coupled with other domains.
+    - `is_bkwd` Flag indicating whether in which orientation this reaction will be coupled with other domains.
     """
 
     def __init__(
@@ -78,9 +76,9 @@ class CatalyticFact(_DomainFact):
     """
     Factory for generating catalytic domains from nucleotide sequences.
 
-    - `reactions` All reactions that can be catalyzed by domains. Each reaction is a
-      tuple of substrate and product molecule species. For stoichiometric coefficients > 1, list
-      the molecule species multiple times.
+    - `reactions` All reactions that can be catalyzed by domains.
+      Each reaction is a tuple of substrate and product molecule species.
+      For stoichiometric coefficients > 1, list the molecule species multiple times.
     - `km_range` The range from which to sample Michaelis Menten constants for this reaction (in mol).
       The sampling will happen in the log transformed intervall, so all values must be > 0.
     - `vmax_range` The range from which to sample maximum velocities for this reaction (in mol per time step).
@@ -90,21 +88,21 @@ class CatalyticFact(_DomainFact):
     - `n_velocity_nts` The number of nucleotides that should encode the maximum Velocity.
     - `n_orientation_nts` The number of nucleotides that should encode the orientation of the reaction.
 
-    This factory randomly assigns nucleotide sequences to reactions, Michaelis Menten constants, maximum
-    velocities, and domain orientations on initialization. When calling the instantiated factory with a
-    nucleotide sequence, it will return the encoded domain. How many nucleotides encode which part of the
-    domain is defined by the `n_*_nts` arguments. The overall length of this domain type in nucleotides
-    is the sum of all these. These domain factories are instantiated when initializing `Genetics`, which
-    also happens when initializing `World`. They are used during translation to map nucleotide sequences
-    to domains.
+    This factory randomly assigns nucleotide sequences to reactions, Michaelis Menten constants,
+    maximum velocities, and domain orientations on initialization.
+    When calling the instantiated factory with a nucleotide sequence, it will return the encoded domain.
+    How many nucleotides encode which part of the domain is defined by the `n_*_nts` arguments.
+    The overall length of this domain type in nucleotides is the sum of all these.
+    These domain factories are instantiated when initializing `Genetics`, which also happens when initializing `World`.
+    They are used during translation to map nucleotide sequences to domains.
 
     ```
         DomainFact = CatalyticFact(reactions=[([A], [B])])
         DomainFact("ATCGATATATTTGCAAATTGA")
     ```
 
-    After this factory has been instantiated you can look into the mappings that map nucleotide sequences
-    to domain specifications. They are on these attributes:
+    After this factory has been instantiated you can look into the mappings that map nucleotide sequences to domain specifications.
+    They are on these attributes:
 
     - `reaction_map` maps nucleotide sequences to reactions
     - `affinity_map` maps nucleotide sequences to Michaelis Menten constants
@@ -112,8 +110,9 @@ class CatalyticFact(_DomainFact):
     - `orientation_map` maps nucleotide sequences to orientations
 
     Any reaction can happen in both directions, so it is not necessary to define the reverse reaction again.
-    The orientation of a reaction only matters in combination with other domains in the way how a protein
-    energetically couples multiple actions. This orientation is defined by an attribute `is_bkwd` on the domain.
+    The orientation of a reaction only matters in combination with other domains
+    in the way how a protein energetically couples multiple actions.
+    This orientation is defined by an attribute `is_bkwd` on the domain.
     That attribute will be sampled during initialization of this factory and there is a 1:1 chance for any orientation.
     """
 
@@ -174,12 +173,10 @@ class TransporterDomain(Domain):
     Usually, you don't need to manually instantiate domains.
     During the simulation they are automatically instantiated through factories.
 
-    - `molecule` The molecule species which can be transported into or out of the cell
-      by this domain.
+    - `molecule` The molecule species which can be transported into or out of the cell by this domain.
     - `affinity` Michaelis Menten constant of the transport (in mol).
     - `velocity` Maximum velocity of the transport (in mol per time step).
-    - `is_bkwd` Flag indicating whether in which orientation this transporter will be
-      coupled with other domains.
+    - `is_bkwd` Flag indicating whether in which orientation this transporter will be coupled with other domains.
     """
 
     def __init__(
@@ -212,21 +209,21 @@ class TransporterFact(_DomainFact):
     - `n_velocity_nts` The number of nucleotides that should encode the maximum Velocity.
     - `n_orientation_nts` The number of nucleotides that should encode the orientation of the transport.
 
-    This factory randomly assigns nucleotide sequences to molecule species, Michaelis Menten constants, maximum
-    velocities, and domain orientations on initialization. When calling the instantiated factory with a
-    nucleotide sequence, it will return the encoded domain. How many nucleotides encode which part of the
-    domain is defined by the `n_*_nts` arguments. The overall length of this domain type in nucleotides
-    is the sum of all these. These domain factories are instantiated when initializing `Genetics`, which
-    also happens when initializing `World`. They are used during translation to map nucleotide sequences
-    to domains.
+    This factory randomly assigns nucleotide sequences to molecule species, Michaelis Menten constants,
+    maximum velocities, and domain orientations on initialization.
+    When calling the instantiated factory with a nucleotide sequence, it will return the encoded domain.
+    How many nucleotides encode which part of the domain is defined by the `n_*_nts` arguments.
+    The overall length of this domain type in nucleotides is the sum of all these.
+    These domain factories are instantiated when initializing `Genetics`, which also happens when initializing `World`.
+    They are used during translation to map nucleotide sequences to domains.
 
     ```
         DomainFact = TransporterFact(molecules=[A])
         DomainFact("ATCGATATATTTGCAAATTGA")
     ```
 
-    After this factory has been instantiated you can look into the mappings that map nucleotide sequences
-    to domain specifications. They are on these attributes:
+    After this factory has been instantiated you can look into the mappings that map nucleotide sequences to domain specifications.
+    They are on these attributes:
 
     - `molecule_map` maps nucleotide sequences to molecules
     - `affinity_map` maps nucleotide sequences to Michaelis Menten constants
@@ -234,8 +231,8 @@ class TransporterFact(_DomainFact):
     - `orientation_map` maps nucleotide sequences to orientations
 
     Any transporter works in both directions.
-    The orientation only matters in combination with other domains in the way how a protein energetically
-    couples multiple actions. This orientation is defined by an attribute `is_bkwd` on the domain.
+    The orientation only matters in combination with other domains in the way how a protein energetically couples multiple actions.
+    This orientation is defined by an attribute `is_bkwd` on the domain.
     That attribute will be sampled during initialization of this factory and there is a 1:1 chance for any orientation.
     """
 
@@ -299,12 +296,12 @@ class RegulatoryDomain(Domain):
     - `effector` The molecule species which will be the effector molecule.
     - `affinity` Michaelis Menten constant of the transport (in mol).
     - `is_inhibiting` Whether this is an inhibiting regulatory domain (otherwise activating).
-    - `is_transmembrane` Whether this is also a transmembrane domain. If true, the
-      domain will react to extracellular molecules instead of intracellular ones.
+    - `is_transmembrane` Whether this is also a transmembrane domain.
+      If true, the domain will react to extracellular molecules instead of intracellular ones.
 
-    I think the term Michaelis Menten constant in a regulatory domain is a bit off
-    since there is no product being created. However, the kinetics of the amount of
-    activation or inhibition are the same.
+    I think the term Michaelis Menten constant in a regulatory domain is a bit weird
+    since there is no product being created.
+    However, the kinetics of the amount of activation or inhibition are the same.
     """
 
     def __init__(
@@ -336,41 +333,38 @@ class RegulatoryFact(_DomainFact):
     Factory for generating regulatory domains from nucleotide sequences.
 
     - `molecules` All molecule species that can be inhibiting or activating effectors.
-    - `km_range` The range from which to sample Michaelis Menten constants for the strength 
-      of inhibition or activation (in mol). The sampling will happen in the log transformed intervall,
-      so all values must be > 0.
+    - `km_range` The range from which to sample Michaelis Menten constants for regulatory activity (in mol).
+      The sampling will happen in the log transformed intervall, so all values must be > 0.
     - `n_molecule_nts` The number of nucleotides that should encode the molecule species.
     - `n_affinity_nts` The number of nucleotides that should encode the Michaelis Menten constant.
-    - `n_transmembrane_nts` The number of nucleotides that should encode whether the domain also is
-      a transmembrane domain (which will make it react to extracellular molecules instead).
-    - `n_inhibit_nts` The number of nucleotides that should encode whether it is an activating or
-      inhibiting regulatory domain.
+    - `n_transmembrane_nts` The number of nucleotides that should encode whether the domain also is a transmembrane domain
+      (which will make it react to extracellular molecules instead).
+    - `n_inhibit_nts` The number of nucleotides that should encode whether it is an activating or inhibiting regulatory domain.
 
     This factory randomly assigns nucleotide sequences to molecule species, Michaelis Menten constants,
     whether the domain is transmembrane, and whether the domain is inhibiting on initialization.
     When calling the instantiated factory with a nucleotide sequence, it will return the encoded domain.
     How many nucleotides encode which part of the domain is defined by the `n_*_nts` arguments.
     The overall length of this domain type in nucleotides is the sum of all these.
-    These domain factories are instantiated when initializing `Genetics`, which
-    also happens when initializing `World`. They are used during translation to map nucleotide sequences
-    to domains.
+    These domain factories are instantiated when initializing `Genetics`, which also happens when initializing `World`.
+    They are used during translation to map nucleotide sequences to domains.
 
     ```
         DomainFact = RegulatoryFact(molecules=[A])
         DomainFact("ATCGATATATTTGCAAAT")
     ```
 
-    After this factory has been instantiated you can look into the mappings that map nucleotide sequences
-    to domain specifications. They are on these attributes:
+    After this factory has been instantiated you can look into the mappings that map nucleotide sequences to domain specifications.
+    They are on these attributes:
 
     - `molecule_map` maps nucleotide sequences to molecules
     - `affinity_map` maps nucleotide sequences to Michaelis Menten constants
     - `transmembrane_map` maps nucleotide sequences to the transmembrane flag
     - `orientation_map` maps nucleotide sequences to orientations
 
-    I think the term Michaelis Menten constant in a regulatory domain is a bit off
-    since there is no product being created. However, the kinetics of the amount of
-    activation or inhibition are the same.
+    I think the term Michaelis Menten constant in a regulatory domain is a bit weird
+    since there is no product being created.
+    However, the kinetics of the amount of activation or inhibition are the same.
     """
 
     def __init__(
@@ -437,8 +431,8 @@ class Genetics:
     """
     Class holding logic about translating nucleotide sequences into proteomes.
     
-    - `chemistry` The chemistry object used for this simulation. If no reactions were defined, there will be
-      no catalytic domain factory, i.e. no catalytic domains defined.
+    - `chemistry` The chemistry object used for this simulation.
+      If no reactions were defined, there will be no catalytic domain factory, i.e. no catalytic domains defined.
     - `start_codons` Start codons which start a coding sequence
     - `stop_codons` Stop codons which stop a coding sequence
     - `p_catal_dom` Chance of encountering a catalytic domain in a random nucleotide sequence.
@@ -447,37 +441,41 @@ class Genetics:
     - `n_dom_type_nts` Number of nucleotides that encodes the domain type (catalytic, transporter, regulatory).
     - `n_reaction_nts` Number of nucleotides that encodes the reaction in catalytic domains
       (will be passed to catalytic domain factory).
-    - `n_molecule_nts` Number of nucleotides that encodes the molecule species in transporter and regulatory
-      domain (will be passed to their domain factories).
+    - `n_molecule_nts` Number of nucleotides that encodes the molecule species in transporter and regulatory domain
+      (will be passed to their domain factories).
     - `n_affinity_nts` Number of nucleotides that encodes the Michaelis Menten constants of domains
       (will be passed to domain factories).
-    - `n_velocity_nts` Number of nucleotides that encodes maximum velocitires in catalytic and regulatory
-      domains (will be passed to their domain factories).
-    - `n_orientation_nts` Number of nucleotides that encodes domain orientation (will be passed to domain factories).
-    - `n_transmembrane_nts` Number of nucleotides that encodes whether a regulatory domain is also a transmembrane
-      domain reacting to extracellular molecules (will be passed to regulatory domain factory).
-    - `n_inhibit_nts` Number of nucleotides that encodes whether a regulatory domain is a inhibiting
-      or activating (will be passed to regulatory domain factory).
+    - `n_velocity_nts` Number of nucleotides that encodes maximum velocitires in catalytic and regulatory domains
+      (will be passed to their domain factories).
+    - `n_orientation_nts` Number of nucleotides that encodes domain orientation
+      (will be passed to domain factories).
+    - `n_transmembrane_nts` Number of nucleotides that encodes whether a regulatory domain is also a transmembrane domain,
+      reacting to extracellular molecules instead (will be passed to regulatory domain factory).
+    - `n_inhibit_nts` Number of nucleotides that encodes whether a regulatory domain is a inhibiting or activating
+      (will be passed to regulatory domain factory).
 
     When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
-    These mappings are then used throughout the simulation. If you initialize this class again, these mappings will be different.
-    Initializing `world` will also create one `genetics` instance. It is on `world.genetics`. If you want to access
-    nucleotide to domain mappings of your simulation, you should use `world.genetics`.
+    These mappings are then used throughout the simulation.
+    If you initialize this class again, these mappings will be different.
+    Initializing `world` will also create one `genetics` instance. It is on `world.genetics`.
+    If you want to access nucleotide to domain mappings of your simulation, you should use `world.genetics`.
     
-    During the simulation the `world` object uses `genetics.get_proteome()` on all genomes to get the proteome
-    for each cell. If you are interested in CDSs only you can use `genetics.get_coding_regions()` to get
-    all CDs for a particular genome. To translate a single CDS you can use `genetics.translate_seq()`.
+    During the simulation the `world` object uses `genetics.get_proteome()` on all genomes to get the proteome for each cell.
+    If you are interested in CDSs only you can use `genetics.get_coding_regions()` to get all CDs for a particular genome.
+    To translate a single CDS you can use `genetics.translate_seq()`.
 
-    The attribute `genetics.domain_map` holds the actual domain mappings. This maps nucleotide sequences to a
-    domain factory. Any of these domain factories is either a catalytic, transporter, or regulatory domain factory.
+    The attribute `genetics.domain_map` holds the actual domain mappings.
+    This maps nucleotide sequences to a domain factory.
+    Any of these domain factories is either a catalytic, transporter, or regulatory domain factory.
     For how nucleotides map to further domain specifications (e.g. affinity) is saved on the domain factory object.
 
-    Translation happens only within coding sequences (CDSs). A CDS starts wherever a start codon is
-    found and ends with the first in-frame encountered stop codon. Un-stopped CDSs are discarded.
+    Translation happens only within coding sequences (CDSs).
+    A CDS starts wherever a start codon is found and ends with the first in-frame encountered stop codon.
+    Un-stopped CDSs are discarded.
     Both the forward and reverse complement of the nucleotide sequence are considered.
     Each CDS represents one protein.
-    All domains found within a CDS will be added as domains to that protein. Unviable proteins, like
-    proteins without domains or proteins with only regulatory domains, are discarded.
+    All domains found within a CDS will be added as domains to that protein.
+    Unviable proteins, like proteins without domains or proteins with only regulatory domains, are discarded.
 
     If you want to use your own `genetics` object for the simulation you can just assign it after creating `world`:
 
@@ -489,10 +487,9 @@ class Genetics:
 
     Changing these attributes has a large effect on the information content of genomes.
     E.g. how many CDSs per nucleotide, i.e. how many proteins per nucleotide;
-    how long are the average CDSs, i.e. how many domains per protein;
-    how likely is it to encounter a domain; how many domains does each nucleotide encode, i.e.
-    how likely is it for a single substitution to change the proteome, how likely is it that this mutation
-    will only slightly change a domain or completely change it.
+    how long are the average CDSs, i.e. how many domains per protein; how likely is it to encounter a domain;
+    how many domains does each nucleotide encode, i.e. how likely is it for a single substitution to change the proteome,
+    how likely is it that this mutation will only slightly change a domain or completely change it.
     """
 
     def __init__(
@@ -585,10 +582,10 @@ class Genetics:
         
         - `seq` nucleotide sequence
 
-        Both forward and reverse-complement are considered. CDSs are derived
-        (see `genetics.get_coding_regions()`) and a protein is translated for
-        every CDS (see `genetics.translate_seq()`). Unviable proteins are
-        discarded.
+        Both forward and reverse-complement are considered.
+        CDSs are extracted (see `genetics.get_coding_regions()`)
+        and a protein is translated for every CDS (see `genetics.translate_seq()`).
+        Unviable proteins (no domains or only regulatory domains) are discarded.
         """
         bwd = reverse_complement(seq)
         cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
@@ -603,12 +600,10 @@ class Genetics:
 
         - `seq` nucleotide sequence
 
-        Assuming coding region can start at any start codon and
-        is stopped with the first stop codon encountered in same
-        frame.
+        Assuming coding region can start at any start codon
+        and is stopped with the first in-frame stop codon encountered.
 
-        Ribosomes will stall without stop codon. So, a coding region
-        without a stop codon is not considerd.
+        Ribosomes will stall without stop codon. So, a coding region without a stop codon is not considerd.
         (https://pubmed.ncbi.nlm.nih.gov/27934701/)
         """
         n = len(seq)

@@ -11,16 +11,17 @@ class Kinetics:
     Usually this class is instantiated automatically when initializing `world`.
     You can access it on `world.kinetics`.
 
-    - `molecules` List of molecule species. They have to be in the same order as
-      they are on `chemistry.molecules`.
-    - `abs_temp` Absolute temperature in Kelvin will influence the free Gibbs energy calculation
-      of reactions. Higher temperature will give the reaction quotient term higher importance.
-    - `device` Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
+    - `molecules` List of molecule species.
+      They have to be in the same order as they are on `chemistry.molecules`.
+    - `abs_temp` Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
+      Higher temperature will give the reaction quotient term higher importance.
+    - `device` Device to use for tensors
+      (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
       This has to be the same device that is used by `world`.
     
     There are `c` cells, `p` proteins, `s` signals.
-    Signals are basically molecule species, but we have to differentiate between intra- and extracellular
-    molecule species. So, there are twice as many signals as molecule species.
+    Signals are basically molecule species, but we have to differentiate between intra- and extracellular molecule species.
+    So, there are twice as many signals as molecule species.
     The order of molecule species is always the same as in `chemistry.molecules`.
     First, all intracellular molecule species are listed, then all extracellular.
     The order of cells is always the same as in `world.cells` and the order of proteins
@@ -36,14 +37,15 @@ class Kinetics:
       This is looks similar to a stoichiometric number. Numbers > 0.0 mean these molecules
       act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
     
-    The main method is `kinetics.integrate_signals()`. When calling `world.enzymatic_activity()`,
-    a matrix `X` of signals (c, s) is prepared and then `kinetics.integrate_signals(X)` is called.
-    Updated signals are returned and `world` writes them back to `world.cell_molecules` and
-    `world.molecule_map`.
+    The main method is `kinetics.integrate_signals()`.
+    When calling `world.enzymatic_activity()`, a matrix `X` of signals (c, s) is prepared
+    and then `kinetics.integrate_signals(X)` is called.
+    Updated signals are returned and `world` writes them back to `world.cell_molecules` and `world.molecule_map`.
 
     Another method, which ended up here, is `kinetics.set_cell_params()` (and `kinetics.unset_cell_params()`)
-    which reads proteomes and updates cell parameters accordingly. This is called whenever the proteomes
-    of some cells changed. Currently, this is also the main bottleneck in performance.
+    which reads proteomes and updates cell parameters accordingly.
+    This is called whenever the proteomes of some cells changed.
+    Currently, this is also the main bottleneck in performance.
     """
 
     # TODO: I could use some native torch functions in some places, e.g. ReLU
@@ -92,11 +94,10 @@ class Kinetics:
         - `cell_prots` list of tuples of cell indexes, protein indexes, and the protein itself
 
         You can compare proteins within a cell and only update the ones that changed.
-        The comparison (`protein0 == protein1`) will note a difference in any of the proteins
-        attributes.
+        The comparison (`protein0 == protein1`) will note a difference in any of the proteins attributes.
 
-        Indexes for proteins are the same as in a cell's object `cell.proteome` and indexes for
-        cells are the same as in `world.cells` or `cell.idx`.
+        Indexes for proteins are the same as in a cell's object `cell.proteome`
+        and indexes for cells are the same as in `world.cells` or `cell.idx`.
         """
         if len(cell_prots) == 0:
             return
@@ -129,16 +130,13 @@ class Kinetics:
 
         - `X` Tensor of every signal in every cell (c, s). Must all be >= 0.0.
         
-        Returns a new tensor of the same shape which represents the updated
-        signals for every cell.
+        Returns a new tensor of the same shape which represents the updated signals for every cell.
 
-        The order of cells in `X` is the same as in `world.cells` and the order
-        of signals is first all intracellular molecule species in the same order
-        as `chemistry.molecules`, then again all molecule species in the same order
-        but this time describing extracellular molecule species. The number of
-        intracellular molecules comes from `world.cell_molecules` for any particular
-        cell. The number of extracellular molecules comes from `world.molecule_map`
-        from the pixel the particular cell currently lives on.
+        The order of cells in `X` is the same as in `world.cells`
+        The order of signals is first all intracellular molecule species in the same order as `chemistry.molecules`,
+        then again all molecule species in the same order but this time describing extracellular molecule species.
+        The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
+        The number of extracellular molecules comes from `world.molecule_map` from the pixel the particular cell currently lives on.
         """
         # adjust direction
         lKe = -self.E / self.abs_temp / GAS_CONSTANT  # (c, p)
@@ -197,12 +195,11 @@ class Kinetics:
         """
         Remove cells from cell params
 
-        - `keep` Bool tensor (c,) which is true for every
-          cell that should not be removed and false for every
-          cell that should be removed.
+        - `keep` Bool tensor (c,) which is true for every cell that should not be removed
+          and false for every cell that should be removed.
         
-        `keep` must have the same length as `world.cells`. The
-        indexes on `keep` reflect the indexes in `world.cells`.
+        `keep` must have the same length as `world.cells`.
+        The indexes on `keep` reflect the indexes in `world.cells`.
         """
         self.Km = self.Km[keep]
         self.Vmax = self.Vmax[keep]

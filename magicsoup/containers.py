@@ -5,27 +5,28 @@ import torch
 
 class Molecule:
     """
-    Represents a molecule species which is part of the world, can diffuse,
-    degrade, and be converted into other molecules.
+    Represents a molecule species which is part of the world, can diffuse, degrade,
+    and be converted into other molecules.
 
     - `name` Used to uniquely identify this molecule species.
     - `energy` In principle a standard free Gibbs energy of formation for 1 mol of this molecule species.
       This amount of energy is released if the molecule would be deconstructed.
       Energetically coupled in a protein it could power other activities.
     - `half_life` Half life of this molecule species in time steps.
-       Molecules degrade by one step if you call `world.degrade_molecules()`. Must be > 0.0.
-    - `diffusivity` A measure for how quick this molecule species diffuses over the molecule map
-      during each time step. Molecules diffuse when calling `world.diffuse_molecules()`.
-      0.0 would mean it doesn't diffuse at all. 1.0 would mean it is spread out equally
-      around its Moore's neighborhood within one time step.
-    - `permeability` A measure for how quick this molecule species permeates cell membranes
-      during each time step. Molecules permeate cell membranes when calling `world.diffuse_molecules()`.
-      0.0 would mean it can't permeate cell membranes. 1.0 would this molecule species spreads
-      equally between cell and molecule map pixel within one time step.
+      Molecules degrade by one step if you call `world.degrade_molecules()`.
+      Must be > 0.0.
+    - `diffusivity` A measure for how quick this molecule species diffuses over the molecule map during each time step.
+      Molecules diffuse when calling `world.diffuse_molecules()`.
+      0.0 would mean it doesn't diffuse at all.
+      1.0 would mean it is spread out equally around its Moore's neighborhood within one time step.
+    - `permeability` A measure for how quick this molecule species permeates cell membranes during each time step.
+      Molecules permeate cell membranes when calling `world.diffuse_molecules()`.
+      0.0 would mean it can't permeate cell membranes.
+      1.0 would mean it spreads equally between cell and molecule map pixel within one time step.
     
     Each molecule species which is supposed to be unique should have a unique `name`.
-    In fact, if you initialize a molecule with the same name multiple times, only one
-    instance of this molecule will be created. E.g.
+    In fact, if you initialize a molecule with the same name multiple times,
+    only one instance of this molecule will be created.
 
     ```
         atp = Molecule("ATP", 10)
@@ -34,47 +35,49 @@ class Molecule:
     ```
 
     This is used later on in the simulation to make efficient comparisons.
-    It also allows you to define overlapping chemistries without creating multiple
-    molecule instances of the same molecule species.
+    It also allows you to define overlapping chemistries without creating multiple molecule instances of the same molecule species.
     
-    However, this also means that if 2 molecules have the same name, other attributes
-    like e.g. energy must also match:
+    However, this also means that if 2 molecules have the same name, other attributes like e.g. energy must also match:
 
     ```
         atp = Molecule("ATP", 10)
         Molecule("ATP", 20)  # raises error
     ```
 
-    Molecule half life should represent the half life if the molecule is not actively deconstructed
-    by a protein. Molecules degrade by one step whenever you call `world.degrade_molecules()`.
-    You can setup the simulation to always call `world.degrade_molecules()` whenever a time step
-    is finished. You could define one time step to equal one second and then use the real half life value
-    for your molecule species.
+    Molecule half life should represent the half life if the molecule is not actively deconstructed by a protein.
+    Molecules degrade by one step whenever you call `world.degrade_molecules()`.
+    You can setup the simulation to always call `world.degrade_molecules()` whenever a time step is finished.
+    You could define one time step to equal one second and then use the real half life value for your molecule species.
 
     Molecular diffusion in the 2D molecule map happens whenever you call `world.diffuse_molecules()`.
-    The molecule map is `world.molecule_map`. It is a 3D tensor where dimension 0
-    represents all molecule species of the simulation. They are ordered in the same way the attribute
-    `molecules` is ordered in the `Chemistry` object you defined. Dimension 1 represents x positions
-    and dimension 2 y positions. Diffusion is implemented as a 2D convolution over the x-y tensor
-    for each molecule species. This convolution has a 9x9 kernel. So, it alters the Moore's neighborhood
-    of each pixel. How much of the center pixel's molecules are allowed to diffuse to the surrounding 8
-    pixels is defined by `diffusivity`. `diffusivity` is the ratio `a/b` when `a` is the amount of molecules
-    diffusing to each of the 8 surrounding pixels, and `b` is the amount of molecules on the center pixel.
+    The molecule map is `world.molecule_map`.
+    It is a 3D tensor where dimension 0 represents all molecule species of the simulation.
+    They are ordered in the same way the attribute `molecules` is ordered in the `Chemistry` object you defined.
+    Dimension 1 represents x positions and dimension 2 y positions.
+    Diffusion is implemented as a 2D convolution over the x-y tensor for each molecule species.
+    This convolution has a 9x9 kernel.
+    So, it alters the Moore's neighborhood of each pixel.
+    How much of the center pixel's molecules are allowed to diffuse to the surrounding 8 pixels is defined by `diffusivity`.
+    `diffusivity` is the ratio `a/b` when `a` is the amount of molecules diffusing to each of the 8 surrounding pixels,
+    and `b` is the amount of molecules on the center pixel.
     Thus, `diffusivity=1.0` means all molecules of the center pixel are spread equally across the 9 pixels.
     
-    Molecules permeating cell membranes also happens with `world.diffuse_molecules()`. Cell molecules are
-    defined in `world.cell_molecules`. It is a 2D tensor where dimension 0 represents all cells and dimension
-    1 represents all molecule species. Again, molecule species are ordered in the same way the attribute
-    `molecules` is ordered in the `Chemistry` object you defined. Dimension 0 always changes its length depedning
-    on how cell replicate or die. The cell index (`cell.idx`) for any cell equals the index in `world.cell_molecules`.
+    Molecules permeating cell membranes also happens with `world.diffuse_molecules()`.
+    Cell molecules are defined in `world.cell_molecules`.
+    It is a 2D tensor where dimension 0 represents all cells and dimension 1 represents all molecule species.
+    Again, molecule species are ordered in the same way the attribute `molecules` is ordered in the `Chemistry` object you defined.
+    Dimension 0 always changes its length depedning on how cell replicate or die.
+    The cell index (`cell.idx`) for any cell equals the index in `world.cell_molecules`.
     So, the amount of molecule species currently in cell with index 100 are defined in `world.cell_molecules[100]`.
     `permeability` defines how much molecules can permeate from `world.molecule_map` into `world.cell_molecules`.
-    Each cell lives on a certain pixel with x and y position. And although there are already molecules on this pixel,
-    the cell retains its own molecules. `permeability` allows molecules from that pixel in the molecule map to
-    permeate into the cell that lives on that pixel (and vice versa). So e.g. if cell 100 lives on pixel 12,450.
+    Each cell lives on a certain pixel with x and y position.
+    And although there are already molecules on this pixel, the cell has its own molecules.
+    You could imagine the cell as a bag of molecule hovering over the pixel.
+    `permeability` allows molecules from that pixel in the molecule map to permeate into the cell that lives on that pixel (and vice versa).
+    So e.g. if cell 100 lives on pixel 12, 450
     Molecules would be allowed to move from `world.molecule_map[:, 12, 450]` to `world.cell_molecules[100, :]`.
-    Again, this happens separately for every molecule species depending on its `permeability` value. Specifically,
-    `permeability` is the ratio of molecules that can permeate into the cell and the molecules that stay outside.
+    Again, this happens separately for every molecule species depending on its `permeability` value.
+    Specifically, `permeability` is the ratio of molecules that can permeate into the cell and the molecules that stay outside.
     Thus, a value of 1.0 means within one call half the molecules permeate into the cell.
     This permeation also happens the other way round, from inside the cell to the outside.
     """
@@ -188,16 +191,15 @@ class Chemistry:
                   All reactions can happen in both directions (left to right or vice versa).
 
     `molecules` should include at least all molecule species that are mentioned in `reactions`.
-    But it is possible to define more molecule species. Cells could use any molecule species in
-    transporer or regulatory domains.
+    But it is possible to define more molecule species. Cells could use any molecule species in transporer or regulatory domains.
     
     Duplicate reactions and molecules will be removed on initialization.
     As any reaction can take place in both directions, it is not necessary to define both directions.
     To combine multiple chemistries you can do `both = chemistry1 & chemistry2` which will combine all molecules and reactions.
 
     The chemistry object is used by the `world` object to know what molecule species exist.
-    On initialization it is also passed to the `genetics` object, which uses `chemistry` to know about
-    each molecule species and reaction and then build domain factories for those.
+    On initialization it is also passed to the `genetics` object,
+    which uses `chemistry` to know about each molecule species and reaction and then build domain factories for those.
     """
 
     def __init__(
@@ -266,45 +268,43 @@ class Domain:
     Domains should not be instantiated directly as `Domain`.
     The `genetics` object will create factories for all possible domains and use them when translating genomes.
     So, there should be no reason to instantiate them at all.
-    However, if you want to directly create domain objects, better use
-    `CatalyticDomain`, `TransporterDomain`, or `RegulatoryDomain` for that.
+    However, if you want to directly create domain objects, better use `CatalyticDomain`, `TransporterDomain`, or `RegulatoryDomain` for that.
 
-    - `substrates` All molecule species used by this domain. The concrete interpretation
-      depends on the type of domain.
-    - `products` All molecules produced by this domain. The concrete interpretation
-      depends on the type of domain.
-    - `affinity` The substrate affinity of this domain. Represents Km in Michaelis
-      Menten kinetics.
-    - `velocity` The maximum velocity of this domain. Represents Vmax in Michaelis
-      Menten kinetics. This is only relevant for certain types of domains.
-    - `is_bkwd` Bool which decides in which direction the domain will be coulpled
-      to other domains of the same protein. This is relevant only for proteins with
-      multiple domains. All reactions and transports of the same protein will move
-      either in one direction or the other. What this direction is, is decided by the
-      Nernst equation. However, which molecule species are on the left or right side
-      is defined by `is_bkwd`.
+    - `substrates` All molecule species used by this domain.
+      The concrete interpretation depends on the type of domain.
+    - `products` All molecules produced by this domain.
+      The concrete interpretation depends on the type of domain.
+    - `affinity` The substrate affinity of this domain.
+      Represents Km in Michaelis Menten kinetics.
+    - `velocity` The maximum velocity of this domain.
+      Represents Vmax in Michaelis Menten kinetics.
+      This is only relevant for certain types of domains.
+    - `is_bkwd` Bool which decides in which direction the domain will be coulpled to other domains of the same protein.
+      This is relevant only for proteins with multiple domains.
+      All reactions and transports of the same protein will move either in one direction or the other.
+      What this direction is, is decided by the Nernst equation.
+      However, which molecule species are on the left or right side is defined by `is_bkwd`.
     - `is_catalytic` Flag to indicate that this is a catalytic domain.
     - `is_transporter` Flag to indicate that this is a transporter domain.
     - `is_regulatory` Flag to indicate that this is a regulatory domain.
-    - `is_inhibiting` Flag to indicate that this is a inhibiting domain. This is only
-      relevant for regulatory domains.
-    - `is_transmembrane` Flag to indicate that this is a transmembrane domain. This is relevant
-      for regulatory domains.
+    - `is_inhibiting` Flag to indicate that this is a inhibiting domain.
+      This is only relevant for regulatory domains.
+    - `is_transmembrane` Flag to indicate that this is also a transmembrane domain.
+      This is relevant for regulatory domains.
 
-    When cells are updated (or new cells are created) their genomes are translated into
-    proteomes. These proteomes are lists of proteins, which in turn carry lists of domains.
-    `world` then reads through these proteins and domains and sets the kinetic parameters
-    for each cell accordingly.
+    When cells are updated (or new cells are created) their genomes are translated into proteomes.
+    These proteomes are lists of proteins, which in turn carry lists of domains.
+    `world` then reads through these proteins and domains and sets the kinetic parameters for each cell accordingly.
 
     You can compare domains (`domain0 == domain1`) and sort them (`sorted(domains)`).
     Thes comparisons are based on all the domains attributes, like `affinity` and `velocity`.
     So, even if 2 domains both catalyze the same reaction, they might not be equal.
     Hashes for these comparisons are calculated during initialization of the domain object.
-    So, it makes no sense to alter the domain object after initialization, and then do
-    a comparison afterwards.
+    So, it makes no sense to alter the domain object after initialization, and then do a comparison afterwards.
 
-    If you print domains they will display all details, but if you convert them to strings,
-    only the most important parts are displayed (e.g. `str(domain)` or `f"{domain}").
+    If you print domains they will display all details,
+    but if you convert them to strings, only the most important parts are displayed
+    (e.g. `str(domain)` or `f"{domain}").
     """
 
     def __init__(
@@ -388,10 +388,14 @@ class Protein:
     - `domains` all domains of the protein
     - `label` Can be used to label this protein. Has no effect.
 
-    Proteins can be compared (`protein0 == protein1`). This comparison is based
-    on comparing all sorted domains. These domain comparisons also take into consideration
-    domain affinities and velocities. So, even seemingly similar proteins might
-    fail the comparison.
+    Proteins can be compared (`protein0 == protein1`).
+    This comparison is based on comparing all sorted domains.
+    These domain comparisons also take into consideration domain affinities and velocities.
+    So, even seemingly similar proteins might fail the comparison.
+
+    A hash that is used during protein to protein comparisons is calculated once during
+    instantiation of the protein. So, it doesn't make sense to alter an already instantiated
+    protein object and then compare it afterwards.
 
     ```
         p0 = Protein(domains=[])
@@ -402,12 +406,8 @@ class Protein:
         assert p0 != p1  # assertion error
     ```
 
-    A hash that is used during protein to protein comparisons is calculated once during
-    instantiation of the protein. So, it doesn't make sense to alter an already instantiated
-    protein object and then compare it afterwards.
-
-    If you print a protein, it will show all its domains in detail. But if you convert
-    it to a string (e.g. `str(protein)` or `f"{protein}"`) it will only show the label.
+    If you print a protein, it will show all its domains in detail.
+    But if you convert it to a string (e.g. `str(protein)` or `f"{protein}"`) it will only show the label.
     """
 
     def __init__(self, domains: list[Domain], label="P"):
@@ -443,42 +443,40 @@ class Cell:
     - `n_survived_steps` Number of time steps this cell has survived.
     - `n_replications` Number of times this cell has divided itself.
 
-    When new cells are added to `world` (directly or by replication), they are
-    automatically placed, their genomes are translated, and they are given an index.
-    Then they are added as an entry to a list `world.cells`. So, usually you would
-    not directly instantiate a cell.
+    When new cells are added to `world` (directly or by replication),
+    they are automatically placed, their genomes are translated, and they are given an index.
+    Then they are added as an entry to a list `world.cells`.
+    So, usually you would not directly instantiate a cell.
 
-    The `world` object maintains this list of cells `world.cells` during the
-    simulation, removing killed cells and adding new or replicated cells.
-    However, for performance reasons not all attributes on this list of cell objects
-    is always updated. If you want to get a cell object with all its current
-    attributes, use `world.get_cell()`.
+    The `world` object maintains this list of cells `world.cells` during the simulation,
+    removing killed cells and adding new or replicated cells.
+    However, for performance reasons not all attributes on this list of cell objects is always updated.
+    If you want to get a cell object with all its current attributes, use `world.get_cell()`.
 
     Apart from the initialization arguments, there are some other useful attributes:
-    - `int_molecules` Intracellular molecules. A tensor with one dimension that
-      represents each molecule species in the same order as defined in `chemistry`.
-    - `ext_molecules` Extracellular molecules. A tensor with one dimension that
-      represents each molecule species in the same order as defined in `chemistry`.
+    - `int_molecules` Intracellular molecules.
+      A tensor with one dimension that represents each molecule species in the same order as defined in `chemistry`.
+    - `ext_molecules` Extracellular molecules.
+      A tensor with one dimension that represents each molecule species in the same order as defined in `chemistry`.
       These are the molecules of the pixel the cell is currently living on.
 
-    A map of all pixels occupied by a cell exists as a tensor `world.cell_map`. A map
-    of all extracellular molecules exists as tensor `world.molecule_map`. All intracellular
-    molecules are defined as a tensor `world.cell_molecules`. `world.cell_survival` and
-    `world.cell_divisions` are tensors that define how many round each cell has survived
-    and how many times each cell was replicated. For performance reasons the simulation
-    is working with these tensors. Their values are not copied into the list of cell
-    objects `world.cells`. By default the cell objects in `world.cells` only always
-    have a genome, proteome, and a position. If you also want to know the other
-    attributes of a specific cell use `world.get_cell()`.
+    A map of all pixels occupied by a cell exists as a tensor `world.cell_map`.
+    A map of all extracellular molecules exists as tensor `world.molecule_map`.
+    All intracellular molecules are defined as a tensor `world.cell_molecules`.
+    `world.cell_survival` and `world.cell_divisions` are tensors that define how many round each cell has survived
+    and how many times each cell was replicated.
+    For performance reasons the simulation is working with these tensors.
+    Their values are not copied into the list of cell objects `world.cells` during the simulation.
+    By default the cell objects in `world.cells` only always have a genome, proteome, and a position.
+    If you also want to know the other attributes of a specific cell use `world.get_cell()`.
     
     During cell division this simulation has a concept of parent and child.
-    The parent is the cell that stays on the same pixel, while the child is
-    the new cell that will occupy another pixel. The child will have `n_survived_steps=0`
-    and `n_replications=0` when it is born. The parent will keep these values.
-    Both cells will have the same genome and proteome.
+    The parent is the cell that stays on the same pixel, while the child is the new cell that will occupy another pixel.
+    The child will have `n_survived_steps=0` and `n_replications=0` when it is born.
+    The parent will keep these values. Both cells will have the same genome and proteome.
 
-    You can compare cells to each other (`cell0 == cell1`). This comparison is based on the
-    genome. So, other attributes are not compared.
+    You can compare cells to each other (`cell0 == cell1`).
+    This comparison is based on the genome. Other attributes are not compared.
     """
 
     def __init__(
