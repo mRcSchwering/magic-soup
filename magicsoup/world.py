@@ -18,41 +18,65 @@ class World:
 
     - `chemistry` The chemistry object that defines molecule species and reactions for this simulation.
     - `map_size` Size of world map as number of pixels in x- and y-direction
-    - `abs_temp` Absolute temperature in Kelvin will influence the free Gibbs energy calculation
-      of reactions. Higher temperature will give the reaction quotient term higher importance.
-    - `mol_map_init` How to initialize molecule maps (`randn` or `zeros`). `randn` is normally distributed
-      N(10, 1), `zeros` is all zeros.
+    - `abs_temp` Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
+      Higher temperature will give the reaction quotient term higher importance.
+    - `mol_map_init` How to initialize molecule maps (`randn` or `zeros`).
+      `randn` is normally distributed N(10, 1), `zeros` is all zeros.
     - `start_codons` start codons which start a coding sequence (translation only happens within coding sequences)
     - `stop_codons` stop codons which stop a coding sequence (translation only happens within coding sequences)
     - `device` Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
       This has to be the same device that is used by `world`.
 
-    The world map (for cells and molecules) is a square map with `map_size` pixels in both
-    directions. But it is "circular" in that when you move over the border to the left, you re-appear
-    on the right and vice versa (same for top and bottom). Each cell occupies one pixel. The cell
-    experiences molecules on on that pixel as extracellular molecules. Additionally,
-    the cell has its intracellular molecules.
-
-    This object holds several tensors representing the environment of the world and its cells:
+    Most attributes on this class describe the current state of molecules and cells.
+    Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
+    Likewise, cells are always ordered the same way as in `world.cells` (see below).
+    The index of a certain cell is the index of that cell in `world.cells`.
+    It is the same index as `cell.idx` of a cell object you retrieved with `world.get_cell()`.
+    But whenever an operation modifies the number of cells (like `world.kill_cells()` or `world.replicate_cells()`),
+    cells get new indexes. Here are the most important attributes:
 
     - `cells` A list of cell objects. These cell objects hold e.g. each cell's genome and proteome.
-    - `cell_map` Boolean 2D tensor referencing which pixels are occupied by a cell. Dimension 0 represents the x, dimension 1 y.
-    - `molecule_map` Float 3D tensor describing how many molecules (in mol) of each molecule species exist on every pixel
-      in this world. Dimension 0 describes the molecule species. They are in the same order as `chemistry.molecules`.
-      Dimension 1 represents x, dimension 2 y. So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species
-      on pixel 1, 2.
+    - `cell_map` Boolean 2D tensor referencing which pixels are occupied by a cell.
+      Dimension 0 represents the x, dimension 1 y.
+    - `molecule_map` Float 3D tensor describing how many molecules (in mol) of each molecule species exist on every pixel in this world.
+      Dimension 0 describes the molecule species. They are in the same order as `chemistry.molecules`.
+      Dimension 1 represents x, dimension 2 y.
+      So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species on pixel 1, 2.
     - `cell_molecules` Float 2D tensor describing the number of molecules (in mol) for each molecule species in each cell.
       Dimension 0 is the cell index. It is the same as in `world.cells` and the same as on a cell object (`cell.idx`).
-      Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`. So, `world.cell_molecules[0, 1]`
-      represents how many mol of the 1st molecule species the 0th cell contains.
-    - `cell_survival` Integer 1D tensor describing how many time steps each cell survived. Cells are in the same as in
-      `world.cells` and the same as on a cell object (`cell.idx`).
-    - `cell_divisions` Integer 1D tensor describing how many times each cell replicated. Cells are in the same as in
-      `world.cells` and the same as on a cell object (`cell.idx`).
+      Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
+      So, `world.cell_molecules[0, 1]` represents how many mol of the 1st molecule species the 0th cell contains.
+    - `cell_survival` Integer 1D tensor describing how many time steps each cell survived.
+      Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
+    - `cell_divisions` Integer 1D tensor describing how many times each cell replicated.
+      Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
 
-    Furthermore, there is a list `cells` which holds all currently living cells with their position, genome,
-    proteome and more. To gather all information for a particular cell use `get_cell`. Some attributes like
-    intra- and extracellular molecule abundances will be added to the cell object when using `get_cell`.
+    Then, there are methods for advancing the simulation:
+
+    - `add_random_cells` add new cells and place them randomly on the map
+    - `replicate_cells` replicate existing cells
+    - `update_cells` update existing cells if their genome has changed
+    - `kill_cells` kill existing cells
+    - `move_cells` move existing cells to a random position in their Moore's neighborhood
+    - `diffuse_molecules` let molecules diffuse and permeate by one time step
+    - `degrade_molecules` let molecules degrade by one time step
+    - `increment_cell_survival` increment `world.cell_survival` by 1
+    - `enzymatic_activity` let cell proteins work for one time step
+      
+    If you want to get a cell with all information about its contents and its current environment use `world.get_cell()`.
+    During the simulation you should however work directly with the tensors mentioned above for performance reasons.
+
+    Furthermore, there are methods for saving and loading a simulation.
+    For any new simulation use `world.save()` once to save the whole world object (with chemistry, genetics, kinetics)
+    to a pickle file. You can restore it with `World.from_file()` later on.
+    Then, to save the world's state you can use `world.save_state()`.
+    This is a quick, lightweight save, but it only saves things that change during the simulation.
+    Use `world.load_state()` to re-load a certain state.
+
+    Finally, the `world` object carries `world.genetics`, `world.kinetics`, and `world.genetics.chemistry`
+    (which is just a reference to the chemistry object that was used when initializing `world`).
+    Usually, you don't need to touch them.
+    But, if you want to override them or look into some details, see the docstrings of their classes for more information.
     """
 
     def __init__(
@@ -109,6 +133,9 @@ class World:
             n=self.n_molecules, size=self.map_size, init=mol_map_init
         ).to(self.device)
 
+    # TODO: does it make sense to keep cell indexes constant (even after deleting cells)
+    #       and only adding new indexes?
+
     def get_cell(
         self,
         by_idx: Optional[int] = None,
@@ -123,8 +150,8 @@ class World:
         - `by_position` get cell by position (x, y)
 
         When accessing `world.cells` directly, the cell object will not have all information.
-        For performance reasons most cell attributes are maintained in tensors during the
-        simulation. Only genome and proteome are maintained during the simulation.
+        For performance reasons most cell attributes are maintained in tensors during the simulation.
+        Only genome and proteome are maintained during the simulation.
         When you call `world.get_cell()` all missing information will be added to the object.
         """
         if by_idx is not None:
@@ -157,9 +184,9 @@ class World:
 
         Returns the indexes of successfully added cells.
 
-        Each cell will be placed randomly on the map and receive half the molecules
-        of the pixel where it was added. If there are less pixels left on the cell map
-        than cells you want to add, only the remaining pixels will be filled with new cells.
+        Each cell will be placed randomly on the map and receive half the molecules of the pixel where it was added.
+        If there are less pixels left on the cell map than cells you want to add,
+        only the remaining pixels will be filled with new cells.
 
         All lists and tensors that reference cells will be updated.
         """
@@ -226,22 +253,20 @@ class World:
 
         - `parent_idxs` Cell indexes of the cells that should replicate.
 
-        Returns a list of tuples of parent and child cell indexes for all successfully
-        replicated cells.
+        Returns a list of tuples of parent and child cell indexes for all successfully replicated cells.
 
         In this simulation the cell that was brought to replicate is the parent.
-        It still lives on the same pixel. The child is the cell that was newly added
-        next to the parent. The child will start with 0 survived steps and 0 replications,
-        while the parent keeps its number of survived steps and increments its number
-        of replications. Half the parent's molecules will be given to the child.
+        It still lives on the same pixel.
+        The child is the cell that was newly added next to the parent.
+        The child will start with 0 survived steps and 0 replications,
+        while the parent keeps its number of survived steps and increments its number of replications.
+        Half the parent's molecules will be given to the child.
 
         Each child will be placed randomly next to its parent (Moore's neighborhood).
         If every pixel in the parent's Moore's neighborhood is taken the cell will not replicate.
 
         All lists and tensors that reference cells will be updated.
         """
-        # TODO: maybe give child the same survived steps and replicated values?
-        #       then average survived steps and replications are more meaningful
         if len(parent_idxs) == 0:
             return []
 
@@ -319,8 +344,7 @@ class World:
         
         - `cell_idxs` indexes of the cells that should die
         
-        Cells that are killed dump their molecule contents onto the pixel
-        they used to live on.
+        Cells that are killed dump their molecule contents onto the pixel they used to live on.
         
         Cells will be removed from all lists and tensors that reference cells.
         Thus, after killing cells the index of some living cells will be updated.
@@ -358,8 +382,7 @@ class World:
 
         - `cell_idxs` indexes of cells that should be moved
         
-        If every pixel in the cells' Moore neighborhood is taken
-        the cell will not be moved.
+        If every pixel in the cells' Moore neighborhood is taken the cell will not be moved.
         `world.cell_map` will be updated.
         """
         if len(cell_idxs) == 0:
@@ -367,6 +390,23 @@ class World:
 
         cells = [self.cells[i] for i in cell_idxs]
         self._randomly_move_cells(cells=cells)
+
+    def enzymatic_activity(self):
+        """
+        Catalyze reactions for one time step
+
+        This includes molecule transport into or out of the cell.
+        `world.molecule_map` and `cell_molecules` are updated.
+        """
+        if len(self.cells) == 0:
+            return
+
+        xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
+        X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
+        X = self.kinetics.integrate_signals(X=X)
+
+        self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
+        self.cell_molecules = X[:, self._int_mol_idxs]
 
     @torch.no_grad()
     def diffuse_molecules(self):
@@ -403,6 +443,7 @@ class World:
     def degrade_molecules(self):
         """
         Degrade molecules in world map and cells by one time step.
+        
         How quickly each molecule species degrades depends on its half life
         which is defined on the `Molecule` object of that species.
         
@@ -414,28 +455,10 @@ class World:
 
     def increment_cell_survival(self):
         """
-        Increment number of currently living cells' time steps by 1.
-        `world.cell_survival` is updated.
+        Increment `world.cell_survival` by 1.
         """
         idxs = list(range(len(self.cells)))
         self.cell_survival[idxs] += 1
-
-    def enzymatic_activity(self):
-        """
-        Catalyze reactions for one time step
-
-        This includes molecule transport into or out of the cell.
-        `world.molecule_map` and `cell_molecules` are updated.
-        """
-        if len(self.cells) == 0:
-            return
-
-        xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
-        X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
-        X = self.kinetics.integrate_signals(X=X)
-
-        self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
-        self.cell_molecules = X[:, self._int_mol_idxs]
 
     def save(self, rundir: Path, name="world.pkl"):
         """
@@ -445,8 +468,7 @@ class World:
         - `name` name of the pickle file
         
         This is a big and slow save.
-        It saves everything needed to restore the world with its
-        chemistry and genetics.
+        It saves everything needed to restore the world with its chemistry and genetics.
         Use `World.from_file()` to restore it.
         For a small and quick save use `world.save_state()`.
         """
