@@ -519,11 +519,14 @@ class World:
             ]
             fh.write("\n".join(lines))
 
-    def load_state(self, statedir: Path):
+    def load_state(self, statedir: Path, update_cell_params=True):
         """
         Load a saved world state.
 
         - `statedir` directory that contains all files of that state
+        - `update_cell_params` whether to update cell parameters as well.
+          If you are only interested in the cells' genomes and molecules
+          you can set this to `False` to make loading states faster.
 
         The state had to be saved with `world.save_state()` previously.
         """
@@ -556,7 +559,8 @@ class World:
             self.cells.append(cell)
             genome_idx_pairs.append((seq, idx))
 
-        self.update_cells(genome_idx_pairs=genome_idx_pairs)
+        if update_cell_params:
+            self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
     def _randomly_move_cells(self, cells: list[Cell]):
         for cell in cells:
