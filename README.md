@@ -7,13 +7,13 @@ Then run and see what random mutations can do.
 
 ### Example
 
-The basic building blocks of what a cell can do is essentially defined by the chemistry.
+The basic building blocks of what a cell can do are defined by the world's chemistry.
 There are molecules and reactions that can convert these molecules.
 Cells can develop proteins with domains that can transport these molecules,
 catalyze the reactions, and be regulated by molecules.
 Any reaction or transport happens only if energetically favourable.
 Below, I am defining the reaction $CO2 + NADPH \rightleftharpoons formiat + NADP$.
-The molecules are defined with a fictional standard Gibbs free energy of formation.
+Each molecule species is defined with a fictional standard Gibbs free energy of formation.
 
 ```python
 import torch
@@ -31,11 +31,11 @@ chemistry = ms.Chemistry(reactions=reactions, molecules=molecules)
 world = ms.World(chemistry=chemistry)
 ```
 
-By coupling multiple domains within the same protein energetically unfavourable actions
-can be performed with the energy of energetically favourable ones.
+By coupling multiple domains within the same protein, energetically unfavourable actions
+can be powered with the energy of energetically favourable ones.
 These domains, their specifications, and how they are coupled in proteins, is all encoded in the cell's genome.
 Here, I am generating 100 cells with random genomes of 500 basepairs each and place them
-in random places of a 2D world map.
+in random places on the 2D world map.
 
 ```python
 genomes = [ms.random_genome(s=500) for _ in range(100)]
@@ -88,6 +88,9 @@ for _ in range(1000):
     world.increment_cell_survival()
 ```
 
+![tensorboard example](tensorboard_example.png "tensorboard example")
+_Watching an ongoing simulation using [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html). In this simulation cells were made to fix CO2 from an artificial CO2 source in the middle of the map._
+
 ### Documentation
 
 The user documentation is in the code.
@@ -102,7 +105,7 @@ See the [Molecule](./magicsoup/containers.py) docstring for more information.
 Then, you create a `World` object which defines things like world map and genetics.
 It carries all data that describes the world at this time step with cells, molecule distributions and so on.
 On this object there are also methods that are used to advance the world by one time step.
-Read the [World](./magicsoup.world.py) docstring for more information.
+Read the [World](./magicsoup/world.py) docstring for more information.
 
 Usually, you would only adjust `Molecule`s and `World`.
 However, in some cases you might want to change the way how genetics work,
