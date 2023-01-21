@@ -89,7 +89,7 @@ for _ in range(1000):
 ```
 
 ![tensorboard example](tensorboard_example.png "tensorboard example")
-_Watching an ongoing simulation using [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html). In this simulation cells were made to fix CO2 from an artificial CO2 source in the middle of the map._
+_Watching an ongoing simulation using [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html). In [this simulation](./experiments/e1_co2_fixing/) cells were made to fix CO2 from an artificial CO2 source in the middle of the map._
 
 ### Documentation
 
