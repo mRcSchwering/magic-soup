@@ -5,6 +5,9 @@ Define a 2D world with certain molecules and reactions.
 Add a few cells and create evolutionary pressure by selectively replicating and killing them.
 Then run and see what random mutations can do.
 
+![tensorboard example](tensorboard_example.png "tensorboard example")
+_Watching an ongoing simulation using [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html). In [this simulation](./experiments/e1_co2_fixing/) cells were made to fix CO2 from an artificial CO2 source in the middle of the map._
+
 ### Example
 
 The basic building blocks of what a cell can do are defined by the world's chemistry.
@@ -87,9 +90,6 @@ for _ in range(1000):
     world.diffuse_molecules()
     world.increment_cell_survival()
 ```
-
-![tensorboard example](tensorboard_example.png "tensorboard example")
-_Watching an ongoing simulation using [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html). In [this simulation](./experiments/e1_co2_fixing/) cells were made to fix CO2 from an artificial CO2 source in the middle of the map._
 
 ### Documentation
 
