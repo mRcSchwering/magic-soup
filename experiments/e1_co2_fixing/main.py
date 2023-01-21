@@ -47,6 +47,7 @@ def add_co2(world: ms.World, co2_idx: int):
 def add_energy(
     world: ms.World, atp_idx: int, adp_idx: int, nadph_idx: int, nadp_idx: int
 ):
+    # keep NADPH/NADP and ATP/ADP ratios high
     for high, low in [(atp_idx, adp_idx), (nadph_idx, nadp_idx)]:
         high_avg = world.molecule_map[high].mean().item()
         low_avg = world.molecule_map[low].mean().item()
@@ -182,11 +183,6 @@ def main(args: Namespace, writer: SummaryWriter):
             nadph_idx=NADPH_IDX,
             nadp_idx=NADP_IDX,
         )
-
-        # TODO: 3 steps where only 1 proc is 100% active total about 25s
-        #       then 1 step where all procs are 50% active (probably enzymatic_activity())
-        #       total about 7k cells (avg genome size?)
-        #       should at least be multiprocessing
 
         world.enzymatic_activity()
 
