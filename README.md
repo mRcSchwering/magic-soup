@@ -332,7 +332,8 @@ As transporters in this simulation also function like catalytic domains, the bel
 
 All reaction quotients are compared with their equilibrium constants and turned around if energetically unfavourable.
 Then, quotients and equilibrium constants are used again to calculate a factor for selectively slowing down proteins close to or at their equilibrium.
-This is done with an arbitrary function:
+This factor is multiplied with the final protein velocity.
+It is calculated with an arbitrary function:
 
 $$
 f(x) =
@@ -354,7 +355,7 @@ and its reciprocal $K_M^{-1}$ is set for its product.
 This means if a protein was very sensitive to a substrate and overshot the equilibrium state,
 it will be very unsensitive to the product (which will then be the substrate).
 Thus, the protein might quickly approach and overshoot the equilibrium state from one side,
-but then slowly approach it from the other (and hopefully reach the $0.1 < |x| < 1$ interval).
+but then slowly approach it from the other (and hopefully reach the $|x| < 1$ interval).
 
 One implication or observation from this is, that it is not good to have huge values for $V_{max}$.
 The range of values to draw $V_{max}$ from should not have values much higher than 10 per time step.
