@@ -1,3 +1,5 @@
+__version__ = "0.0.3"
+
 from .containers import *
 from .genetics import *
 from .world import *

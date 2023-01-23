@@ -1095,15 +1095,18 @@ def test_equilibrium_constants():
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     tolerance = 1e-1  # floating point problems
-    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
-    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=tolerance)
-    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
-    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=tolerance)
+    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < tolerance
+    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < tolerance
 
-    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=tolerance)
-    assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
-    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
-    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=tolerance)
+    assert (Xd[1, 0] - dx_c1_a).abs() < tolerance
+    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < tolerance
+
+
+# TODO: pytest.approx doesnt work with torch
 
 
 @pytest.mark.parametrize("gen", [torch.zeros, torch.randn])
