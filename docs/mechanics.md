@@ -49,13 +49,13 @@ domain can up- or down-regulate this domain.
 Specifications are the effector molecule species, whether it is an activating or inhibiting
 effector, the affinity to that effector.
 
-The exact genetic code for these domains is set when the `Genetics` object is instantiated.
+The exact genetic code for these domains is set when the [Genetics][magicsoup.genetics.Genetics] object is instantiated.
 But a user can also override the exact sequence-to-domain mappings.
 This would be _e.g._ the exact sequence which will encode a catalytic domain for a certain reaction, with certain affinities and velocities.
 In principle this flexibility allows a cell to create complex networks including feedback loops,
 oscillators, and cascades.
 
-For more details see [magicsoup/genetics.py](./magicsoup/genetics.py).
+For more details see the [genetics][magicsoup.genetics] module.
 Also see [Kinetics](#kinetics) for details about the domain kinetics and aggregations.
 
 ### Chemistry
@@ -102,7 +102,7 @@ _E.g._ if there are 2 catalytic domains $A \rightleftharpoons B$ and $C \rightle
 they would become $A + C \rightleftharpoons B + D$ if they have the same orientation,
 and $A + D \rightleftharpoons B + C$ if not.
 
-For more details see [magicsoup/kinetics.py](./magicsoup/kinetics.py) where all the logic
+For more details see the [kinetics][magicsoup.kinetics] module where all the logic
 for translating domains into kinetic parameters lives.
 Also see [Implementation](#implementation) for some implications that arise from implementation details.
 
@@ -186,7 +186,7 @@ Doing a lazy limit (_e.g._ `X.clamp(0.0)`) is also not an option.
 This would mean a cell could deconstruct only 1 A while gaining 2 B.
 It would create molecules and energy from nothing.
 This sounds like an unlikely event, but the cells will exploit this (personal experience).
-See `Kinetics.integrate_signals` in [magicsoup/kinetics.py](./magicsoup/kinetics.py) for more information.
+See [integrate_signals][magicsoup.kinetics.Kinetics.integrate_signals] for more information.
 
 #### Integrating multiple domains
 
@@ -233,4 +233,4 @@ but then slowly approach it from the other (and hopefully reach the $|x| < 1$ in
 One implication or observation from this is, that it is not good to have huge values for $V_{max}$.
 The range of values to draw $V_{max}$ from should not have values much higher than 10 per time step.
 If one wants to simulate much higher protein velocities (such as a catalase)
-it would be better to just call `world.enzymatic_activity()` multiples times.
+it would be better to just call [enzymatic_activity][magicsoup.world.World.enzymatic_activity] multiples times.

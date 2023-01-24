@@ -7,4 +7,4 @@
 
 set -e
 
-PYTHONPATH=$PYTHONPATH:./src pytest tests/
+PYTHONPATH=$PYTHONPATH:./src pytest tests/ "$@"
