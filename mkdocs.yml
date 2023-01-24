@@ -1,13 +1,11 @@
 site_name: MagicSoup
 theme: readthedocs
 
-nav:
-  - Home: index.md
-  - Mechanics: mechanics.md
-
 extra_javascript:
   - https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS-MML_HTMLorMML
 
 markdown_extensions:
   - mdx_math:
       enable_dollar_delimiter: True
+  - markdown_include.include:
+      base_path: .
