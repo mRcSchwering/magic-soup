@@ -12,4 +12,7 @@ markdown_extensions:
 
 plugins:
   - search
-  - mkdocstrings
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]

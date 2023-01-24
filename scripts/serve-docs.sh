@@ -7,4 +7,4 @@
 
 set -e
 
-PYTHONPATH=$PYTHONPATH:./src mkdocs serve
+mkdocs serve

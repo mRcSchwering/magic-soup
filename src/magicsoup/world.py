@@ -16,16 +16,17 @@ class World:
     This is the main object for running the simulation.
     It holds all information and includes all methods for advancing the simulation.
 
-    - `chemistry` The chemistry object that defines molecule species and reactions for this simulation.
-    - `map_size` Size of world map as number of pixels in x- and y-direction
-    - `abs_temp` Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
-      Higher temperature will give the reaction quotient term higher importance.
-    - `mol_map_init` How to initialize molecule maps (`randn` or `zeros`).
-      `randn` is normally distributed N(10, 1), `zeros` is all zeros.
-    - `start_codons` start codons which start a coding sequence (translation only happens within coding sequences)
-    - `stop_codons` stop codons which stop a coding sequence (translation only happens within coding sequences)
-    - `device` Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-      This has to be the same device that is used by `world`.
+    Parameters:
+        chemistry: The chemistry object that defines molecule species and reactions for this simulation.
+        map_size: Size of world map as number of pixels in x- and y-direction.
+        abs_temp: Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
+            Higher temperature will give the reaction quotient term higher importance.
+        mol_map_init: How to initialize molecule maps (`randn` or `zeros`).
+            `randn` is normally distributed N(10, 1), `zeros` is all zeros.
+        start_codons: start codons which start a coding sequence (translation only happens within coding sequences).
+        stop_codons: stop codons which stop a coding sequence (translation only happens within coding sequences).
+        device: Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
+            This has to be the same device that is used by `world`.
 
     Most attributes on this class describe the current state of molecules and cells.
     Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
@@ -35,23 +36,24 @@ class World:
     But whenever an operation modifies the number of cells (like `world.kill_cells()` or `world.replicate_cells()`),
     cells get new indexes. Here are the most important attributes:
 
-    - `cells` A list of cell objects. These cell objects hold e.g. each cell's genome and proteome.
-    - `cell_map` Boolean 2D tensor referencing which pixels are occupied by a cell.
-      Dimension 0 represents the x, dimension 1 y.
-    - `molecule_map` Float 3D tensor describing how many molecules (in mol) of each molecule species exist on every pixel in this world.
-      Dimension 0 describes the molecule species. They are in the same order as `chemistry.molecules`.
-      Dimension 1 represents x, dimension 2 y.
-      So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species on pixel 1, 2.
-    - `cell_molecules` Float 2D tensor describing the number of molecules (in mol) for each molecule species in each cell.
-      Dimension 0 is the cell index. It is the same as in `world.cells` and the same as on a cell object (`cell.idx`).
-      Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
-      So, `world.cell_molecules[0, 1]` represents how many mol of the 1st molecule species the 0th cell contains.
-    - `cell_survival` Integer 1D tensor describing how many time steps each cell survived.
-      Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
-    - `cell_divisions` Integer 1D tensor describing how many times each cell replicated.
-      Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
+    Attributes:
+        cells: A list of cell objects. These cell objects hold e.g. each cell's genome and proteome.
+        cell_map: Boolean 2D tensor referencing which pixels are occupied by a cell.
+            Dimension 0 represents the x, dimension 1 y.
+        molecule_map: Float 3D tensor describing how many molecules (in mol) of each molecule species exist on every pixel in this world.
+            Dimension 0 describes the molecule species. They are in the same order as `chemistry.molecules`.
+            Dimension 1 represents x, dimension 2 y.
+            So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species on pixel 1, 2.
+        cell_molecules: Float 2D tensor describing the number of molecules (in mol) for each molecule species in each cell.
+            Dimension 0 is the cell index. It is the same as in `world.cells` and the same as on a cell object (`cell.idx`).
+            Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
+            So, `world.cell_molecules[0, 1]` represents how many mol of the 1st molecule species the 0th cell contains.
+        cell_survival: Integer 1D tensor describing how many time steps each cell survived.
+            Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
+        cell_divisions: Integer 1D tensor describing how many times each cell replicated.
+            Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
 
-    Then, there are methods for advancing the simulation:
+    Methods for advancing the simulation:
 
     - `add_random_cells` add new cells and place them randomly on the map
     - `replicate_cells` replicate existing cells
@@ -62,7 +64,7 @@ class World:
     - `degrade_molecules` let molecules degrade by one time step
     - `increment_cell_survival` increment `world.cell_survival` by 1
     - `enzymatic_activity` let cell proteins work for one time step
-      
+
     If you want to get a cell with all information about its contents and its current environment use `world.get_cell()`.
     During the simulation you should however work directly with the tensors mentioned above for performance reasons.
 
@@ -82,12 +84,12 @@ class World:
     def __init__(
         self,
         chemistry: Chemistry,
-        map_size=128,
-        abs_temp=310.0,
-        mol_map_init="randn",
+        map_size: int = 128,
+        abs_temp: float = 310.0,
+        mol_map_init: str = "randn",
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-        device="cpu",
+        device: str = "cpu",
     ):
         if not torch.cuda.is_available():
             device = "cpu"
@@ -97,7 +99,9 @@ class World:
         self.abs_temp = abs_temp
 
         self.genetics = Genetics(
-            chemistry=chemistry, start_codons=start_codons, stop_codons=stop_codons,
+            chemistry=chemistry,
+            start_codons=start_codons,
+            stop_codons=stop_codons,
         )
 
         mol_degrads: list[float] = []
@@ -122,14 +126,16 @@ class World:
 
         self.cells: list[Cell] = []
         self.kinetics = Kinetics(
-            molecules=chemistry.molecules, abs_temp=abs_temp, device=self.device,
+            molecules=chemistry.molecules,
+            abs_temp=abs_temp,
+            device=self.device,
         )
 
-        self.cell_map = torch.zeros(map_size, map_size).to(device).bool()
-        self.cell_survival = torch.zeros(0).to(device).int()
-        self.cell_divisions = torch.zeros(0).to(device).int()
-        self.cell_molecules = torch.zeros(0, self.n_molecules).to(device)
-        self.molecule_map = self._get_molecule_map(
+        self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
+        self.cell_survival: torch.Tensor = torch.zeros(0).to(device).int()
+        self.cell_divisions: torch.Tensor = torch.zeros(0).to(device).int()
+        self.cell_molecules: torch.Tensor = torch.zeros(0, self.n_molecules).to(device)
+        self.molecule_map: torch.Tensor = self._get_molecule_map(
             n=self.n_molecules, size=self.map_size, init=mol_map_init
         ).to(self.device)
 
@@ -144,7 +150,7 @@ class World:
     ) -> Cell:
         """
         Get a cell with information about its current environment
-        
+
         - `by_idx` get cell by cell index (`cell.idx`)
         - `by_label` get cell by cell label (`cell.label`)
         - `by_position` get cell by position (x, y)
@@ -346,11 +352,11 @@ class World:
     def kill_cells(self, cell_idxs: list[int]):
         """
         Remove existing cells
-        
+
         - `cell_idxs` indexes of the cells that should die
-        
+
         Cells that are killed dump their molecule contents onto the pixel they used to live on.
-        
+
         Cells will be removed from all lists and tensors that reference cells.
         Thus, after killing cells the index of some living cells will be updated.
         E.g. if there are 10 cells and you kill the cell with index 8 (the 9th cell),
@@ -386,7 +392,7 @@ class World:
         Move cells to a random position in their Moore's neighborhood
 
         - `cell_idxs` indexes of cells that should be moved
-        
+
         If every pixel in the cells' Moore neighborhood is taken the cell will not be moved.
         `world.cell_map` will be updated.
         """
@@ -448,10 +454,10 @@ class World:
     def degrade_molecules(self):
         """
         Degrade molecules in world map and cells by one time step.
-        
+
         How quickly each molecule species degrades depends on its half life
         which is defined on the `Molecule` object of that species.
-        
+
         `world.molecule_map` and `cell_molecules` are updated.
         """
         for mol_i, degrad in enumerate(self._mol_degrads):
@@ -471,7 +477,7 @@ class World:
 
         - `rundir` directory of the pickle file
         - `name` name of the pickle file
-        
+
         This is a big and slow save.
         It saves everything needed to restore the world with its chemistry and genetics.
         Use `World.from_file()` to restore it.
@@ -502,11 +508,11 @@ class World:
         Save current state only
 
         - `statedir` directory to store files in (there are multiple files per state)
-        
+
         This is a small and quick save.
         It only saves things which change during the simulation.
         Restore a certain state with `world.load_state()`.
-        
+
         To restore a world object you need to save it at least once with `world.save()`.
         Then, `world.save_state()` can be used to save different states of that world object.
         """
@@ -693,5 +699,8 @@ class World:
 
     def __repr__(self) -> str:
         clsname = type(self).__name__
-        return "%s(map_size=%r,abs_temp=%r)" % (clsname, self.map_size, self.abs_temp,)
-
+        return "%s(map_size=%r,abs_temp=%r)" % (
+            clsname,
+            self.map_size,
+            self.abs_temp,
+        )
