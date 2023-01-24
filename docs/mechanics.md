@@ -1,4 +1,4 @@
-# Mechanics
+## Mechanics
 
 The simulation is an agent-based 2D spatio-temporal simulation.
 Cells are agents. Each cell has a string, the genome, which unambigously encodes a set or proteins, the proteome.
@@ -18,7 +18,7 @@ It is a tradeoff between a reasonable amount of complexity and performance.
 - [Kinetics](#kintics) explain the protein kinetics in this simulation
 - [Implementation](#implementation) some implementation details worth mentioning
 
-## Genetics
+### Genetics
 
 All mechanisms are based on bacterial [transcription](<https://en.wikipedia.org/wiki/Transcription_(biology)>)
 and [translation](<https://en.wikipedia.org/wiki/Translation_(biology)>).
@@ -58,7 +58,7 @@ oscillators, and cascades.
 For more details see [magicsoup/genetics.py](./magicsoup/genetics.py).
 Also see [Kinetics](#kinetics) for details about the domain kinetics and aggregations.
 
-## Chemistry
+### Chemistry
 
 At the basis of this simulation one has to define which molecule species exist
 and which reactions are possible.
@@ -106,7 +106,7 @@ For more details see [magicsoup/kinetics.py](./magicsoup/kinetics.py) where all 
 for translating domains into kinetic parameters lives.
 Also see [Implementation](#implementation) for some implications that arise from implementation details.
 
-## Kinetics
+### Kinetics
 
 All reactions in this simulation are based on [Michaelis-Menten-Kinetics](https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics).
 If a cell has one protein with one _catalytic domain_ that defines $S \rightleftharpoons P$ it will create molecule species $P$ from $S$ with a rate of
@@ -144,7 +144,7 @@ Also note that while an unregulated protein can always be active, a protein with
 regulatory domain can only be active if the activating effector is present.
 So, an activating regulatory domain can also switch off a protein.
 
-## Implementation
+### Implementation
 
 Making the simulation more performant is an oingoing effort.
 I want to get the frequency up to a thousand time steps per second for a simulation with around 100k cells.
@@ -154,7 +154,7 @@ However, there are still parts which are calculated in plain python.
 As of now, these are the operations concerned with creating/mutating genomes, transcription and translation.
 These parts are usually the performance bottlenecks.
 
-### Low molecule abundances
+#### Low molecule abundances
 
 Changes in molecule abundances are calculated for every step based on protein velocities.
 These protein velocities depend in one part on substrate abundances
@@ -188,7 +188,7 @@ It would create molecules and energy from nothing.
 This sounds like an unlikely event, but the cells will exploit this (personal experience).
 See `Kinetics.integrate_signals` in [magicsoup/kinetics.py](./magicsoup/kinetics.py) for more information.
 
-### Integrating multiple domains
+#### Integrating multiple domains
 
 I had to make a decision with $V_{Max}$ and $K_M$ when having proteins with multiple domains.
 When there are multiple _e.g._ catalytic domains, it might make sense to each give them a seperate
@@ -197,7 +197,7 @@ work at different rates. Thus, the whole energy coupling would become more trick
 
 A similar problem arises with $K_M$: multiple domains can attempt to each give a different $K_M$ value to the same molecule species. _E.g._ there could be a catalytic domain that has molecule A as a substrate and a regulatory domain with molecule A as effector. In these cases I decided to also only have 1 value for $K_M$ for each molecule species. All $K_M$ values for the same molecule species in the same protein are averaged.
 
-### Energetic Equilibrium
+#### Energetic Equilibrium
 
 Theoretically, a reaction should occur in one direction according to its free Gibbs energy $\Delta G$. At some point $\Delta G = 0$ is approached
 and the reaction should be in an equilibrium state where no appreciable difference in substrates and products is measurable anymore.
