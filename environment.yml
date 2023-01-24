@@ -6,7 +6,7 @@ dependencies:
   - black
   - mypy
   - twine
-  - build
   - pip:
+      - build
       - -r src/requirements.txt
       - -r tests/requirements.txt
