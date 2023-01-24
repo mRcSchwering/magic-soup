@@ -9,3 +9,7 @@ markdown_extensions:
       enable_dollar_delimiter: True
   - markdown_include.include:
       base_path: .
+
+plugins:
+  - search
+  - mkdocstrings
