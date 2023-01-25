@@ -49,31 +49,33 @@ class World:
             Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
             So, `world.cell_molecules[0, 1]` represents how many mol of the 1st molecule species the 0th cell contains.
         cell_survival: Integer 1D tensor describing how many time steps each cell survived.
+            This tensor is for monitoring and doesn't have any other effect.
             Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
         cell_divisions: Integer 1D tensor describing how many times each cell replicated.
+            This tensor is for monitoring and doesn't have any other effect.
             Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
 
-    Methods for advancing the simulation:
+    Methods for advancing the simulation and to use during a simulation:
 
-    - `add_random_cells` add new cells and place them randomly on the map
-    - `replicate_cells` replicate existing cells
-    - `update_cells` update existing cells if their genome has changed
-    - `kill_cells` kill existing cells
-    - `move_cells` move existing cells to a random position in their Moore's neighborhood
-    - `diffuse_molecules` let molecules diffuse and permeate by one time step
-    - `degrade_molecules` let molecules degrade by one time step
-    - `increment_cell_survival` increment `world.cell_survival` by 1
-    - `enzymatic_activity` let cell proteins work for one time step
+    - [add_random_cells()][magicsoup.world.World.add_random_cells] add new cells and place them randomly on the map
+    - [replicate_cells()][magicsoup.world.World.replicate_cells] replicate existing cells
+    - [update_cells()][magicsoup.world.World.update_cells] update existing cells if their genome has changed
+    - [kill_cells()][magicsoup.world.World.kill_cells] kill existing cells
+    - [move_cells()][magicsoup.world.World.move_cells] move existing cells to a random position in their Moore's neighborhood
+    - [diffuse_molecules()][magicsoup.world.World.diffuse_molecules] let molecules diffuse and permeate by one time step
+    - [degrade_molecules()][magicsoup.world.World.degrade_molecules] let molecules degrade by one time step
+    - [increment_cell_survival()][magicsoup.world.World.increment_cell_survival] increment `world.cell_survival` by 1
+    - [enzymatic_activity()][magicsoup.world.World.enzymatic_activity] let cell proteins work for one time step
 
-    If you want to get a cell with all information about its contents and its current environment use `world.get_cell()`.
+    If you want to get a cell with all information about its contents and its current environment use [get_cell()][magicsoup.world.World.get_cell].
     During the simulation you should however work directly with the tensors mentioned above for performance reasons.
 
     Furthermore, there are methods for saving and loading a simulation.
-    For any new simulation use `world.save()` once to save the whole world object (with chemistry, genetics, kinetics)
-    to a pickle file. You can restore it with `World.from_file()` later on.
-    Then, to save the world's state you can use `world.save_state()`.
+    For any new simulation use [save()][magicsoup.world.World.save] once to save the whole world object (with chemistry, genetics, kinetics)
+    to a pickle file. You can restore it with [from_file()][magicsoup.world.World.from_file] later on.
+    Then, to save the world's state you can use [save_state()][magicsoup.world.World.save_state].
     This is a quick, lightweight save, but it only saves things that change during the simulation.
-    Use `world.load_state()` to re-load a certain state.
+    Use [load_state()][magicsoup.world.World.load_state] to re-load a certain state.
 
     Finally, the `world` object carries `world.genetics`, `world.kinetics`, and `world.genetics.chemistry`
     (which is just a reference to the chemistry object that was used when initializing `world`).
@@ -139,9 +141,6 @@ class World:
             n=self.n_molecules, size=self.map_size, init=mol_map_init
         ).to(self.device)
 
-    # TODO: does it make sense to keep cell indexes constant (even after deleting cells)
-    #       and only adding new indexes?
-
     def get_cell(
         self,
         by_idx: Optional[int] = None,
@@ -149,17 +148,23 @@ class World:
         by_position: Optional[tuple[int, int]] = None,
     ) -> Cell:
         """
-        Get a cell with information about its current environment
+        Get a cell with information about its current environment.
+        Raises `ValueError` if cell was not found.
 
-        - `by_idx` get cell by cell index (`cell.idx`)
-        - `by_label` get cell by cell label (`cell.label`)
-        - `by_position` get cell by position (x, y)
+        Parameters:
+            by_idx: get cell by cell index (`cell.idx`)
+            by_label: get cell by cell label (`cell.label`)
+            by_position: get cell by position (x, y)
+
+        Returns:
+            The searched cell.
 
         When accessing `world.cells` directly, the cell object will not have all information.
         For performance reasons most cell attributes are maintained in tensors during the simulation.
         Only genome and proteome are maintained during the simulation.
         When you call `world.get_cell()` all missing information will be added to the object.
         """
+        idx = -1
         if by_idx is not None:
             idx = by_idx
         if by_label is not None:
@@ -185,16 +190,17 @@ class World:
     def add_random_cells(self, genomes: list[str]) -> list[int]:
         """
         Create new cells and place them on randomly on the map.
+        All lists and tensors that reference cells will be updated.
 
-        - `genomes` list of genomes of the newly added cells
+        Parameters:
+            genomes: List of genomes of the newly added cells
 
-        Returns the indexes of successfully added cells.
+        Returns:
+            The indexes of successfully added cells.
 
         Each cell will be placed randomly on the map and receive half the molecules of the pixel where it was added.
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
-
-        All lists and tensors that reference cells will be updated.
         """
         genomes = [d for d in genomes if len(d) > 0]
         if len(genomes) == 0:
@@ -255,11 +261,14 @@ class World:
 
     def replicate_cells(self, parent_idxs: list[int]) -> list[tuple[int, int]]:
         """
-        Bring cells to replicate
+        Bring cells to replicate.
+        All lists and tensors that reference cells will be updated.
 
-        - `parent_idxs` Cell indexes of the cells that should replicate.
+        Parameters:
+            parent_idxs: Cell indexes of the cells that should replicate.
 
-        Returns a list of tuples of parent and child cell indexes for all successfully replicated cells.
+        Returns:
+            A list of tuples of parent and child cell indexes for all successfully replicated cells.
 
         In this simulation the cell that was brought to replicate is the parent.
         It still lives on the same pixel.
@@ -270,8 +279,6 @@ class World:
 
         Each child will be placed randomly next to its parent (Moore's neighborhood).
         If every pixel in the parent's Moore's neighborhood is taken the cell will not replicate.
-
-        All lists and tensors that reference cells will be updated.
         """
         if len(parent_idxs) == 0:
             return []
@@ -301,7 +308,8 @@ class World:
         """
         Update existing cells with new genomes.
 
-        - `genome_idx_pairs` list of tuples of genomes and cell indexes
+        Parameters:
+            genome_idx_pairs: List of tuples of genomes and cell indexes
 
         The indexes refer to the index of each cell that is changed.
         The genomes refer to the genome of each cell that is changed.
@@ -351,9 +359,11 @@ class World:
 
     def kill_cells(self, cell_idxs: list[int]):
         """
-        Remove existing cells
+        Remove existing cells.
+        All lists and tensors referencing cells will be updated.
 
-        - `cell_idxs` indexes of the cells that should die
+        Parameters:
+            cell_idxs: Indexes of the cells that should die
 
         Cells that are killed dump their molecule contents onto the pixel they used to live on.
 
@@ -389,12 +399,12 @@ class World:
 
     def move_cells(self, cell_idxs: list[int]):
         """
-        Move cells to a random position in their Moore's neighborhood
-
-        - `cell_idxs` indexes of cells that should be moved
-
+        Move cells to a random position in their Moore's neighborhood.
         If every pixel in the cells' Moore neighborhood is taken the cell will not be moved.
         `world.cell_map` will be updated.
+
+        Parameters:
+            cell_idxs: Indexes of cells that should be moved
         """
         if len(cell_idxs) == 0:
             return
@@ -404,10 +414,9 @@ class World:
 
     def enzymatic_activity(self):
         """
-        Catalyze reactions for one time step
-
+        Catalyze reactions for one time step.
         This includes molecule transport into or out of the cell.
-        `world.molecule_map` and `cell_molecules` are updated.
+        `world.molecule_map` and `world.cell_molecules` are updated.
         """
         if len(self.cells) == 0:
             return
@@ -424,12 +433,11 @@ class World:
         """
         Let molecules in molecule map diffuse and permeate through cell membranes
         by one time step.
+        `world.molecule_map` and `world.cell_molecules` are updated.
 
         By how much each molcule species diffuses around the world map and permeates
         into or out of cells if defined on the `Molecule` objects itself.
         See `Molecule` for more information.
-
-        `world.molecule_map` and `cell_molecules` are updated.
         """
         for mol_i, diffuse in enumerate(self._diffusion):
             before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
@@ -454,11 +462,10 @@ class World:
     def degrade_molecules(self):
         """
         Degrade molecules in world map and cells by one time step.
+        `world.molecule_map` and `world.cell_molecules` are updated.
 
         How quickly each molecule species degrades depends on its half life
         which is defined on the `Molecule` object of that species.
-
-        `world.molecule_map` and `cell_molecules` are updated.
         """
         for mol_i, degrad in enumerate(self._mol_degrads):
             self.molecule_map[mol_i] *= degrad
@@ -467,21 +474,23 @@ class World:
     def increment_cell_survival(self):
         """
         Increment `world.cell_survival` by 1.
+        This is for monitoring and doesn't have any other effect.
         """
         idxs = list(range(len(self.cells)))
         self.cell_survival[idxs] += 1
 
-    def save(self, rundir: Path, name="world.pkl"):
+    def save(self, rundir: Path, name: str = "world.pkl"):
         """
         Write whole world object to pickle file
 
-        - `rundir` directory of the pickle file
-        - `name` name of the pickle file
+        Parameters:
+            rundir: Directory of the pickle file
+            name: Name of the pickle file
 
         This is a big and slow save.
         It saves everything needed to restore the world with its chemistry and genetics.
-        Use `World.from_file()` to restore it.
-        For a small and quick save use `world.save_state()`.
+        Use [from_file()][magicsoup.world.World.from_file] to restore it.
+        For a small and quick save use [save_state()][magicsoup.world.World.save_state].
         """
         # TODO: make this JSON, txt, (except for tensors), to make it possible
         #       to continue using a different language
@@ -491,14 +500,17 @@ class World:
             pickle.dump(self, fh)
 
     @classmethod
-    def from_file(self, rundir: Path, name="world.pkl") -> "World":
+    def from_file(self, rundir: Path, name: str = "world.pkl") -> "World":
         """
         Restore previously saved world from pickle file.
+        The file had to be saved with [save()][magicsoup.world.World.save].
 
-        - `rundir` directory of the pickle file
-        - `name` name of the pickle file
+        Parameters:
+            rundir: Directory of the pickle file
+            name: Name of the pickle file
 
-        The file had to be saved with `world.save()`.
+        Returns:
+            A new `world` instance.
         """
         with open(rundir / name, "rb") as fh:
             return pickle.load(fh)
@@ -507,13 +519,14 @@ class World:
         """
         Save current state only
 
-        - `statedir` directory to store files in (there are multiple files per state)
+        Parameters:
+            statedir: Directory to store files in (there are multiple files per state)
 
         This is a small and quick save.
         It only saves things which change during the simulation.
-        Restore a certain state with `world.load_state()`.
+        Restore a certain state with [load_state()][magicsoup.world.World.load_state].
 
-        To restore a world object you need to save it at least once with `world.save()`.
+        To restore a whole `world` object you need to save it at least once with [save()][magicsoup.world.World.save].
         Then, `world.save_state()` can be used to save different states of that world object.
         """
         statedir.mkdir(parents=True, exist_ok=True)
@@ -523,23 +536,23 @@ class World:
         torch.save(self.cell_survival, statedir / "cell_survival.pt")
         torch.save(self.cell_divisions, statedir / "cell_divisions.pt")
 
-        with open(statedir / "cells.fasta", "w") as fh:
+        with open(statedir / "cells.fasta", "w", encoding="utf-8") as fh:
             lines = [
                 f">{d.idx} {d.label} ({d.position[0]},{d.position[1]})\n{d.genome}"
                 for d in self.cells
             ]
             fh.write("\n".join(lines))
 
-    def load_state(self, statedir: Path, update_cell_params=True):
+    def load_state(self, statedir: Path, update_cell_params: bool = True):
         """
         Load a saved world state.
+        The state had to be saved with [save_state()][magicsoup.world.World.save_state] previously.
 
-        - `statedir` directory that contains all files of that state
-        - `update_cell_params` whether to update cell parameters as well.
-          If you are only interested in the cells' genomes and molecules
-          you can set this to `False` to make loading states faster.
-
-        The state had to be saved with `world.save_state()` previously.
+        Parameters:
+            statedir: Directory that contains all files of that state
+            update_cell_params: Whether to update cell parameters as well.
+                If you are only interested in the cells' genomes and molecules
+                you can set this to `False` to make loading states faster.
         """
         cell_molecules: torch.Tensor = torch.load(statedir / "cell_molecules.pt")
         self.cell_molecules = cell_molecules.to(self.device)
@@ -552,7 +565,7 @@ class World:
         cell_divisions: torch.Tensor = torch.load(statedir / "cell_divisions.pt")
         self.cell_divisions = cell_divisions.to(self.device).int()
 
-        with open(statedir / "cells.fasta", "r") as fh:
+        with open(statedir / "cells.fasta", "r", encoding="utf-8") as fh:
             text: str = fh.read()
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 

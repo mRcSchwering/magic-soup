@@ -55,7 +55,7 @@ This would be _e.g._ the exact sequence which will encode a catalytic domain for
 In principle this flexibility allows a cell to create complex networks including feedback loops,
 oscillators, and cascades.
 
-For more details see the [genetics][magicsoup.genetics] module.
+For more details see the [Genetics][magicsoup.genetics.Genetics] class.
 Also see [Kinetics](#kinetics) for details about the domain kinetics and aggregations.
 
 ### Chemistry
@@ -102,7 +102,7 @@ _E.g._ if there are 2 catalytic domains $A \rightleftharpoons B$ and $C \rightle
 they would become $A + C \rightleftharpoons B + D$ if they have the same orientation,
 and $A + D \rightleftharpoons B + C$ if not.
 
-For more details see the [kinetics][magicsoup.kinetics] module where all the logic
+For more details see the [Kinetics][magicsoup.kinetics.Kinetics] class where all the logic
 for translating domains into kinetic parameters lives.
 Also see [Implementation](#implementation) for some implications that arise from implementation details.
 
@@ -174,6 +174,7 @@ If some $v$ attempts to deconstruct more substrate than available, it is reduced
 by a factor to leave almost zero substrates (a small constant $\varepsilon$ is kept).
 All protein velocities in the same cell are reduced by the same factor.
 This is because of possible dependencies between proteins.
+
 Say, protein P0 tried to do $A \rightleftharpoons B$ with $v_{P0} = 2$, but only 1 of A was available.
 At the same time another protein P1 in the same cell does $B \rightleftharpoons C$ with $v_{P1} = 2$, with 0.5 of B available.
 In the naive calculation P1 would be valid because P0 would create 2 B and so P1 can legitimately deconstruct 2 B.

@@ -16,3 +16,9 @@ plugins:
       handlers:
         python:
           paths: [src]
+          options:
+            heading_level: 4
+            show_root_toc_entry: false
+            show_source: false
+            show_object_full_path: true
+            members_order: source
