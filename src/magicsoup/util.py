@@ -8,7 +8,7 @@ from magicsoup.constants import ALL_NTS
 
 def randstr(n: int = 12) -> str:
     """
-    Generate random string of length `n`
+    Generate random string of length `n`.
 
     With `n=12` and the string consisting of 62 different characters,
     there's a 50% chance of encountering one collision after 5e10 draws.

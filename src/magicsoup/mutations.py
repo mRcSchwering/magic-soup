@@ -4,31 +4,52 @@ from magicsoup.constants import ALL_NTS
 
 
 def substitution(seq: str, idx: int) -> str:
-    """Create a 1 nucleotide substitution at index"""
+    """
+    Create a substitution at specific place in a nucleotide sequence.
+
+    Arguments:
+        seq: nucleotide sequence
+        idx: index of substitution
+    """
     nt = random.choice(ALL_NTS)
     return seq[:idx] + nt + seq[idx + 1 :]
 
 
 def indel(seq: str, idx: int) -> str:
-    """Create a 1 nucleotide insertion or deletion (1:1 chances) at index"""
+    """
+    Create insertion or deletion (1:1 chance) at a specific place in a nucleotide sequence.
+
+    Arguments:
+        seq: nucleotide sequence
+        idx: index of indel
+    """
     if random.choice([True, False]):
         return seq[:idx] + seq[idx + 1 :]
     nt = random.choice(ALL_NTS)
     return seq[:idx] + nt + seq[idx:]
 
 
-def point_mutations(seqs: list[str], p=1e-3, p_indel=0.1) -> list[tuple[str, int]]:
+def point_mutations(
+    seqs: list[str], p: float = 1e-3, p_indel: float = 0.1
+) -> list[tuple[str, int]]:
     """
     Add point mutations to a list of nucleotide sequences.
-
-    - `seqs` nucleotide sequences
-    - `p` probability of a mutation per nucleotide
-    - `p_indel` probability of any point mutation being a deletion or insertion
-      (inverse probability of it being a substitution)
-    
-    Returns list of mutated sequences and their indices; which sequences of `seqs` got muated.
-
+    Mutations are substitutions and indels.
     If an indel occurs, there is a 1:1 chance of it being a deletion or insertion.
+
+    Arguments:
+        seqs: nucleotide sequences
+        p: probability of a mutation per nucleotide
+        p_indel: probability of any point mutation being a deletion or insertion
+                 (inverse probability of it being a substitution)
+
+    Returns:
+        List of mutated sequences and their indices from `seqs`.
+
+    The returned list only contains sequences which experienced at least one mutation.
+    The new sequences are returned together with their `seqs` index.
+    E.g. if this index is 5 it means `seqs[5]` was mutated and the resulting sequence is
+    in the tuple.
     """
     n = len(seqs)
     if n == 0:
@@ -60,20 +81,23 @@ def point_mutations(seqs: list[str], p=1e-3, p_indel=0.1) -> list[tuple[str, int
 
 
 def recombinations(
-    seq_pairs: list[tuple[str, str]], p=1e-3
+    seq_pairs: list[tuple[str, str]], p: float = 1e-3
 ) -> list[tuple[str, str, int]]:
     """
-    Add random recombinations to pairs of nucleotide sequences
+    Add random recombinations to pairs of nucleotide sequences.
+    The recombination happens by creating random strand breaks in the input sequence pairs
+    and randomly re-joining them.
 
-    - `seq_pairs` nucleotide sequence pairs
-    - `p` probability of a strand break per nucleotide
-    
-    Returns list of mutated sequence pairs and their indices.
-    The index describes the index of `seq_pairs`.
+    Arguments:
+        seq_pairs: nucleotide sequence pairs
+        p: probability of a strand break per nucleotide
+
+    Returns:
+        List of mutated sequence pairs and their indices.
+
+    The returned list only contains sequence pairs that experienced a recombination.
+    The new sequence paris are returned and in addition to that their `seq_pairs` index.
     E.g. if it's 5, it means `seq_pairs[5]` was mutated and the resulting sequences are in this 3-tuple.
-
-    The recombination happens by creating random strand breaks in both sequences (with likelihood `p`),
-    then randomly shuffling the strands and randomly re-joining them.
     """
     n = len(seq_pairs)
     if n == 0:
@@ -107,4 +131,3 @@ def recombinations(
         tmps.append((lft_new, rght_new, row_i))
 
     return tmps
-
