@@ -28,8 +28,11 @@ class _DomainFact(abc.ABC):
         raise NotImplementedError("Implement __call__")
 
     def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(min_len=%r)" % (clsname, self.min_len)
+        kwargs = {
+            "min_len": self.min_len,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"
 
 
 class CatalyticDomain(Domain):

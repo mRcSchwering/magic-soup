@@ -183,8 +183,8 @@ class World:
         cell = self.cells[idx]
         cell.int_molecules = self.cell_molecules[idx, :]
         cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]]
-        cell.n_survived_steps = self.cell_survival[idx].item()
-        cell.n_replications = self.cell_divisions[idx].item()
+        cell.n_survived_steps = int(self.cell_survival[idx].item())
+        cell.n_replications = int(self.cell_divisions[idx].item())
         return cell
 
     def add_random_cells(self, genomes: list[str]) -> list[int]:
@@ -711,9 +711,10 @@ class World:
         return torch.cat([t, zeros], dim=d)
 
     def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(map_size=%r,abs_temp=%r)" % (
-            clsname,
-            self.map_size,
-            self.abs_temp,
-        )
+        kwargs = {
+            "map_size": self.map_size,
+            "abs_temp": self.abs_temp,
+            "device": self.device,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"

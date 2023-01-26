@@ -161,15 +161,15 @@ class Molecule:
         return hash(self) == hash(other)
 
     def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(name=%r,energy=%r,half_life=%r,diffusivity=%r,permeability=%r)" % (
-            clsname,
-            self.name,
-            self.energy,
-            self.half_life,
-            self.diffusivity,
-            self.permeability,
-        )
+        kwargs = {
+            "name": self.name,
+            "energy": self.energy,
+            "half_life": self.half_life,
+            "diffusivity": self.diffusivity,
+            "permeability": self.permeability,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"
 
     def __str__(self) -> str:
         return self.name
@@ -255,12 +255,12 @@ class Chemistry:
         return cls(molecules=mols, reactions=reacts)
 
     def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(molecules=%r,eactions=%r)" % (
-            clsname,
-            self.molecules,
-            self.reactions,
-        )
+        kwargs = {
+            "molecules": self.molecules,
+            "reactions": self.reactions,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"
 
 
 class Domain:
@@ -361,23 +361,20 @@ class Domain:
         return hash(self) == hash(other)
 
     def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return (
-            "%s(substrates=%r,products=%r,affinity=%r,velocity=%r,is_bkwd=%r,is_catalytic=%r,is_transporter=%r,is_regulatory=%r,is_inhibiting=%r,is_transmembrane=%r)"
-            % (
-                clsname,
-                self.substrates,
-                self.products,
-                self.affinity,
-                self.velocity,
-                self.is_bkwd,
-                self.is_catalytic,
-                self.is_transporter,
-                self.is_regulatory,
-                self.is_inhibiting,
-                self.is_transmembrane,
-            )
-        )
+        kwargs = {
+            "substrates": self.substrates,
+            "products": self.products,
+            "affinity": self.affinity,
+            "velocity": self.velocity,
+            "is_bkwd": self.is_bkwd,
+            "is_catalytic": self.is_catalytic,
+            "is_transporter": self.is_transporter,
+            "is_regulatory": self.is_regulatory,
+            "is_inhibiting": self.is_inhibiting,
+            "is_transmembrane": self.is_transmembrane,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"
 
     def __str__(self) -> str:
         ins = ",".join(str(d) for d in self.substrates)
@@ -428,8 +425,12 @@ class Protein:
         return hash(self) == hash(other)
 
     def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return "%s(domains=%r,label=%r)" % (clsname, self.domains, self.label)
+        kwargs = {
+            "domains": self.domains,
+            "label": self.label,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"
 
     def __str__(self) -> str:
         return self.label
@@ -525,17 +526,14 @@ class Cell:
         return Cell(**{**old_kwargs, **kwargs})  # type: ignore
 
     def __repr__(self) -> str:
-        clsname = type(self).__name__
-        return (
-            "%s(genome=%r,proteome=%r,position=%r,idx=%r,label=%r,n_survived_steps=%r,n_replications=%r)"
-            % (
-                clsname,
-                self.genome,
-                self.proteome,
-                self.position,
-                self.idx,
-                self.label,
-                self.n_survived_steps,
-                self.n_replications,
-            )
-        )
+        kwargs = {
+            "genome": self.genome,
+            "proteome": self.proteome,
+            "position": self.position,
+            "idx": self.idx,
+            "label": self.label,
+            "n_survived_steps": self.n_survived_steps,
+            "n_replications": self.n_replications,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"
