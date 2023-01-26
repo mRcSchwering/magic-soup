@@ -1,8 +1,10 @@
-## Reference
+# Reference
+
+## world
 
 ::: magicsoup.world
 
-### Containers
+## containers
 
 This module defines some classes which 
 store a state and don't contain a lot of logic.
@@ -14,19 +16,19 @@ which is used when initializing [World][magicsoup.world.World].
 The other classes in this module don't need to be instantiated by a user.
 
 ::: magicsoup.containers
-    options:
-      heading_level: 4
+
+## genetics
 
 ::: magicsoup.genetics
 
+## kinetics
+
 ::: magicsoup.kinetics
 
-### Mutations
+## mutations
 
 This is a supporting module with some
 functions for efficiently creating mutations
 in nucleotide sequences.
 
 ::: magicsoup.mutations
-    options:
-      heading_level: 4

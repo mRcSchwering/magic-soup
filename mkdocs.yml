@@ -7,8 +7,6 @@ extra_javascript:
 markdown_extensions:
   - mdx_math:
       enable_dollar_delimiter: True
-  - markdown_include.include:
-      base_path: .
 
 plugins:
   - search
