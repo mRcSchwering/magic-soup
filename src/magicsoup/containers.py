@@ -439,6 +439,7 @@ class Cell:
     """
     Object representing a cell with its environment.
 
+    Arguments:
         genome: Full genome sequence of this cell.
         proteome: List of proteins this cell has.
         position: Position on the cell map.

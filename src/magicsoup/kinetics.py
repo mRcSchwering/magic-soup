@@ -8,17 +8,18 @@ _EPS = 1e-5
 class Kinetics:
     """
     Class holding logic for simulating protein work.
-    Usually this class is instantiated automatically when initializing `world`.
+    Usually this class is instantiated automatically when initializing [World][magicsoup.world.World].
     You can access it on `world.kinetics`.
 
-    - `molecules` List of molecule species.
-      They have to be in the same order as they are on `chemistry.molecules`.
-    - `abs_temp` Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
-      Higher temperature will give the reaction quotient term higher importance.
-    - `device` Device to use for tensors
-      (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-      This has to be the same device that is used by `world`.
-    
+    Arguments:
+        molecules: List of molecule species.
+            They have to be in the same order as they are on `chemistry.molecules`.
+        abs_temp: Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
+            Higher temperature will give the reaction quotient term higher importance.
+        device: Device to use for tensors
+            (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
+            This has to be the same device that is used by `world`.
+
     There are `c` cells, `p` proteins, `s` signals.
     Signals are basically molecule species, but we have to differentiate between intra- and extracellular molecule species.
     So, there are twice as many signals as molecule species.
@@ -26,7 +27,7 @@ class Kinetics:
     First, all intracellular molecule species are listed, then all extracellular.
     The order of cells is always the same as in `world.cells` and the order of proteins
     for every cell is always the same as the order of proteins in a cell object `cell.proteome`.
-    
+
     Attributes on this class describe cell parameters:
 
     - `Km` Affinities to every signal that is processed by each protein in every cell (c, p, s).
@@ -36,13 +37,14 @@ class Kinetics:
     - `A` Regulatory effect for each signal in every protein in every cell (c, p, s).
       This is looks similar to a stoichiometric number. Numbers > 0.0 mean these molecules
       act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
-    
-    The main method is `kinetics.integrate_signals()`.
-    When calling `world.enzymatic_activity()`, a matrix `X` of signals (c, s) is prepared
-    and then `kinetics.integrate_signals(X)` is called.
-    Updated signals are returned and `world` writes them back to `world.cell_molecules` and `world.molecule_map`.
 
-    Another method, which ended up here, is `kinetics.set_cell_params()` (and `kinetics.unset_cell_params()`)
+    The main method is [integrate_signals()][magicsoup.kinetics.Kinetics].
+    When calling [enzymatic_activity()][magicsoup.world.World.enzymatic_activity], a matrix `X` of signals (c, s) is prepared
+    and then [integrate_signals(X)][magicsoup.kinetics.Kinetics] is called.
+    Updated signals are returned and [World][magicsoup.world.World] writes them back to `world.cell_molecules` and `world.molecule_map`.
+
+    Another method, which ended up here, is [set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params()]
+    (and [unset_cell_params()][magicsoup.kinetics.Kinetics.unset_cell_params()])
     which reads proteomes and updates cell parameters accordingly.
     This is called whenever the proteomes of some cells changed.
     Currently, this is also the main bottleneck in performance.
@@ -54,7 +56,10 @@ class Kinetics:
     # TODO: are the molecule maps faster if molecule2idx (instead of molecule name)?
 
     def __init__(
-        self, molecules: list[Molecule], abs_temp=310.0, device="cpu",
+        self,
+        molecules: list[Molecule],
+        abs_temp: float = 310.0,
+        device: str = "cpu",
     ):
         n = len(molecules)
         self.n_signals = 2 * n
@@ -72,11 +77,11 @@ class Kinetics:
 
     def unset_cell_params(self, cell_prots: list[tuple[int, int]]):
         """
-        Set cell params for these proteins to 0.0
-        
-        - `cell_prots` list of tuples of cell indexes and protein indexes
-
+        Set cell params for these proteins to 0.0.
         This is useful for cells that lost some of their proteins.
+
+        Arguments:
+            cell_prots: List of tuples of cell indexes and protein indexes
         """
         if len(cell_prots) == 0:
             return
@@ -90,11 +95,11 @@ class Kinetics:
     def set_cell_params(self, cell_prots: list[tuple[int, int, Protein]]):
         """
         Set cell params for these proteins accordingly
-        
-        - `cell_prots` list of tuples of cell indexes, protein indexes, and the protein itself
-
         You can compare proteins within a cell and only update the ones that changed.
         The comparison (`protein0 == protein1`) will note a difference in any of the proteins attributes.
+
+        Arguments:
+            cell_prots: List of tuples of cell indexes, protein indexes, and the protein itself
 
         Indexes for proteins are the same as in a cell's object `cell.proteome`
         and indexes for cells are the same as in `world.cells` or `cell.idx`.
@@ -128,9 +133,11 @@ class Kinetics:
         """
         Simulate protein work by integrating all signals.
 
-        - `X` Tensor of every signal in every cell (c, s). Must all be >= 0.0.
-        
-        Returns a new tensor of the same shape which represents the updated signals for every cell.
+        Arguments:
+            X: Tensor of every signal in every cell (c, s). Must all be >= 0.0.
+
+        Returns:
+            New tensor of the same shape which represents the updated signals for every cell.
 
         The order of cells in `X` is the same as in `world.cells`
         The order of signals is first all intracellular molecule species in the same order as `chemistry.molecules`,
@@ -178,10 +185,11 @@ class Kinetics:
     def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
         """
         Copy paremeters from a list of cells to another list of cells
-        
-        - `from_idxs` list of cell indexes to copy from
-        - `to_idxs` list of cell indexes to copy to
-        
+
+        Arguments:
+            from_idxs: List of cell indexes to copy from
+            to_idxs: List of cell indexes to copy to
+
         `from_idxs` and `to_idxs` must have the same length.
         They refer to the same cell indexes as in `world.cells`.
         """
@@ -195,9 +203,10 @@ class Kinetics:
         """
         Remove cells from cell params
 
-        - `keep` Bool tensor (c,) which is true for every cell that should not be removed
-          and false for every cell that should be removed.
-        
+        Arguments:
+            keep: Bool tensor (c,) which is true for every cell that should not be removed
+                and false for every cell that should be removed.
+
         `keep` must have the same length as `world.cells`.
         The indexes on `keep` reflect the indexes in `world.cells`.
         """
@@ -211,7 +220,8 @@ class Kinetics:
         """
         Increase the cell dimension of all cell parameters
 
-        - `by_n` By how many rows to increase the cell dimension
+        Arguments:
+            by_n: By how many rows to increase the cell dimension
         """
         self.Km = self._expand(t=self.Km, n=by_n, d=0)
         self.Vmax = self._expand(t=self.Vmax, n=by_n, d=0)
@@ -223,7 +233,8 @@ class Kinetics:
         """
         Increase the protein dimension of all cell parameters
 
-        - `max_n` The maximum number of rows required in the protein dimension
+        Arguments:
+            max_n: The maximum number of rows required in the protein dimension
         """
         n_prots = int(self.Km.shape[1])
         if max_n > n_prots:
@@ -342,4 +353,3 @@ class Kinetics:
 
     def _tensor(self, *args) -> torch.Tensor:
         return torch.zeros(*args).to(self.device)
-
