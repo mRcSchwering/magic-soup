@@ -43,8 +43,8 @@ class Kinetics:
     and then [integrate_signals(X)][magicsoup.kinetics.Kinetics] is called.
     Updated signals are returned and [World][magicsoup.world.World] writes them back to `world.cell_molecules` and `world.molecule_map`.
 
-    Another method, which ended up here, is [set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params()]
-    (and [unset_cell_params()][magicsoup.kinetics.Kinetics.unset_cell_params()])
+    Another method, which ended up here, is [set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params]
+    (and [unset_cell_params()][magicsoup.kinetics.Kinetics.unset_cell_params])
     which reads proteomes and updates cell parameters accordingly.
     This is called whenever the proteomes of some cells changed.
     Currently, this is also the main bottleneck in performance.

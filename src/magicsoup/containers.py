@@ -140,9 +140,9 @@ class Molecule:
         self,
         name: str,
         energy: float,
-        half_life=100_000,
-        diffusivity=0.1,
-        permeability=0.0,
+        half_life: int = 100_000,
+        diffusivity: float = 0.1,
+        permeability: float = 0.0,
     ):
         self.name = name
         self.energy = energy
