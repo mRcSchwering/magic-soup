@@ -8,14 +8,18 @@ Then run and see what random mutations can do.
 ![monitoring run](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/tensorboard_example.png)
 _Watching an ongoing simulation using TensorBoard. In [this simulation](https://github.com/mRcSchwering/luca/tree/main/experiments/e1_co2_fixing) cells were made to fix CO2 from an artificial CO2 source in the middle of the map._
 
-Proteins in this simulation are made up of catalytic, transporter, and regulatory domains.
-They are energetically coupled within the same protein and mostly follow Michaelis-Menten-Kinetics.
-Chemical reactions and molecule transport only ever happens in the energetically favourable direction, as defined by the Nernst equation.
-With enough proteins a cell is able to create complex networks with cascades, feed-back loops, and oscillators.
-Through these networks a cell is able to communicate with its environment and form relationships with other cells.
-How many proteins a cell has, what domains they have, and how these domains are parametrized is all defined by its genome.
-Through random mutations cells search this vast space of possible proteomes.
-By allowing only certain proteomes to replicate, this search can be guided towards a specific goal.
+### Installation
+
+For CPU alone you can just do:
+
+```
+pip install magicsoup
+```
+
+This simulation relies on [PyTorch](https://pytorch.org/).
+You can move almost all calculations to a GPU.
+To setup pytorch correctly for your GPU see [Get Started (pytorch.org)](https://pytorch.org/get-started/locally/).
+
 
 ### Example
 
@@ -102,14 +106,3 @@ for _ in range(1000):
 
 See the [Docs](https://magic-soup.readthedocs.io/) for more examples and a description of all the mechanics of this simulation
 
-### Installation
-
-For CPU alone you can just do:
-
-```
-pip install magicsoup
-```
-
-This simulation relies on [PyTorch](https://pytorch.org/).
-You can move almost all calculations to a GPU.
-To setup pytorch correctly for your GPU see [Get Started (pytorch.org)](https://pytorch.org/get-started/locally/).

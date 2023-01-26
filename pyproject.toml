@@ -24,6 +24,7 @@ classifiers = [
 ]
 
 [project.urls]
+"Documentation" = "https://magic-soup.readthedocs.io/"
 "Homepage" = "https://github.com/mRcSchwering/magic-soup"
 "Bug Tracker" = "https://github.com/mRcSchwering/magic-soup/issues"
 
