@@ -524,15 +524,15 @@ def test_simple_mm_kinetic():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
-    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
+    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
     assert Xd[0, 2] == 0.0
-    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
 
-    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
+    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
     assert Xd[1, 1] == 0.0
-    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
-    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
 
 
 def test_mm_kinetic_with_proportions():
@@ -583,7 +583,7 @@ def test_mm_kinetic_with_proportions():
     # fmt: on
 
     def mm(x, k, v, n):
-        return v * x ** n / (k + x) ** n
+        return v * x**n / (k + x) ** n
 
     # expected outcome
     dx_c0_b = 2 * mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0], n=1)
@@ -606,15 +606,15 @@ def test_mm_kinetic_with_proportions():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
-    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
-    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
-    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
 
-    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
-    assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
-    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
-    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
 
 
 def test_mm_kinetic_with_multiple_substrates():
@@ -689,15 +689,15 @@ def test_mm_kinetic_with_multiple_substrates():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
-    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
-    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
-    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
 
-    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
-    assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
-    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
-    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
 
 
 def test_mm_kinetic_with_allosteric_action():
@@ -790,7 +790,10 @@ def test_mm_kinetic_with_allosteric_action():
         i1=X0[1, 2], ki1=Km[1, 0, 2], i2=X0[1, 3], ki2=Km[1, 0, 3]
     )
     v1_c1 = mm(x=X0[1, 2], v=Vmax[1, 1], kx=Km[1, 1, 2]) * fa2(
-        a1=X0[1, 0], ka1=Km[1, 1, 0], a2=X0[1, 1], ka2=Km[1, 1, 1],
+        a1=X0[1, 0],
+        ka1=Km[1, 1, 0],
+        a2=X0[1, 1],
+        ka2=Km[1, 1, 1],
     )
     dx_c1_a = -v0_c1
     dx_c1_b = v0_c1
@@ -806,15 +809,15 @@ def test_mm_kinetic_with_allosteric_action():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
-    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
-    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
-    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
 
-    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
-    assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
-    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
-    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
 
 
 def test_reduce_velocity_to_avoid_negative_concentrations():
@@ -865,7 +868,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     # fmt: on
 
     def mm(x, k, v, n=1):
-        return v * x ** n / (k + x) ** n
+        return v * x**n / (k + x) ** n
 
     # expected outcome
     v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
@@ -902,15 +905,15 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
-    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
-    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
-    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
 
-    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
-    assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
-    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
-    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
 
     X1 = X0 + Xd
     assert not torch.any(X1 < 0.0)
@@ -964,7 +967,7 @@ def test_reduce_velocity_in_multiple_proteins():
     # fmt: on
 
     def mm(x, k, v, n=1):
-        return v * x ** n / (k + x) ** n
+        return v * x**n / (k + x) ** n
 
     # expected outcome
     v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
@@ -998,15 +1001,15 @@ def test_reduce_velocity_in_multiple_proteins():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert Xd[0, 0] == pytest.approx(dx_c0_a, abs=TOLERANCE)
-    assert Xd[0, 1] == pytest.approx(dx_c0_b, abs=TOLERANCE)
-    assert Xd[0, 2] == pytest.approx(dx_c0_c, abs=TOLERANCE)
-    assert Xd[0, 3] == pytest.approx(dx_c0_d, abs=TOLERANCE)
+    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
 
-    assert Xd[1, 0] == pytest.approx(dx_c1_a, abs=TOLERANCE)
-    assert Xd[1, 1] == pytest.approx(dx_c1_b, abs=TOLERANCE)
-    assert Xd[1, 2] == pytest.approx(dx_c1_c, abs=TOLERANCE)
-    assert Xd[1, 3] == pytest.approx(dx_c1_d, abs=TOLERANCE)
+    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
 
     X1 = X0 + Xd
     assert not torch.any(X1 < 0.0)
@@ -1104,9 +1107,6 @@ def test_equilibrium_constants():
     assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
     assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
     assert (Xd[1, 3] - dx_c1_d).abs() < tolerance
-
-
-# TODO: pytest.approx doesnt work with torch
 
 
 @pytest.mark.parametrize("gen", [torch.zeros, torch.randn])
