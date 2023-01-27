@@ -2,9 +2,9 @@
 # 
 # Use:
 #
-# bash scripts/test.sh
+# bash scripts/test.sh tests/
 #
 
 set -e
 
-PYTHONPATH=$PYTHONPATH:./src pytest tests/ "$@"
+PYTHONPATH=$PYTHONPATH:./src pytest "$@"

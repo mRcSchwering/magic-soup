@@ -4,9 +4,6 @@ import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES
 
 
-TOLERANCE = 1e-4
-
-
 def test_diffuse():
     # fmt: off
     layer0 = [
@@ -49,8 +46,8 @@ def test_diffuse():
     world.diffuse_molecules()
 
     assert world.molecule_map.shape == (2, 5, 5)
-    assert (world.molecule_map[0] == torch.tensor(exp0)).all()
-    assert (world.molecule_map[1] == torch.tensor(exp1)).all()
+    assert ((world.molecule_map[0] - torch.tensor(exp0)).abs() < 1e-7).all()
+    assert ((world.molecule_map[1] - torch.tensor(exp1)).abs() < 1e-7).all()
 
 
 def test_degrade():
@@ -173,13 +170,11 @@ def test_cell_index_integrity_when_changing_cells():
 
 
 def test_molecule_amount_integrity_during_diffusion():
-    # TODO: this is still shit. Diffusion alone destroys or creates
-    #       molecules due to floating point inaccuracy when doing the convolution
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry, map_size=128)
 
     exp = world.molecule_map.sum(dim=[1, 2])
-    for step_i in range(100):
+    for step_i in range(1000):
         world.diffuse_molecules()
         res = world.molecule_map.sum(dim=[1, 2])
         assert (res.sum() - exp.sum()).abs() < 10.0, step_i
@@ -207,10 +202,8 @@ def test_molecule_amount_integrity_during_reactions():
         ck = world.cell_molecules[:, 2].sum().item() * 2
         return mij + mk + cij + ck
 
-    # TODO: this is also not amazing. Due to floating point inaccuracy
-    #       some molecules are created/destoryed from/to nothing
     n0 = count(world)
-    for step_i in range(100):
+    for step_i in range(1000):
         world.enzymatic_activity()
         n = count(world)
         assert n == pytest.approx(n0, abs=1.0), step_i

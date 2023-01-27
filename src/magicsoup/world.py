@@ -439,10 +439,18 @@ class World:
         into or out of cells if defined on the `Molecule` objects itself.
         See `Molecule` for more information.
         """
+        n_pxls = self.map_size**2
         for mol_i, diffuse in enumerate(self._diffusion):
+            total_before = self.molecule_map[mol_i].sum()
             before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
             after = diffuse(before)
             self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0)
+            total_after = self.molecule_map[mol_i].sum()
+
+            # attempt to fix the problem that convolusion makes a small amount of
+            # molecules appear or disappear (I think because floating point)
+            self.molecule_map[mol_i] += (total_before - total_after) / n_pxls
+            self.molecule_map[mol_i] = self.molecule_map[mol_i].clamp(0.0)
 
         if len(self.cells) == 0:
             return
