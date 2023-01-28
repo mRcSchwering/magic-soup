@@ -111,7 +111,7 @@ def replicate_cells(...):
 def mutate_cells(...):
     ...
 
-if __name__ == "__main__":
+def main():
     chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
     world = ms.World(chemistry=chemistry)
     
@@ -125,6 +125,9 @@ if __name__ == "__main__":
         replicate_cells()
         mutate_cells()
         world.increment_cell_survival()
+
+if __name__ == "__main__":
+    main()
 ```
 
 Here, we would let the simulation run for 10k steps.
@@ -362,7 +365,7 @@ def mutate_cells(world: ms.World):
     world.update_cells(genome_idx_pairs=mutated)
 
 
-if __name__ == "__main__":
+def main():
     chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
     world = ms.World(chemistry=chemistry)
 
@@ -392,4 +395,214 @@ if __name__ == "__main__":
         replicate_cells(world=world, aca=ACA_IDX, hca=HCA_IDX)
         mutate_cells(world=world)
         world.increment_cell_survival()
+
+if __name__ == "__main__":
+    main()
 ```
+
+## Handling
+
+These are some examples for monitoring, checkpointing, and parametrizing simulations.
+Let's assume a setup like described in the [experiment above](#simple-co2-fixing-experiment).
+So, the _main.py_ looks something like this:
+
+```python
+# main.py
+import torch
+import magicsoup as ms
+from .chemistry import REACTIONS, MOLECULES
+
+...
+
+def main():
+    chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
+    world = ms.World(chemistry=chemistry)
+    ...
+
+    for _ in range(10_000):
+        ...
+
+if __name__ == "__main__":
+    main()
+```
+
+### Monitoring
+
+One nice tool for monitoring an ongoing simulation run is [TensorBoard](https://www.tensorflow.org/tensorboard).
+It's an app that watches a directory of your run and displays logged data as line charts, histograms, images and more.
+It can be installed from [pipy](https://pypi.org/project/tensorboard/).
+_pytorch_ already includes a `SummaryWriter` that can be used for writing these logging files.
+
+```python
+# main.py
+import datetime as dt
+from pathlib import Path
+import torch
+from torch.utils.tensorboard import SummaryWriter
+import magicsoup as ms
+from .chemistry import REACTIONS, MOLECULES
+
+THIS_DIR = Path(__file__).parent
+...
+
+def main():
+    now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    writer = SummaryWriter(log_dir=THIS_DIR / "runs" / now)
+
+    chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
+    world = ms.World(chemistry=chemistry)
+    ...
+
+    for _ in range(10_000):
+        ...
+
+if __name__ == "__main__":
+    main()
+```
+
+When it is instantiated it creates `log_dir` if it doesn't already exist.
+This is where all the logging files will go.
+Add `runs/` to `.gitignore` to avoid committing this directory.
+In the example above, I am also adding the current date and time as a a subdirectory,
+so that you can start a run multiple times without overriding the previous ones.
+
+How to use the `SummaryWriter` is explained in [the docs](https://pytorch.org/docs/stable/tensorboard.html).
+It supports a few data types.
+We will start with recording some scalars about cell growth.
+Additionally, we can visualize the cell map by taking a picture of it.
+These pictures are a bit heavy, so we will only capture one every 10 steps. 
+
+```python
+# main.py
+import datetime as dt
+from pathlib import Path
+import torch
+from torch.utils.tensorboard import SummaryWriter
+import magicsoup as ms
+from .chemistry import REACTIONS, MOLECULES
+
+THIS_DIR = Path(__file__).parent
+...
+
+def write_scalars(world: ms.World, writer: SummaryWriter, step: int):
+    writer.add_scalar("Cells/total[n]", len(world.cells), step)
+    writer.add_scalar("Cells/Survival[avg]", world.cell_survival.mean(), step)
+    writer.add_scalar("Cells/Divisions[avg]", world.cell_divisions.mean(), step)
+
+def write_images(world: ms.World, writer: SummaryWriter, step: int):
+    writer.add_image("Maps/Cells", world.cell_map, step, dataformats="WH")
+
+def main():
+    now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    writer = SummaryWriter(log_dir=THIS_DIR / "runs" / now)
+
+    chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
+    world = ms.World(chemistry=chemistry)
+    ...
+
+    for step in range(10_000):
+        ...
+        write_scalars(world=world, writer=writer, step=step)
+        if step % 10 == 0:
+            write_images(world=world, writer=writer, step=step)
+
+if __name__ == "__main__":
+    main()
+```
+
+There is a pattern to labelling the variables on how they will be displayed in the app.
+_E.g._ there will be a _Cells_ and a _Maps_ section.
+The image dataformat is `WH` because dimension 0 of `world.cell_map` represents the x axis,
+and dimension 1 the y axis.
+You can start the app by pointing it at the runs directory `tensorboard --logdir=./runs`.
+
+### Parameters
+
+You might want to parametrize _main.py_ so that you can start it with different conditions.
+Let's say we want to parametrize the number of steps: sometimes we just want to run a few steps to see if it works,
+sometimes we want to start a long run with thousands of steps.
+There are many tools for that.
+I am going to stick to the standard library and use [argparse](https://docs.python.org/3/library/argparse.html).
+
+```python
+# main.py
+import json
+import datetime as dt
+from pathlib import Path
+from argparse import ArgumentParser, Namespace
+import torch
+import magicsoup as ms
+from .chemistry import REACTIONS, MOLECULES
+
+THIS_DIR = Path(__file__).parent
+...
+
+def main(args: Namespace):
+    outdir = THIS_DIR / "runs" / dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    outdir.mkdir(exist_ok=True, parents=True)
+    with open(outdir / "hparams.json", "w") as fh:
+        json.dump(vars(parsed_args), fh)
+
+    chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
+    world = ms.World(chemistry=chemistry)
+    ...
+
+    for _ in range(args.n_steps):
+        ...
+
+if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument("--n_steps", default=10_000, type=int)
+    parsed_args = parser.parse_args()
+    main(args=parsed_args)
+```
+
+Now every run can be started with a diffent `n_steps`, so it makes sense to note
+parameters somewhere when starting a new run.
+Here, I am doing this by just writing `var(parsed_args)` to JSON.
+This can also be done with [SummaryWriter.add_hparams](https://pytorch.org/docs/stable/tensorboard.html#torch.utils.tensorboard.writer.SummaryWriter.add_hparams).
+As in the TensorBoard example above I am creating a _runs_ directory with the current date and time.
+
+### Checkpoints
+
+[World][magicsoup.world.World] has some functions for saving (and loading) itself.
+[save()][magicsoup.world.World.save] is used to save the whole world object as pickle file.
+It can be restored using [from_file()][magicsoup.world.World.from_file].
+However, during the simulation not everything on the world object changes.
+A smaller and quicker way to save is [save_state()][magicsoup.world.World.save_state].
+It only saves the parts which change when running the simulation (will write a few `.pt` files).
+A state can be restored with [load_state()][magicsoup.world.World.load_state].
+So, in the beginning one [save()][magicsoup.world.World.save] is needed to save the whole object.
+Then, [save_state()][magicsoup.world.World.save_state] can be used to save a certain time point.
+
+```python
+# main.py
+import datetime as dt
+from pathlib import Path
+import torch
+import magicsoup as ms
+from .chemistry import REACTIONS, MOLECULES
+
+THIS_DIR = Path(__file__).parent
+...
+
+def main():
+    outdir = THIS_DIR / "runs" / dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
+    outdir.mkdir(exist_ok=True, parents=True)
+
+    chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
+    world = ms.World(chemistry=chemistry)
+    world.save(rundir=outdir)
+    ...
+
+    for step in range(10_000):
+        ...
+        if step % 100 == 0:
+            world.save_state(statedir=outdir / f"step={step}")
+
+if __name__ == "__main__":
+    main()
+```
+
+As in the examples above I am creating a _runs_ directory with the current date and time.
+I am also not saving every step to reduce the time spend saving and the size of _runs/_.
