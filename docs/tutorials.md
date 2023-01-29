@@ -1,6 +1,5 @@
 # Tutorials
 
-
 ## Simple Experiment
 
 As a simple example one could try to teach cells to fix CO2 in a simulation.
@@ -67,7 +66,7 @@ REACTIONS = [
 ```
 
 Each molecule species was created with a unique name and an energy of formation.
-This energy has effects on reaction energies (more on this in [Selection](#selection)).
+This energy has effects on reaction energies (more on this in [Formation energies](#formation-energies)).
 Any number of molecules in this simulation is expressed in _mol_
 and for this energy of formation it makes sense to think of it in terms of _J/mol_.
 So, here _ATP_ is defined with _100 kJ/mol_.
@@ -399,7 +398,7 @@ if __name__ == "__main__":
     main()
 ```
 
-## Handling
+## Boilerplate
 
 These are some examples for monitoring, checkpointing, and parametrizing simulations.
 Let's assume a setup like described in the [experiment above](#simple-experiment).
@@ -608,7 +607,7 @@ I am also not saving every step to reduce the time spend saving and the size of 
 
 ## Selection
 
-Here, I want to focus on cell replication and survival.
+Replication and survival will guide randomly muated proteomes.
 In the [experiment above](#simple-experiment) I just used some functions to
 derive a probability for killing or replicating cells based on intracellular ATP, NADPH, and acetyl-CoA concentrations.
 
@@ -644,7 +643,7 @@ def replicate_cells(world: ms.World, aca: int, hca: int):
         world.cell_molecules[parents + children, hca] += 1.0
 ```
 
-How exactly these probabilities are derived is actually a big part of fine-tuning the simulation.
+How exactly these probabilities are derived is actually a part of fine-tuning the simulation.
 They can make a big difference in how quickly cells learn something.
 When setting up a new simulation it is likely that at first cells seem to not learn anything at all.
 This can often be attributed to cell survival (here, the average number of time steps cells survive)
@@ -698,7 +697,7 @@ The likeliehood that a cell dies or replicates at least once over the course of 
 different intracellular X concentrations.
 
 ![](img/kill_repl_prob.png)
-**Probability over time steps of a cell dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$.**
+_Probability over time steps of a cell dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
 These two events together influence cells growth.
 If a cell replicates, it increases to overall number of cells.
@@ -706,7 +705,7 @@ If a cell dies, it reduces the overall number of cells, and prohibits this cell 
 We can simulate how cells with different X concentrations would grow given these kill and replication probabilities:
 
 ![](img/sim_cell_growth.png)
-**Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$.**
+_Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
 It helps to take a look at such a plot in order to see if the chosen probability functions lead to a balanced growth.
 Here, the probability functions would be good if we expect $X \in [1,5]$ and $X \ge 3$ to be a healthy cell.
@@ -725,7 +724,7 @@ Gray areas represent the total number of cells, stacked bar charts show the cell
 We have cell types with X concentrations of 3, 4, 5, and 6.
 
 ![](img/splitting_cells.png)
-**Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split.**
+_Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split._
 
 As you can see all cell types except the fastest growing cell type (with $X=5$) quickly disappear.
 Higher split ratios reduce stochastic effects a little bit, but the trend is the same.
@@ -737,3 +736,91 @@ As long as there is enough acetyl-CoA on the map cells are not pressured into cr
 So, the extinction event from above is not all bad.
 On the one hand, it can give acetyl-CoA-creating cell types a chance.
 On the other hand, it might just erase all of cells.
+
+
+## Genomes
+
+### Genome size
+
+In the [experiment from the beginning](#simple-experiment) cells were randomly added each round.
+They each had a random genome of 500 base pairs length.
+
+```python
+def add_cells(world: ms.World):
+    dn = 1000 - len(world.cells)
+    if dn > 0:
+        genomes = [ms.random_genome(s=500) for _ in range(dn)]
+        world.add_random_cells(genomes=genomes)
+```
+
+During the simulation these genomes can become shorter or longer through random mutations.
+But in the beginning it usually takes a few hundred or thousand time steps until a first colony appears.
+This process can be sped up by giving cells larger starting genomes.
+Larger genomes generally produce more proteins.
+But there are also other effects to consider.
+The plot below shows the average number of proteins per genome, domains per protein, and coding nucleotides per nucleotide.
+
+![](img/genome_sizes.png)
+_Distributions for proteins per genome, domains per protein, and coding nucleotides per nucleotide for different genome sizes with domain probability 0.01_
+
+With default settings genomes of size 500 create about 1 to 16 proteins.
+Most of them consist of 1 domain, some have 2 domains.
+Roughly every second nucleotide codes for some domain.
+We know that for some reactions in the Wood-Ljungdahl pathway multiple domains must be energetically coupled in order to work.
+So, it would help if the cell has a chance of recieving a few multi-domain proteins already at the start.
+Additionally, we can see that single nucleotide substitutions in the genome have roughly a 50% chance of changing the proteome.
+If this number is higher, proteomes will vary more but also be more unstable.
+
+### Other parameters
+
+When [World][magicsoup.world.World] is initialized, it creates a [Genetics][magicsoup.genetics.Genetics] instance.
+This instances carries factories for catalytic, transporer, and regulatory domains.
+These domains map nucleotide sequences to domains and their specifications (see [Mechanics](./mechanics.md) and [Genetics][magicsoup.genetics.Genetics] for details).
+By changing the frequency with which nucleotide sequences can encode domains, we can change the composition of genomes.
+By default all 3 domain types are encoded by 6 nucleotides and 1% of all 6-nucleotide sequences encode for 1 of those domain types.
+Below is a plot like above that shows distributions for genomes of size 500 with domain type frequencies of 0.1%, 1% and 10%.
+
+![](img/domain_probs.png)
+_Distributions for proteins per genome, domains per protein, and coding nucleotides per nucleotide for different domain probabilities with genome size 500_
+
+With 10% frequency proteoms of size 500 create 6 to 31 proteins.
+Most of these proteins have 2 or 3 domains, and each nucleotide encodes 2 or 3 domains at the same time.
+This would probably create very complex cells from the start but make it very difficult for them to evolve.
+Every mutation would have an effect on multiple proteins at the same time, and single domain proteins would be difficult to achieve.
+
+In any case, if you want to change [Genetics][magicsoup.genetics.Genetics] for your simulation, you have to create your
+own instance and add it to [World][magicsoup.world.World] after it has been instantiated:
+
+```python
+world = ms.World(...)
+world.genetics = ms.Genetics(...)
+```
+
+See the [Genetics reference][magicsoup.genetics.Genetics] for more details.
+
+## Formation energies
+
+In the [experiment from the beginning](#simple-experiment) some molecule species were defined in _chemistry.py_ with formation energies.
+This is in principle akin to the [standard Gibbs free energy of formation](https://en.wikipedia.org/wiki/Standard_Gibbs_free_energy_of_formation).
+
+```python
+formiat = Molecule("formiat", 20.0 * 1e3)
+co2 = Molecule("CO2", 10.0 * 1e3, diffusivity=1.0, permeability=1.0)
+```
+
+In this simulation a chemical reaction is regarded as the decomposition of substrates and the creation of products.
+Whether this reaction will proceed, stall, or turn around is defined by the [Nernst equation](https://en.wikipedia.org/wiki/Nernst_equation).
+_I.e._ the reaction energy together with the world's temperature will define the equilibrium constant of any reaction
+(this is explained in detail in [Mechanics](./mechanics.md)).
+In the example above $CO2 \rightleftharpoons formiat$ has a reaction energy of 10 kJ/mol and would create a equilibrium constant of roughly 0.02.
+If the reaction energy would have been defined as only 10 J/mol, the equilibrium constant would be almost 1.0.
+So, the range in which these formation energy values exist have a big impact on the equilibrium constants of reactions in the simulations.
+For the plot below, chemistries with formation energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were created and
+random proteins were generated. The equilibrium constant distributions of reactions catalyzed by these proteins are shown.
+
+![](img/equilibrium_constants.png)
+_Log10 of equilibrium constant distributions of random proteins at different temperatures for different reactions energies_
+
+With lower reaction energies reactions can be more dirven by reaction quotients.
+For energetically coupled transporter and catalytic domains this means transporters can power more reactions,
+_i.e._ cells can make more use of concentration gradients.
