@@ -68,7 +68,7 @@ REACTIONS = [
 ```
 
 Each molecule species was created with a unique name and an energy of formation.
-This energy has effects on reaction energies (more on this later # TODO).
+This energy has effects on reaction energies (more on this in [Selection](#selection)).
 Any number of molecules in this simulation is expressed in _mol_
 and for this energy of formation it makes sense to think of it in terms of _J/mol_.
 So, here _ATP_ is defined with _100 kJ/mol_.
@@ -541,7 +541,7 @@ def main(args: Namespace):
     outdir = THIS_DIR / "runs" / dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
     outdir.mkdir(exist_ok=True, parents=True)
     with open(outdir / "hparams.json", "w") as fh:
-        json.dump(vars(parsed_args), fh)
+        json.dump(vars(args), fh)
 
     chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
     world = ms.World(chemistry=chemistry)
@@ -559,7 +559,7 @@ if __name__ == "__main__":
 
 Now every run can be started with a diffent `n_steps`, so it makes sense to note
 parameters somewhere when starting a new run.
-Here, I am doing this by just writing `var(parsed_args)` to JSON.
+Here, I am doing this by just writing `var(args)` to JSON.
 This can also be done with [SummaryWriter.add_hparams](https://pytorch.org/docs/stable/tensorboard.html#torch.utils.tensorboard.writer.SummaryWriter.add_hparams).
 As in the TensorBoard example above I am creating a _runs_ directory with the current date and time.
 
@@ -606,3 +606,102 @@ if __name__ == "__main__":
 
 As in the examples above I am creating a _runs_ directory with the current date and time.
 I am also not saving every step to reduce the time spend saving and the size of _runs/_.
+
+## Selection
+
+Here, I want to focus on cell replication and survival.
+In the [experiment above](#simple-co2-fixing-experiment) I just used some functions to
+derive a probability for killing or replicating cells based on intracellular ATP, NADPH, and acetyl-CoA concentrations.
+
+```python
+def sample(p: torch.Tensor) -> list[int]:
+    idxs = torch.argwhere(torch.bernoulli(p))
+    return idxs.flatten().tolist()
+
+
+def kill_cells(world: ms.World, atp: int, nadph: int):
+    # low ATP
+    x0 = world.cell_molecules[:, atp]
+    idxs0 = sample(0.5**4 / (0.5**4 + x0**4))
+
+    # low NADPH
+    x1 = world.cell_molecules[:, nadph]
+    idxs1 = sample(0.5**4 / (0.5**4 + x1**4))
+
+    world.kill_cells(cell_idxs=list(set(idxs0 + idxs1)))
+
+
+def replicate_cells(world: ms.World, aca: int, hca: int):
+    x = world.cell_molecules[:, aca]
+    chosen = sample(x**5 / (x**5 + 15.0**5))
+
+    allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
+    idxs = list(set(chosen) & set(allowed))
+
+    replicated = world.replicate_cells(parent_idxs=idxs)
+    if len(replicated) > 0:
+        parents, children = list(map(list, zip(*replicated)))
+        world.cell_molecules[parents + children, aca] -= 1.0
+        world.cell_molecules[parents + children, hca] += 1.0
+```
+
+How exactly these probabilities are derived is actually a big part of fine-tuning the simulation.
+They can make a big difference in how quickly cells learn something.
+When setting up a new simulation it is likely that at first cells seem to not learn anything at all.
+This can often be attributed to cell survival (here, the average number of time steps cells survive)
+and replication rate (here, the average number of times a cell divided).
+There are some common patterns:
+
+- **no cell growth at all** All cells that ever exist are the random cells which are automatically
+  added. Cell survival is too low. Maybe some cells manage to replicate, but there is no sustained
+  growth because cells die before they can replicate a second time.
+- **overcrouded map** Cells overgrow the map, and then just persist without appreciable
+  metabolism. Cell survival is too high. Every now and then a cell manages to divide, and since cells
+  rarely die, they fill up the map. These cells stall any evolutionary process as they take up space
+  and molecules without doing anything. Maybe a superior cell exists somewhere, but since it is surrounded
+  by other cells, it cannot divide. Thus, it cannot replicate its surperior genome.
+- **wavefront, then total extinction** At some point a colony forms and cells quickly replicate. As the
+  colony grows outwards, cells in the center of the colony die. It becomes a wavefront of quickly
+  dividing cells that runs over the map. After it has ecompassed the entire map once, it disappears.
+
+In general, the wavefront is a good sign because it means some cell figured out how to increase its chance of dividing.
+Using the [experiment from above](#simple-co2-fixing-experiment) it is likely that at some time point
+a cell with an acetyl-CoA transporter appears. As long as there is acetyl-CoA on the map, this cell (and all its descendants)
+will be able to quickly replicate.
+Their NADPH and ATP concentrations will get low and they will only live a few time steps.
+But before they die, they will probably manage to replicate at least once.
+During this exponential growth phase, the proteome that allows the highest replication rate will dominate (_e.g._ the fasted acetyl-CoA transporter).
+However, at some point all the world's acetyl-CoA is exhausted, replication stops, and the remaining cells die.
+
+The only chance to continue is for some cell to learn how to restore acetyl-CoA.
+A cell could for example learn the next step and create transporters for CO2, HS-CoA, and methyl-Ni-ACS.
+However, such a proteome will only become surperior once all the world's acetyl-CoA has been exhausted.
+Between the start of the growth phase and the extinction event such a proteome has to appear and survive until the extinction event.
+The chances of this happening can be increased reducing the speed of this wavefront,
+_i.e._ having more time steps between growth start and the extinction event.
+
+### Survival and replication rate
+
+As mentioned above it is desireable to create a stable colony that slowly grows.
+So, you have to be careful with replication probabilities.
+On the one hand, a better proteome should be rewarded with higher replication rates.
+On the other hand, it should take a colony a long time to overgrow the entire map.
+Additionally, useless cells/proteomes should die to not use up resources.
+It makes sense to think about the likely intracellular molecule concentrations and then fit a long (slowly increasing or decreasing)
+sigmoid function to it.
+Personally, I am currently sticking to functions of the form $f_{incr}(x) = x^n / (x^n + c^n)$ and $f_{decr}(x) = c^n / (x^n + c^n)$.
+In addition, one has to remember that these probabilities accumulate for each cell each round.
+_I.e._ the event o
+
+![](img/kill_repl_prob.png)
+**Probability over time steps of a cell dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$.**
+
+asd
+
+![](img/sim_cell_growth.png)
+**Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$.**
+
+### Splitting cells
+
+![](img/splitting_cells.png)
+**Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split.**
