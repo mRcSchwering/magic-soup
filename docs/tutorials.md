@@ -1,16 +1,16 @@
 # Tutorials
 
 
-## Simple CO2 Fixing Experiment
+## Simple Experiment
 
 As a simple example one could try to teach cells to fix CO2 in a simulation.
-Cells should create a set of proteins that can fix CO2 into some biologically useful form.
+Cells should create a set of proteins that can convert CO2 into some biologically useful form.
 We could define acetyl-CoA as the desired end product.
 So, a cell's survival will be based on its intracellular acetyl-CoA concentration and CO2 will be supplied in abundance.
 
 ### Chemistry
 
-The basis for how cells are allowed to achieved that is defined by this simulation's chemistry.
+The basis for how cells are allowed to achieve that is defined by the simulation's chemistry.
 Here, we will use the [Wood-Ljungdahl pathway](https://en.wikipedia.org/wiki/Wood%E2%80%93Ljungdahl_pathway) as a starting point.
 There are a few molecule species and reactions that eventually end up in acetylating coenzyme A.
 Below, we create a file _chemistry.py_ in which we define all these molecules and reactions.
@@ -36,7 +36,6 @@ NiACS = Molecule("Ni-ACS", 200.0 * 1e3)
 methylNiACS = Molecule("methyl-Ni-ACS", 300.0 * 1e3)
 HSCoA = Molecule("HS-CoA", 200.0 * 1e3)
 acetylCoA = Molecule("acetyl-CoA", 260.0 * 1e3)
-
 
 MOLECULES = [
     NADPH,
@@ -217,7 +216,7 @@ They are good for trimming the simulation.
 
 These are the main levers for exerting evolutionary pressure.
 Most time will go into fine-tuning them.
-Generally, we want to slowly increase or decrease the likelihood of cells dying or replicating over a certain variable (more on this later # TODO).
+Generally, we want to slowly increase or decrease the likelihood of cells dying or replicating over a certain variable (more on this in [Selection](#selection)).
 Here, these variables are intracellular concentration of specific molecule species.
 
 Let's start with killing cells.
@@ -292,7 +291,7 @@ This function derives each cell's new proteome and does all required updates.
 It is currently the performance bottleneck, so it's best to only provide the cells that were really altered
 (don't always recalculate all proteomes).
 
-### Putting it together
+### Putting it all together
 
 Finally, we can combine everything in _main.py_.
 In the functions above I always used indexes to reference certain molecule species on
@@ -403,7 +402,7 @@ if __name__ == "__main__":
 ## Handling
 
 These are some examples for monitoring, checkpointing, and parametrizing simulations.
-Let's assume a setup like described in the [experiment above](#simple-co2-fixing-experiment).
+Let's assume a setup like described in the [experiment above](#simple-experiment).
 So, the _main.py_ looks something like this:
 
 ```python
@@ -610,7 +609,7 @@ I am also not saving every step to reduce the time spend saving and the size of 
 ## Selection
 
 Here, I want to focus on cell replication and survival.
-In the [experiment above](#simple-co2-fixing-experiment) I just used some functions to
+In the [experiment above](#simple-experiment) I just used some functions to
 derive a probability for killing or replicating cells based on intracellular ATP, NADPH, and acetyl-CoA concentrations.
 
 ```python
@@ -665,7 +664,7 @@ There are some common patterns:
   dividing cells that runs over the map. After it has ecompassed the entire map once, it disappears.
 
 In general, the wavefront is a good sign because it means some cell figured out how to increase its chance of dividing.
-Using the [experiment from above](#simple-co2-fixing-experiment) it is likely that at some time point
+Using the [experiment from above](#simple-experiment) it is likely that at some time point
 a cell with an acetyl-CoA transporter appears. As long as there is acetyl-CoA on the map, this cell (and all its descendants)
 will be able to quickly replicate.
 Their NADPH and ATP concentrations will get low and they will only live a few time steps.
@@ -686,22 +685,55 @@ As mentioned above it is desireable to create a stable colony that slowly grows.
 So, you have to be careful with replication probabilities.
 On the one hand, a better proteome should be rewarded with higher replication rates.
 On the other hand, it should take a colony a long time to overgrow the entire map.
-Additionally, useless cells/proteomes should die to not use up resources.
+Additionally, useless cells/proteomes should die to free up molecules and space.
 It makes sense to think about the likely intracellular molecule concentrations and then fit a long (slowly increasing or decreasing)
 sigmoid function to it.
-Personally, I am currently sticking to functions of the form $f_{incr}(x) = x^n / (x^n + c^n)$ and $f_{decr}(x) = c^n / (x^n + c^n)$.
-In addition, one has to remember that these probabilities accumulate for each cell each round.
-_I.e._ the event o
+Personally, I am currently sticking to functions of the form $f_{inc}(x) = x^n / (x^n + c^n)$ and $f_{dec}(x) = c^n / (x^n + c^n)$.
+
+In addition, one has to remember that these probabilities accumulate for each cell each time step.
+_I.e._ being killed is an event that has to happen only once to any cell.
+Say a cell is killed with probability $p_k(X) =(X^7 + 1)^{-1}$ and replicates with probability $p_r(X) = X^5 / (X^5 + 15^5)$, where
+X is some hypothetical molecule species.
+The likeliehood that a cell dies or replicates at least once over the course of multiple time steps is shown below for cells with
+different intracellular X concentrations.
 
 ![](img/kill_repl_prob.png)
 **Probability over time steps of a cell dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$.**
 
-asd
+These two events together influence cells growth.
+If a cell replicates, it increases to overall number of cells.
+If a cell dies, it reduces the overall number of cells, and prohibits this cell from replicating.
+We can simulate how cells with different X concentrations would grow given these kill and replication probabilities:
 
 ![](img/sim_cell_growth.png)
 **Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$.**
 
+It helps to take a look at such a plot in order to see if the chosen probability functions lead to a balanced growth.
+Here, the probability functions would be good if we expect $X \in [1,5]$ and $X \ge 3$ to be a healthy cell.
+
 ### Splitting cells
+
+To keep cells in exponential growth phase indefinitely you can split them.
+In this simulation splitting cells would equate to randomly selecting a few cells, creating a new world map,
+then placing these selected cells on the new world map.
+This way the cells have new molecules and open space to grow.
+
+However, the split itself will select for fast replicating cells.
+Let's take the example from above with $p_k(X) =(X^7 + 1)^{-1}$ and $p_r(X) = X^5 / (X^5 + 15^5)$.
+The plot below shows simulated cell growth, where cells were split with different split ratios whenever the total number of cells exeeded 7k.
+Gray areas represent the total number of cells, stacked bar charts show the cell type composition before the split.
+We have cell types with X concentrations of 3, 4, 5, and 6.
 
 ![](img/splitting_cells.png)
 **Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split.**
+
+As you can see all cell types except the fastest growing cell type (with $X=5$) quickly disappear.
+Higher split ratios reduce stochastic effects a little bit, but the trend is the same.
+However, this cell type might not be the one that we want.
+_E.g._ $X=5$ might be a cell that just created a very fast acetyl-CoA importer.
+Maybe $X=3$ was a cell type that was able to restore its own acetyl-CoA, but it was filtered out after a few splits.
+
+As long as there is enough acetyl-CoA on the map cells are not pressured into creating their own.
+So, the extinction event from above is not all bad.
+On the one hand, it can give acetyl-CoA-creating cell types a chance.
+On the other hand, it might just erase all of cells.
