@@ -742,7 +742,7 @@ On the other hand, it might just erase all of cells.
 
 ### Genome size
 
-In the [experiment from the beginning](#simple-experiment) cells were randomly added each round.
+In the [experiment above](#simple-experiment) cells were randomly added each round.
 They each had a random genome of 500 base pairs length.
 
 ```python
@@ -800,7 +800,7 @@ See the [Genetics reference][magicsoup.genetics.Genetics] for more details.
 
 ## Formation energies
 
-In the [experiment from the beginning](#simple-experiment) some molecule species were defined in _chemistry.py_ with formation energies.
+In the [experiment above](#simple-experiment) some molecule species were defined in _chemistry.py_ with formation energies.
 This is in principle akin to the [standard Gibbs free energy of formation](https://en.wikipedia.org/wiki/Standard_Gibbs_free_energy_of_formation).
 
 ```python
@@ -824,3 +824,39 @@ _Log10 of equilibrium constant distributions of random proteins at different tem
 With lower reaction energies reactions can be more dirven by reaction quotients.
 For energetically coupled transporter and catalytic domains this means transporters can power more reactions,
 _i.e._ cells can make more use of concentration gradients.
+
+## Molecule maps
+
+When instantiating [World][magicsoup.world.World] by default all molecule species will added to `world.molecule_map`, normally distributed,
+with an average concentration of 10.
+In the [experiment above](#simple-experiment) this made sense for most molecule species.
+But for energy carriers ATP/ADP and NADPH/NADP, and for the carbon source CO2 we created functions to regularly change these molecule distributions.
+For adding CO2, one could also think of creating gradient like shown below.
+This could for example introduce a spatial dependence for cell growth.
+
+![](img/gradients.png)
+_Molecule species X is added to molecule map and allowed to diffuse  to create a 1D gradient (top) or 2D gradients (bottom)._
+
+In the plot above, these gradients were created by adding CO2 to specific pixels on the map, and removing them from other other.
+The gradients emerge through diffusion.
+However, the gradient takes a few hundred steps to reach its equilibrium.
+You can also figure out the equilibrium state and initialize the molecule map with it immediately.
+In this case, care must be taken to use the correct device.
+
+```python
+n = int(world.map_size / 2)
+device = world.molecule_map.device
+
+ones = torch.ones((world.map_size, world.map_size))
+linspace = torch.cat([
+    torch.linspace(1.0, 100.0, n),
+    torch.linspace(100.0, 1.0, n)
+])
+gradient = torch.einsum("xy,x->xy", ones, linspace)
+
+world.molecule_map[co2] = gradient.to(device)
+```
+
+The code above creates the 1D gradient that was shown in the plot for CO2.
+By effectively doing `gradient.to(world.molecule_map.device)` we make sure that
+the created tensor will be send to the same device that `world.molecule_map` was on.
