@@ -123,11 +123,11 @@ class Kinetics:
             Vmax.append(v)
             A.append(a)
             N.append(n)
-        self.E[cis, pis] = torch.tensor(E)
-        self.Km[cis, pis] = torch.tensor(Km)
-        self.Vmax[cis, pis] = torch.tensor(Vmax)
-        self.A[cis, pis] = torch.tensor(A)
-        self.N[cis, pis] = torch.tensor(N)
+        self.E[cis, pis] = torch.tensor(E).to(self.device)
+        self.Km[cis, pis] = torch.tensor(Km).to(self.device)
+        self.Vmax[cis, pis] = torch.tensor(Vmax).to(self.device)
+        self.A[cis, pis] = torch.tensor(A).to(self.device)
+        self.N[cis, pis] = torch.tensor(N).to(self.device)
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """

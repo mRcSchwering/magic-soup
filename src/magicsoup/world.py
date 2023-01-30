@@ -697,7 +697,7 @@ class World:
             [a, a, a],
             [a, b, a],
             [a, a, a],
-        ]]])
+        ]]]).to(self.device)
         # fmt: on
 
         conv = torch.nn.Conv2d(
