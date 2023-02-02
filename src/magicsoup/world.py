@@ -5,7 +5,7 @@ import math
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.containers import Cell, Protein, Chemistry
+from magicsoup.containers import Cell, Protein, Chemistry, DomType
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
@@ -27,6 +27,7 @@ class World:
         stop_codons: stop codons which stop a coding sequence (translation only happens within coding sequences).
         device: Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
             This has to be the same device that is used by `world`.
+        workers: Number of processes to use
 
     Most attributes on this class describe the current state of molecules and cells.
     Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
@@ -92,11 +93,13 @@ class World:
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         device: str = "cpu",
+        workers: int = 2,
     ):
         if not torch.cuda.is_available():
             device = "cpu"
 
         self.device = device
+        self.workers = workers
         self.map_size = map_size
         self.abs_temp = abs_temp
 
@@ -104,6 +107,7 @@ class World:
             chemistry=chemistry,
             start_codons=start_codons,
             stop_codons=stop_codons,
+            workers=workers,
         )
 
         mol_degrads: list[float] = []
@@ -203,12 +207,18 @@ class World:
         only the remaining pixels will be filled with new cells.
         """
         genomes = [d for d in genomes if len(d) > 0]
-        if len(genomes) == 0:
+        n_genomes = len(genomes)
+        if n_genomes == 0:
             return []
 
         xs, ys = self._find_free_random_positions(n_cells=len(genomes))
-        if len(xs) == 0:
+        n_avail_pos = len(xs)
+        if n_avail_pos == 0:
             return []
+
+        if n_avail_pos < n_genomes:
+            random.shuffle(genomes)
+            genomes = genomes[:n_avail_pos]
 
         prot_lens = []
         new_idxs = []
@@ -256,6 +266,73 @@ class World:
         pickup = self.molecule_map[:, new_xs, new_ys] * 0.5
         self.cell_molecules[new_idxs, :] += pickup.T
         self.molecule_map[:, new_xs, new_ys] -= pickup
+
+        return new_idxs
+
+    # TODO: tryout
+    def add_random_cells_new(self, genomes: list[str]) -> list[int]:
+        genomes = [d for d in genomes if len(d) > 0]
+        n_genomes = len(genomes)
+        if n_genomes == 0:
+            return []
+
+        xs, ys = self._find_free_random_positions(n_cells=n_genomes)
+        n_avail_pos = len(xs)
+        if n_avail_pos == 0:
+            return []
+
+        if n_avail_pos < n_genomes:
+            random.shuffle(genomes)
+            genomes = genomes[:n_avail_pos]
+
+        # TODO: reduces time by about 10%
+        cdss_lst = self.genetics.get_all_cdss(genomes=genomes)
+        n_max_prots = max(len(d) for d in cdss_lst)
+        if n_max_prots == 0:
+            return []
+
+        # TODO: increases time by about 15%
+        N, A, Km, Vmax = self.genetics.get_all_proteomes(
+            cdss_lst=cdss_lst, n_prots=n_max_prots
+        )
+
+        # N (c, p, d, s)
+        # all 0 N = no domain or regulatory only
+        keep = (N != 0).any(dim=3).any(dim=2).any(dim=1)
+        N = N[keep]
+        A = A[keep]
+        Km = Km[keep]
+        Vmax = Vmax[keep]
+        keep_idxs = keep.argwhere().flatten().tolist()
+
+        xs = [xs[i] for i in keep_idxs]
+        ys = [ys[i] for i in keep_idxs]
+        genomes = [genomes[i] for i in keep_idxs]
+        n_new_cells = len(genomes)
+        if n_new_cells == 0:
+            return []
+
+        new_idxs = list(range(len(self.cells), len(self.cells) + n_new_cells))
+        for cell_i, genome, x, y in zip(new_idxs, genomes, xs, ys):
+            cell = Cell(idx=cell_i, genome=genome, proteome=[], position=(x, y))
+            self.cells.append(cell)
+
+        self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
+        self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
+        self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
+        self.kinetics.increase_max_cells(by_n=n_new_cells)
+        self.kinetics.increase_max_proteins(max_n=n_max_prots)
+        self.kinetics.set_cell_params_new(
+            cell_idxs=new_idxs, N_d=N, A_d=A, Km_d=Km, Vmax_d=Vmax
+        )
+
+        # occupy positions
+        self.cell_map[xs, ys] = True
+
+        # cell is picking up half the molecules of the pxl it is born on
+        pickup = self.molecule_map[:, xs, ys] * 0.5
+        self.cell_molecules[new_idxs, :] += pickup.T
+        self.molecule_map[:, xs, ys] -= pickup
 
         return new_idxs
 
@@ -723,6 +800,7 @@ class World:
             "map_size": self.map_size,
             "abs_temp": self.abs_temp,
             "device": self.device,
+            "workers": self.workers,
         }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"

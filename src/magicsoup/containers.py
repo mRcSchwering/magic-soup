@@ -1,6 +1,7 @@
 from typing import Optional
 import warnings
 import torch
+from magicsoup.constants import CODON_SIZE
 
 
 class Molecule:
@@ -380,6 +381,12 @@ class Domain:
         ins = ",".join(str(d) for d in self.substrates)
         outs = ",".join(str(d) for d in self.products)
         return f"Domain({ins}<->{outs})"
+
+
+
+# TODO: tryout
+# N, A, Km, Vmax
+DomType = tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]
 
 
 class Protein:

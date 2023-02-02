@@ -1,6 +1,6 @@
 import torch
 from magicsoup.constants import GAS_CONSTANT
-from magicsoup.containers import Protein, Molecule
+from magicsoup.containers import Protein, Molecule, DomType
 
 _EPS = 1e-5
 
@@ -66,6 +66,10 @@ class Kinetics:
         self.int_mol_map = {d.name: i for i, d in enumerate(molecules)}
         self.ext_mol_map = {d.name: i + n for i, d in enumerate(molecules)}
 
+        # TODO: tryout
+        self.ext_offset = n
+        self.mol_energies = torch.tensor([d.energy for d in molecules] * 2)
+
         self.abs_temp = abs_temp
         self.device = device
 
@@ -128,6 +132,42 @@ class Kinetics:
         self.Vmax[cis, pis] = torch.tensor(Vmax).to(self.device)
         self.A[cis, pis] = torch.tensor(A).to(self.device)
         self.N[cis, pis] = torch.tensor(N).to(self.device)
+
+    # TODO: tryout
+    def set_cell_params_new(
+        self,
+        cell_idxs: list[int],
+        N_d: torch.Tensor,
+        A_d: torch.Tensor,
+        Km_d: torch.Tensor,
+        Vmax_d: torch.Tensor,
+    ):
+        # TODO: N_d, ... were built with the current set of cells-proteins
+        #       but if the already existing params had more proteins
+        #       the broadcasting I'm doing below fails
+        #       I need to construct these N_d, ... with the proper dimensions
+
+        # N (c, p, d, s)
+        N = N_d.sum(dim=2)
+        self.N[cell_idxs] = N
+
+        # A (c, p, d, s)
+        A = A_d.sum(dim=2)
+        self.A[cell_idxs] = A
+
+        # Km (c, p, d, s)
+        Km = Km_d.nanmean(dim=2).nan_to_num(0.0)
+        self.Km[cell_idxs] = Km
+
+        # Vmax_d (c, p, d)
+        Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
+        self.Vmax[cell_idxs] = Vmax
+
+        # TODO: check if thats correct, should multiply energies with N
+        #       for each signal, then take sum over these signal-energies
+        # N (c, p, s)
+        E = torch.einsum("cps,s->cp", N, self.mol_energies)
+        self.E[cell_idxs] = E
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """

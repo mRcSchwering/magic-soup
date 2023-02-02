@@ -1,6 +1,9 @@
+from typing import Optional
 import warnings
 import random
 import abc
+import torch
+import torch.multiprocessing as mp
 from magicsoup.util import (
     reverse_complement,
     nt_seqs,
@@ -8,8 +11,192 @@ from magicsoup.util import (
     log_weight_map_fact,
     bool_map_fact,
 )
-from magicsoup.containers import Domain, Protein, Chemistry, Molecule
+from magicsoup.containers import Domain, Protein, Chemistry, Molecule, DomType
 from magicsoup.constants import CODON_SIZE
+
+
+# TODO: tryout
+def get_domain(
+    cell_i: int,
+    prot_i: int,
+    dom_i: int,
+    seq: str,
+    domain_map: dict[str, tuple[bool, bool, bool]],
+    molecule_map: dict[str, int],
+    reaction_map: dict[str, tuple[list[int], list[int]]],
+    affinity_map: dict[str, float],
+    velocity_map: dict[str, float],
+    bool_map: dict[str, bool],
+    n_nts: dict[str, int],
+    n_molecules: int,
+    N: torch.Tensor,
+    A: torch.Tensor,
+    Km: torch.Tensor,
+    Vmax: torch.Tensor,
+) -> bool:
+    n_dom_type_nts = n_nts["n_dom_type_nts"]
+    n_reaction_nts = n_nts["n_reaction_nts"]
+    n_molecule_nts = n_nts["n_molecule_nts"]
+    n_affinity_nts = n_nts["n_affinity_nts"]
+    n_velocity_nts = n_nts["n_velocity_nts"]
+    n_bool_nts = n_nts["n_bool_nts"]
+
+    dom_type_seq = seq[:n_dom_type_nts]
+    if dom_type_seq not in domain_map:
+        return False
+
+    i = n_dom_type_nts
+    is_catal, is_trnsp, is_reg = domain_map[dom_type_seq]
+
+    if is_catal:
+        lft, rgt = reaction_map[seq[i : i + n_reaction_nts]]
+        i += n_reaction_nts
+        aff = affinity_map[seq[i : i + n_affinity_nts]]
+        i += n_affinity_nts
+        velo = velocity_map[seq[i : i + n_velocity_nts]]
+        i += n_velocity_nts
+        orient = bool_map[seq[i : i + n_bool_nts]]
+
+        Vmax[cell_i, prot_i, dom_i] = velo
+
+        if orient:
+            prods = lft
+            subs = rgt
+        else:
+            subs = lft
+            prods = rgt
+
+        for mol_i in subs:
+            N[cell_i, prot_i, dom_i, mol_i] = -1.0
+            Km[cell_i, prot_i, dom_i, mol_i] = aff
+
+        for mol_i in prods:
+            N[cell_i, prot_i, dom_i, mol_i] = 1.0
+            Km[cell_i, prot_i, dom_i, mol_i] = 1 / aff
+
+        return True
+
+    if is_trnsp:
+        mol = molecule_map[seq[i : i + n_molecule_nts]]
+        i += n_molecule_nts
+        aff = affinity_map[seq[i : i + n_affinity_nts]]
+        i += n_affinity_nts
+        velo = velocity_map[seq[i : i + n_velocity_nts]]
+        i += n_velocity_nts
+        orient = bool_map[seq[i : i + n_bool_nts]]
+
+        Vmax[cell_i, prot_i, dom_i] = velo
+
+        if orient:
+            sub_i = mol + n_molecules
+            prod_i = mol
+        else:
+            sub_i = mol
+            prod_i = mol + n_molecules
+
+        N[cell_i, prot_i, dom_i, sub_i] = 1
+        N[cell_i, prot_i, dom_i, prod_i] = 1
+        Km[cell_i, prot_i, dom_i, sub_i] = aff
+        Km[cell_i, prot_i, dom_i, prod_i] = 1 / aff
+
+        return True
+
+    if is_reg:
+        mol = molecule_map[seq[i : i + n_molecule_nts]]
+        i += n_molecule_nts
+        aff = affinity_map[seq[i : i + n_affinity_nts]]
+        i += n_affinity_nts
+        transm = bool_map[seq[i : i + n_bool_nts]]
+        i += n_bool_nts
+        inh = bool_map[seq[i : i + n_bool_nts]]
+
+        mol_i = mol + n_molecules if transm else mol
+        A[cell_i, prot_i, dom_i, mol_i] = -1.0 if inh else 1.0
+        Km[cell_i, prot_i, dom_i, mol_i] = aff
+
+        return True
+
+    return False
+
+
+# TODO: tryout
+def translate_seq(
+    cell_i: int,
+    prot_i: int,
+    seq: str,
+    maps: dict,
+    n_nts: dict[str, int],
+    dom_size: int,
+    n_molecules: int,
+    N: torch.Tensor,
+    A: torch.Tensor,
+    Km: torch.Tensor,
+    Vmax: torch.Tensor,
+):
+    domain_map = maps["domain_map"]
+    molecule_map = maps["molecule_map"]
+    reaction_map = maps["reaction_map"]
+    affinity_map = maps["affinity_map"]
+    velocity_map = maps["velocity_map"]
+    bool_map = maps["bool_map"]
+
+    kwargs = {
+        "cell_i": cell_i,
+        "prot_i": prot_i,
+        "domain_map": domain_map,
+        "molecule_map": molecule_map,
+        "reaction_map": reaction_map,
+        "affinity_map": affinity_map,
+        "velocity_map": velocity_map,
+        "bool_map": bool_map,
+        "n_nts": n_nts,
+        "n_molecules": n_molecules,
+        "N": N,
+        "A": A,
+        "Km": Km,
+        "Vmax": Vmax,
+    }
+
+    dom_i = 0
+    i = 0
+    j = dom_size
+    while i + dom_size <= len(seq):
+        is_dom = get_domain(dom_i=dom_i, seq=seq[i : i + dom_size], **kwargs)  # type: ignore
+        if is_dom:
+            dom_i += 1
+            i += dom_size
+            j += dom_size
+        else:
+            i += CODON_SIZE
+            j += CODON_SIZE
+
+
+# TODO: tryout
+def translate_all_seqs(
+    cell_i: int,
+    seqs: list[str],
+    maps: dict,
+    n_nts: dict[str, int],
+    dom_size: int,
+    n_molecules: int,
+    N: torch.Tensor,
+    A: torch.Tensor,
+    Km: torch.Tensor,
+    Vmax: torch.Tensor,
+):
+    kwargs = {
+        "cell_i": cell_i,
+        "maps": maps,
+        "n_nts": n_nts,
+        "dom_size": dom_size,
+        "n_molecules": n_molecules,
+        "N": N,
+        "A": A,
+        "Km": Km,
+        "Vmax": Vmax,
+    }
+    for i, d in enumerate(seqs):
+        translate_seq(prot_i=i, seq=d, **kwargs)  # type: ignore
 
 
 def _check_n(n: int, label: str):
@@ -442,6 +629,95 @@ def _get_n(p: float, s: int, name: str) -> int:
     return n
 
 
+# TODO: tryout
+def get_coding_regions(
+    seq: str,
+    min_cds_size: int,
+    start_codons: tuple[str, ...],
+    stop_codons: tuple[str, ...],
+) -> list[str]:
+    s = CODON_SIZE
+    n = len(seq)
+    max_start_idx = n - min_cds_size
+
+    start_idxs = []
+    for start_codon in start_codons:
+        i = 0
+        while i < max_start_idx:
+            try:
+                hit = seq[i:].index(start_codon)
+                start_idxs.append(i + hit)
+                i = i + hit + s
+            except ValueError:
+                break
+
+    stop_idxs = []
+    for stop_codon in stop_codons:
+        i = 0
+        while i < n - s:
+            try:
+                hit = seq[i:].index(stop_codon)
+                stop_idxs.append(i + hit)
+                i = i + hit + s
+            except ValueError:
+                break
+
+    start_idxs.sort()
+    stop_idxs.sort()
+
+    by_frame: list[tuple[list[int], ...]] = [([], []), ([], []), ([], [])]
+    for start_idx in start_idxs:
+        if start_idx % 3 == 0:
+            by_frame[0][0].append(start_idx)
+        elif (start_idx + 1) % 3 == 0:
+            by_frame[1][0].append(start_idx)
+        else:
+            by_frame[2][0].append(start_idx)
+    for stop_idx in stop_idxs:
+        if stop_idx % 3 == 0:
+            by_frame[0][1].append(stop_idx)
+        elif (stop_idx + 1) % 3 == 0:
+            by_frame[1][1].append(stop_idx)
+        else:
+            by_frame[2][1].append(stop_idx)
+
+    cdss = []
+    for start_idxs, stop_idxs in by_frame:
+        for start_idx in start_idxs:
+            stop_idxs = [d for d in stop_idxs if d > start_idx + s]
+            if len(stop_idxs) > 0:
+                cds_end_idx = min(stop_idxs) + s
+                if cds_end_idx - start_idx > min_cds_size:
+                    cdss.append(seq[start_idx:cds_end_idx])
+            else:
+                break
+
+    return cdss
+
+
+# TODO: tryout
+def get_all_cdss(
+    genome: str,
+    min_cds_size: int,
+    start_codons: tuple[str, ...],
+    stop_codons: tuple[str, ...],
+) -> list[str]:
+    cdsf = get_coding_regions(
+        seq=genome,
+        min_cds_size=min_cds_size,
+        start_codons=start_codons,
+        stop_codons=stop_codons,
+    )
+    bwd = reverse_complement(genome)
+    cdsb = get_coding_regions(
+        seq=bwd,
+        min_cds_size=min_cds_size,
+        start_codons=start_codons,
+        stop_codons=stop_codons,
+    )
+    return cdsf + cdsb
+
+
 class Genetics:
     """
     Class holding logic about translating nucleotide sequences into proteomes.
@@ -469,6 +745,7 @@ class Genetics:
             reacting to extracellular molecules instead (will be passed to regulatory domain factory).
         n_inhibit_nts: Number of nucleotides that encodes whether a regulatory domain is a inhibiting or activating
             (will be passed to regulatory domain factory).
+        workers: number of workers
 
     When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
     These mappings are then used throughout the simulation.
@@ -524,6 +801,7 @@ class Genetics:
         n_orientation_nts: int = 3,
         n_transmembrane_nts: int = 3,
         n_inhibit_nts: int = 3,
+        workers: int = 2,
     ):
         if any(len(d) != CODON_SIZE for d in start_codons):
             raise ValueError(f"Not all start codons are of length {CODON_SIZE}")
@@ -541,6 +819,7 @@ class Genetics:
         self.start_codons = start_codons
         self.stop_codons = stop_codons
         self.dom_type_size = n_dom_type_nts
+        self.workers = workers
 
         if p_catal_dom + p_transp_dom + p_allo_dom > 1.0:
             raise ValueError(
@@ -591,6 +870,112 @@ class Genetics:
         self.dom_details_size = max(d.min_len for d in domain_facts)
         self.dom_size = self.dom_type_size + self.dom_details_size
         self.min_cds_size = self.dom_size + 2 * CODON_SIZE
+
+        # TODO: tryout
+        self.n_nts = {
+            "n_dom_type_nts": n_dom_type_nts,
+            "n_reaction_nts": n_reaction_nts,
+            "n_molecule_nts": n_molecule_nts,
+            "n_affinity_nts": n_affinity_nts,
+            "n_velocity_nts": n_velocity_nts,
+            "n_bool_nts": n_orientation_nts,
+            "n_molecules": len(chemistry.molecules),
+        }
+
+        self._dom_map: dict[str, tuple[bool, bool, bool]] = {}
+        for seq, dom_fact in self.domain_map.items():
+            if isinstance(dom_fact, CatalyticFact):
+                self._dom_map[seq] = (True, False, False)
+            if isinstance(dom_fact, TransporterFact):
+                self._dom_map[seq] = (False, True, False)
+            if isinstance(dom_fact, RegulatoryFact):
+                self._dom_map[seq] = (False, False, True)
+
+        _react_map = generic_map_fact(nt_seqs(n_reaction_nts), chemistry.reactions)
+        self._react_map: dict[str, tuple[list[int], list[int]]] = {}
+        for seq, (subs, prods) in _react_map.items():
+            subsi = [chemistry.molecules.index(d) for d in subs]
+            prodsi = [chemistry.molecules.index(d) for d in prods]
+            self._react_map[seq] = (subsi, prodsi)
+
+        _mol_map = generic_map_fact(nt_seqs(n_reaction_nts), chemistry.molecules)
+        self._mol_map = {k: chemistry.molecules.index(v) for k, v in _mol_map.items()}
+
+        self._aff_map = log_weight_map_fact(nt_seqs(n_affinity_nts), 1e-5, 1.0)
+        self._velo_map = log_weight_map_fact(nt_seqs(n_velocity_nts), 0.01, 10)
+        self._bool_map = bool_map_fact(nt_seqs(n_orientation_nts))
+
+    # TODO: tryout
+    def get_all_cdss(self, genomes: list[str]) -> list[list[str]]:
+        inputs = [
+            (d, self.min_cds_size, self.start_codons, self.stop_codons) for d in genomes
+        ]
+
+        with mp.Pool(self.workers) as pool:
+            cdss = pool.starmap(get_all_cdss, inputs)
+
+        return cdss
+
+    # TODO: tryout
+    def get_all_proteomes(
+        self, cdss_lst: list[list[str]], n_prots: int
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        n_cells = len(cdss_lst)
+        n_doms = 10
+        n_mols = len(self.chemistry.molecules)
+        dims = [n_cells, n_prots, n_doms]
+
+        # TODO: n_prots might be smaller than current p
+        #       but I should already have correct p here
+        #       because later I want to broadcast them
+
+        N = torch.zeros(*dims, n_mols * 2).share_memory_()
+        A = torch.zeros(*dims, n_mols * 2).share_memory_()
+        Km = torch.full((*dims, n_mols * 2), torch.nan).share_memory_()
+        Vmax = torch.full((*dims,), torch.nan).share_memory_()
+
+        # TODO: diese Dinger nach Kinetics umzuiehen, dann habe ich auch zugriff
+        #       auf die aktuelle protein dimension
+        #       außerdem kann ich die vielleicht einmal instantiierenund dann
+        #       immer wieder neu verwenden
+        #       muss ich testen, resizen geht nicht, aber während dem multiproc muss
+        #       ich das ja nicht.
+        #       man könnte das resizen später auch etwas robuster machen indem man
+        #       immer +10 proteine/domänen resized und es dann so lässt bis wieder weniger
+        #       proteine kommen
+        #       bei den Zellen auch, dann hat man da immer eine Ablage mit der man arbeitet
+
+        maps = {
+            "domain_map": self._dom_map,
+            "molecule_map": self._mol_map,
+            "reaction_map": self._react_map,
+            "affinity_map": self._aff_map,
+            "velocity_map": self._velo_map,
+            "bool_map": self._bool_map,
+        }
+
+        args = [
+            (
+                i,
+                d,
+                maps,
+                self.n_nts,
+                self.dom_size,
+                n_mols,
+                N,
+                A,
+                Km,
+                Vmax,
+            )
+            for i, d in enumerate(cdss_lst)
+        ]
+
+        print("start pool")
+        with mp.Pool(self.workers) as pool:
+            pool.starmap(translate_all_seqs, args)
+        print("finish pool")
+
+        return N, A, Km, Vmax
 
     def get_proteome(self, seq: str) -> list[Protein]:
         """
