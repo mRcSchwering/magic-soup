@@ -136,15 +136,15 @@ def new_add_random_cells(world: ms.World, genomes: list[str]):
     world.add_random_cells_new(genomes=genomes)
 
 
-def main(n=1000, s=500):
-    print(f"{n:,} genomes, {s:,} size")
+def main(n=1000, s=500, w=4):
+    print(f"{n:,} genomes, {s:,} size, {w} workers")
     genomes = [ms.random_genome(s) for _ in range(n)]
 
-    world = ms.World(chemistry=CHEMISTRY, workers=4)
+    world = ms.World(chemistry=CHEMISTRY, workers=w)
     mu, sd = timeit(classic_add_random_cells, world, genomes)
     print(f"({mu:.2f}+-{sd:.2f})s - classic")
 
-    world = ms.World(chemistry=CHEMISTRY, workers=4)
+    world = ms.World(chemistry=CHEMISTRY, workers=w)
     mu, sd = timeit(new_add_random_cells, world, genomes)
     print(f"({mu:.2f}+-{sd:.2f})s - new")
 
@@ -153,5 +153,6 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--n", default=1_000, type=int)
     parser.add_argument("--s", default=500, type=int)
+    parser.add_argument("--workers", default=4, type=int)
     args = parser.parse_args()
-    main(n=args.n, s=args.s)
+    main(n=args.n, s=args.s, w=args.workers)

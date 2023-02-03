@@ -5,7 +5,7 @@ import math
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.containers import Cell, Protein, Chemistry, DomType
+from magicsoup.containers import Cell, Protein, Chemistry
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
@@ -135,6 +135,7 @@ class World:
             molecules=chemistry.molecules,
             abs_temp=abs_temp,
             device=self.device,
+            workers=self.workers,
         )
 
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
@@ -272,38 +273,46 @@ class World:
     # TODO: tryout
     def add_random_cells_new(self, genomes: list[str]) -> list[int]:
         genomes = [d for d in genomes if len(d) > 0]
-        n_genomes = len(genomes)
-        if n_genomes == 0:
+        n_cells = len(genomes)
+        if n_cells == 0:
             return []
 
-        xs, ys = self._find_free_random_positions(n_cells=n_genomes)
+        xs, ys = self._find_free_random_positions(n_cells=n_cells)
         n_avail_pos = len(xs)
         if n_avail_pos == 0:
             return []
 
-        if n_avail_pos < n_genomes:
+        if n_avail_pos < n_cells:
+            n_cells = n_avail_pos
             random.shuffle(genomes)
-            genomes = genomes[:n_avail_pos]
+            genomes = genomes[:n_cells]
 
-        # TODO: reduces time by about 10%
-        cdss_lst = self.genetics.get_all_cdss(genomes=genomes)
-        n_max_prots = max(len(d) for d in cdss_lst)
-        if n_max_prots == 0:
+        dom_seqs_lst = self.genetics.get_all_domain_seqs(genomes=genomes)
+        dom_seqs_lst = [d for d in dom_seqs_lst if len(d) > 0]
+        n_cells = len(dom_seqs_lst)
+        if n_cells == 0:
             return []
 
-        # TODO: increases time by about 15%
-        N, A, Km, Vmax = self.genetics.get_all_proteomes(
-            cdss_lst=cdss_lst, n_prots=n_max_prots
-        )
+        mappings = {
+            "domain_map": self.genetics.dom_map,
+            "molecule_map": self.genetics.mol_map,
+            "reaction_map": self.genetics.react_map,
+            "affinity_map": self.genetics.aff_map,
+            "velocity_map": self.genetics.velo_map,
+            "bool_map": self.genetics.bool_map,
+        }
 
-        # N (c, p, d, s)
-        # all 0 N = no domain or regulatory only
-        keep = (N != 0).any(dim=3).any(dim=2).any(dim=1)
-        N = N[keep]
-        A = A[keep]
-        Km = Km[keep]
-        Vmax = Vmax[keep]
-        keep_idxs = keep.argwhere().flatten().tolist()
+        n_max_prots = max(len(d) for d in dom_seqs_lst)
+        n_max_doms = max(len(dd) for d in dom_seqs_lst for dd in d)
+        self.kinetics.increase_max_cells_d(max_n=n_cells)
+        self.kinetics.increase_max_proteins_d(max_n=n_max_prots)
+        self.kinetics.increase_max_domains_d(max_n=n_max_doms)
+
+        keep_idxs = self.kinetics.get_all_proteomes(
+            dom_seqs_lst=dom_seqs_lst,
+            mappings=mappings,
+            region_lens=self.genetics.n_nts,
+        )
 
         xs = [xs[i] for i in keep_idxs]
         ys = [ys[i] for i in keep_idxs]
@@ -312,7 +321,8 @@ class World:
         if n_new_cells == 0:
             return []
 
-        new_idxs = list(range(len(self.cells), len(self.cells) + n_new_cells))
+        n_cells = len(self.cells)
+        new_idxs = list(range(n_cells, n_cells + n_new_cells))
         for cell_i, genome, x, y in zip(new_idxs, genomes, xs, ys):
             cell = Cell(idx=cell_i, genome=genome, proteome=[], position=(x, y))
             self.cells.append(cell)
@@ -320,11 +330,10 @@ class World:
         self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
         self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
         self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
-        self.kinetics.increase_max_cells(by_n=n_new_cells)
+
         self.kinetics.increase_max_proteins(max_n=n_max_prots)
-        self.kinetics.set_cell_params_new(
-            cell_idxs=new_idxs, N_d=N, A_d=A, Km_d=Km, Vmax_d=Vmax
-        )
+        self.kinetics.increase_max_cells(by_n=n_new_cells)
+        self.kinetics.set_cell_params_new(cell_idxs=new_idxs, container_idxs=keep_idxs)
 
         # occupy positions
         self.cell_map[xs, ys] = True
