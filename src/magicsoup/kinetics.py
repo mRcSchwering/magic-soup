@@ -4,6 +4,7 @@ import math
 import random
 import torch
 import torch.multiprocessing as mp
+import torch.nn.functional as F
 from magicsoup.constants import GAS_CONSTANT, CODON_TABLE, CODON_SIZE
 from magicsoup.containers import Protein, Molecule
 
@@ -38,12 +39,11 @@ _EPS = 1e-5
 # 3. one-hot -> one-hot (categorical)
 
 
-def dom_seq_to_tokens(seq: str) -> torch.Tensor:
+def dom_to_tokens(seq: str) -> list[int]:
     s = CODON_SIZE
     n = len(seq)
     ijs = [(i, i + s) for i in range(0, n + 1 - s, s)]
-    tokens = [CODON_TABLE[seq[i:j]] for i, j in ijs]
-    return torch.tensor(tokens)
+    return [CODON_TABLE[seq[i:j]] for i, j in ijs]
 
 
 def get_one_hot_conversion_matrix(
@@ -169,53 +169,53 @@ class DomainToVector:
         return out
 
 
-vectors = [
-    [0.0, 0.0, 1.0, 0.0, -1.0, 0.0],
-    [0.0, 2.0, 0.0, 0.0, 0.0, -2.0],
-    [0.0, 1.0, 1.0, 0.0, -1.0, 0.0],
-    [0.0, -2.0, 0.0, 0.0, 1.0, 0.0],
-    [1.0, 1.0, 1.0, 1.0, 0.0, 0.0],
-]
+# vectors = [
+#     [0.0, 0.0, 1.0, 0.0, -1.0, 0.0],
+#     [0.0, 2.0, 0.0, 0.0, 0.0, -2.0],
+#     [0.0, 1.0, 1.0, 0.0, -1.0, 0.0],
+#     [0.0, -2.0, 0.0, 0.0, 1.0, 0.0],
+#     [1.0, 1.0, 1.0, 1.0, 0.0, 0.0],
+# ]
 
-model = DomainToVector(
-    enc_size=len(CODON_TABLE), dom_size=5, enc_idxs=[0, 1], vectors=vectors
-)
+# model = DomainToVector(
+#     enc_size=len(CODON_TABLE), dom_size=5, enc_idxs=[0, 1], vectors=vectors
+# )
 
 
-one_hot = OneHot(enc_size=len(CODON_TABLE))
+# one_hot = OneHot(enc_size=len(CODON_TABLE))
 
-model(one_hot.encode(dom_seq_to_tokens("AAAAGATACAAGAAA")))
+# model(one_hot.encode(dom_seq_to_tokens("AAAAGATACAAGAAA")))
 
-p0 = torch.stack(
-    [
-        dom_seq_to_tokens("AATGATTACAAGAAA"),
-        dom_seq_to_tokens("TATGATTACAAGAAA"),
-        dom_seq_to_tokens("ATTGATTACAAGAAA"),
-        dom_seq_to_tokens("AGGGATTACAAGAAT"),
-    ]
-)
-p1 = torch.stack(
-    [
-        dom_seq_to_tokens("AATGATTACAAGAAA"),
-        dom_seq_to_tokens("TATGATTACATTAAG"),
-    ]
-)
-proteins = [p0, p1]
-max_doms = max(d.size(0) for d in proteins)
-cell = torch.stack(
-    [
-        torch.nn.functional.pad(
-            d, pad=(0, 0, 0, max_doms - d.size(0)), mode="constant", value=0
-        )
-        for d in proteins
-    ]
-)
+# p0 = torch.stack(
+#     [
+#         dom_seq_to_tokens("AATGATTACAAGAAA"),
+#         dom_seq_to_tokens("TATGATTACAAGAAA"),
+#         dom_seq_to_tokens("ATTGATTACAAGAAA"),
+#         dom_seq_to_tokens("AGGGATTACAAGAAT"),
+#     ]
+# )
+# p1 = torch.stack(
+#     [
+#         dom_seq_to_tokens("AATGATTACAAGAAA"),
+#         dom_seq_to_tokens("TATGATTACATTAAG"),
+#     ]
+# )
+# proteins = [p0, p1]
+# max_doms = max(d.size(0) for d in proteins)
+# cell = torch.stack(
+#     [
+#         torch.nn.functional.pad(
+#             d, pad=(0, 0, 0, max_doms - d.size(0)), mode="constant", value=0
+#         )
+#         for d in proteins
+#     ]
+# )
 
-d = one_hot.encode(cell)
-d.size()
-one_hot.decode(d)
-r = model(d)
-r.sum(dim=1)
+# d = one_hot.encode(cell)
+# d.size()
+# one_hot.decode(d)
+# r = model(d)
+# r.sum(dim=1)
 
 
 # TODO: tryout
@@ -350,6 +350,44 @@ def translate_dom_seqs(
             set_domain_params(prot_i=prot_i, dom_i=dom_i, seq=seq, **kwargs)  # type: ignore
 
 
+def convert_dom_seqs(
+    proteins: list[list[tuple[tuple[bool, bool, bool], str]]],
+    n_prots: int,
+    n_doms: int,
+    n_dom_codons: int,
+) -> tuple[list[list[bool]], list[list[bool]], list[list[bool]], list[list[list[int]]]]:
+    empty_prot_bool = [False] * n_doms
+    empty_dom_seq = [0] * n_dom_codons
+    empty_prot_seq = [empty_dom_seq] * n_doms
+
+    p_catals = []
+    p_trnsps = []
+    p_regs = []
+    p_tokens = []
+    for doms in proteins:
+        d_catals = []
+        d_trnsps = []
+        d_regs = []
+        d_tokens = []
+        for (catal, trnsp, reg), seq in doms:
+            d_catals.append(catal)
+            d_trnsps.append(trnsp)
+            d_regs.append(reg)
+            d_tokens.append(dom_to_tokens(seq))
+        d_pad = n_doms - len(d_tokens)
+        p_catals.append(d_catals + [False] * d_pad)
+        p_trnsps.append(d_trnsps + [False] * d_pad)
+        p_regs.append(d_regs + [False] * d_pad)
+        p_tokens.append(d_tokens + [empty_dom_seq] * d_pad)
+    p_pad = n_prots - len(p_tokens)
+
+    catals = p_catals + [empty_prot_bool] * p_pad
+    trnsps = p_trnsps + [empty_prot_bool] * p_pad
+    regs = p_regs + [empty_prot_bool] * p_pad
+    dom_specs = p_tokens + [empty_prot_seq] * p_pad
+    return catals, trnsps, regs, dom_specs
+
+
 class Kinetics:
     """
     Class holding logic for simulating protein work.
@@ -403,7 +441,11 @@ class Kinetics:
     def __init__(
         self,
         molecules: list[Molecule],
+        reactions: list[tuple[list[Molecule], list[Molecule]]],
+        n_dom_codons: int,
         abs_temp: float = 310.0,
+        km_range: tuple[float, float] = (1e-5, 1.0),
+        vmax_range: tuple[float, float] = (0.01, 10.0),
         device: str = "cpu",
         workers: int = 2,
     ):
@@ -416,6 +458,55 @@ class Kinetics:
         # TODO: tryout
         self.ext_offset = n
         self.mol_energies = torch.tensor([d.energy for d in molecules] * 2)
+        self.n_dom_codons = n_dom_codons
+
+        oh_enc_size = max(CODON_TABLE.values())
+        self.one_hot = OneHot(enc_size=oh_enc_size)
+
+        # Catalytic: Km (1), Vmax (1), orientation (1), reaction vectors (2)
+        # Transporter: Km(1), Vmax (1), orientation (1), molecule vectors for transporters (2)
+        # Regulatory: Km(1), effect (1), molecule vectors for regulatory (2)
+        kwargs = {"enc_size": oh_enc_size, "dom_size": n_dom_codons}
+        self.affinity_map = DomainToLogWeight(
+            **kwargs, enc_idxs=[0], min_w=km_range[0], max_w=km_range[1]
+        )
+        self.velocity_map = DomainToLogWeight(
+            **kwargs, enc_idxs=[1], min_w=vmax_range[0], max_w=vmax_range[1]
+        )
+        self.orient_map = DomainToSign(**kwargs, enc_idxs=[2])
+
+        # careful, only copy [0] to avoid having references to the same list
+        react_vectors = [[0] * self.n_signals for _ in range(len(reactions))]
+        for ri, (lft, rgt) in enumerate(reactions):
+            for mol in lft:
+                mol_i = self.int_mol_map[mol.name]
+                react_vectors[ri][mol_i] -= 1
+            for mol in rgt:
+                mol_i = self.int_mol_map[mol.name]
+                react_vectors[ri][mol_i] += 1
+
+        self.reaction_map = DomainToVector(
+            **kwargs, enc_idxs=[3, 4], vectors=react_vectors
+        )
+
+        trnsp_mol_vectors = [[0] * self.n_signals for _ in range(self.n_signals)]
+        for mi in range(self.n_molecules):
+            trnsp_mol_vectors[mi][mi] = 1
+            trnsp_mol_vectors[mi][mi + self.n_molecules] = -1
+            trnsp_mol_vectors[mi + self.n_molecules][mi] = -1
+            trnsp_mol_vectors[mi + self.n_molecules][mi + self.n_molecules] = 1
+
+        self.trnsp_mol_map = DomainToVector(
+            **kwargs, enc_idxs=[3, 4], vectors=trnsp_mol_vectors
+        )
+
+        reg_mol_vectors = [[0] * self.n_signals for _ in range(self.n_signals)]
+        for mi in range(self.n_signals):
+            reg_mol_vectors[mi][mi] = 1
+
+        self.reg_mol_map = DomainToVector(
+            **kwargs, enc_idxs=[3, 4], vectors=reg_mol_vectors
+        )
 
         self.abs_temp = abs_temp
         self.device = device
@@ -522,27 +613,76 @@ class Kinetics:
         self.N[cis, pis] = torch.tensor(N).to(self.device)
 
     # TODO: tryout
-    def set_cell_params_new(self, cell_idxs: list[int], container_idxs: list[int]):
+    def set_cell_params_new(
+        self,
+        cell_idxs: list[int],
+        dom_seqs_lst: list[list[list[tuple[tuple[bool, bool, bool], str]]]],
+    ):
+        n_prots = self.N.size(1)
+        n_doms = max(len(dd) for d in dom_seqs_lst for dd in d)
+
+        args = []
+        for proteins in dom_seqs_lst:
+            args.append((proteins, n_prots, n_doms, self.n_dom_codons))
+
+        # TODO: pool necessary?
+        with mp.Pool(self.workers) as pool:
+            res = pool.starmap(convert_dom_seqs, args)
+
+        c_catals = []
+        c_trnsps = []
+        c_regs = []
+        c_doms = []
+        for catals, trnsps, regs, doms in res:
+            c_catals.append(catals)
+            c_trnsps.append(trnsps)
+            c_regs.append(regs)
+            c_doms.append(doms)
+
+        # c cells, p proteins, d domains, n domain len, h one-hot enc len
+        catal_mask = torch.tensor(c_catals)  # bool (c, p, d)
+        trnsp_mask = torch.tensor(c_trnsps)  # bool (c, p, d)
+        reg_mask = torch.tensor(c_regs)  # bool (c, p, d)
+        dom_specs = self.one_hot.encode(torch.tensor(c_doms))  # bool (c, p, d, n, h)
+
+        # TODO: how can I use the masks (their shapes are different)
+        velo = self.velocity_map(dom_specs)
+        aff = self.affinity_map(dom_specs)
+        orients = self.orient_map(dom_specs)
+        reacts = self.reaction_map(dom_specs)
+        trnsp_mols = self.trnsp_mol_map(dom_specs)
+        reg_mols = self.reg_mol_map(dom_specs)
+
         # N (c, p, d, s)
-        N = self.N_d[container_idxs].sum(dim=2)
+        N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask.float())
+        N_t = torch.einsum("cpds,cpd->cpds", trnsp_mols, trnsp_mask.float())
+        N_d = torch.einsum("cpds,cpd->cpds", (N_r + N_t), orients)
+        N = N_d.sum(dim=2)
         self.N[cell_idxs] = N
 
         # A (c, p, d, s)
-        A = self.A_d[container_idxs].sum(dim=2)
+        A_r = torch.einsum("cpds,cpd->cpds", reg_mols, reg_mask.float())
+        A_d = torch.einsum("cpds,cpd->cpds", A_r, orients)
+        A = A_d.sum(dim=2)
         self.A[cell_idxs] = A
 
         # Km (c, p, d, s)
-        Km = self.Km_d[container_idxs].nanmean(dim=2).nan_to_num(0.0)
+        lft_mols = ((A_d > 0.0) | (N_d > 0.0)).float()
+        rgt_mols = (N_d < 0.0).float()
+        Km_l = torch.einsum("cpds,cpd->cpds", lft_mols, aff)
+        Km_r = torch.einsum("cpds,cpd->cpds", rgt_mols, 1 / aff)
+        Km_d = Km_l + Km_r
+        Km = Km_d.mean(dim=2)  # TODO: exclude zeros (torch.where?)
         self.Km[cell_idxs] = Km
 
         # Vmax_d (c, p, d)
-        Vmax = self.Vmax_d[container_idxs].nanmean(dim=2).nan_to_num(0.0)
-        self.Vmax[cell_idxs] = Vmax
+        Vmax_d = velo * (catal_mask | trnsp_mask).float()
+        V = Vmax_d.mean(dim=2)  # TODO: exlude zeros
+        self.Vmax[cell_idxs] = V
 
-        # TODO: check if thats correct, should multiply energies with N
-        #       for each signal, then take sum over these signal-energies
         # N (c, p, s)
-        self.E[cell_idxs] = torch.einsum("cps,s->cp", N, self.mol_energies)
+        E = torch.einsum("cps,s->cp", N, self.mol_energies)
+        self.E[cell_idxs] = E
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """

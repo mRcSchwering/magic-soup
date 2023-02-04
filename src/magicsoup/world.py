@@ -5,6 +5,7 @@ import math
 import pickle
 from pathlib import Path
 import torch
+from magicsoup.constants import CODON_SIZE
 from magicsoup.containers import Cell, Protein, Chemistry
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
@@ -133,6 +134,8 @@ class World:
         self.cells: list[Cell] = []
         self.kinetics = Kinetics(
             molecules=chemistry.molecules,
+            reactions=chemistry.reactions,
+            n_dom_codons=int(self.genetics.dom_details_size / CODON_SIZE),
             abs_temp=abs_temp,
             device=self.device,
             workers=self.workers,
@@ -293,6 +296,9 @@ class World:
         if n_cells == 0:
             return []
 
+        # ab hier weiß ich schon das final n_cells, max prots:
+        # positions checked, proteine ohne non-reg doms raus, cells ohne proteine raus
+
         mappings = {
             "domain_map": self.genetics.dom_map,
             "molecule_map": self.genetics.mol_map,
@@ -322,6 +328,8 @@ class World:
             return []
 
         n_cells = len(self.cells)
+
+        # ab heir gehts weiter
         new_idxs = list(range(n_cells, n_cells + n_new_cells))
         for cell_i, genome, x, y in zip(new_idxs, genomes, xs, ys):
             cell = Cell(idx=cell_i, genome=genome, proteome=[], position=(x, y))
@@ -333,7 +341,7 @@ class World:
 
         self.kinetics.increase_max_proteins(max_n=n_max_prots)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.set_cell_params_new(cell_idxs=new_idxs, container_idxs=keep_idxs)
+        self.kinetics.set_cell_params_new(cell_idxs=new_idxs, dom_seqs_lst=dom_seqs_lst)
 
         # occupy positions
         self.cell_map[xs, ys] = True

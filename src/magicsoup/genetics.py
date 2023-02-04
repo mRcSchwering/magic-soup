@@ -517,8 +517,8 @@ def get_all_domain_seqs(
     stop_codons: tuple[str, ...],
     dom_size: int,
     dom_type_size: int,
-    dom_type_seqs: list[str],
-) -> list[list[str]]:
+    dom_type_map: dict[str, tuple[bool, bool, bool]],
+) -> list[list[tuple[tuple[bool, bool, bool], str]]]:
     cdsf = get_coding_regions(
         seq=genome,
         min_cds_size=min_cds_size,
@@ -534,21 +534,32 @@ def get_all_domain_seqs(
     )
     cdss = cdsf + cdsb
 
-    dom_seqs: list[list[str]] = []
+    prot_doms = []
     for cds in cdss:
         doms = []
+        is_useful_prot = False
+
         i = 0
         j = dom_size
         while i + dom_size <= len(cds):
-            if cds[i : i + dom_type_size] in dom_type_seqs:
-                doms.append(cds[i : i + dom_size])
+            dom_type_seq = cds[i : i + dom_type_size]
+            if dom_type_seq in dom_type_map:
+                catal, trnsp, reg = dom_type_map[dom_type_seq]
+                if not reg:
+                    is_useful_prot = True
+                dom_spec_seq = cds[i + dom_type_size : i + dom_size]
+                doms.append(((catal, trnsp, reg), dom_spec_seq))
                 i += dom_size
                 j += dom_size
             else:
                 i += CODON_SIZE
                 j += CODON_SIZE
-        dom_seqs.append(doms)
-    return dom_seqs
+
+        # protein should have at least 1 non-regulatory domain
+        if is_useful_prot:
+            prot_doms.append(doms)
+
+    return prot_doms
 
 
 class Genetics:
@@ -740,7 +751,10 @@ class Genetics:
         self.dom_type_seqs = list(self.dom_map)
 
     # TODO: tryout
-    def get_all_domain_seqs(self, genomes: list[str]) -> list[list[list[str]]]:
+    def get_all_domain_seqs(
+        self, genomes: list[str]
+    ) -> list[list[list[tuple[tuple[bool, bool, bool], str]]]]:
+        """Proteins with no domain or only regulatory domains are already filtered out"""
         args = [
             (
                 d,
@@ -749,7 +763,7 @@ class Genetics:
                 self.stop_codons,
                 self.dom_size,
                 self.dom_type_size,
-                self.dom_type_seqs,
+                self.dom_map,
             )
             for d in genomes
         ]
