@@ -443,8 +443,7 @@ def _get_n(p: float, s: int, name: str) -> int:
     return n
 
 
-# TODO: tryout
-def get_coding_regions(
+def _get_coding_regions(
     seq: str,
     min_cds_size: int,
     start_codons: tuple[str, ...],
@@ -509,33 +508,31 @@ def get_coding_regions(
     return cdss
 
 
-# TODO: tryout
-def get_all_domain_seqs(
+def _translate_genome(
     genome: str,
-    min_cds_size: int,
     start_codons: tuple[str, ...],
     stop_codons: tuple[str, ...],
     dom_size: int,
     dom_type_size: int,
-    dom_type_map: dict[str, tuple[bool, bool, bool]],
+    dom_type_map: dict[str, int],
     one_codon_map: dict[str, int],
     two_codon_map: dict[str, int],
-) -> list[list[tuple[tuple[bool, bool, bool], int, int, int, int]]]:
+) -> list[list[tuple[int, int, int, int, int]]]:
     idx0_slice = slice(0, 2 * CODON_SIZE)
     idx1_slice = slice(2 * CODON_SIZE, 3 * CODON_SIZE)
     idx2_slice = slice(3 * CODON_SIZE, 4 * CODON_SIZE)
     idx3_slice = slice(4 * CODON_SIZE, 5 * CODON_SIZE)
 
-    cdsf = get_coding_regions(
+    cdsf = _get_coding_regions(
         seq=genome,
-        min_cds_size=min_cds_size,
+        min_cds_size=dom_size,
         start_codons=start_codons,
         stop_codons=stop_codons,
     )
     bwd = reverse_complement(genome)
-    cdsb = get_coding_regions(
+    cdsb = _get_coding_regions(
         seq=bwd,
-        min_cds_size=min_cds_size,
+        min_cds_size=dom_size,
         start_codons=start_codons,
         stop_codons=stop_codons,
     )
@@ -551,15 +548,18 @@ def get_all_domain_seqs(
         while i + dom_size <= len(cds):
             dom_type_seq = cds[i : i + dom_type_size]
             if dom_type_seq in dom_type_map:
-                catal, trnsp, reg = dom_type_map[dom_type_seq]
-                if not reg:
+
+                # 1=catal, 2=trnsp, 3=reg
+                dom_type = dom_type_map[dom_type_seq]
+                if dom_type != 3:
                     is_useful_prot = True
+
                 dom_spec_seq = cds[i + dom_type_size : i + dom_size]
                 idx0 = two_codon_map[dom_spec_seq[idx0_slice]]
                 idx1 = one_codon_map[dom_spec_seq[idx1_slice]]
                 idx2 = one_codon_map[dom_spec_seq[idx2_slice]]
                 idx3 = one_codon_map[dom_spec_seq[idx3_slice]]
-                doms.append(((catal, trnsp, reg), idx0, idx1, idx2, idx3))
+                doms.append((dom_type, idx0, idx1, idx2, idx3))
                 i += dom_size
                 j += dom_size
             else:
@@ -578,28 +578,12 @@ class Genetics:
     Class holding logic about translating nucleotide sequences into proteomes.
 
     Arguments:
-        chemistry: The chemistry object used for this simulation.
-            If no reactions were defined, there will be no catalytic domain factory, i.e. no catalytic domains defined.
         start_codons: Start codons which start a coding sequence
         stop_codons: Stop codons which stop a coding sequence
         p_catal_dom: Chance of encountering a catalytic domain in a random nucleotide sequence.
         p_transp_dom: Chance of encountering a transporter domain in a random nucleotide sequence.
         p_allo_dom: Chance of encountering a regulatory domain in a random nucleotide sequence.
         n_dom_type_nts: Number of nucleotides that encodes the domain type (catalytic, transporter, regulatory).
-        n_reaction_nts: Number of nucleotides that encodes the reaction in catalytic domains
-            (will be passed to catalytic domain factory).
-        n_molecule_nts: Number of nucleotides that encodes the molecule species in transporter and regulatory domain
-            (will be passed to their domain factories).
-        n_affinity_nts: Number of nucleotides that encodes the Michaelis Menten constants of domains
-            (will be passed to domain factories).
-        n_velocity_nts: Number of nucleotides that encodes maximum velocitires in catalytic and regulatory domains
-            (will be passed to their domain factories).
-        n_orientation_nts: Number of nucleotides that encodes domain orientation
-            (will be passed to domain factories).
-        n_transmembrane_nts: Number of nucleotides that encodes whether a regulatory domain is also a transmembrane domain,
-            reacting to extracellular molecules instead (will be passed to regulatory domain factory).
-        n_inhibit_nts: Number of nucleotides that encodes whether a regulatory domain is a inhibiting or activating
-            (will be passed to regulatory domain factory).
         workers: number of workers
 
     When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
@@ -642,20 +626,12 @@ class Genetics:
 
     def __init__(
         self,
-        chemistry: Chemistry,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         p_catal_dom: float = 0.01,
         p_transp_dom: float = 0.01,
         p_allo_dom: float = 0.01,
         n_dom_type_nts: int = 6,
-        n_reaction_nts: int = 6,
-        n_molecule_nts: int = 6,
-        n_affinity_nts: int = 6,
-        n_velocity_nts: int = 6,
-        n_orientation_nts: int = 3,
-        n_transmembrane_nts: int = 3,
-        n_inhibit_nts: int = 3,
         workers: int = 2,
     ):
         if any(len(d) != CODON_SIZE for d in start_codons):
@@ -670,11 +646,16 @@ class Genetics:
         if n_dom_type_nts % CODON_SIZE != 0:
             raise ValueError(f"n_dom_type_nts should be a multiple of {CODON_SIZE}.")
 
-        self.chemistry = chemistry
         self.start_codons = start_codons
         self.stop_codons = stop_codons
         self.dom_type_size = n_dom_type_nts
         self.workers = workers
+
+        # Domain: domain_type (catal, trnsp, reg) + specification
+        # specification: 1 2-codon token, 3 1-codon tokens
+        # Domain can start and finish with start and stop codons, so this
+        # is also the minimum CDS size
+        self.dom_size = self.dom_type_size + (2 + 3) * CODON_SIZE
 
         if p_catal_dom + p_transp_dom + p_allo_dom > 1.0:
             raise ValueError(
@@ -689,62 +670,16 @@ class Genetics:
         n_transp_doms = _get_n(p=p_transp_dom, s=n, name="transporter domains")
         n_allo_doms = _get_n(p=p_allo_dom, s=n, name="allosteric domains")
 
-        catal_dom_fact = CatalyticFact(
-            reactions=chemistry.reactions,
-            n_reaction_nts=n_reaction_nts,
-            n_affinity_nts=n_affinity_nts,
-            n_velocity_nts=n_velocity_nts,
-            n_orientation_nts=n_orientation_nts,
-        )
-        transp_dom_fact = TransporterFact(
-            molecules=chemistry.molecules,
-            n_molecule_nts=n_molecule_nts,
-            n_affinity_nts=n_affinity_nts,
-            n_velocity_nts=n_velocity_nts,
-            n_orientation_nts=n_orientation_nts,
-        )
-        allo_dom_fact = RegulatoryFact(
-            molecules=chemistry.molecules,
-            n_molecule_nts=n_molecule_nts,
-            n_affinity_nts=n_affinity_nts,
-            n_transmembrane_nts=n_transmembrane_nts,
-            n_inhibit_nts=n_inhibit_nts,
-        )
-
-        domain_facts: dict[_DomainFact, list[str]] = {}
-        if len(self.chemistry.reactions) > 0:
-            domain_facts[catal_dom_fact] = sets[:n_catal_doms]
-            del sets[:n_catal_doms]
-        domain_facts[transp_dom_fact] = sets[:n_transp_doms]
+        # 1=catalytic, 2=transporter, 3=regulatory
+        domain_types: dict[int, list[str]] = {}
+        domain_types[1] = sets[:n_catal_doms]
+        del sets[:n_catal_doms]
+        domain_types[2] = sets[:n_transp_doms]
         del sets[:n_transp_doms]
-        domain_facts[allo_dom_fact] = sets[:n_allo_doms]
+        domain_types[3] = sets[:n_allo_doms]
         del sets[:n_allo_doms]
 
-        self.domain_map = {d: k for k, v in domain_facts.items() for d in v}
-
-        self.dom_details_size = max(d.min_len for d in domain_facts)
-        self.dom_size = self.dom_type_size + self.dom_details_size
-        self.min_cds_size = self.dom_size + 2 * CODON_SIZE
-
-        # TODO: tryout
-        self.n_nts = {
-            "n_dom_type_nts": n_dom_type_nts,
-            "n_reaction_nts": n_reaction_nts,
-            "n_molecule_nts": n_molecule_nts,
-            "n_affinity_nts": n_affinity_nts,
-            "n_velocity_nts": n_velocity_nts,
-            "n_bool_nts": n_orientation_nts,
-            "n_molecules": len(chemistry.molecules),
-        }
-
-        self.dom_map: dict[str, tuple[bool, bool, bool]] = {}
-        for seq, dom_fact in self.domain_map.items():
-            if isinstance(dom_fact, CatalyticFact):
-                self.dom_map[seq] = (True, False, False)
-            if isinstance(dom_fact, TransporterFact):
-                self.dom_map[seq] = (False, True, False)
-            if isinstance(dom_fact, RegulatoryFact):
-                self.dom_map[seq] = (False, False, True)
+        self.domain_map = {d: k for k, v in domain_types.items() for d in v}
 
         self.two_codon_map: dict[str, int] = {}
         for i, seq in enumerate(nt_seqs(n=2 * CODON_SIZE)):
@@ -754,34 +689,33 @@ class Genetics:
         for i, seq in enumerate(nt_seqs(n=CODON_SIZE)):
             self.one_codon_map[seq] = i + 1
 
-        _react_map = generic_map_fact(nt_seqs(n_reaction_nts), chemistry.reactions)
-        self.react_map: dict[str, tuple[list[int], list[int]]] = {}
-        for seq, (subs, prods) in _react_map.items():
-            subsi = [chemistry.molecules.index(d) for d in subs]
-            prodsi = [chemistry.molecules.index(d) for d in prods]
-            self.react_map[seq] = (subsi, prodsi)
-
-        _mol_map = generic_map_fact(nt_seqs(n_reaction_nts), chemistry.molecules)
-        self.mol_map = {k: chemistry.molecules.index(v) for k, v in _mol_map.items()}
-
-        self.aff_map = log_weight_map_fact(nt_seqs(n_affinity_nts), 1e-5, 1.0)
-        self.velo_map = log_weight_map_fact(nt_seqs(n_velocity_nts), 0.01, 10)
-        self.bool_map = bool_map_fact(nt_seqs(n_orientation_nts))
-        self.dom_type_seqs = list(self.dom_map)
-
-    def get_all_domain_seqs(
+    def translate_genomes(
         self, genomes: list[str]
-    ) -> list[list[list[tuple[tuple[bool, bool, bool], int, int, int, int]]]]:
-        """Proteins with no domain or only regulatory domains are already filtered out"""
+    ) -> list[list[list[tuple[int, int, int, int, int]]]]:
+        """
+        Translate all genomes into proteomes
+
+        Arguments:
+            geneomes: list of nucleotide sequences
+
+        Returns:
+            List of proteomes with each proteome being a list of proteins.
+            Each protein is a list of domains, and domains are represented
+            as tuples of indices. These indices will be mapped to specific
+            domain specifications by [Kinetics](magicsoup.kinetics.Kinetics).
+
+        Both forward and reverse-complement are considered.
+        CDSs are extracted and a protein is translated for every CDS.
+        Unviable proteins (no domains or only regulatory domains) are discarded.
+        """
         args = [
             (
                 d,
-                self.min_cds_size,
                 self.start_codons,
                 self.stop_codons,
                 self.dom_size,
                 self.dom_type_size,
-                self.dom_map,
+                self.domain_map,
                 self.one_codon_map,
                 self.two_codon_map,
             )
@@ -789,117 +723,6 @@ class Genetics:
         ]
 
         with mp.Pool(self.workers) as pool:
-            dom_seqs = pool.starmap(get_all_domain_seqs, args)
+            dom_seqs = pool.starmap(_translate_genome, args)
 
         return dom_seqs
-
-    def get_proteome(self, seq: str) -> list[Protein]:
-        """
-        Get all proteins encoded by a nucleotide sequence
-
-        Arguments:
-            seq: nucleotide sequence
-
-        Both forward and reverse-complement are considered.
-        CDSs are extracted (see [get_coding_regions()][magicsoup.genetics.Genetics.get_coding_regions])
-        and a protein is translated for every CDS (see [translate_seq()][magicsoup.genetics.Genetics.translate_seq]).
-        Unviable proteins (no domains or only regulatory domains) are discarded.
-        """
-        bwd = reverse_complement(seq)
-        cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
-        proteins = [self.translate_seq(d) for d in cds]
-        proteins = [d for d in proteins if len(d) > 0]
-        proteins = [d for d in proteins if not all(dd.is_regulatory for dd in d)]
-        return [Protein(domains=d, label=f"P{i}") for i, d in enumerate(proteins)]
-
-    def get_coding_regions(self, seq: str) -> list[str]:
-        """
-        Get all coding regions in nucleotide sequence
-
-        Arguments:
-            seq: nucleotide sequence
-
-        Assuming coding region can start at any start codon
-        and is stopped with the first in-frame stop codon encountered.
-        Coding regions without a stop codon are not considerd.
-        """
-        n = len(seq)
-        max_start_idx = n - self.min_cds_size
-
-        start_idxs = []
-        for start_codon in self.start_codons:
-            i = 0
-            while i < max_start_idx:
-                try:
-                    hit = seq[i:].index(start_codon)
-                    start_idxs.append(i + hit)
-                    i = i + hit + CODON_SIZE
-                except ValueError:
-                    break
-
-        stop_idxs = []
-        for stop_codon in self.stop_codons:
-            i = 0
-            while i < n - CODON_SIZE:
-                try:
-                    hit = seq[i:].index(stop_codon)
-                    stop_idxs.append(i + hit)
-                    i = i + hit + CODON_SIZE
-                except ValueError:
-                    break
-
-        start_idxs.sort()
-        stop_idxs.sort()
-
-        by_frame: list[tuple[list[int], ...]] = [([], []), ([], []), ([], [])]
-        for start_idx in start_idxs:
-            if start_idx % 3 == 0:
-                by_frame[0][0].append(start_idx)
-            elif (start_idx + 1) % 3 == 0:
-                by_frame[1][0].append(start_idx)
-            else:
-                by_frame[2][0].append(start_idx)
-        for stop_idx in stop_idxs:
-            if stop_idx % 3 == 0:
-                by_frame[0][1].append(stop_idx)
-            elif (stop_idx + 1) % 3 == 0:
-                by_frame[1][1].append(stop_idx)
-            else:
-                by_frame[2][1].append(stop_idx)
-
-        cdss = []
-        for start_idxs, stop_idxs in by_frame:
-            for start_idx in start_idxs:
-                stop_idxs = [d for d in stop_idxs if d > start_idx + CODON_SIZE]
-                if len(stop_idxs) > 0:
-                    cds_end_idx = min(stop_idxs) + CODON_SIZE
-                    if cds_end_idx - start_idx > self.min_cds_size:
-                        cdss.append(seq[start_idx:cds_end_idx])
-                else:
-                    break
-
-        return cdss
-
-    def translate_seq(self, seq: str) -> list[Domain]:
-        """
-        Translate a coding region into a protein.
-        The CDS should be a desoxy-ribonucleotide sequence (i.e. TGCA).
-
-        Arguments:
-            seq: nucleotide sequence
-        """
-        i = 0
-        j = self.dom_type_size
-        doms: list[Domain] = []
-        while i + self.dom_size <= len(seq):
-            domfact = self.domain_map.get(seq[i:j])
-            if domfact is not None:
-                dom = domfact(seq[j : j + self.dom_details_size])
-                doms.append(dom)
-                i += self.dom_size
-                j += self.dom_size
-            else:
-                i += CODON_SIZE
-                j += CODON_SIZE
-
-        return doms

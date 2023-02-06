@@ -5,7 +5,6 @@ import math
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.constants import CODON_SIZE
 from magicsoup.containers import Cell, Protein, Chemistry
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
@@ -105,7 +104,6 @@ class World:
         self.abs_temp = abs_temp
 
         self.genetics = Genetics(
-            chemistry=chemistry,
             start_codons=start_codons,
             stop_codons=stop_codons,
             workers=workers,
@@ -135,7 +133,6 @@ class World:
         self.kinetics = Kinetics(
             molecules=chemistry.molecules,
             reactions=chemistry.reactions,
-            n_dom_codons=int(self.genetics.dom_details_size / CODON_SIZE),
             abs_temp=abs_temp,
             device=self.device,
             workers=self.workers,
@@ -211,9 +208,9 @@ class World:
             random.shuffle(genomes)
             genomes = genomes[:n_new_cells]
 
-        dom_seqs_lst = self.genetics.get_all_domain_seqs(genomes=genomes)
-        dom_seqs_lst = [d for d in dom_seqs_lst if len(d) > 0]
-        n_new_cells = len(dom_seqs_lst)
+        proteomes = self.genetics.translate_genomes(genomes=genomes)
+        proteomes = [d for d in proteomes if len(d) > 0]
+        n_new_cells = len(proteomes)
         if n_new_cells == 0:
             return []
 
@@ -230,10 +227,10 @@ class World:
         self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
         self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
 
-        n_max_prots = max(len(d) for d in dom_seqs_lst)
+        n_max_prots = max(len(d) for d in proteomes)
         self.kinetics.increase_max_proteins(max_n=n_max_prots)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.set_cell_params(cell_idxs=new_idxs, dom_seqs_lst=dom_seqs_lst)
+        self.kinetics.set_cell_params(cell_idxs=new_idxs, proteomes=proteomes)
 
         # occupy positions
         self.cell_map[xs, ys] = True
@@ -301,46 +298,33 @@ class World:
         The genomes refer to the genome of each cell that is changed.
         `world.cells` will be updated with new genomes and proteomes.
         """
-        # TODO: 3 steps where only 1 proc is 100% active total about 25s
-        #       then 1 step where all procs are 50% active (probably enzymatic_activity())
-        #       total about 7k cells with avg genome size 4000
-        #       needs to speed up....
-
         if len(genome_idx_pairs) == 0:
             return
 
-        kill_idxs: list[int] = []
-        prot_lens: list[int] = []
-        set_params: list[tuple[int, int, Protein]] = []
-        unset_params: list[tuple[int, int]] = []
+        kill_idxs = []
+        transl_idxs = []
+        genomes = []
         for genome, idx in genome_idx_pairs:
-            if len(genome) == 0:
+            if len(genome) > 0:
+                genomes.append(genome)
+                transl_idxs.append(idx)
+            else:
                 kill_idxs.append(idx)
-                continue
 
-            cell = self.cells[idx]
-            newprot = self.genetics.get_proteome(seq=genome)
-            if len(newprot) == 0:
+        proteomes = self.genetics.translate_genomes(genomes=genomes)
+
+        set_idxs = []
+        set_proteomes = []
+        for proteome, idx in zip(proteomes, transl_idxs):
+            if len(proteome) > 0:
+                set_proteomes.append(proteome)
+                set_idxs.append(idx)
+            else:
                 kill_idxs.append(idx)
-                continue
 
-            oldprot = cell.proteome
-            n_new = len(newprot)
-            n_old = len(oldprot)
-            n = min(n_old, n_new)
-            for pi, (np, op) in enumerate(zip(newprot[:n], oldprot[:n])):
-                if np != op:
-                    set_params.append((idx, pi, np))
-            if n_old > n_new:
-                unset_params.extend((idx, i) for i in range(n, n_old))
-
-            cell.proteome = newprot
-            cell.genome = genome
-            prot_lens.append(n_new)
-
-        self.kinetics.increase_max_proteins(max_n=max(prot_lens))
-        self.kinetics.set_cell_params(cell_prots=set_params)
-        self.kinetics.unset_cell_params(cell_prots=unset_params)
+        max_prots = max(len(d[0]) for d in set_proteomes)
+        self.kinetics.increase_max_proteins(max_n=max_prots)
+        self.kinetics.set_cell_params(cell_idxs=set_idxs, proteomes=set_proteomes)
         self.kill_cells(cell_idxs=kill_idxs)
 
     def kill_cells(self, cell_idxs: list[int]):

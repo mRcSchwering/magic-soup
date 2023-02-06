@@ -53,8 +53,13 @@ def timeit(callback, *args, r=3) -> tuple[float, float]:
     return m, s
 
 
-def new_add_random_cells(world: ms.World, genomes: list[str]):
+def add_cells(world: ms.World, genomes: list[str]):
     world.add_random_cells(genomes=genomes)
+
+
+def update_cells(world: ms.World, genomes: list[str]):
+    pairs = [(d, i) for d, i in zip(genomes, range(len(world.cells)))]
+    world.update_cells(genome_idx_pairs=pairs)
 
 
 def main(n=1000, s=500, w=4):
@@ -62,8 +67,14 @@ def main(n=1000, s=500, w=4):
     genomes = [ms.random_genome(s) for _ in range(n)]
 
     world = ms.World(chemistry=CHEMISTRY, workers=w)
-    mu, sd = timeit(new_add_random_cells, world, genomes)
-    print(f"({mu:.2f}+-{sd:.2f})s - new")
+    mu, sd = timeit(add_cells, world, genomes)
+    print(f"({mu:.2f}+-{sd:.2f})s - add cells")
+
+    world = ms.World(chemistry=CHEMISTRY, workers=w)
+    genomes = [ms.random_genome(s) for _ in range(n)]
+    world.add_random_cells(genomes=genomes)
+    mu, sd = timeit(update_cells, world, genomes)
+    print(f"({mu:.2f}+-{sd:.2f})s - update")
 
 
 if __name__ == "__main__":
