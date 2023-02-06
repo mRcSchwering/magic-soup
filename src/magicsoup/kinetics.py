@@ -1,57 +1,12 @@
 from typing import Optional
-from itertools import product
 import math
 import random
 import torch
 import torch.multiprocessing as mp
-import torch.nn.functional as F
-from magicsoup.constants import GAS_CONSTANT, CODON_TABLE, CODON_SIZE
+from magicsoup.constants import GAS_CONSTANT, ALL_CODONS
 from magicsoup.containers import Protein, Molecule
 
 _EPS = 1e-5
-
-
-def _dom_to_tokens(seq: str) -> list[int]:
-    s = CODON_SIZE
-    n = len(seq)
-    ijs = [(i, i + s) for i in range(0, n + 1 - s, s)]
-    return [CODON_TABLE[seq[i:j]] for i, j in ijs]
-
-
-def _get_one_hot_conversion_matrix(
-    oh_size: int, len_size: int, enc_idxs: list[int]
-) -> torch.Tensor:
-    enc_size = len(enc_idxs)
-    all_oh_encs = list(range(oh_size))
-    out_oh_encs = list(product(*[all_oh_encs] * enc_size))
-    out_size = len(out_oh_encs)
-
-    w = torch.zeros(out_size, len_size, oh_size)
-    for i, combi in enumerate(out_oh_encs):
-        for j, oh in zip(enc_idxs, combi):
-            w[i, j, oh] = 1.0
-
-    return w / enc_size
-
-
-class _OneHot:
-    """
-    Creates a model for one-hot encoding tokens
-    and vice versa.
-    """
-
-    def __init__(self, enc_size: int, device: str = "cpu"):
-        self.w = torch.cat(
-            [torch.zeros(1, enc_size), torch.diag(torch.ones(enc_size))]
-        ).to(device)
-
-    def encode(self, t: torch.Tensor) -> torch.Tensor:
-        """size: (..., )"""
-        return self.w[t]
-
-    def decode(self, t: torch.Tensor) -> torch.Tensor:
-        """size: (..., one-hot) must be last dim"""
-        return t.argmax(dim=-1) + t.sum(dim=-1)
 
 
 class _LogWeightMapFact:
@@ -62,26 +17,22 @@ class _LogWeightMapFact:
 
     def __init__(
         self,
-        enc_size: int,
-        dom_size: int,
-        enc_idxs: list[int],
+        max_token: int,
         weight_range: tuple[float, float],
         device: str = "cpu",
+        zero_value: float = torch.nan,
     ):
         l_min_w = math.log(min(weight_range))
         l_max_w = math.log(max(weight_range))
-        self.w0 = _get_one_hot_conversion_matrix(
-            oh_size=enc_size, len_size=dom_size, enc_idxs=enc_idxs
-        ).to(device)
-        out_size = self.w0.size(0)
-        weights = [math.exp(random.uniform(l_min_w, l_max_w)) for _ in range(out_size)]
-        self.w1 = torch.tensor(weights).to(device)
+        weights = torch.tensor(
+            [zero_value]
+            + [math.exp(random.uniform(l_min_w, l_max_w)) for _ in range(max_token)]
+        )
+        self.weights = weights.to(device)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        """size: (..., domain, one-hot)"""
-        enc = (torch.einsum("odi,...di->...o", self.w0, t) == 1.0).float()
-        out = enc @ self.w1
-        return out
+        """t: long (c, p, d)"""
+        return self.weights[t]
 
 
 class _SignMapFact:
@@ -90,21 +41,14 @@ class _SignMapFact:
     with 50% probability of each being mapped.
     """
 
-    def __init__(
-        self, enc_size: int, dom_size: int, enc_idxs: list[int], device: str = "cpu"
-    ):
+    def __init__(self, max_token: int, device: str = "cpu", zero_value: float = 0.0):
         choices = [1.0, -1.0]
-        self.w0 = _get_one_hot_conversion_matrix(
-            oh_size=enc_size, len_size=dom_size, enc_idxs=enc_idxs
-        ).to(device)
-        out_size = self.w0.size(0)
-        self.w1 = torch.tensor(random.choices(choices, k=out_size)).to(device)
+        signs = torch.tensor([zero_value] + random.choices(choices, k=max_token))
+        self.signs = signs.to(device)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        """size: (..., domain, one-hot)"""
-        enc = (torch.einsum("odi,...di->...o", self.w0, t) == 1.0).float()
-        out = enc @ self.w1
-        return out
+        """t: long (c, p, d)"""
+        return self.signs[t]
 
 
 class _VectorMapFact:
@@ -116,70 +60,91 @@ class _VectorMapFact:
 
     def __init__(
         self,
-        enc_size: int,
-        dom_size: int,
-        enc_idxs: list[int],
+        max_token: int,
         vectors: list[list[float]],
         device: str = "cpu",
+        zero_value: float = 0.0,
     ):
         n_vectors = len(vectors)
         vector_size = len(vectors[0])
+
         if not all(len(d) == vector_size for d in vectors):
             raise ValueError("Not all vectors have the same length")
 
-        self.w0 = _get_one_hot_conversion_matrix(
-            oh_size=enc_size, len_size=dom_size, enc_idxs=enc_idxs
-        ).to(device)
-        out_size = self.w0.size(0)
-        idxs = random.choices(list(range(n_vectors)), k=out_size)
-        w1 = torch.zeros(out_size, vector_size)
+        if n_vectors > max_token:
+            raise ValueError(
+                f"There are max_token={max_token} and {n_vectors} vectors."
+                " It is not possible to map all vectors"
+            )
+
+        idxs = random.choices(list(range(n_vectors)), k=max_token)
+        M = torch.full((max_token + 1, vector_size), fill_value=zero_value)
         for row_i, idx in enumerate(idxs):
-            w1[row_i] = torch.tensor(vectors[idx])
-        self.w1 = w1.to(device)
+            M[row_i + 1] = torch.tensor(vectors[idx])
+        self.M = M.to(device)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        """size: (..., domain, one-hot)"""
-        enc = (torch.einsum("odi,...di->...o", self.w0, t) == 1.0).float()
-        out = torch.einsum("...o,ov->...v", enc, self.w1)
-        return out
+        """t: long (c, p, d)"""
+        return self.M[t]
 
 
 def _convert_dom_seqs(
-    proteins: list[list[tuple[tuple[bool, bool, bool], str]]],
+    proteins: list[list[tuple[tuple[bool, bool, bool], int, int, int, int]]],
     n_prots: int,
     n_doms: int,
-    n_dom_codons: int,
-) -> tuple[list[list[bool]], list[list[bool]], list[list[bool]], list[list[list[int]]]]:
+) -> tuple[
+    list[list[bool]],
+    list[list[bool]],
+    list[list[bool]],
+    list[list[int]],
+    list[list[int]],
+    list[list[int]],
+    list[list[int]],
+]:
     empty_prot_bool = [False] * n_doms
-    empty_dom_seq = [0] * n_dom_codons
-    empty_prot_seq = [empty_dom_seq] * n_doms
+    empty_prot_seq = [0] * n_doms
 
     p_catals = []
     p_trnsps = []
     p_regs = []
-    p_tokens = []
+    p_idxs0 = []
+    p_idxs1 = []
+    p_idxs2 = []
+    p_idxs3 = []
     for doms in proteins:
         d_catals = []
         d_trnsps = []
         d_regs = []
-        d_tokens = []
-        for (catal, trnsp, reg), seq in doms:
+        d_idxs0 = []
+        d_idxs1 = []
+        d_idxs2 = []
+        d_idxs3 = []
+        for (catal, trnsp, reg), i0, i1, i2, i3 in doms:
             d_catals.append(catal)
             d_trnsps.append(trnsp)
             d_regs.append(reg)
-            d_tokens.append(_dom_to_tokens(seq))
-        d_pad = n_doms - len(d_tokens)
+            d_idxs0.append(i0)
+            d_idxs1.append(i1)
+            d_idxs2.append(i2)
+            d_idxs3.append(i3)
+        d_pad = n_doms - len(d_idxs0)
         p_catals.append(d_catals + [False] * d_pad)
         p_trnsps.append(d_trnsps + [False] * d_pad)
         p_regs.append(d_regs + [False] * d_pad)
-        p_tokens.append(d_tokens + [empty_dom_seq] * d_pad)
-    p_pad = n_prots - len(p_tokens)
+        p_idxs0.append(d_idxs0 + [0] * d_pad)
+        p_idxs1.append(d_idxs1 + [0] * d_pad)
+        p_idxs2.append(d_idxs2 + [0] * d_pad)
+        p_idxs3.append(d_idxs3 + [0] * d_pad)
 
+    p_pad = n_prots - len(p_idxs0)
     catals = p_catals + [empty_prot_bool] * p_pad
     trnsps = p_trnsps + [empty_prot_bool] * p_pad
     regs = p_regs + [empty_prot_bool] * p_pad
-    dom_specs = p_tokens + [empty_prot_seq] * p_pad
-    return catals, trnsps, regs, dom_specs
+    idxs0 = p_idxs0 + [empty_prot_seq] * p_pad
+    idxs1 = p_idxs1 + [empty_prot_seq] * p_pad
+    idxs2 = p_idxs2 + [empty_prot_seq] * p_pad
+    idxs3 = p_idxs3 + [empty_prot_seq] * p_pad
+    return catals, trnsps, regs, idxs0, idxs1, idxs2, idxs3
 
 
 class Kinetics:
@@ -252,32 +217,22 @@ class Kinetics:
         self.mol_energies = torch.tensor([d.energy for d in molecules] * 2)
         self.n_dom_codons = n_dom_codons
 
-        oh_enc_size = max(CODON_TABLE.values())
-        self.one_hot = _OneHot(enc_size=oh_enc_size, device=device)
-
-        # Catalytic: Km (1), Vmax (1), orientation (1), reaction vectors (2)
-        # Transporter: Km(1), Vmax (1), orientation (1), molecule vectors for transporters (2)
-        # Regulatory: Km(1), effect (1), molecule vectors for regulatory (2)
+        one_codon_size = len(ALL_CODONS)
+        two_codon_size = one_codon_size**2
 
         self.affinity_map = _LogWeightMapFact(
-            enc_idxs=[0],
+            max_token=one_codon_size,
             weight_range=km_range,
-            enc_size=oh_enc_size,
-            dom_size=n_dom_codons,
             device=device,
         )
 
         self.velocity_map = _LogWeightMapFact(
-            enc_idxs=[1],
+            max_token=one_codon_size,
             weight_range=vmax_range,
-            enc_size=oh_enc_size,
-            dom_size=n_dom_codons,
             device=device,
         )
 
-        self.orient_map = _SignMapFact(
-            enc_idxs=[2], enc_size=oh_enc_size, dom_size=n_dom_codons, device=device
-        )
+        self.orient_map = _SignMapFact(max_token=one_codon_size, device=device)
 
         # careful, only copy [0] to avoid having references to the same list
         react_vectors = [[0.0] * self.n_signals for _ in range(len(reactions))]
@@ -290,10 +245,8 @@ class Kinetics:
                 react_vectors[ri][mol_i] += 1
 
         self.reaction_map = _VectorMapFact(
-            enc_idxs=[3, 4],
+            max_token=two_codon_size,
             vectors=react_vectors,
-            enc_size=oh_enc_size,
-            dom_size=n_dom_codons,
             device=device,
         )
 
@@ -305,10 +258,8 @@ class Kinetics:
             trnsp_mol_vectors[mi + self.n_molecules][mi + self.n_molecules] = 1
 
         self.trnsp_mol_map = _VectorMapFact(
-            enc_idxs=[3, 4],
+            max_token=two_codon_size,
             vectors=trnsp_mol_vectors,
-            enc_size=oh_enc_size,
-            dom_size=n_dom_codons,
             device=device,
         )
 
@@ -317,10 +268,8 @@ class Kinetics:
             reg_mol_vectors[mi][mi] = 1
 
         self.reg_mol_map = _VectorMapFact(
-            enc_idxs=[3, 4],
+            max_token=two_codon_size,
             vectors=reg_mol_vectors,
-            enc_size=oh_enc_size,
-            dom_size=n_dom_codons,
             device=device,
         )
 
@@ -361,7 +310,9 @@ class Kinetics:
     def set_cell_params(
         self,
         cell_idxs: list[int],
-        dom_seqs_lst: list[list[list[tuple[tuple[bool, bool, bool], str]]]],
+        dom_seqs_lst: list[
+            list[list[tuple[tuple[bool, bool, bool], int, int, int, int]]]
+        ],
     ):
         print("starting cell params")
         n_prots = self.N.size(1)
@@ -369,7 +320,7 @@ class Kinetics:
 
         args = []
         for proteins in dom_seqs_lst:
-            args.append((proteins, n_prots, n_doms, self.n_dom_codons))
+            args.append((proteins, n_prots, n_doms))
 
         # TODO: pool necessary?
         # TODO: fill-up pre-built tensors?
@@ -381,26 +332,35 @@ class Kinetics:
         c_catals = []
         c_trnsps = []
         c_regs = []
-        c_doms = []
-        for catals, trnsps, regs, doms in res:
+        c_idxs0 = []
+        c_idxs1 = []
+        c_idxs2 = []
+        c_idxs3 = []
+        for catals, trnsps, regs, i0s, i1s, i2s, i3s in res:
             c_catals.append(catals)
             c_trnsps.append(trnsps)
             c_regs.append(regs)
-            c_doms.append(doms)
+            c_idxs0.append(i0s)
+            c_idxs1.append(i1s)
+            c_idxs2.append(i2s)
+            c_idxs3.append(i3s)
 
         # c cells, p proteins, d domains, n domain len, h one-hot enc len
         catal_mask = torch.tensor(c_catals)  # bool (c, p, d)
         trnsp_mask = torch.tensor(c_trnsps)  # bool (c, p, d)
         reg_mask = torch.tensor(c_regs)  # bool (c, p, d)
-        dom_specs = self.one_hot.encode(torch.tensor(c_doms))  # float (c, p, d, n, h)
+        idxs0 = torch.tensor(c_idxs0)  # long (c, p, d)
+        idxs1 = torch.tensor(c_idxs1)  # long (c, p, d)
+        idxs2 = torch.tensor(c_idxs2)  # long (c, p, d)
+        idxs3 = torch.tensor(c_idxs3)  # long (c, p, d)
 
         print("mapping")
-        velo = self.velocity_map(dom_specs)  # float (c, p, d)
-        aff = self.affinity_map(dom_specs)  # float (c, p, d)
-        orients = self.orient_map(dom_specs)  # float (c, p, d)
-        reacts = self.reaction_map(dom_specs)  # float (c, p, d, s)
-        trnsp_mols = self.trnsp_mol_map(dom_specs)  # float (c, p, d, s)
-        reg_mols = self.reg_mol_map(dom_specs)  # float (c, p, d, s)
+        velo = self.velocity_map(idxs1)  # float (c, p, d)
+        aff = self.affinity_map(idxs2)  # float (c, p, d)
+        orients = self.orient_map(idxs3)  # float (c, p, d)
+        reacts = self.reaction_map(idxs0)  # float (c, p, d, s)
+        trnsp_mols = self.trnsp_mol_map(idxs0)  # float (c, p, d, s)
+        reg_mols = self.reg_mol_map(idxs0)  # float (c, p, d, s)
 
         print("calculating params")
 
@@ -423,13 +383,11 @@ class Kinetics:
         Km_l = torch.einsum("cpds,cpd->cpds", lft_mols, aff)
         Km_r = torch.einsum("cpds,cpd->cpds", rgt_mols, 1 / aff)
         Km_d = Km_l + Km_r
-        Km_d[Km_d == 0.0] = torch.nan
         Km = Km_d.nanmean(dim=2).nan_to_num(0.0)
         self.Km[cell_idxs] = Km
 
         # Vmax_d (c, p, d)
         Vmax_d = velo * (catal_mask | trnsp_mask).float()
-        Vmax_d[Vmax_d == 0.0] = torch.nan
         Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
         self.Vmax[cell_idxs] = Vmax
 

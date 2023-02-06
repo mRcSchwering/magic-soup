@@ -518,7 +518,14 @@ def get_all_domain_seqs(
     dom_size: int,
     dom_type_size: int,
     dom_type_map: dict[str, tuple[bool, bool, bool]],
-) -> list[list[tuple[tuple[bool, bool, bool], str]]]:
+    one_codon_map: dict[str, int],
+    two_codon_map: dict[str, int],
+) -> list[list[tuple[tuple[bool, bool, bool], int, int, int, int]]]:
+    idx0_slice = slice(0, 2 * CODON_SIZE)
+    idx1_slice = slice(2 * CODON_SIZE, 3 * CODON_SIZE)
+    idx2_slice = slice(3 * CODON_SIZE, 4 * CODON_SIZE)
+    idx3_slice = slice(4 * CODON_SIZE, 5 * CODON_SIZE)
+
     cdsf = get_coding_regions(
         seq=genome,
         min_cds_size=min_cds_size,
@@ -548,7 +555,11 @@ def get_all_domain_seqs(
                 if not reg:
                     is_useful_prot = True
                 dom_spec_seq = cds[i + dom_type_size : i + dom_size]
-                doms.append(((catal, trnsp, reg), dom_spec_seq))
+                idx0 = two_codon_map[dom_spec_seq[idx0_slice]]
+                idx1 = one_codon_map[dom_spec_seq[idx1_slice]]
+                idx2 = one_codon_map[dom_spec_seq[idx2_slice]]
+                idx3 = one_codon_map[dom_spec_seq[idx3_slice]]
+                doms.append(((catal, trnsp, reg), idx0, idx1, idx2, idx3))
                 i += dom_size
                 j += dom_size
             else:
@@ -735,6 +746,14 @@ class Genetics:
             if isinstance(dom_fact, RegulatoryFact):
                 self.dom_map[seq] = (False, False, True)
 
+        self.two_codon_map: dict[str, int] = {}
+        for i, seq in enumerate(nt_seqs(n=2 * CODON_SIZE)):
+            self.two_codon_map[seq] = i + 1
+
+        self.one_codon_map: dict[str, int] = {}
+        for i, seq in enumerate(nt_seqs(n=CODON_SIZE)):
+            self.one_codon_map[seq] = i + 1
+
         _react_map = generic_map_fact(nt_seqs(n_reaction_nts), chemistry.reactions)
         self.react_map: dict[str, tuple[list[int], list[int]]] = {}
         for seq, (subs, prods) in _react_map.items():
@@ -752,7 +771,7 @@ class Genetics:
 
     def get_all_domain_seqs(
         self, genomes: list[str]
-    ) -> list[list[list[tuple[tuple[bool, bool, bool], str]]]]:
+    ) -> list[list[list[tuple[tuple[bool, bool, bool], int, int, int, int]]]]:
         """Proteins with no domain or only regulatory domains are already filtered out"""
         args = [
             (
@@ -763,6 +782,8 @@ class Genetics:
                 self.dom_size,
                 self.dom_type_size,
                 self.dom_map,
+                self.one_codon_map,
+                self.two_codon_map,
             )
             for d in genomes
         ]
