@@ -108,7 +108,6 @@ class World:
             chemistry=chemistry,
             start_codons=start_codons,
             stop_codons=stop_codons,
-            workers=workers,
         )
 
         mol_degrads: list[float] = []
@@ -134,11 +133,8 @@ class World:
         self.cells: list[Cell] = []
         self.kinetics = Kinetics(
             molecules=chemistry.molecules,
-            reactions=chemistry.reactions,
-            n_dom_codons=int(self.genetics.dom_details_size / CODON_SIZE),
             abs_temp=abs_temp,
             device=self.device,
-            workers=self.workers,
         )
 
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
@@ -270,86 +266,6 @@ class World:
         pickup = self.molecule_map[:, new_xs, new_ys] * 0.5
         self.cell_molecules[new_idxs, :] += pickup.T
         self.molecule_map[:, new_xs, new_ys] -= pickup
-
-        return new_idxs
-
-    # TODO: tryout
-    def add_random_cells_new(self, genomes: list[str]) -> list[int]:
-        genomes = [d for d in genomes if len(d) > 0]
-        n_cells = len(genomes)
-        if n_cells == 0:
-            return []
-
-        xs, ys = self._find_free_random_positions(n_cells=n_cells)
-        n_avail_pos = len(xs)
-        if n_avail_pos == 0:
-            return []
-
-        if n_avail_pos < n_cells:
-            n_cells = n_avail_pos
-            random.shuffle(genomes)
-            genomes = genomes[:n_cells]
-
-        dom_seqs_lst = self.genetics.get_all_domain_seqs(genomes=genomes)
-        dom_seqs_lst = [d for d in dom_seqs_lst if len(d) > 0]
-        n_cells = len(dom_seqs_lst)
-        if n_cells == 0:
-            return []
-
-        # ab hier weiß ich schon das final n_cells, max prots:
-        # positions checked, proteine ohne non-reg doms raus, cells ohne proteine raus
-
-        mappings = {
-            "domain_map": self.genetics.dom_map,
-            "molecule_map": self.genetics.mol_map,
-            "reaction_map": self.genetics.react_map,
-            "affinity_map": self.genetics.aff_map,
-            "velocity_map": self.genetics.velo_map,
-            "bool_map": self.genetics.bool_map,
-        }
-
-        n_max_prots = max(len(d) for d in dom_seqs_lst)
-        n_max_doms = max(len(dd) for d in dom_seqs_lst for dd in d)
-        self.kinetics.increase_max_cells_d(max_n=n_cells)
-        self.kinetics.increase_max_proteins_d(max_n=n_max_prots)
-        self.kinetics.increase_max_domains_d(max_n=n_max_doms)
-
-        keep_idxs = self.kinetics.get_all_proteomes(
-            dom_seqs_lst=dom_seqs_lst,
-            mappings=mappings,
-            region_lens=self.genetics.n_nts,
-        )
-
-        xs = [xs[i] for i in keep_idxs]
-        ys = [ys[i] for i in keep_idxs]
-        genomes = [genomes[i] for i in keep_idxs]
-        n_new_cells = len(genomes)
-        if n_new_cells == 0:
-            return []
-
-        n_cells = len(self.cells)
-
-        # ab heir gehts weiter
-        new_idxs = list(range(n_cells, n_cells + n_new_cells))
-        for cell_i, genome, x, y in zip(new_idxs, genomes, xs, ys):
-            cell = Cell(idx=cell_i, genome=genome, proteome=[], position=(x, y))
-            self.cells.append(cell)
-
-        self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
-        self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
-        self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
-
-        self.kinetics.increase_max_proteins(max_n=n_max_prots)
-        self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.set_cell_params_new(cell_idxs=new_idxs, dom_seqs_lst=dom_seqs_lst)
-
-        # occupy positions
-        self.cell_map[xs, ys] = True
-
-        # cell is picking up half the molecules of the pxl it is born on
-        pickup = self.molecule_map[:, xs, ys] * 0.5
-        self.cell_molecules[new_idxs, :] += pickup.T
-        self.molecule_map[:, xs, ys] -= pickup
 
         return new_idxs
 

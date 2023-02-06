@@ -1,7 +1,6 @@
 import warnings
 import random
 import abc
-import torch.multiprocessing as mp
 from magicsoup.util import (
     reverse_complement,
     nt_seqs,
@@ -443,125 +442,6 @@ def _get_n(p: float, s: int, name: str) -> int:
     return n
 
 
-# TODO: tryout
-def get_coding_regions(
-    seq: str,
-    min_cds_size: int,
-    start_codons: tuple[str, ...],
-    stop_codons: tuple[str, ...],
-) -> list[str]:
-    s = CODON_SIZE
-    n = len(seq)
-    max_start_idx = n - min_cds_size
-
-    start_idxs = []
-    for start_codon in start_codons:
-        i = 0
-        while i < max_start_idx:
-            try:
-                hit = seq[i:].index(start_codon)
-                start_idxs.append(i + hit)
-                i = i + hit + s
-            except ValueError:
-                break
-
-    stop_idxs = []
-    for stop_codon in stop_codons:
-        i = 0
-        while i < n - s:
-            try:
-                hit = seq[i:].index(stop_codon)
-                stop_idxs.append(i + hit)
-                i = i + hit + s
-            except ValueError:
-                break
-
-    start_idxs.sort()
-    stop_idxs.sort()
-
-    by_frame: list[tuple[list[int], ...]] = [([], []), ([], []), ([], [])]
-    for start_idx in start_idxs:
-        if start_idx % 3 == 0:
-            by_frame[0][0].append(start_idx)
-        elif (start_idx + 1) % 3 == 0:
-            by_frame[1][0].append(start_idx)
-        else:
-            by_frame[2][0].append(start_idx)
-    for stop_idx in stop_idxs:
-        if stop_idx % 3 == 0:
-            by_frame[0][1].append(stop_idx)
-        elif (stop_idx + 1) % 3 == 0:
-            by_frame[1][1].append(stop_idx)
-        else:
-            by_frame[2][1].append(stop_idx)
-
-    cdss = []
-    for start_idxs, stop_idxs in by_frame:
-        for start_idx in start_idxs:
-            stop_idxs = [d for d in stop_idxs if d > start_idx + s]
-            if len(stop_idxs) > 0:
-                cds_end_idx = min(stop_idxs) + s
-                if cds_end_idx - start_idx > min_cds_size:
-                    cdss.append(seq[start_idx:cds_end_idx])
-            else:
-                break
-
-    return cdss
-
-
-# TODO: tryout
-def get_all_domain_seqs(
-    genome: str,
-    min_cds_size: int,
-    start_codons: tuple[str, ...],
-    stop_codons: tuple[str, ...],
-    dom_size: int,
-    dom_type_size: int,
-    dom_type_map: dict[str, tuple[bool, bool, bool]],
-) -> list[list[tuple[tuple[bool, bool, bool], str]]]:
-    cdsf = get_coding_regions(
-        seq=genome,
-        min_cds_size=min_cds_size,
-        start_codons=start_codons,
-        stop_codons=stop_codons,
-    )
-    bwd = reverse_complement(genome)
-    cdsb = get_coding_regions(
-        seq=bwd,
-        min_cds_size=min_cds_size,
-        start_codons=start_codons,
-        stop_codons=stop_codons,
-    )
-    cdss = cdsf + cdsb
-
-    prot_doms = []
-    for cds in cdss:
-        doms = []
-        is_useful_prot = False
-
-        i = 0
-        j = dom_size
-        while i + dom_size <= len(cds):
-            dom_type_seq = cds[i : i + dom_type_size]
-            if dom_type_seq in dom_type_map:
-                catal, trnsp, reg = dom_type_map[dom_type_seq]
-                if not reg:
-                    is_useful_prot = True
-                dom_spec_seq = cds[i + dom_type_size : i + dom_size]
-                doms.append(((catal, trnsp, reg), dom_spec_seq))
-                i += dom_size
-                j += dom_size
-            else:
-                i += CODON_SIZE
-                j += CODON_SIZE
-
-        # protein should have at least 1 non-regulatory domain
-        if is_useful_prot:
-            prot_doms.append(doms)
-
-    return prot_doms
-
-
 class Genetics:
     """
     Class holding logic about translating nucleotide sequences into proteomes.
@@ -645,7 +525,6 @@ class Genetics:
         n_orientation_nts: int = 3,
         n_transmembrane_nts: int = 3,
         n_inhibit_nts: int = 3,
-        workers: int = 2,
     ):
         if any(len(d) != CODON_SIZE for d in start_codons):
             raise ValueError(f"Not all start codons are of length {CODON_SIZE}")
@@ -663,7 +542,6 @@ class Genetics:
         self.start_codons = start_codons
         self.stop_codons = stop_codons
         self.dom_type_size = n_dom_type_nts
-        self.workers = workers
 
         if p_catal_dom + p_transp_dom + p_allo_dom > 1.0:
             raise ValueError(
@@ -714,64 +592,6 @@ class Genetics:
         self.dom_details_size = max(d.min_len for d in domain_facts)
         self.dom_size = self.dom_type_size + self.dom_details_size
         self.min_cds_size = self.dom_size + 2 * CODON_SIZE
-
-        # TODO: tryout
-        self.n_nts = {
-            "n_dom_type_nts": n_dom_type_nts,
-            "n_reaction_nts": n_reaction_nts,
-            "n_molecule_nts": n_molecule_nts,
-            "n_affinity_nts": n_affinity_nts,
-            "n_velocity_nts": n_velocity_nts,
-            "n_bool_nts": n_orientation_nts,
-            "n_molecules": len(chemistry.molecules),
-        }
-
-        self.dom_map: dict[str, tuple[bool, bool, bool]] = {}
-        for seq, dom_fact in self.domain_map.items():
-            if isinstance(dom_fact, CatalyticFact):
-                self.dom_map[seq] = (True, False, False)
-            if isinstance(dom_fact, TransporterFact):
-                self.dom_map[seq] = (False, True, False)
-            if isinstance(dom_fact, RegulatoryFact):
-                self.dom_map[seq] = (False, False, True)
-
-        _react_map = generic_map_fact(nt_seqs(n_reaction_nts), chemistry.reactions)
-        self.react_map: dict[str, tuple[list[int], list[int]]] = {}
-        for seq, (subs, prods) in _react_map.items():
-            subsi = [chemistry.molecules.index(d) for d in subs]
-            prodsi = [chemistry.molecules.index(d) for d in prods]
-            self.react_map[seq] = (subsi, prodsi)
-
-        _mol_map = generic_map_fact(nt_seqs(n_reaction_nts), chemistry.molecules)
-        self.mol_map = {k: chemistry.molecules.index(v) for k, v in _mol_map.items()}
-
-        self.aff_map = log_weight_map_fact(nt_seqs(n_affinity_nts), 1e-5, 1.0)
-        self.velo_map = log_weight_map_fact(nt_seqs(n_velocity_nts), 0.01, 10)
-        self.bool_map = bool_map_fact(nt_seqs(n_orientation_nts))
-        self.dom_type_seqs = list(self.dom_map)
-
-    # TODO: tryout
-    def get_all_domain_seqs(
-        self, genomes: list[str]
-    ) -> list[list[list[tuple[tuple[bool, bool, bool], str]]]]:
-        """Proteins with no domain or only regulatory domains are already filtered out"""
-        args = [
-            (
-                d,
-                self.min_cds_size,
-                self.start_codons,
-                self.stop_codons,
-                self.dom_size,
-                self.dom_type_size,
-                self.dom_map,
-            )
-            for d in genomes
-        ]
-
-        with mp.Pool(self.workers) as pool:
-            dom_seqs = pool.starmap(get_all_domain_seqs, args)
-
-        return dom_seqs
 
     def get_proteome(self, seq: str) -> list[Protein]:
         """
