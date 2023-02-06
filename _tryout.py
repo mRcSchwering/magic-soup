@@ -1,10 +1,8 @@
 import time
 from argparse import ArgumentParser
-import random
-import torch
 
-# import magicsoup as ms
-# from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+import magicsoup as ms
+from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 CODON_SIZE = 3
 MIN_CDS_SIZE = 12
@@ -131,105 +129,25 @@ def timeit(callback, *args, r=3) -> tuple[float, float]:
     return m, s
 
 
-# def classic_add_random_cells(world: ms.World, genomes: list[str]):
-#     world.add_random_cells(genomes=genomes)
+def classic_add_random_cells(world: ms.World, genomes: list[str]):
+    world.add_random_cells(genomes=genomes)
 
 
-# def new_add_random_cells(world: ms.World, genomes: list[str]):
-#     world.add_random_cells_new(genomes=genomes)
-
-
-def dom_seq_to_tokens(seq: str) -> torch.Tensor:
-    s = CODON_SIZE
-    n = len(seq)
-    ijs = [(i, i + s) for i in range(0, n + 1 - s, s)]
-    tokens = [CODON_TABLE[seq[i:j]] for i, j in ijs]
-    return torch.tensor(tokens)
-
-
-def dom_seq_to_tokens2(seq: str) -> list[int]:
-    s = CODON_SIZE
-    n = len(seq)
-    ijs = [(i, i + s) for i in range(0, n + 1 - s, s)]
-    return [CODON_TABLE[seq[i:j]] for i, j in ijs]
-
-
-def pad_r1(t: torch.Tensor, d, s: int) -> torch.Tensor:
-    return torch.nn.functional.pad(
-        t, pad=(0, 0, 0, s - t.size(0)), value=d, mode="constant"
-    )
-
-
-def pad_r2(t: torch.Tensor, d, s: int) -> torch.Tensor:
-    return torch.nn.functional.pad(
-        t, pad=(0, 0, 0, 0, 0, s - t.size(0)), value=d, mode="constant"
-    )
-
-
-def asd(dom_seqs_lst):
-    n_prots = max(len(d) for d in dom_seqs_lst)
-    n_doms = max(len(dd) for d in dom_seqs_lst for dd in d)
-
-    c_doms = []
-    for proteins in dom_seqs_lst:
-        p_doms = []
-        for doms in proteins:
-            dom_seqs = []
-            for seq in doms:
-                dom_seqs.append(dom_seq_to_tokens(seq))
-            p_doms.append(pad_r1(torch.stack(dom_seqs), s=n_doms, d=0))
-        c_doms.append(pad_r2(torch.stack(p_doms), s=n_prots, d=0))
-    tokens = torch.stack(c_doms)  # bool (c, p, d, n) n ^= domain length
-
-
-def asd2(dom_seqs_lst):
-    n_prots = max(len(d) for d in dom_seqs_lst)
-    n_doms = max(len(dd) for d in dom_seqs_lst for dd in d)
-
-    empty_dom = [0] * 10
-    empty_prot = [empty_dom] * n_doms
-
-    c_doms = []
-    for proteins in dom_seqs_lst:
-        p_doms = []
-        for doms in proteins:
-            dom_seqs = []
-            for seq in doms:
-                dom_seqs.append(dom_seq_to_tokens2(seq))
-            p_doms.append(dom_seqs + [empty_dom] * (n_doms - len(dom_seqs)))
-        c_doms.append(p_doms + [empty_prot] * (n_prots - len(p_doms)))
-    tokens = torch.tensor(c_doms).size()  # bool (c, p, d, n) n ^= domain length
+def new_add_random_cells(world: ms.World, genomes: list[str]):
+    world.add_random_cells_new(genomes=genomes)
 
 
 def main(n=1000, s=500, w=4):
-    # print(f"{n:,} genomes, {s:,} size, {w} workers")
-    # genomes = [ms.random_genome(s) for _ in range(n)]
-    k = 10
-    codons = list(CODON_TABLE)
+    print(f"{n:,} genomes, {s:,} size, {w} workers")
+    genomes = [ms.random_genome(s) for _ in range(n)]
 
-    dom_seqs_lst = []
-    for _ in range(n):
-        prots = []
-        for _ in range(random.randint(30, 50)):
-            doms = []
-            for _ in range(random.randint(1, 5)):
-                doms.append("".join(random.choices(codons, k=k)))
-            prots.append(doms)
-        dom_seqs_lst.append(prots)
+    world = ms.World(chemistry=CHEMISTRY, workers=w)
+    mu, sd = timeit(classic_add_random_cells, world, genomes)
+    print(f"({mu:.2f}+-{sd:.2f})s - classic")
 
-    mu, sd = timeit(asd, dom_seqs_lst)
-    print(f"({mu:.2f}+-{sd:.2f})s - asd")
-
-    mu, sd = timeit(asd2, dom_seqs_lst)
-    print(f"({mu:.2f}+-{sd:.2f})s - asd2")
-
-    # world = ms.World(chemistry=CHEMISTRY, workers=w)
-    # mu, sd = timeit(classic_add_random_cells, world, genomes)
-    # print(f"({mu:.2f}+-{sd:.2f})s - classic")
-
-    # world = ms.World(chemistry=CHEMISTRY, workers=w)
-    # mu, sd = timeit(new_add_random_cells, world, genomes)
-    # print(f"({mu:.2f}+-{sd:.2f})s - new")
+    world = ms.World(chemistry=CHEMISTRY, workers=w)
+    mu, sd = timeit(new_add_random_cells, world, genomes)
+    print(f"({mu:.2f}+-{sd:.2f})s - new")
 
 
 if __name__ == "__main__":
