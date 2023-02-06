@@ -1,6 +1,5 @@
 import time
 from argparse import ArgumentParser
-
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
@@ -62,6 +61,10 @@ def update_cells(world: ms.World, genomes: list[str]):
     world.update_cells(genome_idx_pairs=pairs)
 
 
+def process(world: ms.World):
+    world.enzymatic_activity()
+
+
 def main(n=1000, s=500, w=4):
     print(f"{n:,} genomes, {s:,} size, {w} workers")
     genomes = [ms.random_genome(s) for _ in range(n)]
@@ -75,6 +78,12 @@ def main(n=1000, s=500, w=4):
     world.add_random_cells(genomes=genomes)
     mu, sd = timeit(update_cells, world, genomes)
     print(f"({mu:.2f}+-{sd:.2f})s - update")
+
+    world = ms.World(chemistry=CHEMISTRY, workers=w)
+    genomes = [ms.random_genome(s) for _ in range(n)]
+    world.add_random_cells(genomes=genomes)
+    mu, sd = timeit(process, world)
+    print(f"({mu:.2f}+-{sd:.2f})s - process")
 
 
 if __name__ == "__main__":
