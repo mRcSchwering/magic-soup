@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Optional
 from itertools import product
 import math
 import random
@@ -11,14 +11,14 @@ from magicsoup.containers import Protein, Molecule
 _EPS = 1e-5
 
 
-def dom_to_tokens(seq: str) -> list[int]:
+def _dom_to_tokens(seq: str) -> list[int]:
     s = CODON_SIZE
     n = len(seq)
     ijs = [(i, i + s) for i in range(0, n + 1 - s, s)]
     return [CODON_TABLE[seq[i:j]] for i, j in ijs]
 
 
-def get_one_hot_conversion_matrix(
+def _get_one_hot_conversion_matrix(
     oh_size: int, len_size: int, enc_idxs: list[int]
 ) -> torch.Tensor:
     enc_size = len(enc_idxs)
@@ -34,7 +34,7 @@ def get_one_hot_conversion_matrix(
     return w / enc_size
 
 
-class OneHot:
+class _OneHot:
     """
     Creates a model for one-hot encoding tokens
     and vice versa.
@@ -54,7 +54,7 @@ class OneHot:
         return t.argmax(dim=-1) + t.sum(dim=-1)
 
 
-class LogWeightMapFact:
+class _LogWeightMapFact:
     """
     Creates model that maps domains to a float
     which is sampled from a log uniform distribution.
@@ -70,7 +70,7 @@ class LogWeightMapFact:
     ):
         l_min_w = math.log(min(weight_range))
         l_max_w = math.log(max(weight_range))
-        self.w0 = get_one_hot_conversion_matrix(
+        self.w0 = _get_one_hot_conversion_matrix(
             oh_size=enc_size, len_size=dom_size, enc_idxs=enc_idxs
         ).to(device)
         out_size = self.w0.size(0)
@@ -84,7 +84,7 @@ class LogWeightMapFact:
         return out
 
 
-class SignMapFact:
+class _SignMapFact:
     """
     Creates a model that maps domains to 1.0 or -1.0
     with 50% probability of each being mapped.
@@ -94,7 +94,7 @@ class SignMapFact:
         self, enc_size: int, dom_size: int, enc_idxs: list[int], device: str = "cpu"
     ):
         choices = [1.0, -1.0]
-        self.w0 = get_one_hot_conversion_matrix(
+        self.w0 = _get_one_hot_conversion_matrix(
             oh_size=enc_size, len_size=dom_size, enc_idxs=enc_idxs
         ).to(device)
         out_size = self.w0.size(0)
@@ -107,7 +107,7 @@ class SignMapFact:
         return out
 
 
-class VectorMapFact:
+class _VectorMapFact:
     """
     Create model that maps one-hot encoded domains
     to a list of vectors. Each vector will be mapped with
@@ -127,7 +127,7 @@ class VectorMapFact:
         if not all(len(d) == vector_size for d in vectors):
             raise ValueError("Not all vectors have the same length")
 
-        self.w0 = get_one_hot_conversion_matrix(
+        self.w0 = _get_one_hot_conversion_matrix(
             oh_size=enc_size, len_size=dom_size, enc_idxs=enc_idxs
         ).to(device)
         out_size = self.w0.size(0)
@@ -144,139 +144,7 @@ class VectorMapFact:
         return out
 
 
-# TODO: tryout
-def set_domain_params(
-    cell_i: int,
-    prot_i: int,
-    dom_i: int,
-    seq: str,
-    domain_map: dict[str, tuple[bool, bool, bool]],
-    molecule_map: dict[str, int],
-    reaction_map: dict[str, tuple[list[int], list[int]]],
-    affinity_map: dict[str, float],
-    velocity_map: dict[str, float],
-    bool_map: dict[str, bool],
-    n_nts: dict[str, int],
-    n_molecules: int,
-    N_d: torch.Tensor,
-    A_d: torch.Tensor,
-    Km_d: torch.Tensor,
-    Vmax_d: torch.Tensor,
-):
-    n_dom_type_nts = n_nts["n_dom_type_nts"]
-    n_reaction_nts = n_nts["n_reaction_nts"]
-    n_molecule_nts = n_nts["n_molecule_nts"]
-    n_affinity_nts = n_nts["n_affinity_nts"]
-    n_velocity_nts = n_nts["n_velocity_nts"]
-    n_bool_nts = n_nts["n_bool_nts"]
-
-    i = n_dom_type_nts
-    is_catal, is_trnsp, is_reg = domain_map[seq[:n_dom_type_nts]]
-
-    if is_catal:
-        lft, rgt = reaction_map[seq[i : i + n_reaction_nts]]
-        i += n_reaction_nts
-        aff = affinity_map[seq[i : i + n_affinity_nts]]
-        i += n_affinity_nts
-        velo = velocity_map[seq[i : i + n_velocity_nts]]
-        i += n_velocity_nts
-        orient = bool_map[seq[i : i + n_bool_nts]]
-
-        Vmax_d[cell_i, prot_i, dom_i] = velo
-
-        if orient:
-            prods = lft
-            subs = rgt
-        else:
-            subs = lft
-            prods = rgt
-
-        for mol_i in subs:
-            N_d[cell_i, prot_i, dom_i, mol_i] = -1.0
-            Km_d[cell_i, prot_i, dom_i, mol_i] = aff
-
-        for mol_i in prods:
-            N_d[cell_i, prot_i, dom_i, mol_i] = 1.0
-            Km_d[cell_i, prot_i, dom_i, mol_i] = 1 / aff
-
-    if is_trnsp:
-        mol = molecule_map[seq[i : i + n_molecule_nts]]
-        i += n_molecule_nts
-        aff = affinity_map[seq[i : i + n_affinity_nts]]
-        i += n_affinity_nts
-        velo = velocity_map[seq[i : i + n_velocity_nts]]
-        i += n_velocity_nts
-        orient = bool_map[seq[i : i + n_bool_nts]]
-
-        Vmax_d[cell_i, prot_i, dom_i] = velo
-
-        if orient:
-            sub_i = mol + n_molecules
-            prod_i = mol
-        else:
-            sub_i = mol
-            prod_i = mol + n_molecules
-
-        N_d[cell_i, prot_i, dom_i, sub_i] = -1.0
-        N_d[cell_i, prot_i, dom_i, prod_i] = 1.0
-        Km_d[cell_i, prot_i, dom_i, sub_i] = aff
-        Km_d[cell_i, prot_i, dom_i, prod_i] = 1 / aff
-
-    if is_reg:
-        mol = molecule_map[seq[i : i + n_molecule_nts]]
-        i += n_molecule_nts
-        aff = affinity_map[seq[i : i + n_affinity_nts]]
-        i += n_affinity_nts
-        transm = bool_map[seq[i : i + n_bool_nts]]
-        i += n_bool_nts
-        inh = bool_map[seq[i : i + n_bool_nts]]
-
-        mol_i = mol + n_molecules if transm else mol
-        A_d[cell_i, prot_i, dom_i, mol_i] = -1.0 if inh else 1.0
-        Km_d[cell_i, prot_i, dom_i, mol_i] = aff
-
-
-# TODO: tryout
-def translate_dom_seqs(
-    cell_i: int,
-    cdss: list[str],
-    maps: dict,
-    n_nts: dict[str, int],
-    n_molecules: int,
-    N_d: torch.Tensor,
-    A_d: torch.Tensor,
-    Km_d: torch.Tensor,
-    Vmax_d: torch.Tensor,
-):
-    domain_map = maps["domain_map"]
-    molecule_map = maps["molecule_map"]
-    reaction_map = maps["reaction_map"]
-    affinity_map = maps["affinity_map"]
-    velocity_map = maps["velocity_map"]
-    bool_map = maps["bool_map"]
-
-    kwargs = {
-        "cell_i": cell_i,
-        "domain_map": domain_map,
-        "molecule_map": molecule_map,
-        "reaction_map": reaction_map,
-        "affinity_map": affinity_map,
-        "velocity_map": velocity_map,
-        "bool_map": bool_map,
-        "n_nts": n_nts,
-        "n_molecules": n_molecules,
-        "N_d": N_d,
-        "A_d": A_d,
-        "Km_d": Km_d,
-        "Vmax_d": Vmax_d,
-    }
-
-    for prot_i, dom_seqs in enumerate(cdss):
-        for dom_i, seq in enumerate(dom_seqs):
-            set_domain_params(prot_i=prot_i, dom_i=dom_i, seq=seq, **kwargs)  # type: ignore
-
-
-def convert_dom_seqs(
+def _convert_dom_seqs(
     proteins: list[list[tuple[tuple[bool, bool, bool], str]]],
     n_prots: int,
     n_doms: int,
@@ -299,7 +167,7 @@ def convert_dom_seqs(
             d_catals.append(catal)
             d_trnsps.append(trnsp)
             d_regs.append(reg)
-            d_tokens.append(dom_to_tokens(seq))
+            d_tokens.append(_dom_to_tokens(seq))
         d_pad = n_doms - len(d_tokens)
         p_catals.append(d_catals + [False] * d_pad)
         p_trnsps.append(d_trnsps + [False] * d_pad)
@@ -381,19 +249,17 @@ class Kinetics:
         self.int_mol_map = {d.name: i for i, d in enumerate(molecules)}
         self.ext_mol_map = {d.name: i + n for i, d in enumerate(molecules)}
 
-        # TODO: tryout
-        self.ext_offset = n
         self.mol_energies = torch.tensor([d.energy for d in molecules] * 2)
         self.n_dom_codons = n_dom_codons
 
         oh_enc_size = max(CODON_TABLE.values())
-        self.one_hot = OneHot(enc_size=oh_enc_size, device=device)
+        self.one_hot = _OneHot(enc_size=oh_enc_size, device=device)
 
         # Catalytic: Km (1), Vmax (1), orientation (1), reaction vectors (2)
         # Transporter: Km(1), Vmax (1), orientation (1), molecule vectors for transporters (2)
         # Regulatory: Km(1), effect (1), molecule vectors for regulatory (2)
 
-        self.affinity_map = LogWeightMapFact(
+        self.affinity_map = _LogWeightMapFact(
             enc_idxs=[0],
             weight_range=km_range,
             enc_size=oh_enc_size,
@@ -401,7 +267,7 @@ class Kinetics:
             device=device,
         )
 
-        self.velocity_map = LogWeightMapFact(
+        self.velocity_map = _LogWeightMapFact(
             enc_idxs=[1],
             weight_range=vmax_range,
             enc_size=oh_enc_size,
@@ -409,7 +275,7 @@ class Kinetics:
             device=device,
         )
 
-        self.orient_map = SignMapFact(
+        self.orient_map = _SignMapFact(
             enc_idxs=[2], enc_size=oh_enc_size, dom_size=n_dom_codons, device=device
         )
 
@@ -423,7 +289,7 @@ class Kinetics:
                 mol_i = self.int_mol_map[mol.name]
                 react_vectors[ri][mol_i] += 1
 
-        self.reaction_map = VectorMapFact(
+        self.reaction_map = _VectorMapFact(
             enc_idxs=[3, 4],
             vectors=react_vectors,
             enc_size=oh_enc_size,
@@ -438,7 +304,7 @@ class Kinetics:
             trnsp_mol_vectors[mi + self.n_molecules][mi] = -1
             trnsp_mol_vectors[mi + self.n_molecules][mi + self.n_molecules] = 1
 
-        self.trnsp_mol_map = VectorMapFact(
+        self.trnsp_mol_map = _VectorMapFact(
             enc_idxs=[3, 4],
             vectors=trnsp_mol_vectors,
             enc_size=oh_enc_size,
@@ -450,7 +316,7 @@ class Kinetics:
         for mi in range(self.n_signals):
             reg_mol_vectors[mi][mi] = 1
 
-        self.reg_mol_map = VectorMapFact(
+        self.reg_mol_map = _VectorMapFact(
             enc_idxs=[3, 4],
             vectors=reg_mol_vectors,
             enc_size=oh_enc_size,
@@ -475,39 +341,6 @@ class Kinetics:
         self.Km_d = self._tensor(0, 0, 0, self.n_signals, d=torch.nan).share_memory_()
         self.Vmax_d = self._tensor(0, 0, 0, d=torch.nan).share_memory_()
 
-    # TODO: tryout
-    def get_all_proteomes(
-        self,
-        dom_seqs_lst: list[list[list[str]]],
-        mappings: dict[str, Any],
-        region_lens: dict[str, int],
-    ) -> list[int]:
-        args = []
-        for ci, cdss in enumerate(dom_seqs_lst):
-            args.append(
-                (
-                    ci,
-                    cdss,
-                    mappings,
-                    region_lens,
-                    self.n_molecules,
-                    self.N_d,
-                    self.A_d,
-                    self.Km_d,
-                    self.Vmax_d,
-                )
-            )
-
-        with mp.Pool(self.workers) as pool:
-            pool.starmap(translate_dom_seqs, args)
-
-        # N (c, p, d, s)
-        # all 0s N ^= no domain or regulatory domains only
-        keep = (self.N_d != 0).any(dim=3).any(dim=2).any(dim=1)
-        keep_idxs = keep.argwhere().flatten().tolist()
-
-        return keep_idxs
-
     def unset_cell_params(self, cell_prots: list[tuple[int, int]]):
         """
         Set cell params for these proteins to 0.0.
@@ -525,45 +358,7 @@ class Kinetics:
         self.A[cells, prots] = 0.0
         self.N[cells, prots] = 0.0
 
-    def set_cell_params(self, cell_prots: list[tuple[int, int, Protein]]):
-        """
-        Set cell params for these proteins accordingly
-        You can compare proteins within a cell and only update the ones that changed.
-        The comparison (`protein0 == protein1`) will note a difference in any of the proteins attributes.
-
-        Arguments:
-            cell_prots: List of tuples of cell indexes, protein indexes, and the protein itself
-
-        Indexes for proteins are the same as in a cell's object `cell.proteome`
-        and indexes for cells are the same as in `world.cells` or `cell.idx`.
-        """
-        if len(cell_prots) == 0:
-            return
-
-        cis = []
-        pis = []
-        E = []
-        Km = []
-        Vmax = []
-        A = []
-        N = []
-        for ci, pi, prot in cell_prots:
-            e, k, v, a, n = self._get_protein_params(protein=prot)
-            cis.append(ci)
-            pis.append(pi)
-            E.append(e)
-            Km.append(k)
-            Vmax.append(v)
-            A.append(a)
-            N.append(n)
-        self.E[cis, pis] = torch.tensor(E).to(self.device)
-        self.Km[cis, pis] = torch.tensor(Km).to(self.device)
-        self.Vmax[cis, pis] = torch.tensor(Vmax).to(self.device)
-        self.A[cis, pis] = torch.tensor(A).to(self.device)
-        self.N[cis, pis] = torch.tensor(N).to(self.device)
-
-    # TODO: tryout
-    def set_cell_params_new(
+    def set_cell_params(
         self,
         cell_idxs: list[int],
         dom_seqs_lst: list[list[list[tuple[tuple[bool, bool, bool], str]]]],
@@ -580,7 +375,7 @@ class Kinetics:
         # TODO: fill-up pre-built tensors?
         print("starting cell pool")
         with mp.Pool(self.workers) as pool:
-            res = pool.starmap(convert_dom_seqs, args)
+            res = pool.starmap(_convert_dom_seqs, args)
 
         print("creating tensors")
         c_catals = []

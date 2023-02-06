@@ -196,85 +196,6 @@ class World:
         return cell
 
     def add_random_cells(self, genomes: list[str]) -> list[int]:
-        """
-        Create new cells and place them on randomly on the map.
-        All lists and tensors that reference cells will be updated.
-
-        Parameters:
-            genomes: List of genomes of the newly added cells
-
-        Returns:
-            The indexes of successfully added cells.
-
-        Each cell will be placed randomly on the map and receive half the molecules of the pixel where it was added.
-        If there are less pixels left on the cell map than cells you want to add,
-        only the remaining pixels will be filled with new cells.
-        """
-        genomes = [d for d in genomes if len(d) > 0]
-        n_genomes = len(genomes)
-        if n_genomes == 0:
-            return []
-
-        xs, ys = self._find_free_random_positions(n_cells=len(genomes))
-        n_avail_pos = len(xs)
-        if n_avail_pos == 0:
-            return []
-
-        if n_avail_pos < n_genomes:
-            random.shuffle(genomes)
-            genomes = genomes[:n_avail_pos]
-
-        prot_lens = []
-        new_idxs = []
-        new_params: list[tuple[int, int, Protein]] = []
-        next_idx = len(self.cells)
-        n_new_cells = 0
-        new_xs = []
-        new_ys = []
-        for genome in genomes:
-            proteome = self.genetics.get_proteome(seq=genome)
-            n_proteins = len(proteome)
-            if n_proteins == 0:
-                continue
-
-            prot_lens.append(n_proteins)
-            new_idxs.append(next_idx)
-            for prot_i, prot in enumerate(proteome):
-                new_params.append((next_idx, prot_i, prot))
-
-            x = xs[n_new_cells]
-            y = ys[n_new_cells]
-            new_xs.append(x)
-            new_ys.append(y)
-
-            cell = Cell(idx=next_idx, genome=genome, proteome=proteome, position=(x, y))
-            self.cells.append(cell)
-
-            next_idx += 1
-            n_new_cells += 1
-
-        if n_new_cells == 0:
-            return []
-
-        self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
-        self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
-        self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
-        self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.increase_max_proteins(max_n=max(prot_lens))
-        self.kinetics.set_cell_params(cell_prots=new_params)
-
-        # occupy positions
-        self.cell_map[new_xs, new_ys] = True
-
-        # cell is picking up half the molecules of the pxl it is born on
-        pickup = self.molecule_map[:, new_xs, new_ys] * 0.5
-        self.cell_molecules[new_idxs, :] += pickup.T
-        self.molecule_map[:, new_xs, new_ys] -= pickup
-
-        return new_idxs
-
-    # TODO: tryout
-    def add_random_cells_new(self, genomes: list[str]) -> list[int]:
         genomes = [d for d in genomes if len(d) > 0]
         n_new_cells = len(genomes)
         if n_new_cells == 0:
@@ -312,7 +233,7 @@ class World:
         n_max_prots = max(len(d) for d in dom_seqs_lst)
         self.kinetics.increase_max_proteins(max_n=n_max_prots)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.set_cell_params_new(cell_idxs=new_idxs, dom_seqs_lst=dom_seqs_lst)
+        self.kinetics.set_cell_params(cell_idxs=new_idxs, dom_seqs_lst=dom_seqs_lst)
 
         # occupy positions
         self.cell_map[xs, ys] = True

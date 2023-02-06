@@ -750,7 +750,6 @@ class Genetics:
         self.bool_map = bool_map_fact(nt_seqs(n_orientation_nts))
         self.dom_type_seqs = list(self.dom_map)
 
-    # TODO: tryout
     def get_all_domain_seqs(
         self, genomes: list[str]
     ) -> list[list[list[tuple[tuple[bool, bool, bool], str]]]]:
