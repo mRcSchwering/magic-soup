@@ -3,7 +3,15 @@ import math
 import random
 import torch
 from magicsoup.constants import GAS_CONSTANT, ALL_CODONS
-from magicsoup.containers import Molecule
+from magicsoup.containers import (
+    Molecule,
+    Protein,
+    CatalyticDomain,
+    TransporterDomain,
+    RegulatoryDomain,
+    Domain,
+)
+
 
 _EPS = 1e-5
 
@@ -90,24 +98,24 @@ class _VectorMapFact:
 class _ReactionMapFact(_VectorMapFact):
     def __init__(
         self,
-        molecules: list[Molecule],
+        molmap: dict[Molecule, int],
         reactions: list[tuple[list[Molecule], list[Molecule]]],
         max_token: int,
         device: str = "cpu",
         zero_value: float = 0.0,
     ):
-        n_signals = 2 * len(molecules)
-        molmap = {d: i for i, d in enumerate(molecules)}
+        n_signals = 2 * len(molmap)
+        n_reacts = len(reactions)
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(len(reactions))]
+        vectors = [[0.0] * n_signals for _ in range(n_reacts + 1)]
         for ri, (lft, rgt) in enumerate(reactions):
             for mol in lft:
                 mol_i = molmap[mol]
-                vectors[ri][mol_i] -= 1
+                vectors[ri + 1][mol_i] -= 1
             for mol in rgt:
                 mol_i = molmap[mol]
-                vectors[ri][mol_i] += 1
+                vectors[ri + 1][mol_i] += 1
 
         super().__init__(
             vectors=vectors, max_token=max_token, device=device, zero_value=zero_value
@@ -125,12 +133,12 @@ class _TransporterMapFact(_VectorMapFact):
         n_signals = 2 * n_molecules
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_signals)]
+        vectors = [[0.0] * n_signals for _ in range(n_signals + 1)]
         for mi in range(n_molecules):
-            vectors[mi][mi] = 1
-            vectors[mi][mi + n_molecules] = -1
-            vectors[mi + n_molecules][mi] = -1
-            vectors[mi + n_molecules][mi + n_molecules] = 1
+            vectors[mi + 1][mi] = 1
+            vectors[mi + 1][mi + n_molecules] = -1
+            vectors[mi + n_molecules + 1][mi] = -1
+            vectors[mi + n_molecules + 1][mi + n_molecules] = 1
 
         super().__init__(
             vectors=vectors, max_token=max_token, device=device, zero_value=zero_value
@@ -148,9 +156,9 @@ class _RegulatoryMapFact(_VectorMapFact):
         n_signals = 2 * n_molecules
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_signals)]
+        vectors = [[0.0] * n_signals for _ in range(n_signals + 1)]
         for mi in range(n_signals):
-            vectors[mi][mi] = 1
+            vectors[mi + 1][mi] = 1
 
         super().__init__(
             vectors=vectors, max_token=max_token, device=device, zero_value=zero_value
@@ -223,6 +231,8 @@ class Kinetics:
         self.workers = workers
 
         self.mol_energies = self._tensor_from([d.energy for d in molecules] * 2)
+        self.mol_2_mi = {d: i for i, d in enumerate(molecules)}
+        self.mi_2_mol = {v: k for k, v in self.mol_2_mi.items()}
 
         # working cell params
         n_signals = 2 * len(molecules)
@@ -255,7 +265,7 @@ class Kinetics:
         self.orient_map = _SignMapFact(max_token=one_codon_size, device=device)
 
         self.reaction_map = _ReactionMapFact(
-            molecules=molecules,
+            molmap=self.mol_2_mi,
             reactions=reactions,
             max_token=two_codon_size,
             device=device,
@@ -286,56 +296,76 @@ class Kinetics:
         self.A[cells, prots] = 0.0
         self.N[cells, prots] = 0.0
 
-    def _collect_proteome_idxs(
-        self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,]:
-        n_prots = self.N.size(1)
-        n_doms = max(len(dd) for d in proteomes for dd in d)
-        empty_seq = [0] * n_doms
+    def get_proteome(
+        self, proteome: list[list[tuple[int, int, int, int, int]]]
+    ) -> list[Protein]:
+        """
+        Calculate cell parameters for a single proteome and return it as
+        a list of proteins
 
-        c_dts = []
-        c_idxs0 = []
-        c_idxs1 = []
-        c_idxs2 = []
-        c_idxs3 = []
-        for proteins in proteomes:
-            p_dts = []
-            p_idxs0 = []
-            p_idxs1 = []
-            p_idxs2 = []
-            p_idxs3 = []
-            for doms in proteins:
-                d_dts = []
-                d_idxs0 = []
-                d_idxs1 = []
-                d_idxs2 = []
-                d_idxs3 = []
-                for dt, i0, i1, i2, i3 in doms:
-                    d_dts.append(dt)
-                    d_idxs0.append(i0)
-                    d_idxs1.append(i1)
-                    d_idxs2.append(i2)
-                    d_idxs3.append(i3)
-                d_pad = n_doms - len(d_idxs0)
-                p_dts.append(d_dts + [0] * d_pad)
-                p_idxs0.append(d_idxs0 + [0] * d_pad)
-                p_idxs1.append(d_idxs1 + [0] * d_pad)
-                p_idxs2.append(d_idxs2 + [0] * d_pad)
-                p_idxs3.append(d_idxs3 + [0] * d_pad)
+        Arguments:
+            proteome: proteome which should be calculated
 
-            p_pad = n_prots - len(p_idxs0)
-            c_dts.append(p_dts + [empty_seq] * p_pad)
-            c_idxs0.append(p_idxs0 + [empty_seq] * p_pad)
-            c_idxs1.append(p_idxs1 + [empty_seq] * p_pad)
-            c_idxs2.append(p_idxs2 + [empty_seq] * p_pad)
-            c_idxs3.append(p_idxs3 + [empty_seq] * p_pad)
+        Retruns:
+            A list of objects that represent proteins with domains and their
+            specifications.
+        """
+        N_d, A_d, Km_d, Vmax_d, dom_types = self._get_proteome_tensors(
+            proteomes=[proteome]
+        )
 
-        dom_types = self._tensor_from(c_dts)  # long (c, p, d)
-        idxs0 = self._tensor_from(c_idxs0)  # long (c, p, d)
-        idxs1 = self._tensor_from(c_idxs1)  # long (c, p, d)
-        idxs2 = self._tensor_from(c_idxs2)  # long (c, p, d)
-        idxs3 = self._tensor_from(c_idxs3)  # long (c, p, d)
-        return dom_types, idxs0, idxs1, idxs2, idxs3
+        prots: list[Protein] = []
+        for pi in range(dom_types.size(1)):
+            doms: list[Domain] = []
+            for di in range(dom_types.size(2)):
+
+                if dom_types[0][pi][di].item() == 1:
+                    lfts: list[Molecule] = []
+                    rgts: list[Molecule] = []
+                    for mi, n in enumerate(N_d[0][pi][di].tolist()):
+                        if n >= 1:
+                            rgts.extend(([self.mi_2_mol[mi]] * int(n)))
+                        elif n <= -1:
+                            lfts.extend(([self.mi_2_mol[mi]] * -int(n)))
+                    doms.append(
+                        CatalyticDomain(
+                            reaction=(lfts, rgts),
+                            affinity=Km_d[0][pi][di].amin().item(),
+                            velocity=Vmax_d[0][pi][di].item(),
+                        )
+                    )
+
+                if dom_types[0][pi][di].item() == 2:
+                    mi = int(torch.argwhere(N_d[0][pi][di] != 0).min().item())
+                    doms.append(
+                        TransporterDomain(
+                            molecule=self.mi_2_mol[mi],
+                            affinity=Km_d[0][pi][di].amin().item(),
+                            velocity=Vmax_d[0][pi][di].item(),
+                            is_bkwd=bool((N_d[0][pi][di][mi] < 0).item()),
+                        )
+                    )
+
+                if dom_types[0][pi][di].item() == 3:
+                    mi = int(torch.argwhere(A_d[0][pi][di] != 0)[0].item())
+                    if mi in self.mi_2_mol:
+                        is_trnsm = False
+                        mol = self.mi_2_mol[mi]
+                    else:
+                        is_trnsm = True
+                        mol = self.mi_2_mol[mi - len(self.mi_2_mol)]
+                    doms.append(
+                        RegulatoryDomain(
+                            effector=mol,
+                            affinity=Km_d[0][pi][di].amin().item(),
+                            is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
+                            is_transmembrane=is_trnsm,
+                        )
+                    )
+
+            prots.append(Protein(domains=doms, label=f"P{pi}"))
+
+        return prots
 
     def set_cell_params(
         self,
@@ -348,84 +378,27 @@ class Kinetics:
         Arguments:
             cell_idxs: Indexes of cells which proteomes belong to
             proteomes: list of proteomes which should be calculated and set
-
-        Each proteome is represented as a list of proteins. Each protein is a list
-        of domains. Each domain is a list of integers which represent indexes of
-        domain specifications. These indexes will be translated into parameters
-        such as Km, Vmax, orientation, reaction, molecule.
         """
-        dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
-            proteomes=proteomes
-        )
-
-        # 1=catalytic, 2=transporter, 3=regulatory
-        # dom_types = self._tensor_from(c_dts)  # long (c, p, d)
-        catal_mask = (dom_types == 1).float()
-        trnsp_mask = (dom_types == 2).float()
-        reg_mask = (dom_types == 3).float()
-        catal_trnsp_mask = ((dom_types == 1) | (dom_types == 2)).float()
-
-        # idxs0 = self._tensor_from(c_idxs0)  # long (c, p, d)
-        # idxs1 = self._tensor_from(c_idxs1)  # long (c, p, d)
-        # idxs2 = self._tensor_from(c_idxs2)  # long (c, p, d)
-        # idxs3 = self._tensor_from(c_idxs3)  # long (c, p, d)
-
-        # map indices of domain specifications to concrete values
-        # idx0 is specific for every domain type
-        # idx1-3 are used for the floats that all domains need
-
-        # idxs0 is a 2-codon index (n=4096)
-        reacts = self.reaction_map(idxs0)  # float (c, p, d, s)
-        trnsp_mols = self.trnsp_mol_map(idxs0)  # float (c, p, d, s)
-        reg_mols = self.reg_mol_map(idxs0)  # float (c, p, d, s)
-
-        # idxs1-3 are 1-codon indexes (n=64)
-        velo = self.velocity_map(idxs1)  # float (c, p, d)
-        aff = self.affinity_map(idxs2)  # float (c, p, d)
-        orients = self.orient_map(idxs3)  # float (c, p, d)
+        N_d, A_d, Km_d, Vmax_d, _ = self._get_proteome_tensors(proteomes=proteomes)
 
         # N (c, p, d, s)
-        # TODO: trying to do this without einsum
-        #       scheint kaum was auszumachen...
-        #       ist aber schwerer nachzuvollziehen
-        cpds_size = reacts.size()
-
-        N_r = reacts * catal_mask.unsqueeze(-1).expand(*cpds_size)
-        # N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask)
-        N_t = trnsp_mols * trnsp_mask.unsqueeze(-1).expand(*cpds_size)
-        # N_t = torch.einsum("cpds,cpd->cpds", trnsp_mols, trnsp_mask)
-        N_d = (N_r + N_t) * orients.unsqueeze(-1).expand(*cpds_size)
-        # N_d = torch.einsum("cpds,cpd->cpds", (N_r + N_t), orients)
         N = N_d.sum(dim=2)
         self.N[cell_idxs] = N
 
         # A (c, p, d, s)
-        A_r = reg_mols * reg_mask.unsqueeze(-1).expand(*cpds_size)
-        # A_r = torch.einsum("cpds,cpd->cpds", reg_mols, reg_mask)
-        A_d = A_r * orients.unsqueeze(-1).expand(*cpds_size)
-        # A_d = torch.einsum("cpds,cpd->cpds", A_r, orients)
         A = A_d.sum(dim=2)
         self.A[cell_idxs] = A
 
         # Km (c, p, d, s)
-        lft_mols = ((A_d > 0.0) | (N_d > 0.0)).float()
-        rgt_mols = (N_d < 0.0).float()
-        Km_l = lft_mols * aff.unsqueeze(-1).expand(*cpds_size)
-        # Km_l = torch.einsum("cpds,cpd->cpds", lft_mols, aff)
-        Km_r = rgt_mols * (1 / aff).unsqueeze(-1).expand(*cpds_size)
-        # Km_r = torch.einsum("cpds,cpd->cpds", rgt_mols, 1 / aff)
-        Km_d = Km_l + Km_r
         Km = Km_d.nanmean(dim=2).nan_to_num(0.0)
         self.Km[cell_idxs] = Km
 
         # Vmax_d (c, p, d)
-        Vmax_d = velo * catal_trnsp_mask
         Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
         self.Vmax[cell_idxs] = Vmax
 
         # N (c, p, s)
-        E = N @ self.mol_energies
-        # E = torch.einsum("cps,s->cp", N, self.mol_energies)
+        E = torch.einsum("cps,s->cp", N, self.mol_energies)
         self.E[cell_idxs] = E
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
@@ -553,6 +526,104 @@ class Kinetics:
             self.E = self._expand(t=self.E, n=by_n, d=1)
             self.N = self._expand(t=self.N, n=by_n, d=1)
             self.A = self._expand(t=self.A, n=by_n, d=1)
+
+    def _get_proteome_tensors(
+        self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        # separate domain specifications into different tensors
+        dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
+            proteomes=proteomes
+        )
+
+        # identify domain types
+        # 1=catalytic, 2=transporter, 3=regulatory
+        catal_mask = (dom_types == 1).float()
+        trnsp_mask = (dom_types == 2).float()
+        reg_mask = (dom_types == 3).float()
+        catal_trnsp_mask = ((dom_types == 1) | (dom_types == 2)).float()
+
+        # map indices of domain specifications to concrete values
+        # idx0 is a 2-codon index specific for every domain type (n=4096)
+        # idx1-3 are 1-codon used for the floats (n=64)
+        reacts = self.reaction_map(idxs0)  # float (c, p, d, s)
+        trnsp_mols = self.trnsp_mol_map(idxs0)  # float (c, p, d, s)
+        reg_mols = self.reg_mol_map(idxs0)  # float (c, p, d, s)
+
+        velo = self.velocity_map(idxs1)  # float (c, p, d)
+        aff = self.affinity_map(idxs2)  # float (c, p, d)
+        orients = self.orient_map(idxs3)  # float (c, p, d)
+
+        # N (c, p, d, s)
+        N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask)
+        N_t = torch.einsum("cpds,cpd->cpds", trnsp_mols, trnsp_mask)
+        N_d = torch.einsum("cpds,cpd->cpds", (N_r + N_t), orients)
+
+        # A (c, p, d, s)
+        A_r = torch.einsum("cpds,cpd->cpds", reg_mols, reg_mask)
+        A_d = torch.einsum("cpds,cpd->cpds", A_r, orients)
+
+        # Km (c, p, d, s)
+        lft_mols = ((A_d > 0.0) | (N_d > 0.0)).float()
+        rgt_mols = (N_d < 0.0).float()
+        Km_l = torch.einsum("cpds,cpd->cpds", lft_mols, aff)
+        Km_r = torch.einsum("cpds,cpd->cpds", rgt_mols, 1 / aff)
+        Km_d = Km_l + Km_r
+
+        # Vmax_d (c, p, d)
+        Vmax_d = velo * catal_trnsp_mask
+
+        return N_d, A_d, Km_d, Vmax_d, dom_types
+
+    def _collect_proteome_idxs(
+        self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,]:
+        n_prots = self.N.size(1)
+        n_doms = max(len(dd) for d in proteomes for dd in d)
+        empty_seq = [0] * n_doms
+
+        c_dts = []
+        c_idxs0 = []
+        c_idxs1 = []
+        c_idxs2 = []
+        c_idxs3 = []
+        for proteins in proteomes:
+            p_dts = []
+            p_idxs0 = []
+            p_idxs1 = []
+            p_idxs2 = []
+            p_idxs3 = []
+            for doms in proteins:
+                d_dts = []
+                d_idxs0 = []
+                d_idxs1 = []
+                d_idxs2 = []
+                d_idxs3 = []
+                for dt, i0, i1, i2, i3 in doms:
+                    d_dts.append(dt)
+                    d_idxs0.append(i0)
+                    d_idxs1.append(i1)
+                    d_idxs2.append(i2)
+                    d_idxs3.append(i3)
+                d_pad = n_doms - len(d_idxs0)
+                p_dts.append(d_dts + [0] * d_pad)
+                p_idxs0.append(d_idxs0 + [0] * d_pad)
+                p_idxs1.append(d_idxs1 + [0] * d_pad)
+                p_idxs2.append(d_idxs2 + [0] * d_pad)
+                p_idxs3.append(d_idxs3 + [0] * d_pad)
+
+            p_pad = n_prots - len(p_idxs0)
+            c_dts.append(p_dts + [empty_seq] * p_pad)
+            c_idxs0.append(p_idxs0 + [empty_seq] * p_pad)
+            c_idxs1.append(p_idxs1 + [empty_seq] * p_pad)
+            c_idxs2.append(p_idxs2 + [empty_seq] * p_pad)
+            c_idxs3.append(p_idxs3 + [empty_seq] * p_pad)
+
+        dom_types = self._tensor_from(c_dts)  # long (c, p, d)
+        idxs0 = self._tensor_from(c_idxs0)  # long (c, p, d)
+        idxs1 = self._tensor_from(c_idxs1)  # long (c, p, d)
+        idxs2 = self._tensor_from(c_idxs2)  # long (c, p, d)
+        idxs3 = self._tensor_from(c_idxs3)  # long (c, p, d)
+        return dom_types, idxs0, idxs1, idxs2, idxs3
 
     def _get_ln_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
         # substrates

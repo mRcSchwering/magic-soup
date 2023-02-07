@@ -1,7 +1,6 @@
 from typing import Optional
 import warnings
 import torch
-from magicsoup.constants import CODON_SIZE
 
 
 class Molecule:
@@ -275,118 +274,131 @@ class Domain:
     [TransporterDomain][magicsoup.genetics.TransporterDomain], or [RegulatoryDomain][magicsoup.genetics.RegulatoryDomain].
 
     Arguments:
-        substrates: All molecule species used by this domain.
-            The concrete interpretation depends on the type of domain.
-        products: All molecules produced by this domain.
-            The concrete interpretation depends on the type of domain.
-        affinity: The substrate affinity of this domain.
-            Represents Km in Michaelis Menten kinetics.
-        velocity: The maximum velocity of this domain.
-            Represents Vmax in Michaelis Menten kinetics.
-            This is only relevant for certain types of domains.
-        is_bkwd: Flag which decides in which direction the domain will be coulpled to other domains of the same protein.
-            This is relevant only for proteins with multiple domains.
-            All reactions and transports of the same protein will move either in one direction or the other.
-            What this direction is, is decided by the Nernst equation.
-            However, which molecule species are on the left or right side is defined by `is_bkwd`.
         is_catalytic: Flag to indicate that this is a catalytic domain.
         is_transporter: Flag to indicate that this is a transporter domain.
         is_regulatory: Flag to indicate that this is a regulatory domain.
-        is_inhibiting: Flag to indicate that this is a inhibiting domain.
-            This is only relevant for regulatory domains.
-        is_transmembrane: Flag to indicate that this is also a transmembrane domain.
-            This is relevant for regulatory domains.
 
     When cells are updated (or new cells are created) their genomes are translated into proteomes.
     These proteomes are lists of proteins, which in turn carry lists of domains.
     [World][magicsoup.world.World] then reads through these proteins and domains and sets the kinetic parameters for each cell accordingly.
-
-    You can compare domains (`domain0 == domain1`) and sort them (`sorted(domains)`).
-    Thes comparisons are based on all the domains attributes, like `affinity` and `velocity`.
-    So, even if 2 domains both catalyze the same reaction, they might not be equal.
-    Hashes for these comparisons are calculated during initialization of the domain object.
-    So, it makes no sense to alter the domain object after initialization, and then do a comparison afterwards.
-
-    If you print domains they will display all details,
-    but if you convert them to strings, only the most important parts are displayed
-    (e.g. `str(domain)` or `f"{domain}").
     """
 
     def __init__(
         self,
-        substrates: list[Molecule],
-        products: list[Molecule],
-        affinity: float,
-        velocity: float,
-        is_bkwd: bool,
         is_catalytic: bool = False,
         is_transporter: bool = False,
         is_regulatory: bool = False,
-        is_inhibiting: bool = False,
-        is_transmembrane: bool = False,
     ):
-        self.substrates = substrates
-        self.products = products
-        self.affinity = affinity
-        self.velocity = velocity
-        self.is_bkwd = is_bkwd
-
         self.is_catalytic = is_catalytic
         self.is_transporter = is_transporter
         self.is_regulatory = is_regulatory
-        self.is_inhibiting = is_inhibiting
-        self.is_transmembrane = is_transmembrane
-
-        self._hash = hash(
-            (
-                tuple(self.substrates),
-                tuple(self.products),
-                self.affinity,
-                self.velocity,
-                self.is_bkwd,
-                self.is_catalytic,
-                self.is_transporter,
-                self.is_regulatory,
-                self.is_inhibiting,
-                self.is_transmembrane,
-            )
-        )
-
-    def __lt__(self, other: "Domain") -> bool:
-        return hash(self) < hash(other)
-
-    def __hash__(self) -> int:
-        return self._hash
-
-    def __eq__(self, other) -> bool:
-        return hash(self) == hash(other)
 
     def __repr__(self) -> str:
         kwargs = {
-            "substrates": self.substrates,
-            "products": self.products,
-            "affinity": self.affinity,
-            "velocity": self.velocity,
-            "is_bkwd": self.is_bkwd,
             "is_catalytic": self.is_catalytic,
             "is_transporter": self.is_transporter,
             "is_regulatory": self.is_regulatory,
-            "is_inhibiting": self.is_inhibiting,
-            "is_transmembrane": self.is_transmembrane,
         }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
 
+
+class CatalyticDomain(Domain):
+    """
+    Container holding the specification for a catalytic domain.
+    Usually, you don't need to manually instantiate domains.
+    During the simulation they are automatically instantiated through factories.
+
+    Arguments:
+        reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
+            For stoichiometric coefficients > 1, list the molecule species multiple times.
+        affinity: Michaelis Menten constant of the reaction (in mol).
+        velocity: Maximum velocity of the reaction (in mol per time step).
+    """
+
+    def __init__(
+        self,
+        reaction: tuple[list[Molecule], list[Molecule]],
+        affinity: float,
+        velocity: float,
+    ):
+        super().__init__(is_catalytic=True)
+        subs, prods = reaction
+        self.substrates = subs
+        self.products = prods
+        self.affinity = affinity
+        self.velocity = velocity
+
     def __str__(self) -> str:
         ins = ",".join(str(d) for d in self.substrates)
         outs = ",".join(str(d) for d in self.products)
-        return f"Domain({ins}<->{outs})"
+        return f"CatalyticDomain({ins}->{outs})"
 
 
+class TransporterDomain(Domain):
+    """
+    Container holding the specification for a transporter domain.
+    Usually, you don't need to manually instantiate domains.
+    During the simulation they are automatically instantiated through factories.
 
-# TODO: tryout
-# N, A, Km, Vmax
-DomType = tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]
+    Arguments:
+        molecule: The molecule species which can be transported into or out of the cell by this domain.
+        affinity: Michaelis Menten constant of the transport (in mol).
+        velocity: Maximum velocity of the transport (in mol per time step).
+        is_bkwd: Flag indicating whether in which orientation this transporter will be coupled with other domains.
+    """
+
+    def __init__(
+        self, molecule: Molecule, affinity: float, velocity: float, is_bkwd: bool
+    ):
+        super().__init__(is_transporter=True)
+        self.molecule = molecule
+        self.affinity = affinity
+        self.velocity = velocity
+        self.is_bkwd = is_bkwd
+
+    def __str__(self) -> str:
+        return f"TransporterDomain({self.molecule})"
+
+
+class RegulatoryDomain(Domain):
+    """
+    Container holding the specification for a regulatory domain.
+    Usually, you don't need to manually instantiate domains.
+    During the simulation they are automatically instantiated through factories.
+
+    Arguments:
+        effector: The molecule species which will be the effector molecule.
+        affinity: Michaelis Menten constant of the transport (in mol).
+        is_inhibiting: Whether this is an inhibiting regulatory domain (otherwise activating).
+        is_transmembrane: Whether this is also a transmembrane domain.
+            If true, the domain will react to extracellular molecules instead of intracellular ones.
+
+    I think the term Michaelis Menten constant in a regulatory domain is a bit weird
+    since there is no product being created.
+    However, the kinetics of the amount of activation or inhibition are the same.
+    """
+
+    def __init__(
+        self,
+        effector: Molecule,
+        affinity: float,
+        is_inhibiting: bool,
+        is_transmembrane: bool,
+    ):
+        super().__init__(is_regulatory=True)
+        self.effector = effector
+        self.affinity = affinity
+        self.is_transmembrane = is_transmembrane
+        self.is_inhibiting = is_inhibiting
+
+    def __str__(self) -> str:
+        loc = "transmembrane" if self.is_transmembrane else "cytosolic"
+        eff = "inhibiting" if self.is_inhibiting else "activating"
+        return f"ReceptorDomain({self.effector},{loc},{eff})"
+
+
+# TODO: reprs for domains
 
 
 class Protein:
@@ -396,24 +408,6 @@ class Protein:
         domains: All domains of the protein
         label: Can be used to label this protein. Has no effect.
 
-    Proteins can be compared (`protein0 == protein1`).
-    This comparison is based on comparing all sorted domains.
-    These domain comparisons also take into consideration domain affinities and velocities.
-    So, even seemingly similar proteins might fail the comparison.
-
-    A hash that is used during protein to protein comparisons is calculated once during
-    instantiation of the protein. So, it doesn't make sense to alter an already instantiated
-    protein object and then compare it afterwards.
-
-    ```
-        p0 = Protein(domains=[])
-        p1 = Protein(domains=[])
-        assert p0 == p1  # ok
-
-        p0.domains = ["asd"]
-        assert p0 != p1  # assertion error
-    ```
-
     If you print a protein, it will show all its domains in detail.
     But if you convert it to a string (e.g. `str(protein)` or `f"{protein}"`) it will only show the label.
     """
@@ -422,14 +416,6 @@ class Protein:
         self.domains = domains
         self.label = label
         self.n_domains = len(domains)
-
-        self._hash = hash(tuple(sorted(self.domains)))
-
-    def __hash__(self) -> int:
-        return self._hash
-
-    def __eq__(self, other) -> bool:
-        return hash(self) == hash(other)
 
     def __repr__(self) -> str:
         kwargs = {
@@ -487,9 +473,6 @@ class Cell:
     The parent is the cell that stays on the same pixel, while the child is the new cell that will occupy another pixel.
     The child will have `n_survived_steps=0` and `n_replications=0` when it is born.
     The parent will keep these values. Both cells will have the same genome and proteome.
-
-    You can compare cells to each other (`cell0 == cell1`).
-    This comparison is based on the genome. Other attributes are not compared.
     """
 
     def __init__(
@@ -511,14 +494,6 @@ class Cell:
         self.n_replications = n_replications
         self.int_molecules: Optional[torch.Tensor] = None
         self.ext_molecules: Optional[torch.Tensor] = None
-
-    def __hash__(self) -> int:
-        # TODO: also compare position or index?
-        #       where exactly do I use this?
-        return hash(self.genome)
-
-    def __eq__(self, other) -> bool:
-        return hash(self) == hash(other)
 
     def copy(self, **kwargs) -> "Cell":
         old_kwargs = {

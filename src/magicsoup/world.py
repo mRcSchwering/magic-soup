@@ -166,7 +166,7 @@ class World:
 
         When accessing `world.cells` directly, the cell object will not have all information.
         For performance reasons most cell attributes are maintained in tensors during the simulation.
-        Only genome and proteome are maintained during the simulation.
+        Only genome and position are kept up-to-date in the cell object during the simulation.
         When you call `world.get_cell()` all missing information will be added to the object.
         """
         idx = -1
@@ -190,9 +190,27 @@ class World:
         cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]]
         cell.n_survived_steps = int(self.cell_survival[idx].item())
         cell.n_replications = int(self.cell_divisions[idx].item())
+
+        (cdss,) = self.genetics.translate_genomes(genomes=[cell.genome])
+        cell.proteome = self.kinetics.get_proteome(proteome=cdss)
+
         return cell
 
     def add_random_cells(self, genomes: list[str]) -> list[int]:
+        """
+        Create new cells and place them on randomly on the map.
+        All lists and tensors that reference cells will be updated.
+
+        Parameters:
+            genomes: List of genomes of the newly added cells
+
+        Returns:
+            The indexes of successfully added cells.
+
+        Each cell will be placed randomly on the map and receive half the molecules of the pixel where it was added.
+        If there are less pixels left on the cell map than cells you want to add,
+        only the remaining pixels will be filled with new cells.
+        """
         genomes = [d for d in genomes if len(d) > 0]
         n_new_cells = len(genomes)
         if n_new_cells == 0:
