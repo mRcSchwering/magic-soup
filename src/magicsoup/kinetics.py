@@ -311,6 +311,7 @@ class Kinetics:
             doms: list[DomainType] = []
             for di in range(dom_types.size(2)):
 
+                # catalytic domain (N has positive and negative integers)
                 if dom_types[0][pi][di].item() == 1:
                     lfts: list[Molecule] = []
                     rgts: list[Molecule] = []
@@ -319,25 +320,29 @@ class Kinetics:
                             rgts.extend(([self.mi_2_mol[mi]] * int(n)))
                         elif n <= -1:
                             lfts.extend(([self.mi_2_mol[mi]] * -int(n)))
+                    mi = self.mol_2_mi[lfts[0]]
                     doms.append(
                         CatalyticDomain(
                             reaction=(lfts, rgts),
-                            km=Km_d[0][pi][di].amin().item(),
+                            km=Km_d[0][pi][di][mi].item(),
                             vmax=Vmax_d[0][pi][di].item(),
                         )
                     )
 
+                # transporter domain (N has one +1 and one -1)
                 if dom_types[0][pi][di].item() == 2:
-                    mi = int(torch.argwhere(N_d[0][pi][di] != 0).min().item())
+                    lft = int(torch.argwhere(N_d[0][pi][di] == -1)[0].item())
+                    rgt = int(torch.argwhere(N_d[0][pi][di] == 1)[0].item())
+                    mi = lft if lft in self.mi_2_mol else rgt
                     doms.append(
                         TransporterDomain(
                             molecule=self.mi_2_mol[mi],
-                            km=Km_d[0][pi][di].amin().item(),
+                            km=Km_d[0][pi][di][mi].item(),
                             vmax=Vmax_d[0][pi][di].item(),
-                            is_bkwd=bool((N_d[0][pi][di][mi] < 0).item()),
                         )
                     )
 
+                # regulatory domain (A has one +1)
                 if dom_types[0][pi][di].item() == 3:
                     mi = int(torch.argwhere(A_d[0][pi][di] != 0)[0].item())
                     if mi in self.mi_2_mol:
@@ -349,7 +354,7 @@ class Kinetics:
                     doms.append(
                         RegulatoryDomain(
                             effector=mol,
-                            km=Km_d[0][pi][di].amin().item(),
+                            km=Km_d[0][pi][di][mi].item(),
                             is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
                             is_transmembrane=is_trnsm,
                         )
@@ -386,7 +391,6 @@ class Kinetics:
         self.Km[cell_idxs] = Km
 
         # Vmax_d (c, p, d)
-        # Vmax[Vmax == 0.0] = torch.nan
         Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
         self.Vmax[cell_idxs] = Vmax
 
@@ -546,7 +550,7 @@ class Kinetics:
         A_d = torch.einsum("cpds,cpd->cpds", A_r, signs)
 
         # Km (c, p, d, s)
-        is_lft = (A_d > 0.0) | (N_d < 0.0)
+        is_lft = (A_d != 0.0) | (N_d < 0.0)
         is_rgt = N_d > 0.0
         Km_l = torch.einsum("cpds,cpd->cpds", is_lft.float(), Kms)
         Km_r = torch.einsum("cpds,cpd->cpds", is_rgt.float(), 1 / Kms)

@@ -273,6 +273,9 @@ class CatalyticDomain:
         km: Michaelis Menten constant of the reaction (in mol).
         vmax: Maximum velocity of the reaction (in mol per time step).
 
+    The catalytic domain is described for the direction from substrates to products.
+    For the reverse reaction, the reciprocal of Km applies. Vmax stays the same.
+
     In the simulation domains for all proteins and cells exist as a set of tensors.
     This object is just a representation of a domain extracted from these tensors.
     You shouldn't need to instantiate it.
@@ -307,17 +310,20 @@ class TransporterDomain:
         vmax: Maximum velocity of the transport (in mol per time step).
         is_bkwd: Flag indicating whether in which orientation this transporter will be coupled with other domains.
 
+    The transporter domain is described for intracellular molecules of this molecule species.
+    The reciprocal of Km is used for extracellular molecules of this molecule species.
+    Vmax stays the same.
+
     In the simulation domains for all proteins and cells exist as a set of tensors.
     This object is just a representation of a domain extracted from these tensors.
     You shouldn't need to instantiate it.
     These domain objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
     """
 
-    def __init__(self, molecule: Molecule, km: float, vmax: float, is_bkwd: bool):
+    def __init__(self, molecule: Molecule, km: float, vmax: float):
         self.molecule = molecule
         self.km = km
         self.vmax = vmax
-        self.is_bkwd = is_bkwd
 
     def __repr__(self) -> str:
         return (
