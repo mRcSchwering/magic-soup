@@ -210,12 +210,6 @@ class Kinetics:
     Currently, this is also the main bottleneck in performance.
     """
 
-    # TODO: I could use functions that map directly to C. E.g. replace torch.einsum
-    #       with the correct matmul
-
-    # TODO: I could also try to make the cell dimension variable. E.g. in nn.Models
-    #       dim=0 is always kept variable
-
     def __init__(
         self,
         molecules: list[Molecule],
@@ -248,21 +242,19 @@ class Kinetics:
         one_codon_size = len(ALL_CODONS)
         two_codon_size = one_codon_size**2
 
-        # TODO: these maps need to be saved
-
-        self.affinity_map = _LogWeightMapFact(
+        self.km_map = _LogWeightMapFact(
             max_token=one_codon_size,
             weight_range=km_range,
             device=device,
         )
 
-        self.velocity_map = _LogWeightMapFact(
+        self.vmax_map = _LogWeightMapFact(
             max_token=one_codon_size,
             weight_range=vmax_range,
             device=device,
         )
 
-        self.orient_map = _SignMapFact(max_token=one_codon_size, device=device)
+        self.sign_map = _SignMapFact(max_token=one_codon_size, device=device)
 
         self.reaction_map = _ReactionMapFact(
             molmap=self.mol_2_mi,
@@ -271,11 +263,11 @@ class Kinetics:
             device=device,
         )
 
-        self.trnsp_mol_map = _TransporterMapFact(
+        self.transport_map = _TransporterMapFact(
             n_molecules=len(molecules), max_token=two_codon_size, device=device
         )
 
-        self.reg_mol_map = _RegulatoryMapFact(
+        self.effector_map = _RegulatoryMapFact(
             n_molecules=len(molecules), max_token=two_codon_size, device=device
         )
 
@@ -495,12 +487,6 @@ class Kinetics:
         Arguments:
             by_n: By how many rows to increase the cell dimension
         """
-        # TODO: I could use a scaling method like for proteins
-        #       but then I would have to keep cell idxs, and also remember
-        #       rows which are currently free
-        # TODO: I could also try to express all calculations with a free batch
-        #       dimension. E.g. nn.Models are always implemented in a way that
-        #       dim=0 can be variable
         self.Km = self._expand(t=self.Km, n=by_n, d=0)
         self.Vmax = self._expand(t=self.Vmax, n=by_n, d=0)
         self.E = self._expand(t=self.E, n=by_n, d=0)
@@ -514,10 +500,6 @@ class Kinetics:
         Arguments:
             max_n: The maximum number of rows required in the protein dimension
         """
-        # TODO: the number of upscales could be reduced by upscaling to e.g. the next
-        #       higher 10s
-        # TODO: I could also downscale proteins: E.g. if 10x in a row max_n was always
-        #       more than 10 below the current n_prots, I can downscale.
         n_prots = int(self.Km.shape[1])
         if max_n > n_prots:
             by_n = max_n - n_prots
@@ -546,31 +528,31 @@ class Kinetics:
         # idx0 is a 2-codon index specific for every domain type (n=4096)
         # idx1-3 are 1-codon used for the floats (n=64)
         reacts = self.reaction_map(idxs0)  # float (c, p, d, s)
-        trnsp_mols = self.trnsp_mol_map(idxs0)  # float (c, p, d, s)
-        reg_mols = self.reg_mol_map(idxs0)  # float (c, p, d, s)
+        trnspts = self.transport_map(idxs0)  # float (c, p, d, s)
+        effectors = self.effector_map(idxs0)  # float (c, p, d, s)
 
-        velo = self.velocity_map(idxs1)  # float (c, p, d)
-        aff = self.affinity_map(idxs2)  # float (c, p, d)
-        orients = self.orient_map(idxs3)  # float (c, p, d)
+        Vmaxs = self.vmax_map(idxs1)  # float (c, p, d)
+        Kms = self.km_map(idxs2)  # float (c, p, d)
+        signs = self.sign_map(idxs3)  # float (c, p, d)
 
         # N (c, p, d, s)
         N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask)
-        N_t = torch.einsum("cpds,cpd->cpds", trnsp_mols, trnsp_mask)
-        N_d = torch.einsum("cpds,cpd->cpds", (N_r + N_t), orients)
+        N_t = torch.einsum("cpds,cpd->cpds", trnspts, trnsp_mask)
+        N_d = torch.einsum("cpds,cpd->cpds", (N_r + N_t), signs)
 
         # A (c, p, d, s)
-        A_r = torch.einsum("cpds,cpd->cpds", reg_mols, reg_mask)
-        A_d = torch.einsum("cpds,cpd->cpds", A_r, orients)
+        A_r = torch.einsum("cpds,cpd->cpds", effectors, reg_mask)
+        A_d = torch.einsum("cpds,cpd->cpds", A_r, signs)
 
         # Km (c, p, d, s)
         lft_mols = ((A_d > 0.0) | (N_d > 0.0)).float()
         rgt_mols = (N_d < 0.0).float()
-        Km_l = torch.einsum("cpds,cpd->cpds", lft_mols, aff)
-        Km_r = torch.einsum("cpds,cpd->cpds", rgt_mols, 1 / aff)
+        Km_l = torch.einsum("cpds,cpd->cpds", lft_mols, Kms)
+        Km_r = torch.einsum("cpds,cpd->cpds", rgt_mols, 1 / Kms)
         Km_d = Km_l + Km_r
 
         # Vmax_d (c, p, d)
-        Vmax_d = velo * catal_trnsp_mask
+        Vmax_d = Vmaxs * catal_trnsp_mask
 
         return N_d, A_d, Km_d, Vmax_d, dom_types
 
