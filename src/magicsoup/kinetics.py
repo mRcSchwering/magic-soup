@@ -9,7 +9,7 @@ from magicsoup.containers import (
     CatalyticDomain,
     TransporterDomain,
     RegulatoryDomain,
-    Domain,
+    DomainType,
 )
 
 
@@ -316,7 +316,7 @@ class Kinetics:
 
         prots: list[Protein] = []
         for pi in range(dom_types.size(1)):
-            doms: list[Domain] = []
+            doms: list[DomainType] = []
             for di in range(dom_types.size(2)):
 
                 if dom_types[0][pi][di].item() == 1:
@@ -330,8 +330,8 @@ class Kinetics:
                     doms.append(
                         CatalyticDomain(
                             reaction=(lfts, rgts),
-                            affinity=Km_d[0][pi][di].amin().item(),
-                            velocity=Vmax_d[0][pi][di].item(),
+                            km=Km_d[0][pi][di].amin().item(),
+                            vmax=Vmax_d[0][pi][di].item(),
                         )
                     )
 
@@ -340,8 +340,8 @@ class Kinetics:
                     doms.append(
                         TransporterDomain(
                             molecule=self.mi_2_mol[mi],
-                            affinity=Km_d[0][pi][di].amin().item(),
-                            velocity=Vmax_d[0][pi][di].item(),
+                            km=Km_d[0][pi][di].amin().item(),
+                            vmax=Vmax_d[0][pi][di].item(),
                             is_bkwd=bool((N_d[0][pi][di][mi] < 0).item()),
                         )
                     )
@@ -357,7 +357,7 @@ class Kinetics:
                     doms.append(
                         RegulatoryDomain(
                             effector=mol,
-                            affinity=Km_d[0][pi][di].amin().item(),
+                            km=Km_d[0][pi][di].amin().item(),
                             is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
                             is_transmembrane=is_trnsm,
                         )

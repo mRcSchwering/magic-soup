@@ -5,7 +5,7 @@ import math
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.containers import Cell, Protein, Chemistry
+from magicsoup.containers import Cell, Chemistry
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics

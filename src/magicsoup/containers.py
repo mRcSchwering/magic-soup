@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 import warnings
 import torch
 
@@ -263,113 +263,75 @@ class Chemistry:
         return f"{type(self).__name__}({','.join(args)})"
 
 
-class Domain:
-    """
-    Container class that defines a domain.
-
-    Domains should not be instantiated directly as `Domain`.
-    [Genetics][magicsoup.genetics.Genetics] will create factories for all possible domains and use them when translating genomes.
-    So, there should be no reason to instantiate them by hand.
-    However, if you want to directly create domain objects, better use [CatalyticDomain][magicsoup.genetics.CatalyticDomain],
-    [TransporterDomain][magicsoup.genetics.TransporterDomain], or [RegulatoryDomain][magicsoup.genetics.RegulatoryDomain].
-
-    Arguments:
-        is_catalytic: Flag to indicate that this is a catalytic domain.
-        is_transporter: Flag to indicate that this is a transporter domain.
-        is_regulatory: Flag to indicate that this is a regulatory domain.
-
-    When cells are updated (or new cells are created) their genomes are translated into proteomes.
-    These proteomes are lists of proteins, which in turn carry lists of domains.
-    [World][magicsoup.world.World] then reads through these proteins and domains and sets the kinetic parameters for each cell accordingly.
-    """
-
-    def __init__(
-        self,
-        is_catalytic: bool = False,
-        is_transporter: bool = False,
-        is_regulatory: bool = False,
-    ):
-        self.is_catalytic = is_catalytic
-        self.is_transporter = is_transporter
-        self.is_regulatory = is_regulatory
-
-    def __repr__(self) -> str:
-        kwargs = {
-            "is_catalytic": self.is_catalytic,
-            "is_transporter": self.is_transporter,
-            "is_regulatory": self.is_regulatory,
-        }
-        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
-        return f"{type(self).__name__}({','.join(args)})"
-
-
-class CatalyticDomain(Domain):
+class CatalyticDomain:
     """
     Container holding the specification for a catalytic domain.
-    Usually, you don't need to manually instantiate domains.
-    During the simulation they are automatically instantiated through factories.
 
     Arguments:
         reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
             For stoichiometric coefficients > 1, list the molecule species multiple times.
-        affinity: Michaelis Menten constant of the reaction (in mol).
-        velocity: Maximum velocity of the reaction (in mol per time step).
+        km: Michaelis Menten constant of the reaction (in mol).
+        vmax: Maximum velocity of the reaction (in mol per time step).
+
+    In the simulation domains for all proteins and cells exist as a set of tensors.
+    This object is just a representation of a domain extracted from these tensors.
+    You shouldn't need to instantiate it.
+    These domain objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
     """
 
     def __init__(
         self,
         reaction: tuple[list[Molecule], list[Molecule]],
-        affinity: float,
-        velocity: float,
+        km: float,
+        vmax: float,
     ):
-        super().__init__(is_catalytic=True)
         subs, prods = reaction
         self.substrates = subs
         self.products = prods
-        self.affinity = affinity
-        self.velocity = velocity
+        self.km = km
+        self.vmax = vmax
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         ins = ",".join(str(d) for d in self.substrates)
         outs = ",".join(str(d) for d in self.products)
-        return f"CatalyticDomain({ins}->{outs})"
+        return f"CatalyticDomain({ins}->{outs},Km={self.km:.2e},Vmax{self.vmax:.2e})"
 
 
-class TransporterDomain(Domain):
+class TransporterDomain:
     """
     Container holding the specification for a transporter domain.
-    Usually, you don't need to manually instantiate domains.
-    During the simulation they are automatically instantiated through factories.
 
     Arguments:
         molecule: The molecule species which can be transported into or out of the cell by this domain.
-        affinity: Michaelis Menten constant of the transport (in mol).
-        velocity: Maximum velocity of the transport (in mol per time step).
+        km: Michaelis Menten constant of the transport (in mol).
+        vmax: Maximum velocity of the transport (in mol per time step).
         is_bkwd: Flag indicating whether in which orientation this transporter will be coupled with other domains.
+
+    In the simulation domains for all proteins and cells exist as a set of tensors.
+    This object is just a representation of a domain extracted from these tensors.
+    You shouldn't need to instantiate it.
+    These domain objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
     """
 
-    def __init__(
-        self, molecule: Molecule, affinity: float, velocity: float, is_bkwd: bool
-    ):
-        super().__init__(is_transporter=True)
+    def __init__(self, molecule: Molecule, km: float, vmax: float, is_bkwd: bool):
         self.molecule = molecule
-        self.affinity = affinity
-        self.velocity = velocity
+        self.km = km
+        self.vmax = vmax
         self.is_bkwd = is_bkwd
 
-    def __str__(self) -> str:
-        return f"TransporterDomain({self.molecule})"
+    def __repr__(self) -> str:
+        return (
+            f"TransporterDomain({self.molecule},Km={self.km:.2e},Vmax={self.vmax:.2e})"
+        )
 
 
-class RegulatoryDomain(Domain):
+class RegulatoryDomain:
     """
     Container holding the specification for a regulatory domain.
-    Usually, you don't need to manually instantiate domains.
-    During the simulation they are automatically instantiated through factories.
 
     Arguments:
         effector: The molecule species which will be the effector molecule.
-        affinity: Michaelis Menten constant of the transport (in mol).
+        km: Michaelis Menten constant of the transport (in mol).
         is_inhibiting: Whether this is an inhibiting regulatory domain (otherwise activating).
         is_transmembrane: Whether this is also a transmembrane domain.
             If true, the domain will react to extracellular molecules instead of intracellular ones.
@@ -377,28 +339,32 @@ class RegulatoryDomain(Domain):
     I think the term Michaelis Menten constant in a regulatory domain is a bit weird
     since there is no product being created.
     However, the kinetics of the amount of activation or inhibition are the same.
+
+    In the simulation domains for all proteins and cells exist as a set of tensors.
+    This object is just a representation of a domain extracted from these tensors.
+    You shouldn't need to instantiate it.
+    These domain objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
     """
 
     def __init__(
         self,
         effector: Molecule,
-        affinity: float,
+        km: float,
         is_inhibiting: bool,
         is_transmembrane: bool,
     ):
-        super().__init__(is_regulatory=True)
         self.effector = effector
-        self.affinity = affinity
+        self.km = km
         self.is_transmembrane = is_transmembrane
         self.is_inhibiting = is_inhibiting
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         loc = "transmembrane" if self.is_transmembrane else "cytosolic"
         eff = "inhibiting" if self.is_inhibiting else "activating"
-        return f"ReceptorDomain({self.effector},{loc},{eff})"
+        return f"ReceptorDomain({self.effector},Km={self.km:.2e},{loc},{eff})"
 
 
-# TODO: reprs for domains
+DomainType = Union[CatalyticDomain, TransporterDomain, RegulatoryDomain]
 
 
 class Protein:
@@ -408,11 +374,13 @@ class Protein:
         domains: All domains of the protein
         label: Can be used to label this protein. Has no effect.
 
-    If you print a protein, it will show all its domains in detail.
-    But if you convert it to a string (e.g. `str(protein)` or `f"{protein}"`) it will only show the label.
+    In the simulation proteins for all cells exist as a set of tensors.
+    This object is just a representation of a single protein.
+    You shouldn't need to instantiate it.
+    Protein objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
     """
 
-    def __init__(self, domains: list[Domain], label: str = "P"):
+    def __init__(self, domains: list[DomainType], label: str = "P"):
         self.domains = domains
         self.label = label
         self.n_domains = len(domains)
@@ -424,9 +392,6 @@ class Protein:
         }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
-
-    def __str__(self) -> str:
-        return self.label
 
 
 class Cell:
