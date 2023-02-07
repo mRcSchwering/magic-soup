@@ -1,13 +1,17 @@
 import pytest
 import torch
-from magicsoup.containers import Protein, Molecule
-from magicsoup.genetics import CatalyticDomain, RegulatoryDomain, TransporterDomain
+from magicsoup.containers import (
+    Protein,
+    Molecule,
+    CatalyticDomain,
+    RegulatoryDomain,
+    TransporterDomain,
+)
 from magicsoup.kinetics import Kinetics
 from magicsoup.constants import GAS_CONSTANT
 
 TOLERANCE = 1e-4
 
-# fmt: off
 
 ma = Molecule("a", energy=15)
 mb = Molecule("b", energy=10)
@@ -19,8 +23,61 @@ r_a_b = ([ma], [mb])
 r_b_c = ([mb], [mc])
 r_bc_d = ([mb, mc], [md])
 r_d_bb = ([md], [mb, mb])
+REACTIONS = [r_a_b, r_b_c, r_bc_d, r_d_bb]
+
+# fmt: off
+KM_WEIGHTS = torch.tensor([
+    torch.nan, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,  # idxs 0-9
+    1.0, 1.2, 1.5, 1.8, 2.0, 2.2, 2.5, 2.8, 3.0, 3.2  # idxs 10-19
+])
+
+VMAX_WEIGHTS = torch.tensor([
+    torch.nan, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,  # idxs 0-9
+    2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9,  # idxs 10-19
+])
+
+SIGNS = torch.tensor([0.0, 1.0, -1.0])  # idxs 0-2
+
+TRANSPORT_M = torch.tensor([
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 0: none
+    [-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 1: a in->out
+    [0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 2: b in->out
+    [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0], # idx 3: c in->out
+    [0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0], # idx 4: d in->out
+])
+
+EFFECTOR_M = torch.tensor([
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 0: none
+    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 1: a in
+    [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 2: b in
+    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 3: c in
+    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], # idx 4: d in
+    [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 4: a out
+    [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 4: b out
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0], # idx 4: c out
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], # idx 4: d out
+])
+
+REACTION_M = torch.tensor([
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],   # idx 0: none
+    [-1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 1: a -> b
+    [0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 2: b -> c
+    [0.0, -1.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0], # idx 3: b,c -> d
+    [0.0, 2.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0],  # idx 4: d -> 2b
+])
 
 # fmt: on
+
+
+def get_kinetics() -> Kinetics:
+    kinetics = Kinetics(molecules=MOLECULES, reactions=REACTIONS)
+    kinetics.km_map.weights = KM_WEIGHTS.clone()
+    kinetics.vmax_map.weights = VMAX_WEIGHTS.clone()
+    kinetics.sign_map.signs = SIGNS.clone()
+    kinetics.transport_map.M = TRANSPORT_M.clone()
+    kinetics.effector_map.M = EFFECTOR_M.clone()
+    kinetics.reaction_map.M = REACTION_M.clone()
+    return kinetics
 
 
 def avg(*x):
@@ -38,7 +95,7 @@ def test_unsetting_cell_params():
     cell_prots1 = [(1, i) for i in range(3)]
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
@@ -54,29 +111,30 @@ def test_unsetting_cell_params():
 
 
 def test_cell_params_with_transporter_domains():
+
+    # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-
-    p0 = Protein(domains=[
-        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False)
-    ])
-    p1 = Protein(domains=[
-        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False),
-        TransporterDomain(molecule=ma, affinity=0.2, velocity=1.1, is_bkwd=True)
-    ])
-    c0 = [p0, p1]
-
-    p0 = Protein(domains=[
-        TransporterDomain(molecule=ma, affinity=0.4, velocity=1.5, is_bkwd=False),
-        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.4, is_bkwd=False),
-        TransporterDomain(molecule=mb, affinity=0.6, velocity=1.3, is_bkwd=False),
-        TransporterDomain(molecule=mc, affinity=0.7, velocity=1.2, is_bkwd=False)
-    ])
-    p1 = Protein(domains=[
-        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False)
-    ])
-    c1 = [p0, p1]
-
+    c0 = [
+        [
+            (2, 1, 5, 5, 1)  # transporter, mol a, Vmax 1.5, Km 0.5, fwd
+        ],
+        [
+            (2, 1, 5, 5, 1), # transporter, mol a, Vmax 1.5, Km 0.5, fwd
+            (2, 1, 1, 2, 2)  # transporter, mol a, Vmax 1.1, Km 0.2, bwd
+        ],
+    ]
+    c1 = [
+        [
+            (2, 1, 5, 4, 1), # transporter, mol a, Vmax 1.5, Km 0.4, fwd
+            (2, 1, 4, 5, 1), # transporter, mol a, Vmax 1.4, Km 0.5, fwd
+            (2, 2, 3, 6, 1), # transporter, mol b, Vmax 1.3, Km 0.6, fwd
+            (2, 3, 2, 7, 1)  # transporter, mol c, Vmax 1.2, Km 0.7, fwd
+        ],
+        [
+            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
+            (2, 1, 5, 5, 1)   # transporter, mol a, Vmax 1.5, Km 0.5, fwd
+        ],
+    ]
     # fmt: on
 
     Km = torch.zeros(2, 3, 8)
@@ -85,17 +143,14 @@ def test_cell_params_with_transporter_domains():
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
-    cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
-    cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
-
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.N = N
     kinetics.A = A
-    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
+    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
     assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Km[0, 0, 4] == pytest.approx(1 / 0.5, abs=TOLERANCE)

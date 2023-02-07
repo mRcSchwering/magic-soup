@@ -145,7 +145,7 @@ class Molecule:
         permeability: float = 0.0,
     ):
         self.name = name
-        self.energy = energy
+        self.energy = float(energy)  # int would error out in kinetics
         self.half_life = half_life
         self.diffusivity = diffusivity
         self.permeability = permeability

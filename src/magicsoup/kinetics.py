@@ -386,6 +386,7 @@ class Kinetics:
         self.Km[cell_idxs] = Km
 
         # Vmax_d (c, p, d)
+        # Vmax[Vmax == 0.0] = torch.nan
         Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
         self.Vmax[cell_idxs] = Vmax
 
@@ -545,11 +546,12 @@ class Kinetics:
         A_d = torch.einsum("cpds,cpd->cpds", A_r, signs)
 
         # Km (c, p, d, s)
-        lft_mols = ((A_d > 0.0) | (N_d > 0.0)).float()
-        rgt_mols = (N_d < 0.0).float()
-        Km_l = torch.einsum("cpds,cpd->cpds", lft_mols, Kms)
-        Km_r = torch.einsum("cpds,cpd->cpds", rgt_mols, 1 / Kms)
+        is_lft = (A_d > 0.0) | (N_d < 0.0)
+        is_rgt = N_d > 0.0
+        Km_l = torch.einsum("cpds,cpd->cpds", is_lft.float(), Kms)
+        Km_r = torch.einsum("cpds,cpd->cpds", is_rgt.float(), 1 / Kms)
         Km_d = Km_l + Km_r
+        Km_d[~(is_lft | is_rgt)] = torch.nan
 
         # Vmax_d (c, p, d)
         Vmax_d = Vmaxs * catal_trnsp_mask
