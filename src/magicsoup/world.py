@@ -102,6 +102,7 @@ class World:
         self.workers = workers
         self.map_size = map_size
         self.abs_temp = abs_temp
+        self.chemistry = chemistry
 
         self.genetics = Genetics(
             start_codons=start_codons,
