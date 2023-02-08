@@ -200,8 +200,7 @@ class Chemistry:
     To combine multiple chemistries you can do `both = chemistry1 & chemistry2` which will combine all molecules and reactions.
 
     The chemistry object is used by [World][magicsoup.world.World] to know what molecule species exist.
-    On initialization it is also passed to [Genetics][magicsoup.genetics.Genetics],
-    which uses `chemistry` to know about each molecule species and reaction and then build domain factories for those.
+    Reactions and molecule species are used to set up the world and create mappings for domains.
     """
 
     def __init__(
@@ -281,7 +280,7 @@ class CatalyticDomain:
     In the simulation domains for all proteins and cells exist as a set of tensors.
     This object is just a representation of a domain extracted from these tensors.
     You shouldn't need to instantiate it.
-    These domain objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
+    These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
     def __init__(
@@ -310,7 +309,6 @@ class TransporterDomain:
         molecule: The molecule species which can be transported into or out of the cell by this domain.
         km: Michaelis Menten constant of the transport (in mol).
         vmax: Maximum velocity of the transport (in mol per time step).
-        is_bkwd: Flag indicating whether in which orientation this transporter will be coupled with other domains.
 
     The transporter domain is described for intracellular molecules of this molecule species.
     The reciprocal of Km is used for extracellular molecules of this molecule species.
@@ -319,7 +317,7 @@ class TransporterDomain:
     In the simulation domains for all proteins and cells exist as a set of tensors.
     This object is just a representation of a domain extracted from these tensors.
     You shouldn't need to instantiate it.
-    These domain objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
+    These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
     def __init__(self, molecule: Molecule, km: float, vmax: float):
@@ -351,7 +349,7 @@ class RegulatoryDomain:
     In the simulation domains for all proteins and cells exist as a set of tensors.
     This object is just a representation of a domain extracted from these tensors.
     You shouldn't need to instantiate it.
-    These domain objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
+    These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
     def __init__(
@@ -385,7 +383,7 @@ class Protein:
     In the simulation proteins for all cells exist as a set of tensors.
     This object is just a representation of a single protein.
     You shouldn't need to instantiate it.
-    Protein objects are created when calling _e.g._ {get_cell()}{magicsoup.world.get_cell}.
+    Protein objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
     def __init__(self, domains: list[DomainType], label: str = "P"):
@@ -440,7 +438,7 @@ class Cell:
     For performance reasons the simulation is working with these tensors.
     Their values are not copied into the list of cell objects `world.cells` during the simulation.
     By default the cell objects in `world.cells` only always have a genome, proteome, and a position.
-    If you also want to know the other attributes of a specific cell use [get_cell()][magicsoup.world.World].
+    If you also want to know the other attributes of a specific cell use [get_cell()][magicsoup.world.World.get_cell].
 
     During cell division this simulation has a concept of parent and child.
     The parent is the cell that stays on the same pixel, while the child is the new cell that will occupy another pixel.

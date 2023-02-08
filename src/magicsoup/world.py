@@ -26,8 +26,9 @@ class World:
         start_codons: start codons which start a coding sequence (translation only happens within coding sequences).
         stop_codons: stop codons which stop a coding sequence (translation only happens within coding sequences).
         device: Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-            This has to be the same device that is used by `world`.
-        workers: Number of processes to use
+            This can be used to move most calculations to a GPU.
+        workers: Number of multiprocessing workers to use.
+            These are used to parallelize some calculations that can only be done on the CPU.
 
     Most attributes on this class describe the current state of molecules and cells.
     Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
@@ -78,11 +79,16 @@ class World:
     This is a quick, lightweight save, but it only saves things that change during the simulation.
     Use [load_state()][magicsoup.world.World.load_state] to re-load a certain state.
 
-    Finally, the `world` object carries `world.genetics`, `world.kinetics`, and `world.genetics.chemistry`
+    Finally, the `world` object carries `world.genetics`, `world.kinetics`, and `world.chemistry`
     (which is just a reference to the chemistry object that was used when initializing `world`).
     Usually, you don't need to touch them.
     But, if you want to override them or look into some details, see the docstrings of their classes for more information.
     """
+
+    # TODO: Cell positions could be maintained in a tensor only.
+    #       That way I could keep them on the GPU
+    #       Often I move them from CPU to GPU, just to add them to cell.position
+    #       But their actual use is always on the GPU: indexing on self.cell_map
 
     def __init__(
         self,
@@ -110,6 +116,14 @@ class World:
             workers=workers,
         )
 
+        self.kinetics = Kinetics(
+            molecules=chemistry.molecules,
+            reactions=chemistry.reactions,
+            abs_temp=abs_temp,
+            device=self.device,
+            workers=self.workers,
+        )
+
         mol_degrads: list[float] = []
         diffusion: list[torch.nn.Conv2d] = []
         permeation: list[float] = []
@@ -126,26 +140,18 @@ class World:
         self._permeation = permeation
 
         self._nghbrhd_map = {
-            (x, y): torch.tensor(moore_nghbrhd(x, y, map_size))
+            (x, y): torch.tensor(moore_nghbrhd(x, y, map_size)).to(self.device)
             for x, y in product(range(map_size), range(map_size))
         }
 
         self.cells: list[Cell] = []
-        self.kinetics = Kinetics(
-            molecules=chemistry.molecules,
-            reactions=chemistry.reactions,
-            abs_temp=abs_temp,
-            device=self.device,
-            workers=self.workers,
-        )
-
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
         self.cell_survival: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_divisions: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_molecules: torch.Tensor = torch.zeros(0, self.n_molecules).to(device)
         self.molecule_map: torch.Tensor = self._get_molecule_map(
-            n=self.n_molecules, size=self.map_size, init=mol_map_init
-        ).to(self.device)
+            n=self.n_molecules, size=map_size, init=mol_map_init
+        )
 
     def get_cell(
         self,
@@ -167,7 +173,7 @@ class World:
 
         When accessing `world.cells` directly, the cell object will not have all information.
         For performance reasons most cell attributes are maintained in tensors during the simulation.
-        Only genome and position are kept up-to-date in the cell object during the simulation.
+        Only index, genome and position are kept up-to-date in the cell object during the simulation.
         When you call `world.get_cell()` all missing information will be added to the object.
         """
         idx = -1
@@ -370,7 +376,7 @@ class World:
         spillout = self.cell_molecules[cell_idxs, :]
         self.molecule_map[:, xs, ys] += spillout.T
 
-        keep = torch.ones(self.cell_survival.size(0), dtype=torch.bool)
+        keep = torch.ones(self.cell_survival.size(0), dtype=torch.bool).to(self.device)
         keep[cell_idxs] = False
         self.cell_survival = self.cell_survival[keep]
         self.cell_divisions = self.cell_divisions[keep]
@@ -588,7 +594,7 @@ class World:
             x, y = cell.position
             nghbrhd = self._nghbrhd_map[(x, y)]
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = len(pxls)
+            n = pxls.size(0)
 
             if n == 0:
                 continue
@@ -611,7 +617,7 @@ class World:
             x, y = parent.position
             nghbrhd = self._nghbrhd_map[(x, y)]
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = len(pxls)
+            n = pxls.size(0)
 
             if n == 0:
                 continue
@@ -630,11 +636,12 @@ class World:
     def _find_free_random_positions(self, n_cells: int) -> tuple[list[int], list[int]]:
         # available spots on map
         pxls = torch.argwhere(~self.cell_map)
-        if n_cells > len(pxls):
-            n_cells = len(pxls)
+        n_pxls = pxls.size(0)
+        if n_cells > n_pxls:
+            n_cells = n_pxls
 
         # place cells on map
-        idxs = random.sample(range(len(pxls)), k=n_cells)
+        idxs = random.sample(range(n_pxls), k=n_cells)
         chosen = pxls[idxs]
         xs, ys = chosen.T.tolist()
         return xs, ys
@@ -642,9 +649,9 @@ class World:
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
         if init == "zeros":
-            return torch.zeros(*args)
+            return torch.zeros(*args).to(self.device)
         if init == "randn":
-            return torch.abs(torch.randn(*args) + 10.0)
+            return torch.abs(torch.randn(*args) + 10.0).to(self.device)
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."

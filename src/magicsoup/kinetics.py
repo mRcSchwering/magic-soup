@@ -18,7 +18,7 @@ _EPS = 1e-5
 
 class _LogWeightMapFact:
     """
-    Creates model that maps domains to a float
+    Creates an object that maps tokens to a float
     which is sampled from a log uniform distribution.
     """
 
@@ -44,7 +44,7 @@ class _LogWeightMapFact:
 
 class _SignMapFact:
     """
-    Creates a model that maps domains to 1.0 or -1.0
+    Creates an object that maps tokens to 1.0 or -1.0
     with 50% probability of each being mapped.
     """
 
@@ -60,7 +60,7 @@ class _SignMapFact:
 
 class _VectorMapFact:
     """
-    Create model that maps one-hot encoded domains
+    Create an object that maps tokens
     to a list of vectors. Each vector will be mapped with
     the same frequency.
     """
@@ -107,6 +107,12 @@ class _VectorMapFact:
 
 
 class _ReactionMapFact(_VectorMapFact):
+    """
+    Create an object that maps tokens to vectors.
+    Each vector has signals length and represents the
+    stoichiometry of a reaction.
+    """
+
     def __init__(
         self,
         molmap: dict[Molecule, int],
@@ -138,6 +144,12 @@ class _ReactionMapFact(_VectorMapFact):
 
 
 class _TransporterMapFact(_VectorMapFact):
+    """
+    Create an object that maps tokens to vectors.
+    Each vector has signals length and represents the
+    stoichiometry of a molecule transport into or out of the cell.
+    """
+
     def __init__(
         self,
         n_molecules: int,
@@ -165,6 +177,13 @@ class _TransporterMapFact(_VectorMapFact):
 
 
 class _RegulatoryMapFact(_VectorMapFact):
+    """
+    Create an object that maps tokens to vectors.
+    Each vector has signals length and represents the
+    either activating (+1) or inhibiting (-1) effect
+    of an effector molecule.
+    """
+
     def __init__(
         self,
         n_molecules: int,
@@ -197,8 +216,14 @@ class Kinetics:
     Arguments:
         molecules: List of molecule species.
             They have to be in the same order as they are on `chemistry.molecules`.
+        reactions: List of all possible reactions in this simulation as a list of tuples: `(substrates, products)`.
+            All reactions can happen in both directions (left to right or vice versa).
         abs_temp: Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
             Higher temperature will give the reaction quotient term higher importance.
+        km_range: The range from which to sample Michaelis Menten constants for domains (in mol).
+            The sampling will happen in the log transformed intervall, so all values must be > 0.
+        vmax_range: The range from which to sample maximum velocities for domains (in mol per time step).
+            The sampling will happen in the log transformed intervall, so all values must be > 0.
         device: Device to use for tensors
             (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
             This has to be the same device that is used by `world`.
@@ -231,6 +256,12 @@ class Kinetics:
     which reads proteomes and updates cell parameters accordingly.
     This is called whenever the proteomes of some cells changed.
     Currently, this is also the main bottleneck in performance.
+
+    When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
+    These mappings are then used throughout the simulation.
+    If you initialize this class again, these mappings will be different.
+    Initializing [World][magicsoup.world.World] will also create one `Kinetics` instance. It is on `world.kinetics`.
+    If you want to access nucleotide to domain mappings of your simulation, you should use `world.kinetics`.
     """
 
     def __init__(
@@ -302,6 +333,7 @@ class Kinetics:
         Arguments:
             cell_prots: List of tuples of cell indexes and protein indexes
         """
+        # TODO: is this method still needed?
         if len(cell_prots) == 0:
             return
         cells, prots = list(map(list, zip(*cell_prots)))
@@ -398,6 +430,12 @@ class Kinetics:
         Arguments:
             cell_idxs: Indexes of cells which proteomes belong to
             proteomes: list of proteomes which should be calculated and set
+
+        Proteomes must be represented as a list (proteomes) of lists (proteins)
+        of lists (domains) which each carry tuples. These tuples are domain specifications
+        that are derived by [Genetics][magicsoup.genetics.Genetics].
+        These are indices which will be mapped to concrete values
+        (molecule species, Km, Vmax, reactions, ...).
         """
         N_d, A_d, Km_d, Vmax_d, _ = self._get_proteome_tensors(proteomes=proteomes)
 
@@ -674,6 +712,8 @@ class Kinetics:
         return torch.where(torch.any(self.A > 0.0, dim=2), V, 1.0)  # (c, p)
 
     def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
+        # TODO: this might be faster and easier to read if I just make it
+        #       2 functions: expand_c and expand_p
         pre = t.shape[slice(d)]
         post = t.shape[slice(d + 1, t.dim())]
         zeros = self._tensor(*pre, n, *post)

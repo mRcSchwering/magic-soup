@@ -1,3 +1,9 @@
+"""
+Little helper script for checking the performance of some functions
+
+    python perf.py --n=1000 --s=1000
+
+"""
 import time
 from argparse import ArgumentParser
 import magicsoup as ms
@@ -74,6 +80,22 @@ def update_cells(w: int, n: int, s: int):
     return m, s
 
 
+def replicate_cells(w: int, n: int, s: int):
+    tds = []
+    for _ in range(R):
+        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        genomes = [ms.random_genome(s) for _ in range(n)]
+        idxs = world.add_random_cells(genomes=genomes)
+
+        t0 = time.time()
+        world.replicate_cells(parent_idxs=idxs)
+        tds.append(time.time() - t0)
+
+    m = sum(tds) / R
+    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
+    return m, s
+
+
 def enzymatic_activity(w: int, n: int, s: int):
     tds = []
     for _ in range(R):
@@ -98,6 +120,9 @@ def main(n=1000, s=500, w=4):
 
     mu, sd = update_cells(w=w, n=n, s=s)
     print(f"({mu:.2f}+-{sd:.2f})s - update cells")
+
+    mu, sd = replicate_cells(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - replicate cells")
 
     mu, sd = enzymatic_activity(w=w, n=n, s=s)
     print(f"({mu:.2f}+-{sd:.2f})s - enzymatic activity")

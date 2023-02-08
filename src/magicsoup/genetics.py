@@ -178,20 +178,9 @@ class Genetics:
         n_dom_type_nts: Number of nucleotides that encodes the domain type (catalytic, transporter, regulatory).
         workers: number of workers
 
-    When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
-    These mappings are then used throughout the simulation.
-    If you initialize this class again, these mappings will be different.
-    Initializing [World][magicsoup.world.World] will also create one `Genetics` instance. It is on `world.genetics`.
-    If you want to access nucleotide to domain mappings of your simulation, you should use `world.genetics`.
-
-    During the simulation [World][magicsoup.world.World] uses `genetics.get_proteome()` on all genomes to get the proteome for each cell.
-    If you are interested in CDSs only you can use [get_coding_regions()][magicsoup.genetics.Genetics.get_coding_regions] to get all CDs for a particular genome.
-    To translate a single CDS you can use [translate_seq()][magicsoup.genetics.Genetics.translate_seq].
-
-    The attribute `genetics.domain_map` holds the actual domain mappings.
-    This maps nucleotide sequences to a domain factory.
-    Any of these domain factories is either a catalytic, transporter, or regulatory domain factory.
-    For how nucleotides map to further domain specifications (e.g. affinity) is saved on the domain factory object.
+    During the simulation [World][magicsoup.world.World] uses [translate_genomes][magicsoup.genetics.Genetics.translate_genomes].
+    The return value of this method is a nested list of tokens.
+    These tokens are then mapped into concrete domain specifications (_e.g._ Km, Vmax, reactions, ...) by [Kinetics][magicsoup.kinetics.Kinetics].
 
     Translation happens only within coding sequences (CDSs).
     A CDS starts wherever a start codon is found and ends with the first in-frame encountered stop codon.
@@ -205,7 +194,7 @@ class Genetics:
 
     ```
         world = World(chemistry=chemistry)
-        my_genetics = Genetics(chemistry=chemistry, p_transp_dom=0.1, stop_codons=("TGA", ))
+        my_genetics = Genetics(p_transp_dom=0.1, stop_codons=("TGA", ))
         world.genetics = my_genetics
     ```
 
@@ -287,13 +276,13 @@ class Genetics:
         Translate all genomes into proteomes
 
         Arguments:
-            geneomes: list of nucleotide sequences
+            genomes: list of nucleotide sequences
 
         Returns:
-            List of proteomes with each proteome being a list of proteins.
-            Each protein is a list of domains, and domains are represented
-            as tuples of indices. These indices will be mapped to specific
-            domain specifications by [Kinetics](magicsoup.kinetics.Kinetics).
+            List of proteomes. This is a list (proteomes) of lists (proteins)
+            of lists (domains) with each domain being a tuple of indices.
+            These indices will be mapped to specific
+            domain specifications by [Kinetics][magicsoup.kinetics.Kinetics].
 
         Both forward and reverse-complement are considered.
         CDSs are extracted and a protein is translated for every CDS.
