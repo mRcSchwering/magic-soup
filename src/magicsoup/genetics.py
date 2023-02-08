@@ -130,18 +130,14 @@ def _extract_domains(
 
 def _translate_genome(
     genome: str,
+    dom_size: int,
     start_codons: tuple[str, ...],
     stop_codons: tuple[str, ...],
     dom_type_map: dict[str, int],
     one_codon_map: dict[str, int],
     two_codon_map: dict[str, int],
 ) -> list[list[tuple[int, int, int, int, int]]]:
-    # Domain: domain_type (catal, trnsp, reg) + specification
-    # specification: 1 x 2-codon token, 3 x 1-codon tokens
-    # Domain can start and finish with start and stop codons, so this
-    # is also the minimum CDS size
     dom_type_size = len(next(iter(dom_type_map)))
-    dom_size = dom_type_size + 5 * CODON_SIZE
 
     cdsf = _get_coding_regions(
         seq=genome,
@@ -246,6 +242,12 @@ class Genetics:
         self.stop_codons = stop_codons
         self.workers = workers
 
+        # Domain: domain_type (catal, trnsp, reg) + specification
+        # specification: 1 x 2-codon token, 3 x 1-codon tokens
+        # Domain can start and finish with start and stop codons, so this
+        # is also the minimum CDS size
+        self.dom_size = n_dom_type_nts + 5 * CODON_SIZE
+
         if p_catal_dom + p_transp_dom + p_reg_dom > 1.0:
             raise ValueError(
                 "p_catal_dom, p_transp_dom, p_reg_dom together must not be greater 1.0"
@@ -300,6 +302,7 @@ class Genetics:
         args = [
             (
                 d,
+                self.dom_size,
                 self.start_codons,
                 self.stop_codons,
                 self.domain_map,

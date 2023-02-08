@@ -68,15 +68,20 @@ class _VectorMapFact:
     def __init__(
         self,
         max_token: int,
+        n_signals: int,
         vectors: list[list[float]],
         device: str = "cpu",
         zero_value: float = 0.0,
     ):
         n_vectors = len(vectors)
-        vector_size = len(vectors[0])
+        M = torch.full((max_token + 1, n_signals), fill_value=zero_value)
 
-        if not all(len(d) == vector_size for d in vectors):
-            raise ValueError("Not all vectors have the same length")
+        if n_vectors == 0:
+            self.M = M.to(device)
+            return
+
+        if not all(len(d) == n_signals for d in vectors):
+            raise ValueError(f"Not all vectors have length of signal_size={n_signals}")
 
         if n_vectors > max_token:
             raise ValueError(
@@ -84,8 +89,14 @@ class _VectorMapFact:
                 " It is not possible to map all vectors"
             )
 
+        for vector in vectors:
+            if all(d == 0.0 for d in vector):
+                raise ValueError(
+                    "At least one vector includes only zeros."
+                    " Each vector should contain at least one non-zero value."
+                )
+
         idxs = random.choices(list(range(n_vectors)), k=max_token)
-        M = torch.full((max_token + 1, vector_size), fill_value=zero_value)
         for row_i, idx in enumerate(idxs):
             M[row_i + 1] = torch.tensor(vectors[idx])
         self.M = M.to(device)
@@ -108,17 +119,21 @@ class _ReactionMapFact(_VectorMapFact):
         n_reacts = len(reactions)
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_reacts + 1)]
+        vectors = [[0.0] * n_signals for _ in range(n_reacts)]
         for ri, (lft, rgt) in enumerate(reactions):
             for mol in lft:
                 mol_i = molmap[mol]
-                vectors[ri + 1][mol_i] -= 1
+                vectors[ri][mol_i] -= 1
             for mol in rgt:
                 mol_i = molmap[mol]
-                vectors[ri + 1][mol_i] += 1
+                vectors[ri][mol_i] += 1
 
         super().__init__(
-            vectors=vectors, max_token=max_token, device=device, zero_value=zero_value
+            vectors=vectors,
+            n_signals=n_signals,
+            max_token=max_token,
+            device=device,
+            zero_value=zero_value,
         )
 
 
@@ -133,15 +148,19 @@ class _TransporterMapFact(_VectorMapFact):
         n_signals = 2 * n_molecules
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_signals + 1)]
+        vectors = [[0.0] * n_signals for _ in range(n_signals)]
         for mi in range(n_molecules):
-            vectors[mi + 1][mi] = 1
-            vectors[mi + 1][mi + n_molecules] = -1
-            vectors[mi + n_molecules + 1][mi] = -1
-            vectors[mi + n_molecules + 1][mi + n_molecules] = 1
+            vectors[mi][mi] = 1
+            vectors[mi][mi + n_molecules] = -1
+            vectors[mi + n_molecules][mi] = -1
+            vectors[mi + n_molecules][mi + n_molecules] = 1
 
         super().__init__(
-            vectors=vectors, max_token=max_token, device=device, zero_value=zero_value
+            vectors=vectors,
+            n_signals=n_signals,
+            max_token=max_token,
+            device=device,
+            zero_value=zero_value,
         )
 
 
@@ -156,12 +175,16 @@ class _RegulatoryMapFact(_VectorMapFact):
         n_signals = 2 * n_molecules
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_signals + 1)]
+        vectors = [[0.0] * n_signals for _ in range(n_signals)]
         for mi in range(n_signals):
-            vectors[mi + 1][mi] = 1
+            vectors[mi][mi] = 1
 
         super().__init__(
-            vectors=vectors, max_token=max_token, device=device, zero_value=zero_value
+            vectors=vectors,
+            n_signals=n_signals,
+            max_token=max_token,
+            device=device,
+            zero_value=zero_value,
         )
 
 
