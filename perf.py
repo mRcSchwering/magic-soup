@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
+R = 5
 CODON_SIZE = 3
 MIN_CDS_SIZE = 12
 START_CODONS = ("TTG", "GTG", "ATG")
@@ -41,49 +42,65 @@ AA_MAP = {
 # fmt: on
 
 
-def timeit(callback, *args, r=3) -> tuple[float, float]:
+def add_cells(w: int, n: int, s: int):
     tds = []
-    for _ in range(r):
+    for _ in range(R):
+        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        genomes = [ms.random_genome(s) for _ in range(n)]
+
         t0 = time.time()
-        callback(*args)
+        world.add_random_cells(genomes=genomes)
         tds.append(time.time() - t0)
-    m = sum(tds) / r
-    s = sum((d - m) ** 2 / r for d in tds) ** (1 / 2)
+
+    m = sum(tds) / R
+    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
     return m, s
 
 
-def add_cells(world: ms.World, genomes: list[str]):
-    world.add_random_cells(genomes=genomes)
+def update_cells(w: int, n: int, s: int):
+    tds = []
+    for _ in range(R):
+        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        genomes = [ms.random_genome(s) for _ in range(n)]
+        world.add_random_cells(genomes=genomes)
+
+        t0 = time.time()
+        pairs = [(d.genome, d.idx) for d in world.cells]
+        world.update_cells(genome_idx_pairs=pairs)
+        tds.append(time.time() - t0)
+
+    m = sum(tds) / R
+    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
+    return m, s
 
 
-def update_cells(world: ms.World, genomes: list[str]):
-    pairs = [(d, i) for d, i in zip(genomes, range(len(world.cells)))]
-    world.update_cells(genome_idx_pairs=pairs)
+def enzymatic_activity(w: int, n: int, s: int):
+    tds = []
+    for _ in range(R):
+        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        genomes = [ms.random_genome(s) for _ in range(n)]
+        world.add_random_cells(genomes=genomes)
 
+        t0 = time.time()
+        world.enzymatic_activity()
+        tds.append(time.time() - t0)
 
-def process(world: ms.World):
-    world.enzymatic_activity()
+    m = sum(tds) / R
+    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
+    return m, s
 
 
 def main(n=1000, s=500, w=4):
     print(f"{n:,} genomes, {s:,} size, {w} workers")
-    genomes = [ms.random_genome(s) for _ in range(n)]
 
-    world = ms.World(chemistry=CHEMISTRY, workers=w)
-    mu, sd = timeit(add_cells, world, genomes)
+    mu, sd = add_cells(w=w, n=n, s=s)
     print(f"({mu:.2f}+-{sd:.2f})s - add cells")
 
-    world = ms.World(chemistry=CHEMISTRY, workers=w)
-    genomes = [ms.random_genome(s) for _ in range(n)]
-    world.add_random_cells(genomes=genomes)
-    mu, sd = timeit(update_cells, world, genomes)
-    print(f"({mu:.2f}+-{sd:.2f})s - update")
+    mu, sd = update_cells(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - update cells")
 
-    world = ms.World(chemistry=CHEMISTRY, workers=w)
-    genomes = [ms.random_genome(s) for _ in range(n)]
-    world.add_random_cells(genomes=genomes)
-    mu, sd = timeit(process, world)
-    print(f"({mu:.2f}+-{sd:.2f})s - process")
+    mu, sd = enzymatic_activity(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - enzymatic activity")
 
 
 if __name__ == "__main__":

@@ -80,10 +80,8 @@ def _get_coding_regions(
     return cdss
 
 
-def _translate_genome(
-    genome: str,
-    start_codons: tuple[str, ...],
-    stop_codons: tuple[str, ...],
+def _extract_domains(
+    cdss: list[str],
     dom_size: int,
     dom_type_size: int,
     dom_type_map: dict[str, int],
@@ -94,21 +92,6 @@ def _translate_genome(
     idx1_slice = slice(2 * CODON_SIZE, 3 * CODON_SIZE)
     idx2_slice = slice(3 * CODON_SIZE, 4 * CODON_SIZE)
     idx3_slice = slice(4 * CODON_SIZE, 5 * CODON_SIZE)
-
-    cdsf = _get_coding_regions(
-        seq=genome,
-        min_cds_size=dom_size,
-        start_codons=start_codons,
-        stop_codons=stop_codons,
-    )
-    bwd = reverse_complement(genome)
-    cdsb = _get_coding_regions(
-        seq=bwd,
-        min_cds_size=dom_size,
-        start_codons=start_codons,
-        stop_codons=stop_codons,
-    )
-    cdss = cdsf + cdsb
 
     prot_doms = []
     for cds in cdss:
@@ -145,6 +128,47 @@ def _translate_genome(
     return prot_doms
 
 
+def _translate_genome(
+    genome: str,
+    start_codons: tuple[str, ...],
+    stop_codons: tuple[str, ...],
+    dom_type_map: dict[str, int],
+    one_codon_map: dict[str, int],
+    two_codon_map: dict[str, int],
+) -> list[list[tuple[int, int, int, int, int]]]:
+    # Domain: domain_type (catal, trnsp, reg) + specification
+    # specification: 1 x 2-codon token, 3 x 1-codon tokens
+    # Domain can start and finish with start and stop codons, so this
+    # is also the minimum CDS size
+    dom_type_size = len(next(iter(dom_type_map)))
+    dom_size = dom_type_size + 5 * CODON_SIZE
+
+    cdsf = _get_coding_regions(
+        seq=genome,
+        min_cds_size=dom_size,
+        start_codons=start_codons,
+        stop_codons=stop_codons,
+    )
+    bwd = reverse_complement(genome)
+    cdsb = _get_coding_regions(
+        seq=bwd,
+        min_cds_size=dom_size,
+        start_codons=start_codons,
+        stop_codons=stop_codons,
+    )
+
+    prot_doms = _extract_domains(
+        cdss=cdsf + cdsb,
+        dom_size=dom_size,
+        dom_type_size=dom_type_size,
+        dom_type_map=dom_type_map,
+        one_codon_map=one_codon_map,
+        two_codon_map=two_codon_map,
+    )
+
+    return prot_doms
+
+
 class Genetics:
     """
     Class holding logic about translating nucleotide sequences into proteomes.
@@ -154,7 +178,7 @@ class Genetics:
         stop_codons: Stop codons which stop a coding sequence
         p_catal_dom: Chance of encountering a catalytic domain in a random nucleotide sequence.
         p_transp_dom: Chance of encountering a transporter domain in a random nucleotide sequence.
-        p_allo_dom: Chance of encountering a regulatory domain in a random nucleotide sequence.
+        p_reg_dom: Chance of encountering a regulatory domain in a random nucleotide sequence.
         n_dom_type_nts: Number of nucleotides that encodes the domain type (catalytic, transporter, regulatory).
         workers: number of workers
 
@@ -202,7 +226,7 @@ class Genetics:
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         p_catal_dom: float = 0.01,
         p_transp_dom: float = 0.01,
-        p_allo_dom: float = 0.01,
+        p_reg_dom: float = 0.01,
         n_dom_type_nts: int = 6,
         workers: int = 2,
     ):
@@ -220,18 +244,11 @@ class Genetics:
 
         self.start_codons = start_codons
         self.stop_codons = stop_codons
-        self.dom_type_size = n_dom_type_nts
         self.workers = workers
 
-        # Domain: domain_type (catal, trnsp, reg) + specification
-        # specification: 1 2-codon token, 3 1-codon tokens
-        # Domain can start and finish with start and stop codons, so this
-        # is also the minimum CDS size
-        self.dom_size = self.dom_type_size + (2 + 3) * CODON_SIZE
-
-        if p_catal_dom + p_transp_dom + p_allo_dom > 1.0:
+        if p_catal_dom + p_transp_dom + p_reg_dom > 1.0:
             raise ValueError(
-                "p_catal_dom, p_transp_dom, p_allo_dom together must not be greater 1.0"
+                "p_catal_dom, p_transp_dom, p_reg_dom together must not be greater 1.0"
             )
 
         sets = nt_seqs(n_dom_type_nts)
@@ -240,7 +257,7 @@ class Genetics:
 
         n_catal_doms = _get_n(p=p_catal_dom, s=n, name="catalytic domains")
         n_transp_doms = _get_n(p=p_transp_dom, s=n, name="transporter domains")
-        n_allo_doms = _get_n(p=p_allo_dom, s=n, name="allosteric domains")
+        n_reg_doms = _get_n(p=p_reg_dom, s=n, name="allosteric domains")
 
         # 1=catalytic, 2=transporter, 3=regulatory
         domain_types: dict[int, list[str]] = {}
@@ -248,8 +265,8 @@ class Genetics:
         del sets[:n_catal_doms]
         domain_types[2] = sets[:n_transp_doms]
         del sets[:n_transp_doms]
-        domain_types[3] = sets[:n_allo_doms]
-        del sets[:n_allo_doms]
+        domain_types[3] = sets[:n_reg_doms]
+        del sets[:n_reg_doms]
 
         self.domain_map = {d: k for k, v in domain_types.items() for d in v}
 
@@ -285,8 +302,6 @@ class Genetics:
                 d,
                 self.start_codons,
                 self.stop_codons,
-                self.dom_size,
-                self.dom_type_size,
                 self.domain_map,
                 self.one_codon_map,
                 self.two_codon_map,
