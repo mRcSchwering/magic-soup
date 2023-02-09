@@ -7,5 +7,5 @@
 
 set -e
 
-git tag "$1" -a "$1"
+git tag "$1"
 git push origin --tags
