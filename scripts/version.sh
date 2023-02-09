@@ -2,10 +2,10 @@
 # 
 # Use:
 #
-# bash scripts/version.sh 1.0.0 -a "first version"
+# bash scripts/version.sh 1.0.0
 #
 
 set -e
 
-git tag "$@"
+git tag "$1" -a "$1"
 git push origin --tags
