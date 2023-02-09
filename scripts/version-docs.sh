@@ -9,3 +9,5 @@ set -e
 
 git tag "$1"
 git push origin --tags
+
+echo "Activate new version docs on RTD"

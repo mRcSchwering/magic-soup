@@ -346,7 +346,7 @@ class World:
             else:
                 kill_idxs.append(idx)
 
-        max_prots = max(len(d[0]) for d in set_proteomes)
+        max_prots = max(len(d) for d in set_proteomes)
         self.kinetics.increase_max_proteins(max_n=max_prots)
         self.kinetics.set_cell_params(cell_idxs=set_idxs, proteomes=set_proteomes)
         self.kill_cells(cell_idxs=kill_idxs)
