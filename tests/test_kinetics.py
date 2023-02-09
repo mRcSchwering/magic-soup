@@ -1,13 +1,17 @@
 import pytest
 import torch
-from magicsoup.containers import Protein, Molecule
-from magicsoup.genetics import CatalyticDomain, RegulatoryDomain, TransporterDomain
+from magicsoup.containers import (
+    Protein,
+    Molecule,
+    CatalyticDomain,
+    RegulatoryDomain,
+    TransporterDomain,
+)
 from magicsoup.kinetics import Kinetics
 from magicsoup.constants import GAS_CONSTANT
 
 TOLERANCE = 1e-4
 
-# fmt: off
 
 ma = Molecule("a", energy=15)
 mb = Molecule("b", energy=10)
@@ -19,8 +23,70 @@ r_a_b = ([ma], [mb])
 r_b_c = ([mb], [mc])
 r_bc_d = ([mb, mc], [md])
 r_d_bb = ([md], [mb, mb])
+REACTIONS = [r_a_b, r_b_c, r_bc_d, r_d_bb]
+
+# fmt: off
+KM_WEIGHTS = torch.tensor([
+    torch.nan, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,  # idxs 0-9
+    1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,  # idxs 10-19
+    2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9  # idxs 20-29
+])
+
+VMAX_WEIGHTS = torch.tensor([
+    torch.nan, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,  # idxs 0-9
+    2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9,  # idxs 10-19
+])
+
+SIGNS = torch.tensor([0.0, 1.0, -1.0])  # idxs 0-2
+
+TRANSPORT_M = torch.tensor([
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 0: none
+    [-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 1: a in->out
+    [0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 2: b in->out
+    [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0], # idx 3: c in->out
+    [0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0], # idx 4: d in->out
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+])
+
+EFFECTOR_M = torch.tensor([
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 0: none
+    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 1: a in
+    [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 2: b in
+    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 3: c in
+    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], # idx 4: d in
+    [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 5: a out
+    [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 6: b out
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0], # idx 7: c out
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], # idx 8: d out
+])
+
+REACTION_M = torch.tensor([
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],   # idx 0: none
+    [-1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 1: a -> b
+    [0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 2: b -> c
+    [0.0, -1.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0], # idx 3: b,c -> d
+    [0.0, 2.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0],  # idx 4: d -> 2b
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+])
 
 # fmt: on
+
+
+def get_kinetics() -> Kinetics:
+    kinetics = Kinetics(molecules=MOLECULES, reactions=REACTIONS)
+    kinetics.km_map.weights = KM_WEIGHTS.clone()
+    kinetics.vmax_map.weights = VMAX_WEIGHTS.clone()
+    kinetics.sign_map.signs = SIGNS.clone()
+    kinetics.transport_map.M = TRANSPORT_M.clone()
+    kinetics.effector_map.M = EFFECTOR_M.clone()
+    kinetics.reaction_map.M = REACTION_M.clone()
+    return kinetics
 
 
 def avg(*x):
@@ -38,7 +104,7 @@ def test_unsetting_cell_params():
     cell_prots1 = [(1, i) for i in range(3)]
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
@@ -54,29 +120,30 @@ def test_unsetting_cell_params():
 
 
 def test_cell_params_with_transporter_domains():
+
+    # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-
-    p0 = Protein(domains=[
-        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False)
-    ])
-    p1 = Protein(domains=[
-        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False),
-        TransporterDomain(molecule=ma, affinity=0.2, velocity=1.1, is_bkwd=True)
-    ])
-    c0 = [p0, p1]
-
-    p0 = Protein(domains=[
-        TransporterDomain(molecule=ma, affinity=0.4, velocity=1.5, is_bkwd=False),
-        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.4, is_bkwd=False),
-        TransporterDomain(molecule=mb, affinity=0.6, velocity=1.3, is_bkwd=False),
-        TransporterDomain(molecule=mc, affinity=0.7, velocity=1.2, is_bkwd=False)
-    ])
-    p1 = Protein(domains=[
-        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        TransporterDomain(molecule=ma, affinity=0.5, velocity=1.5, is_bkwd=False)
-    ])
-    c1 = [p0, p1]
-
+    c0 = [
+        [
+            (2, 1, 5, 5, 1)  # transporter, mol a, Vmax 1.5, Km 0.5, fwd
+        ],
+        [
+            (2, 1, 5, 5, 1), # transporter, mol a, Vmax 1.5, Km 0.5, fwd
+            (2, 1, 1, 2, 2)  # transporter, mol a, Vmax 1.1, Km 0.2, bwd
+        ],
+    ]
+    c1 = [
+        [
+            (2, 1, 5, 4, 1), # transporter, mol a, Vmax 1.5, Km 0.4, fwd
+            (2, 1, 4, 5, 1), # transporter, mol a, Vmax 1.4, Km 0.5, fwd
+            (2, 2, 3, 6, 1), # transporter, mol b, Vmax 1.3, Km 0.6, fwd
+            (2, 3, 2, 7, 1)  # transporter, mol c, Vmax 1.2, Km 0.7, fwd
+        ],
+        [
+            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
+            (2, 1, 5, 5, 1)   # transporter, mol a, Vmax 1.5, Km 0.5, fwd
+        ],
+    ]
     # fmt: on
 
     Km = torch.zeros(2, 3, 8)
@@ -85,17 +152,14 @@ def test_cell_params_with_transporter_domains():
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
-    cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
-    cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
-
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.N = N
     kinetics.A = A
-    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
+    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
     assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Km[0, 0, 4] == pytest.approx(1 / 0.5, abs=TOLERANCE)
@@ -161,34 +225,87 @@ def test_cell_params_with_transporter_domains():
 
     assert not A.any()
 
+    # test proteome representation
 
-def test_cell_params_with_allosteric_domains():
+    proteins = kinetics.get_proteome(proteome=c0)
+
+    p0 = proteins[0]
+    assert isinstance(p0.domains[0], TransporterDomain)
+    assert p0.domains[0].molecule is ma
+    assert p0.domains[0].vmax == pytest.approx(1.5, abs=TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+
+    p1 = proteins[1]
+    assert isinstance(p1.domains[0], TransporterDomain)
+    assert p1.domains[0].molecule is ma
+    assert p1.domains[0].vmax == pytest.approx(1.5, abs=TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p1.domains[1], TransporterDomain)
+    assert p1.domains[1].molecule is ma
+    assert p1.domains[1].vmax == pytest.approx(1.1, abs=TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(1 / 0.2, abs=TOLERANCE)
+
+    proteins = kinetics.get_proteome(proteome=c1)
+
+    p0 = proteins[0]
+    assert isinstance(p0.domains[0], TransporterDomain)
+    assert p0.domains[0].molecule is ma
+    assert p0.domains[0].vmax == pytest.approx(1.5, abs=TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.4, abs=TOLERANCE)
+    assert isinstance(p0.domains[1], TransporterDomain)
+    assert p0.domains[1].molecule is ma
+    assert p0.domains[1].vmax == pytest.approx(1.4, abs=TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p0.domains[2], TransporterDomain)
+    assert p0.domains[2].molecule is mb
+    assert p0.domains[2].vmax == pytest.approx(1.3, abs=TOLERANCE)
+    assert p0.domains[2].km == pytest.approx(0.6, abs=TOLERANCE)
+    assert isinstance(p0.domains[3], TransporterDomain)
+    assert p0.domains[3].molecule is mc
+    assert p0.domains[3].vmax == pytest.approx(1.2, abs=TOLERANCE)
+    assert p0.domains[3].km == pytest.approx(0.7, abs=TOLERANCE)
+
+    p1 = proteins[1]
+    assert isinstance(p1.domains[0], CatalyticDomain)
+    assert p1.domains[0].substrates == [ma]
+    assert p1.domains[0].products == [mb]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p1.domains[1], TransporterDomain)
+    assert p1.domains[1].molecule is ma
+    assert p1.domains[1].vmax == pytest.approx(1.5, abs=TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(0.5, abs=TOLERANCE)
+
+
+def test_cell_params_with_regulatory_domains():
+
+    # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
+    c0 = [
+        [
+            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
+            (3, 3, 0, 10, 1), # reg, c, Km 1.0, cyto, act
+            (3, 4, 0, 20, 2), # reg, d, Km 2.0, cyto, inh
+        ],
+        [
+            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
+            (3, 1, 0, 10, 1), # reg, a, Km 1.0, cyto, act
+            (3, 5, 0, 15, 1), # reg, a, Km 1.5, transm, act
+        ]
+    ]
 
-    p0 = Protein(domains=[
-        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        RegulatoryDomain(mc, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
-        RegulatoryDomain(md, affinity=2.0, is_transmembrane=False, is_inhibiting=True),
-    ])
-    p1 = Protein(domains=[
-        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        RegulatoryDomain(ma, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
-        RegulatoryDomain(ma, affinity=1.5, is_transmembrane=True, is_inhibiting=False),
-    ])
-    c0 = [p0, p1]
-
-    p0 = Protein(domains=[
-        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        RegulatoryDomain(mb, affinity=1.0, is_transmembrane=False, is_inhibiting=True),
-        RegulatoryDomain(mb, affinity=1.5, is_transmembrane=True, is_inhibiting=True),
-    ])
-    p1 = Protein(domains=[
-        CatalyticDomain(r_a_b, affinity=0.5, velocity=2.0, is_bkwd=False),
-        RegulatoryDomain(md, affinity=1.0, is_transmembrane=False, is_inhibiting=False),
-        RegulatoryDomain(md, affinity=1.5, is_transmembrane=False, is_inhibiting=False),
-    ])
-    c1 = [p0, p1]
-
+    c1 = [
+        [
+            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
+            (3, 2, 0, 10, 2), # reg, b, Km 1.0, cyto, inh
+            (3, 6, 0, 15, 2), # reg, b, Km 1.5, transm, inh
+        ],
+        [
+            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
+            (3, 4, 0, 10, 1), # reg, d, Km 1.0, cyto, act
+            (3, 4, 0, 15, 1), # reg, d, Km 1.5, cyto, act
+        ]
+    ]
     # fmt: on
 
     Km = torch.zeros(2, 3, 8)
@@ -197,17 +314,14 @@ def test_cell_params_with_allosteric_domains():
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
-    cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
-    cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
-
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.N = N
     kinetics.A = A
-    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
+    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
     assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Km[0, 0, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
@@ -319,32 +433,108 @@ def test_cell_params_with_allosteric_domains():
     for i in range(8):
         assert A[1, 2, i] == 0
 
+    # test protein representation
+
+    proteins = kinetics.get_proteome(proteome=c0)
+
+    p0 = proteins[0]
+    assert isinstance(p0.domains[0], CatalyticDomain)
+    assert p0.domains[0].substrates == [ma]
+    assert p0.domains[0].products == [mb]
+    assert p0.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p0.domains[1], RegulatoryDomain)
+    assert p0.domains[1].effector is mc
+    assert not p0.domains[1].is_inhibiting
+    assert not p0.domains[1].is_transmembrane
+    assert p0.domains[1].km == pytest.approx(1.0, abs=TOLERANCE)
+    assert isinstance(p0.domains[2], RegulatoryDomain)
+    assert p0.domains[2].effector is md
+    assert p0.domains[2].is_inhibiting
+    assert not p0.domains[2].is_transmembrane
+    assert p0.domains[2].km == pytest.approx(2.0, abs=TOLERANCE)
+
+    p1 = proteins[1]
+    assert isinstance(p1.domains[0], CatalyticDomain)
+    assert p1.domains[0].substrates == [ma]
+    assert p1.domains[0].products == [mb]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p1.domains[1], RegulatoryDomain)
+    assert p1.domains[1].effector is ma
+    assert not p1.domains[1].is_inhibiting
+    assert not p1.domains[1].is_transmembrane
+    assert p1.domains[1].km == pytest.approx(1.0, abs=TOLERANCE)
+    assert isinstance(p1.domains[2], RegulatoryDomain)
+    assert p1.domains[2].effector is ma
+    assert not p1.domains[2].is_inhibiting
+    assert p1.domains[2].is_transmembrane
+    assert p1.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
+
+    proteins = kinetics.get_proteome(proteome=c1)
+
+    p0 = proteins[0]
+    assert isinstance(p0.domains[0], CatalyticDomain)
+    assert p0.domains[0].substrates == [ma]
+    assert p0.domains[0].products == [mb]
+    assert p0.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p0.domains[1], RegulatoryDomain)
+    assert p0.domains[1].effector is mb
+    assert p0.domains[1].is_inhibiting
+    assert not p0.domains[1].is_transmembrane
+    assert p0.domains[1].km == pytest.approx(1.0, abs=TOLERANCE)
+    assert isinstance(p0.domains[2], RegulatoryDomain)
+    assert p0.domains[2].effector is mb
+    assert p0.domains[2].is_inhibiting
+    assert p0.domains[2].is_transmembrane
+    assert p0.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
+
+    p1 = proteins[1]
+    assert isinstance(p1.domains[0], CatalyticDomain)
+    assert p1.domains[0].substrates == [ma]
+    assert p1.domains[0].products == [mb]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p1.domains[1], RegulatoryDomain)
+    assert p1.domains[1].effector is md
+    assert not p1.domains[1].is_inhibiting
+    assert not p1.domains[1].is_transmembrane
+    assert p1.domains[1].km == pytest.approx(1.0, abs=TOLERANCE)
+    assert isinstance(p1.domains[2], RegulatoryDomain)
+    assert p1.domains[2].effector is md
+    assert not p1.domains[2].is_inhibiting
+    assert not p1.domains[2].is_transmembrane
+    assert p1.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
+
 
 def test_cell_params_with_catalytic_domains():
+
+    # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-
-    p0 = Protein(domains=[
-        CatalyticDomain(r_a_b, affinity=0.5, velocity=1.0, is_bkwd=False),
-        CatalyticDomain(r_bc_d, affinity=1.5, velocity=1.2, is_bkwd=True),
-    ])
-    p1 = Protein(domains=[
-        CatalyticDomain(r_b_c, affinity=0.9, velocity=2.0, is_bkwd=False),
-        CatalyticDomain(r_bc_d, affinity=1.2, velocity=1.3, is_bkwd=True),
-    ])
-    p2 = Protein(domains=[
-        CatalyticDomain(r_d_bb, affinity=3.1, velocity=5.1, is_bkwd=False),
-    ])
-    c0 = [p0, p1, p2]
-
-    p0 = Protein(domains=[
-        CatalyticDomain(r_a_b, affinity=0.3, velocity=1.1, is_bkwd=True),
-        CatalyticDomain(r_bc_d, affinity=1.4, velocity=2.1, is_bkwd=True),
-    ])
-    p1 = Protein(domains=[
-        CatalyticDomain(r_b_c, affinity=0.3, velocity=1.9, is_bkwd=False),
-        CatalyticDomain(r_bc_d, affinity=1.7, velocity=2.3, is_bkwd=False),
-    ])
-    c1 = [p0, p1]
+    c0 = [
+        [
+            (1, 1, 1, 5, 1), # catal, a->b, Vmax 1.1, Km 0.5, fwd
+            (1, 3, 2, 15, 2), # catal, bc->d, Vmax 1.2, Km 1.5, bwd
+        ],
+        [
+            (1, 2, 10, 9, 1), # catal, b->c, Vmax 2.0, Km 0.9, fwd
+            (1, 3, 3, 12, 2), # catal, bc->d, Vmax 1.3, Km 1.2, bwd
+        ],
+        [
+            (1, 4, 19, 29, 1), # catal, d->bb, Vmax 2.9, Km 2.9, fwd
+        ]
+    ]
+    c1 = [
+        [
+            (1, 1, 1, 3, 2), # catal, a->b, Vmax 1.1, Km 0.3, bwd
+            (1, 3, 11, 14, 2), # catal, bc->d, Vmax 2.1, Km 1.4, bwd
+        ],
+        [
+            (1, 2, 9, 3, 1), # catal, b->c, Vmax 1.9, Km 0.3, fwd
+            (1, 3, 13, 17, 1), # catal, bc->d, Vmax 2.3, Km 1.7, fwd
+        ]
+    ]
 
     # fmt: on
 
@@ -354,17 +544,14 @@ def test_cell_params_with_catalytic_domains():
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
-    cell_prots0 = [(0, i, d) for i, d in enumerate(c0)]
-    cell_prots1 = [(1, i, d) for i, d in enumerate(c1)]
-
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.Km = Km
     kinetics.Vmax = Vmax
     kinetics.E = E
     kinetics.N = N
     kinetics.A = A
-    kinetics.set_cell_params(cell_prots=cell_prots0 + cell_prots1)
+    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
     assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Km[0, 0, 1] == pytest.approx(avg(1 / 0.5, 1 / 1.5), abs=TOLERANCE)
@@ -379,9 +566,9 @@ def test_cell_params_with_catalytic_domains():
     for i in [4, 5, 6, 7]:
         assert Km[0, 1, i] == 0.0
     assert Km[0, 2, 0] == 0.0
-    assert Km[0, 2, 1] == pytest.approx(1 / 3.1, abs=TOLERANCE)
+    assert Km[0, 2, 1] == pytest.approx(1 / 2.9, abs=TOLERANCE)
     assert Km[0, 2, 2] == 0.0
-    assert Km[0, 2, 3] == pytest.approx(3.1, abs=TOLERANCE)
+    assert Km[0, 2, 3] == pytest.approx(2.9, abs=TOLERANCE)
     for i in [4, 5, 6, 7]:
         assert Km[0, 2, i] == 0.0
 
@@ -400,9 +587,9 @@ def test_cell_params_with_catalytic_domains():
     for i in range(8):
         assert Km[1, 2, i] == 0.0
 
-    assert Vmax[0, 0] == pytest.approx(avg(1.0, 1.2), abs=TOLERANCE)
+    assert Vmax[0, 0] == pytest.approx(avg(1.1, 1.2), abs=TOLERANCE)
     assert Vmax[0, 1] == pytest.approx(avg(2.0, 1.3), abs=TOLERANCE)
-    assert Vmax[0, 2] == pytest.approx(5.1, abs=TOLERANCE)
+    assert Vmax[0, 2] == pytest.approx(2.9, abs=TOLERANCE)
 
     assert Vmax[1, 0] == pytest.approx(avg(1.1, 2.1), abs=TOLERANCE)
     assert Vmax[1, 1] == pytest.approx(avg(1.9, 2.3), abs=TOLERANCE)
@@ -451,6 +638,67 @@ def test_cell_params_with_catalytic_domains():
         assert N[1, 2, i] == 0
 
     assert not A.any()
+
+    # test protein representation
+
+    proteins = kinetics.get_proteome(proteome=c0)
+
+    p0 = proteins[0]
+    assert isinstance(p0.domains[0], CatalyticDomain)
+    assert p0.domains[0].substrates == [ma]
+    assert p0.domains[0].products == [mb]
+    assert p0.domains[0].vmax == pytest.approx(1.1, abs=TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p0.domains[1], CatalyticDomain)
+    assert p0.domains[1].substrates == [md]
+    assert p0.domains[1].products == [mb, mc]
+    assert p0.domains[1].vmax == pytest.approx(1.2, abs=TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(1.5, abs=TOLERANCE)
+
+    p1 = proteins[1]
+    assert isinstance(p1.domains[0], CatalyticDomain)
+    assert p1.domains[0].substrates == [mb]
+    assert p1.domains[0].products == [mc]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.9, abs=TOLERANCE)
+    assert isinstance(p1.domains[1], CatalyticDomain)
+    assert p1.domains[1].substrates == [md]
+    assert p1.domains[1].products == [mb, mc]
+    assert p1.domains[1].vmax == pytest.approx(1.3, abs=TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(1.2, abs=TOLERANCE)
+
+    p2 = proteins[2]
+    assert isinstance(p2.domains[0], CatalyticDomain)
+    assert p2.domains[0].substrates == [md]
+    assert p2.domains[0].products == [mb, mb]
+    assert p2.domains[0].vmax == pytest.approx(2.9, abs=TOLERANCE)
+    assert p2.domains[0].km == pytest.approx(2.9, abs=TOLERANCE)
+
+    proteins = kinetics.get_proteome(proteome=c1)
+
+    p0 = proteins[0]
+    assert isinstance(p0.domains[0], CatalyticDomain)
+    assert p0.domains[0].substrates == [mb]
+    assert p0.domains[0].products == [ma]
+    assert p0.domains[0].vmax == pytest.approx(1.1, abs=TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.3, abs=TOLERANCE)
+    assert isinstance(p0.domains[1], CatalyticDomain)
+    assert p0.domains[1].substrates == [md]
+    assert p0.domains[1].products == [mb, mc]
+    assert p0.domains[1].vmax == pytest.approx(2.1, abs=TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(1.4, abs=TOLERANCE)
+
+    p1 = proteins[1]
+    assert isinstance(p1.domains[0], CatalyticDomain)
+    assert p1.domains[0].substrates == [mb]
+    assert p1.domains[0].products == [mc]
+    assert p1.domains[0].vmax == pytest.approx(1.9, abs=TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.3, abs=TOLERANCE)
+    assert isinstance(p1.domains[1], CatalyticDomain)
+    assert p1.domains[1].substrates == [mb, mc]
+    assert p1.domains[1].products == [md]
+    assert p1.domains[1].vmax == pytest.approx(2.3, abs=TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(1.7, abs=TOLERANCE)
 
 
 def test_simple_mm_kinetic():
@@ -516,7 +764,7 @@ def test_simple_mm_kinetic():
     dx_c1_d = dx_c1_d_1 + dx_c1_d_2
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -598,7 +846,7 @@ def test_mm_kinetic_with_proportions():
     dx_c1_d = 0.0
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -681,7 +929,7 @@ def test_mm_kinetic_with_multiple_substrates():
     dx_c1_d = -c1_v0
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -801,7 +1049,7 @@ def test_mm_kinetic_with_allosteric_action():
     dx_c1_d = v1_c1
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -897,7 +1145,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     dx_c1_d = v0_c1
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -993,7 +1241,7 @@ def test_reduce_velocity_in_multiple_proteins():
     dx_c1_d = 0.0
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -1089,7 +1337,7 @@ def test_equilibrium_constants():
     dx_c1_d = v0_c1 + v1_c1
 
     # test
-    kinetics = Kinetics(molecules=MOLECULES, abs_temp=310.0)
+    kinetics = get_kinetics()
     kinetics.N = N
     kinetics.Km = Km
     kinetics.Vmax = Vmax
@@ -1115,7 +1363,7 @@ def test_substrate_concentrations_are_always_finite_and_positive(gen):
     n_prots = 100
     n_steps = 100
 
-    kinetics = Kinetics(molecules=MOLECULES)
+    kinetics = get_kinetics()
     n_mols = len(MOLECULES) * 2
 
     # concentrations (c, s)

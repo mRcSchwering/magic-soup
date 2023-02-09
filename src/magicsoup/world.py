@@ -5,8 +5,7 @@ import math
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.constants import CODON_SIZE
-from magicsoup.containers import Cell, Protein, Chemistry
+from magicsoup.containers import Cell, Chemistry
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
@@ -27,8 +26,9 @@ class World:
         start_codons: start codons which start a coding sequence (translation only happens within coding sequences).
         stop_codons: stop codons which stop a coding sequence (translation only happens within coding sequences).
         device: Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-            This has to be the same device that is used by `world`.
-        workers: Number of processes to use
+            This can be used to move most calculations to a GPU.
+        workers: Number of multiprocessing workers to use.
+            These are used to parallelize some calculations that can only be done on the CPU.
 
     Most attributes on this class describe the current state of molecules and cells.
     Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
@@ -79,11 +79,16 @@ class World:
     This is a quick, lightweight save, but it only saves things that change during the simulation.
     Use [load_state()][magicsoup.world.World.load_state] to re-load a certain state.
 
-    Finally, the `world` object carries `world.genetics`, `world.kinetics`, and `world.genetics.chemistry`
+    Finally, the `world` object carries `world.genetics`, `world.kinetics`, and `world.chemistry`
     (which is just a reference to the chemistry object that was used when initializing `world`).
     Usually, you don't need to touch them.
     But, if you want to override them or look into some details, see the docstrings of their classes for more information.
     """
+
+    # TODO: Cell positions could be maintained in a tensor only.
+    #       That way I could keep them on the GPU
+    #       Often I move them from CPU to GPU, just to add them to cell.position
+    #       But their actual use is always on the GPU: indexing on self.cell_map
 
     def __init__(
         self,
@@ -103,11 +108,19 @@ class World:
         self.workers = workers
         self.map_size = map_size
         self.abs_temp = abs_temp
+        self.chemistry = chemistry
 
         self.genetics = Genetics(
-            chemistry=chemistry,
             start_codons=start_codons,
             stop_codons=stop_codons,
+        )
+
+        self.kinetics = Kinetics(
+            molecules=chemistry.molecules,
+            reactions=chemistry.reactions,
+            abs_temp=abs_temp,
+            device=self.device,
+            workers=self.workers,
         )
 
         mol_degrads: list[float] = []
@@ -126,24 +139,18 @@ class World:
         self._permeation = permeation
 
         self._nghbrhd_map = {
-            (x, y): torch.tensor(moore_nghbrhd(x, y, map_size))
+            (x, y): torch.tensor(moore_nghbrhd(x, y, map_size)).to(self.device)
             for x, y in product(range(map_size), range(map_size))
         }
 
         self.cells: list[Cell] = []
-        self.kinetics = Kinetics(
-            molecules=chemistry.molecules,
-            abs_temp=abs_temp,
-            device=self.device,
-        )
-
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
         self.cell_survival: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_divisions: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_molecules: torch.Tensor = torch.zeros(0, self.n_molecules).to(device)
         self.molecule_map: torch.Tensor = self._get_molecule_map(
-            n=self.n_molecules, size=self.map_size, init=mol_map_init
-        ).to(self.device)
+            n=self.n_molecules, size=map_size, init=mol_map_init
+        )
 
     def get_cell(
         self,
@@ -165,7 +172,7 @@ class World:
 
         When accessing `world.cells` directly, the cell object will not have all information.
         For performance reasons most cell attributes are maintained in tensors during the simulation.
-        Only genome and proteome are maintained during the simulation.
+        Only index, genome and position are kept up-to-date in the cell object during the simulation.
         When you call `world.get_cell()` all missing information will be added to the object.
         """
         idx = -1
@@ -189,6 +196,10 @@ class World:
         cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]]
         cell.n_survived_steps = int(self.cell_survival[idx].item())
         cell.n_replications = int(self.cell_divisions[idx].item())
+
+        (cdss,) = self.genetics.translate_genomes(genomes=[cell.genome])
+        cell.proteome = self.kinetics.get_proteome(proteome=cdss)
+
         return cell
 
     def add_random_cells(self, genomes: list[str]) -> list[int]:
@@ -207,65 +218,51 @@ class World:
         only the remaining pixels will be filled with new cells.
         """
         genomes = [d for d in genomes if len(d) > 0]
-        n_genomes = len(genomes)
-        if n_genomes == 0:
+        n_new_cells = len(genomes)
+        if n_new_cells == 0:
             return []
 
-        xs, ys = self._find_free_random_positions(n_cells=len(genomes))
+        xs, ys = self._find_free_random_positions(n_cells=n_new_cells)
         n_avail_pos = len(xs)
         if n_avail_pos == 0:
             return []
 
-        if n_avail_pos < n_genomes:
+        if n_avail_pos < n_new_cells:
+            n_new_cells = n_avail_pos
             random.shuffle(genomes)
-            genomes = genomes[:n_avail_pos]
+            genomes = genomes[:n_new_cells]
 
-        prot_lens = []
-        new_idxs = []
-        new_params: list[tuple[int, int, Protein]] = []
-        next_idx = len(self.cells)
-        n_new_cells = 0
-        new_xs = []
-        new_ys = []
-        for genome in genomes:
-            proteome = self.genetics.get_proteome(seq=genome)
-            n_proteins = len(proteome)
-            if n_proteins == 0:
-                continue
-
-            prot_lens.append(n_proteins)
-            new_idxs.append(next_idx)
-            for prot_i, prot in enumerate(proteome):
-                new_params.append((next_idx, prot_i, prot))
-
-            x = xs[n_new_cells]
-            y = ys[n_new_cells]
-            new_xs.append(x)
-            new_ys.append(y)
-
-            cell = Cell(idx=next_idx, genome=genome, proteome=proteome, position=(x, y))
-            self.cells.append(cell)
-
-            next_idx += 1
-            n_new_cells += 1
-
+        proteomes = self.genetics.translate_genomes(genomes=genomes)
+        proteomes = [d for d in proteomes if len(d) > 0]
+        n_new_cells = len(proteomes)
         if n_new_cells == 0:
             return []
+
+        xs = xs[:n_new_cells]
+        ys = ys[:n_new_cells]
+
+        n_cells = len(self.cells)
+        new_idxs = list(range(n_cells, n_cells + n_new_cells))
+        for cell_i, genome, x, y in zip(new_idxs, genomes, xs, ys):
+            cell = Cell(idx=cell_i, genome=genome, proteome=[], position=(x, y))
+            self.cells.append(cell)
 
         self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
         self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
         self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
+
+        n_max_prots = max(len(d) for d in proteomes)
+        self.kinetics.increase_max_proteins(max_n=n_max_prots)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.increase_max_proteins(max_n=max(prot_lens))
-        self.kinetics.set_cell_params(cell_prots=new_params)
+        self.kinetics.set_cell_params(cell_idxs=new_idxs, proteomes=proteomes)
 
         # occupy positions
-        self.cell_map[new_xs, new_ys] = True
+        self.cell_map[xs, ys] = True
 
         # cell is picking up half the molecules of the pxl it is born on
-        pickup = self.molecule_map[:, new_xs, new_ys] * 0.5
+        pickup = self.molecule_map[:, xs, ys] * 0.5
         self.cell_molecules[new_idxs, :] += pickup.T
-        self.molecule_map[:, new_xs, new_ys] -= pickup
+        self.molecule_map[:, xs, ys] -= pickup
 
         return new_idxs
 
@@ -325,46 +322,33 @@ class World:
         The genomes refer to the genome of each cell that is changed.
         `world.cells` will be updated with new genomes and proteomes.
         """
-        # TODO: 3 steps where only 1 proc is 100% active total about 25s
-        #       then 1 step where all procs are 50% active (probably enzymatic_activity())
-        #       total about 7k cells with avg genome size 4000
-        #       needs to speed up....
-
         if len(genome_idx_pairs) == 0:
             return
 
-        kill_idxs: list[int] = []
-        prot_lens: list[int] = []
-        set_params: list[tuple[int, int, Protein]] = []
-        unset_params: list[tuple[int, int]] = []
+        kill_idxs = []
+        transl_idxs = []
+        genomes = []
         for genome, idx in genome_idx_pairs:
-            if len(genome) == 0:
+            if len(genome) > 0:
+                genomes.append(genome)
+                transl_idxs.append(idx)
+            else:
                 kill_idxs.append(idx)
-                continue
 
-            cell = self.cells[idx]
-            newprot = self.genetics.get_proteome(seq=genome)
-            if len(newprot) == 0:
+        proteomes = self.genetics.translate_genomes(genomes=genomes)
+
+        set_idxs = []
+        set_proteomes = []
+        for proteome, idx in zip(proteomes, transl_idxs):
+            if len(proteome) > 0:
+                set_proteomes.append(proteome)
+                set_idxs.append(idx)
+            else:
                 kill_idxs.append(idx)
-                continue
 
-            oldprot = cell.proteome
-            n_new = len(newprot)
-            n_old = len(oldprot)
-            n = min(n_old, n_new)
-            for pi, (np, op) in enumerate(zip(newprot[:n], oldprot[:n])):
-                if np != op:
-                    set_params.append((idx, pi, np))
-            if n_old > n_new:
-                unset_params.extend((idx, i) for i in range(n, n_old))
-
-            cell.proteome = newprot
-            cell.genome = genome
-            prot_lens.append(n_new)
-
-        self.kinetics.increase_max_proteins(max_n=max(prot_lens))
-        self.kinetics.set_cell_params(cell_prots=set_params)
-        self.kinetics.unset_cell_params(cell_prots=unset_params)
+        max_prots = max(len(d[0]) for d in set_proteomes)
+        self.kinetics.increase_max_proteins(max_n=max_prots)
+        self.kinetics.set_cell_params(cell_idxs=set_idxs, proteomes=set_proteomes)
         self.kill_cells(cell_idxs=kill_idxs)
 
     def kill_cells(self, cell_idxs: list[int]):
@@ -391,7 +375,7 @@ class World:
         spillout = self.cell_molecules[cell_idxs, :]
         self.molecule_map[:, xs, ys] += spillout.T
 
-        keep = torch.ones(self.cell_survival.size(0), dtype=torch.bool)
+        keep = torch.ones(self.cell_survival.size(0), dtype=torch.bool).to(self.device)
         keep[cell_idxs] = False
         self.cell_survival = self.cell_survival[keep]
         self.cell_divisions = self.cell_divisions[keep]
@@ -609,7 +593,7 @@ class World:
             x, y = cell.position
             nghbrhd = self._nghbrhd_map[(x, y)]
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = len(pxls)
+            n = pxls.size(0)
 
             if n == 0:
                 continue
@@ -632,7 +616,7 @@ class World:
             x, y = parent.position
             nghbrhd = self._nghbrhd_map[(x, y)]
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = len(pxls)
+            n = pxls.size(0)
 
             if n == 0:
                 continue
@@ -651,11 +635,12 @@ class World:
     def _find_free_random_positions(self, n_cells: int) -> tuple[list[int], list[int]]:
         # available spots on map
         pxls = torch.argwhere(~self.cell_map)
-        if n_cells > len(pxls):
-            n_cells = len(pxls)
+        n_pxls = pxls.size(0)
+        if n_cells > n_pxls:
+            n_cells = n_pxls
 
         # place cells on map
-        idxs = random.sample(range(len(pxls)), k=n_cells)
+        idxs = random.sample(range(n_pxls), k=n_cells)
         chosen = pxls[idxs]
         xs, ys = chosen.T.tolist()
         return xs, ys
@@ -663,9 +648,9 @@ class World:
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
         if init == "zeros":
-            return torch.zeros(*args)
+            return torch.zeros(*args).to(self.device)
         if init == "randn":
-            return torch.abs(torch.randn(*args) + 10.0)
+            return torch.abs(torch.randn(*args) + 10.0).to(self.device)
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."

@@ -1,435 +1,8 @@
 import warnings
 import random
-import abc
-from magicsoup.util import (
-    reverse_complement,
-    nt_seqs,
-    generic_map_fact,
-    log_weight_map_fact,
-    bool_map_fact,
-)
-from magicsoup.containers import Domain, Protein, Chemistry, Molecule
+import torch.multiprocessing as mp
+from magicsoup.util import reverse_complement, nt_seqs
 from magicsoup.constants import CODON_SIZE
-
-
-def _check_n(n: int, label: str):
-    if n % CODON_SIZE != 0:
-        raise ValueError(f"{label} must be a multiple of {CODON_SIZE}. Now it is {n}")
-
-
-class _DomainFact(abc.ABC):
-    """Base class to create domain factory. Must implement __call__."""
-
-    min_len = 0
-
-    @abc.abstractmethod
-    def __call__(self, seq: str) -> Domain:
-        """Instantiate domain object from encoding nucleotide sequence"""
-        raise NotImplementedError("Implement __call__")
-
-    def __repr__(self) -> str:
-        kwargs = {
-            "min_len": self.min_len,
-        }
-        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
-        return f"{type(self).__name__}({','.join(args)})"
-
-
-class CatalyticDomain(Domain):
-    """
-    Container holding the specification for a catalytic domain.
-    Usually, you don't need to manually instantiate domains.
-    During the simulation they are automatically instantiated through factories.
-
-    Arguments:
-        reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
-            For stoichiometric coefficients > 1, list the molecule species multiple times.
-        affinity: Michaelis Menten constant of the reaction (in mol).
-        velocity: Maximum velocity of the reaction (in mol per time step).
-        is_bkwd: Flag indicating whether in which orientation this reaction will be coupled with other domains.
-    """
-
-    def __init__(
-        self,
-        reaction: tuple[list[Molecule], list[Molecule]],
-        affinity: float,
-        velocity: float,
-        is_bkwd: bool,
-    ):
-        subs, prods = reaction
-        super().__init__(
-            substrates=subs,
-            products=prods,
-            affinity=affinity,
-            velocity=velocity,
-            is_bkwd=is_bkwd,
-            is_catalytic=True,
-        )
-
-    def __str__(self) -> str:
-        if self.is_bkwd:
-            outs = ",".join(str(d) for d in self.substrates)
-            ins = ",".join(str(d) for d in self.products)
-        else:
-            ins = ",".join(str(d) for d in self.substrates)
-            outs = ",".join(str(d) for d in self.products)
-        return f"CatalyticDomain({ins}->{outs})"
-
-
-class CatalyticFact(_DomainFact):
-    """
-    Factory for generating catalytic domains from nucleotide sequences.
-
-    Arguments:
-        reactions: All reactions that can be catalyzed by domains.
-            Each reaction is a tuple of substrate and product molecule species.
-            For stoichiometric coefficients > 1, list the molecule species multiple times.
-        km_range: The range from which to sample Michaelis Menten constants for this reaction (in mol).
-            The sampling will happen in the log transformed intervall, so all values must be > 0.
-        vmax_range: The range from which to sample maximum velocities for this reaction (in mol per time step).
-            The sampling will happen in the log transformed intervall, so all values must be > 0.
-        n_reaction_nts: The number of nucleotides that should encode the reaction.
-        n_affinity_nts: The number of nucleotides that should encode the Michaelis Menten constant.
-        n_velocity_nts: The number of nucleotides that should encode the maximum Velocity.
-        n_orientation_nts: The number of nucleotides that should encode the orientation of the reaction.
-
-    This factory randomly assigns nucleotide sequences to reactions, Michaelis Menten constants,
-    maximum velocities, and domain orientations on initialization.
-    When calling the instantiated factory with a nucleotide sequence, it will return the encoded domain.
-    How many nucleotides encode which part of the domain is defined by the `n_*_nts` arguments.
-    The overall length of this domain type in nucleotides is the sum of all these.
-    These domain factories are instantiated when initializing [Genetics][magicsoup.genetics.Genetics],
-    which also happens when initializing [World][magicsoup.world.World].
-    They are used during translation to map nucleotide sequences to domains.
-
-    ```
-        DomainFact = CatalyticFact(reactions=[([A], [B])])
-        DomainFact("ATCGATATATTTGCAAATTGA")
-    ```
-
-    After this factory has been instantiated you can look into the mappings that map nucleotide sequences to domain specifications.
-    They are on these attributes:
-
-    - `reaction_map` maps nucleotide sequences to reactions
-    - `affinity_map` maps nucleotide sequences to Michaelis Menten constants
-    - `velocity_map` maps nucleotide sequences to maximum velocities
-    - `orientation_map` maps nucleotide sequences to orientations
-
-    Any reaction can happen in both directions, so it is not necessary to define the reverse reaction again.
-    The orientation of a reaction only matters in combination with other domains
-    in the way how a protein energetically couples multiple actions.
-    This orientation is defined by an attribute `is_bkwd` on the domain.
-    That attribute will be sampled during initialization of this factory and there is a 1:1 chance for any orientation.
-    """
-
-    def __init__(
-        self,
-        reactions: list[tuple[list[Molecule], list[Molecule]]],
-        km_range: tuple[float, float] = (1e-5, 1.0),
-        vmax_range: tuple[float, float] = (0.01, 10.0),
-        n_reaction_nts: int = 6,
-        n_affinity_nts: int = 6,
-        n_velocity_nts: int = 6,
-        n_orientation_nts: int = 3,
-    ):
-        self.reaction_map = generic_map_fact(nt_seqs(n_reaction_nts), reactions)
-        self.affinity_map = log_weight_map_fact(nt_seqs(n_affinity_nts), *km_range)
-        self.velocity_map = log_weight_map_fact(nt_seqs(n_velocity_nts), *vmax_range)
-        self.orientation_map = bool_map_fact(nt_seqs(n_orientation_nts))
-
-        _check_n(n_reaction_nts, "n_reaction_nts")
-        _check_n(n_affinity_nts, "n_affinity_nts")
-        _check_n(n_velocity_nts, "n_velocity_nts")
-        _check_n(n_orientation_nts, "n_orientation_nts")
-
-        if len(reactions) > 4**n_reaction_nts:
-            raise ValueError(
-                f"There are {len(reactions)} reactions."
-                f" But with n_reaction_nts={n_reaction_nts} only {4 ** n_reaction_nts} reactions can be encoded."
-            )
-
-        self.react_slice = slice(0, n_reaction_nts)
-        self.aff_slice = slice(n_reaction_nts, n_reaction_nts + n_affinity_nts)
-        self.velo_slice = slice(
-            n_reaction_nts + n_affinity_nts,
-            n_reaction_nts + n_affinity_nts + n_velocity_nts,
-        )
-        self.orient_slice = slice(
-            n_reaction_nts + n_affinity_nts + n_velocity_nts,
-            n_reaction_nts + n_affinity_nts + n_velocity_nts + n_orientation_nts,
-        )
-
-        self.min_len = (
-            n_reaction_nts + n_affinity_nts + n_velocity_nts + n_orientation_nts
-        )
-
-    def __call__(self, seq: str) -> Domain:
-        react = self.reaction_map[seq[self.react_slice]]
-        aff = self.affinity_map[seq[self.aff_slice]]
-        velo = self.velocity_map[seq[self.velo_slice]]
-        is_bkwd = self.orientation_map[seq[self.orient_slice]]
-        return CatalyticDomain(
-            reaction=react, affinity=aff, velocity=velo, is_bkwd=is_bkwd
-        )
-
-
-class TransporterDomain(Domain):
-    """
-    Container holding the specification for a transporter domain.
-    Usually, you don't need to manually instantiate domains.
-    During the simulation they are automatically instantiated through factories.
-
-    Arguments:
-        molecule: The molecule species which can be transported into or out of the cell by this domain.
-        affinity: Michaelis Menten constant of the transport (in mol).
-        velocity: Maximum velocity of the transport (in mol per time step).
-        is_bkwd: Flag indicating whether in which orientation this transporter will be coupled with other domains.
-    """
-
-    def __init__(
-        self, molecule: Molecule, affinity: float, velocity: float, is_bkwd: bool
-    ):
-        super().__init__(
-            substrates=[molecule],
-            products=[],
-            affinity=affinity,
-            velocity=velocity,
-            is_bkwd=is_bkwd,
-            is_transporter=True,
-        )
-
-    def __str__(self) -> str:
-        return f"TransporterDomain({self.substrates[0]})"
-
-
-class TransporterFact(_DomainFact):
-    """
-    Factory for generating transporter domains from nucleotide sequences.
-
-    Arguments:
-        molecules: All molecule species that can be transported into or out of the cell.
-        km_range: The range from which to sample Michaelis Menten constants for this transport (in mol).
-            The sampling will happen in the log transformed intervall, so all values must be > 0.
-        vmax_range: The range from which to sample maximum velocities for this transport (in mol per time step).
-            The sampling will happen in the log transformed intervall, so all values must be > 0.
-        n_molecule_nts: The number of nucleotides that should encode the molecule species.
-        n_affinity_nts: The number of nucleotides that should encode the Michaelis Menten constant.
-        n_velocity_nts: The number of nucleotides that should encode the maximum Velocity.
-        n_orientation_nts: The number of nucleotides that should encode the orientation of the transport.
-
-    This factory randomly assigns nucleotide sequences to molecule species, Michaelis Menten constants,
-    maximum velocities, and domain orientations on initialization.
-    When calling the instantiated factory with a nucleotide sequence, it will return the encoded domain.
-    How many nucleotides encode which part of the domain is defined by the `n_*_nts` arguments.
-    The overall length of this domain type in nucleotides is the sum of all these.
-    These domain factories are instantiated when initializing [Genetics][magicsoup.genetics.Genetics],
-    which also happens when initializing [World][magicsoup.world.World].
-    They are used during translation to map nucleotide sequences to domains.
-
-    ```
-        DomainFact = TransporterFact(molecules=[A])
-        DomainFact("ATCGATATATTTGCAAATTGA")
-    ```
-
-    After this factory has been instantiated you can look into the mappings that map nucleotide sequences to domain specifications.
-    They are on these attributes:
-
-    - `molecule_map` maps nucleotide sequences to molecules
-    - `affinity_map` maps nucleotide sequences to Michaelis Menten constants
-    - `velocity_map` maps nucleotide sequences to maximum velocities
-    - `orientation_map` maps nucleotide sequences to orientations
-
-    Any transporter works in both directions.
-    The orientation only matters in combination with other domains in the way how a protein energetically couples multiple actions.
-    This orientation is defined by an attribute `is_bkwd` on the domain.
-    That attribute will be sampled during initialization of this factory and there is a 1:1 chance for any orientation.
-    """
-
-    def __init__(
-        self,
-        molecules: list[Molecule],
-        km_range: tuple[float, float] = (1e-5, 1.0),
-        vmax_range: tuple[float, float] = (0.01, 10.0),
-        n_molecule_nts: int = 6,
-        n_affinity_nts: int = 6,
-        n_velocity_nts: int = 6,
-        n_orientation_nts: int = 3,
-    ):
-        self.molecule_map = generic_map_fact(nt_seqs(n_molecule_nts), molecules)
-        self.affinity_map = log_weight_map_fact(nt_seqs(n_affinity_nts), *km_range)
-        self.velocity_map = log_weight_map_fact(nt_seqs(n_velocity_nts), *vmax_range)
-        self.orientation_map = bool_map_fact(nt_seqs(n_orientation_nts))
-
-        _check_n(n_molecule_nts, "n_molecule_nts")
-        _check_n(n_affinity_nts, "n_affinity_nts")
-        _check_n(n_velocity_nts, "n_velocity_nts")
-        _check_n(n_orientation_nts, "n_orientation_nts")
-
-        if len(molecules) > 4**n_molecule_nts:
-            raise ValueError(
-                f"There are {len(molecules)} molecules."
-                f" But with n_molecule_nts={n_molecule_nts} only {4 ** n_molecule_nts} molecules can be encoded."
-            )
-
-        self.mol_slice = slice(0, n_molecule_nts)
-        self.aff_slice = slice(n_molecule_nts, n_molecule_nts + n_affinity_nts)
-        self.velo_slice = slice(
-            n_molecule_nts + n_affinity_nts,
-            n_molecule_nts + n_affinity_nts + n_velocity_nts,
-        )
-        self.orient_slice = slice(
-            n_molecule_nts + n_affinity_nts + n_velocity_nts,
-            n_molecule_nts + n_affinity_nts + n_velocity_nts + n_orientation_nts,
-        )
-
-        self.min_len = (
-            n_molecule_nts + n_affinity_nts + n_velocity_nts + n_orientation_nts
-        )
-
-    def __call__(self, seq: str) -> Domain:
-        mol = self.molecule_map[seq[self.mol_slice]]
-        aff = self.affinity_map[seq[self.aff_slice]]
-        velo = self.velocity_map[seq[self.velo_slice]]
-        is_bkwd = self.orientation_map[seq[self.orient_slice]]
-        return TransporterDomain(
-            molecule=mol, affinity=aff, velocity=velo, is_bkwd=is_bkwd
-        )
-
-
-class RegulatoryDomain(Domain):
-    """
-    Container holding the specification for a regulatory domain.
-    Usually, you don't need to manually instantiate domains.
-    During the simulation they are automatically instantiated through factories.
-
-    Arguments:
-        effector: The molecule species which will be the effector molecule.
-        affinity: Michaelis Menten constant of the transport (in mol).
-        is_inhibiting: Whether this is an inhibiting regulatory domain (otherwise activating).
-        is_transmembrane: Whether this is also a transmembrane domain.
-            If true, the domain will react to extracellular molecules instead of intracellular ones.
-
-    I think the term Michaelis Menten constant in a regulatory domain is a bit weird
-    since there is no product being created.
-    However, the kinetics of the amount of activation or inhibition are the same.
-    """
-
-    def __init__(
-        self,
-        effector: Molecule,
-        affinity: float,
-        is_inhibiting: bool,
-        is_transmembrane: bool,
-    ):
-        super().__init__(
-            substrates=[effector],
-            products=[],
-            affinity=affinity,
-            velocity=0.0,
-            is_bkwd=False,
-            is_regulatory=True,
-            is_inhibiting=is_inhibiting,
-            is_transmembrane=is_transmembrane,
-        )
-
-    def __str__(self) -> str:
-        loc = "transmembrane" if self.is_transmembrane else "cytosolic"
-        eff = "inhibiting" if self.is_inhibiting else "activating"
-        return f"ReceptorDomain({self.substrates[0]},{loc},{eff})"
-
-
-class RegulatoryFact(_DomainFact):
-    """
-    Factory for generating regulatory domains from nucleotide sequences.
-
-    Arguments:
-        molecules: All molecule species that can be inhibiting or activating effectors.
-        km_range: The range from which to sample Michaelis Menten constants for regulatory activity (in mol).
-            The sampling will happen in the log transformed intervall, so all values must be > 0.
-        n_molecule_nts: The number of nucleotides that should encode the molecule species.
-        n_affinity_nts: The number of nucleotides that should encode the Michaelis Menten constant.
-        n_transmembrane_nts: The number of nucleotides that should encode whether the domain also is a transmembrane domain
-            (which will make it react to extracellular molecules instead).
-        n_inhibit_nts: The number of nucleotides that should encode whether it is an activating or inhibiting regulatory domain.
-
-    This factory randomly assigns nucleotide sequences to molecule species, Michaelis Menten constants,
-    whether the domain is transmembrane, and whether the domain is inhibiting on initialization.
-    When calling the instantiated factory with a nucleotide sequence, it will return the encoded domain.
-    How many nucleotides encode which part of the domain is defined by the `n_*_nts` arguments.
-    The overall length of this domain type in nucleotides is the sum of all these.
-    These domain factories are instantiated when initializing [Genetics][magicsoup.genetics.Genetics],
-    which also happens when initializing [World][magicsoup.world.World].
-    They are used during translation to map nucleotide sequences to domains.
-
-    ```
-        DomainFact = RegulatoryFact(molecules=[A])
-        DomainFact("ATCGATATATTTGCAAAT")
-    ```
-
-    After this factory has been instantiated you can look into the mappings that map nucleotide sequences to domain specifications.
-    They are on these attributes:
-
-    - `molecule_map` maps nucleotide sequences to molecules
-    - `affinity_map` maps nucleotide sequences to Michaelis Menten constants
-    - `transmembrane_map` maps nucleotide sequences to the transmembrane flag
-    - `orientation_map` maps nucleotide sequences to orientations
-
-    I think the term Michaelis Menten constant in a regulatory domain is a bit weird
-    since there is no product being created.
-    However, the kinetics of the amount of activation or inhibition are the same.
-    """
-
-    def __init__(
-        self,
-        molecules: list[Molecule],
-        km_range: tuple[float, float] = (1e-5, 1.0),
-        n_molecule_nts: int = 6,
-        n_affinity_nts: int = 6,
-        n_transmembrane_nts: int = 3,
-        n_inhibit_nts: int = 3,
-    ):
-        self.molecule_map = generic_map_fact(nt_seqs(n_molecule_nts), molecules)
-        self.affinity_map = log_weight_map_fact(nt_seqs(n_affinity_nts), *km_range)
-        self.transmembrane_map = bool_map_fact(nt_seqs(n_transmembrane_nts))
-        self.inhibit_map = bool_map_fact(nt_seqs(n_inhibit_nts))
-
-        _check_n(n_molecule_nts, "n_molecule_nts")
-        _check_n(n_affinity_nts, "n_affinity_nts")
-        _check_n(n_transmembrane_nts, "n_transmembrane_nts")
-        _check_n(n_inhibit_nts, "n_inhibit_nts")
-
-        if len(molecules) > 4**n_molecule_nts:
-            raise ValueError(
-                f"There are {len(molecules)} molecules."
-                f" But with n_molecule_nts={n_molecule_nts} only {4 ** n_molecule_nts} molecules can be encoded."
-            )
-
-        self.mol_slice = slice(0, n_molecule_nts)
-        self.aff_slice = slice(n_molecule_nts, n_molecule_nts + n_affinity_nts)
-        self.trans_slice = slice(
-            n_molecule_nts + n_affinity_nts,
-            n_molecule_nts + n_affinity_nts + n_transmembrane_nts,
-        )
-        self.inh_slice = slice(
-            n_molecule_nts + n_affinity_nts + n_transmembrane_nts,
-            n_molecule_nts + n_affinity_nts + n_transmembrane_nts + n_inhibit_nts,
-        )
-
-        self.min_len = (
-            n_molecule_nts + n_affinity_nts + n_transmembrane_nts + n_inhibit_nts
-        )
-
-    def __call__(self, seq: str) -> Domain:
-        mol = self.molecule_map[seq[self.mol_slice]]
-        aff = self.affinity_map[seq[self.aff_slice]]
-        trans = self.transmembrane_map[seq[self.inh_slice]]
-        inh = self.inhibit_map[seq[self.inh_slice]]
-        return RegulatoryDomain(
-            effector=mol,
-            affinity=aff,
-            is_inhibiting=inh,
-            is_transmembrane=trans,
-        )
 
 
 def _get_n(p: float, s: int, name: str) -> int:
@@ -442,49 +15,172 @@ def _get_n(p: float, s: int, name: str) -> int:
     return n
 
 
+def _get_coding_regions(
+    seq: str,
+    min_cds_size: int,
+    start_codons: tuple[str, ...],
+    stop_codons: tuple[str, ...],
+) -> list[str]:
+    s = CODON_SIZE
+    n = len(seq)
+    max_start_idx = n - min_cds_size
+
+    start_idxs = []
+    for start_codon in start_codons:
+        i = 0
+        while i < max_start_idx:
+            try:
+                hit = seq[i:].index(start_codon)
+                start_idxs.append(i + hit)
+                i = i + hit + s
+            except ValueError:
+                break
+
+    stop_idxs = []
+    for stop_codon in stop_codons:
+        i = 0
+        while i < n - s:
+            try:
+                hit = seq[i:].index(stop_codon)
+                stop_idxs.append(i + hit)
+                i = i + hit + s
+            except ValueError:
+                break
+
+    start_idxs.sort()
+    stop_idxs.sort()
+
+    by_frame: list[tuple[list[int], ...]] = [([], []), ([], []), ([], [])]
+    for start_idx in start_idxs:
+        if start_idx % 3 == 0:
+            by_frame[0][0].append(start_idx)
+        elif (start_idx + 1) % 3 == 0:
+            by_frame[1][0].append(start_idx)
+        else:
+            by_frame[2][0].append(start_idx)
+    for stop_idx in stop_idxs:
+        if stop_idx % 3 == 0:
+            by_frame[0][1].append(stop_idx)
+        elif (stop_idx + 1) % 3 == 0:
+            by_frame[1][1].append(stop_idx)
+        else:
+            by_frame[2][1].append(stop_idx)
+
+    cdss = []
+    for start_idxs, stop_idxs in by_frame:
+        for start_idx in start_idxs:
+            stop_idxs = [d for d in stop_idxs if d > start_idx + s]
+            if len(stop_idxs) > 0:
+                cds_end_idx = min(stop_idxs) + s
+                if cds_end_idx - start_idx > min_cds_size:
+                    cdss.append(seq[start_idx:cds_end_idx])
+            else:
+                break
+
+    return cdss
+
+
+def _extract_domains(
+    cdss: list[str],
+    dom_size: int,
+    dom_type_size: int,
+    dom_type_map: dict[str, int],
+    one_codon_map: dict[str, int],
+    two_codon_map: dict[str, int],
+) -> list[list[tuple[int, int, int, int, int]]]:
+    idx0_slice = slice(0, 2 * CODON_SIZE)
+    idx1_slice = slice(2 * CODON_SIZE, 3 * CODON_SIZE)
+    idx2_slice = slice(3 * CODON_SIZE, 4 * CODON_SIZE)
+    idx3_slice = slice(4 * CODON_SIZE, 5 * CODON_SIZE)
+
+    prot_doms = []
+    for cds in cdss:
+        doms = []
+        is_useful_prot = False
+
+        i = 0
+        j = dom_size
+        while i + dom_size <= len(cds):
+            dom_type_seq = cds[i : i + dom_type_size]
+            if dom_type_seq in dom_type_map:
+
+                # 1=catal, 2=trnsp, 3=reg
+                dom_type = dom_type_map[dom_type_seq]
+                if dom_type != 3:
+                    is_useful_prot = True
+
+                dom_spec_seq = cds[i + dom_type_size : i + dom_size]
+                idx0 = two_codon_map[dom_spec_seq[idx0_slice]]
+                idx1 = one_codon_map[dom_spec_seq[idx1_slice]]
+                idx2 = one_codon_map[dom_spec_seq[idx2_slice]]
+                idx3 = one_codon_map[dom_spec_seq[idx3_slice]]
+                doms.append((dom_type, idx0, idx1, idx2, idx3))
+                i += dom_size
+                j += dom_size
+            else:
+                i += CODON_SIZE
+                j += CODON_SIZE
+
+        # protein should have at least 1 non-regulatory domain
+        if is_useful_prot:
+            prot_doms.append(doms)
+
+    return prot_doms
+
+
+def _translate_genome(
+    genome: str,
+    dom_size: int,
+    start_codons: tuple[str, ...],
+    stop_codons: tuple[str, ...],
+    dom_type_map: dict[str, int],
+    one_codon_map: dict[str, int],
+    two_codon_map: dict[str, int],
+) -> list[list[tuple[int, int, int, int, int]]]:
+    dom_type_size = len(next(iter(dom_type_map)))
+
+    cdsf = _get_coding_regions(
+        seq=genome,
+        min_cds_size=dom_size,
+        start_codons=start_codons,
+        stop_codons=stop_codons,
+    )
+    bwd = reverse_complement(genome)
+    cdsb = _get_coding_regions(
+        seq=bwd,
+        min_cds_size=dom_size,
+        start_codons=start_codons,
+        stop_codons=stop_codons,
+    )
+
+    prot_doms = _extract_domains(
+        cdss=cdsf + cdsb,
+        dom_size=dom_size,
+        dom_type_size=dom_type_size,
+        dom_type_map=dom_type_map,
+        one_codon_map=one_codon_map,
+        two_codon_map=two_codon_map,
+    )
+
+    return prot_doms
+
+
 class Genetics:
     """
     Class holding logic about translating nucleotide sequences into proteomes.
 
     Arguments:
-        chemistry: The chemistry object used for this simulation.
-            If no reactions were defined, there will be no catalytic domain factory, i.e. no catalytic domains defined.
         start_codons: Start codons which start a coding sequence
         stop_codons: Stop codons which stop a coding sequence
         p_catal_dom: Chance of encountering a catalytic domain in a random nucleotide sequence.
         p_transp_dom: Chance of encountering a transporter domain in a random nucleotide sequence.
-        p_allo_dom: Chance of encountering a regulatory domain in a random nucleotide sequence.
+        p_reg_dom: Chance of encountering a regulatory domain in a random nucleotide sequence.
         n_dom_type_nts: Number of nucleotides that encodes the domain type (catalytic, transporter, regulatory).
-        n_reaction_nts: Number of nucleotides that encodes the reaction in catalytic domains
-            (will be passed to catalytic domain factory).
-        n_molecule_nts: Number of nucleotides that encodes the molecule species in transporter and regulatory domain
-            (will be passed to their domain factories).
-        n_affinity_nts: Number of nucleotides that encodes the Michaelis Menten constants of domains
-            (will be passed to domain factories).
-        n_velocity_nts: Number of nucleotides that encodes maximum velocitires in catalytic and regulatory domains
-            (will be passed to their domain factories).
-        n_orientation_nts: Number of nucleotides that encodes domain orientation
-            (will be passed to domain factories).
-        n_transmembrane_nts: Number of nucleotides that encodes whether a regulatory domain is also a transmembrane domain,
-            reacting to extracellular molecules instead (will be passed to regulatory domain factory).
-        n_inhibit_nts: Number of nucleotides that encodes whether a regulatory domain is a inhibiting or activating
-            (will be passed to regulatory domain factory).
         workers: number of workers
 
-    When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
-    These mappings are then used throughout the simulation.
-    If you initialize this class again, these mappings will be different.
-    Initializing [World][magicsoup.world.World] will also create one `Genetics` instance. It is on `world.genetics`.
-    If you want to access nucleotide to domain mappings of your simulation, you should use `world.genetics`.
-
-    During the simulation [World][magicsoup.world.World] uses `genetics.get_proteome()` on all genomes to get the proteome for each cell.
-    If you are interested in CDSs only you can use [get_coding_regions()][magicsoup.genetics.Genetics.get_coding_regions] to get all CDs for a particular genome.
-    To translate a single CDS you can use [translate_seq()][magicsoup.genetics.Genetics.translate_seq].
-
-    The attribute `genetics.domain_map` holds the actual domain mappings.
-    This maps nucleotide sequences to a domain factory.
-    Any of these domain factories is either a catalytic, transporter, or regulatory domain factory.
-    For how nucleotides map to further domain specifications (e.g. affinity) is saved on the domain factory object.
+    During the simulation [World][magicsoup.world.World] uses [translate_genomes][magicsoup.genetics.Genetics.translate_genomes].
+    The return value of this method is a nested list of tokens.
+    These tokens are then mapped into concrete domain specifications (_e.g._ Km, Vmax, reactions, ...) by [Kinetics][magicsoup.kinetics.Kinetics].
 
     Translation happens only within coding sequences (CDSs).
     A CDS starts wherever a start codon is found and ends with the first in-frame encountered stop codon.
@@ -498,7 +194,7 @@ class Genetics:
 
     ```
         world = World(chemistry=chemistry)
-        my_genetics = Genetics(chemistry=chemistry, p_transp_dom=0.1, stop_codons=("TGA", ))
+        my_genetics = Genetics(p_transp_dom=0.1, stop_codons=("TGA", ))
         world.genetics = my_genetics
     ```
 
@@ -511,20 +207,13 @@ class Genetics:
 
     def __init__(
         self,
-        chemistry: Chemistry,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         p_catal_dom: float = 0.01,
         p_transp_dom: float = 0.01,
-        p_allo_dom: float = 0.01,
+        p_reg_dom: float = 0.01,
         n_dom_type_nts: int = 6,
-        n_reaction_nts: int = 6,
-        n_molecule_nts: int = 6,
-        n_affinity_nts: int = 6,
-        n_velocity_nts: int = 6,
-        n_orientation_nts: int = 3,
-        n_transmembrane_nts: int = 3,
-        n_inhibit_nts: int = 3,
+        workers: int = 2,
     ):
         if any(len(d) != CODON_SIZE for d in start_codons):
             raise ValueError(f"Not all start codons are of length {CODON_SIZE}")
@@ -538,14 +227,19 @@ class Genetics:
         if n_dom_type_nts % CODON_SIZE != 0:
             raise ValueError(f"n_dom_type_nts should be a multiple of {CODON_SIZE}.")
 
-        self.chemistry = chemistry
         self.start_codons = start_codons
         self.stop_codons = stop_codons
-        self.dom_type_size = n_dom_type_nts
+        self.workers = workers
 
-        if p_catal_dom + p_transp_dom + p_allo_dom > 1.0:
+        # Domain: domain_type (catal, trnsp, reg) + specification
+        # specification: 1 x 2-codon token, 3 x 1-codon tokens
+        # Domain can start and finish with start and stop codons, so this
+        # is also the minimum CDS size
+        self.dom_size = n_dom_type_nts + 5 * CODON_SIZE
+
+        if p_catal_dom + p_transp_dom + p_reg_dom > 1.0:
             raise ValueError(
-                "p_catal_dom, p_transp_dom, p_allo_dom together must not be greater 1.0"
+                "p_catal_dom, p_transp_dom, p_reg_dom together must not be greater 1.0"
             )
 
         sets = nt_seqs(n_dom_type_nts)
@@ -554,152 +248,60 @@ class Genetics:
 
         n_catal_doms = _get_n(p=p_catal_dom, s=n, name="catalytic domains")
         n_transp_doms = _get_n(p=p_transp_dom, s=n, name="transporter domains")
-        n_allo_doms = _get_n(p=p_allo_dom, s=n, name="allosteric domains")
+        n_reg_doms = _get_n(p=p_reg_dom, s=n, name="allosteric domains")
 
-        catal_dom_fact = CatalyticFact(
-            reactions=chemistry.reactions,
-            n_reaction_nts=n_reaction_nts,
-            n_affinity_nts=n_affinity_nts,
-            n_velocity_nts=n_velocity_nts,
-            n_orientation_nts=n_orientation_nts,
-        )
-        transp_dom_fact = TransporterFact(
-            molecules=chemistry.molecules,
-            n_molecule_nts=n_molecule_nts,
-            n_affinity_nts=n_affinity_nts,
-            n_velocity_nts=n_velocity_nts,
-            n_orientation_nts=n_orientation_nts,
-        )
-        allo_dom_fact = RegulatoryFact(
-            molecules=chemistry.molecules,
-            n_molecule_nts=n_molecule_nts,
-            n_affinity_nts=n_affinity_nts,
-            n_transmembrane_nts=n_transmembrane_nts,
-            n_inhibit_nts=n_inhibit_nts,
-        )
-
-        domain_facts: dict[_DomainFact, list[str]] = {}
-        if len(self.chemistry.reactions) > 0:
-            domain_facts[catal_dom_fact] = sets[:n_catal_doms]
-            del sets[:n_catal_doms]
-        domain_facts[transp_dom_fact] = sets[:n_transp_doms]
+        # 1=catalytic, 2=transporter, 3=regulatory
+        domain_types: dict[int, list[str]] = {}
+        domain_types[1] = sets[:n_catal_doms]
+        del sets[:n_catal_doms]
+        domain_types[2] = sets[:n_transp_doms]
         del sets[:n_transp_doms]
-        domain_facts[allo_dom_fact] = sets[:n_allo_doms]
-        del sets[:n_allo_doms]
+        domain_types[3] = sets[:n_reg_doms]
+        del sets[:n_reg_doms]
 
-        self.domain_map = {d: k for k, v in domain_facts.items() for d in v}
+        self.domain_map = {d: k for k, v in domain_types.items() for d in v}
 
-        self.dom_details_size = max(d.min_len for d in domain_facts)
-        self.dom_size = self.dom_type_size + self.dom_details_size
-        self.min_cds_size = self.dom_size + 2 * CODON_SIZE
+        self.two_codon_map: dict[str, int] = {}
+        for i, seq in enumerate(nt_seqs(n=2 * CODON_SIZE)):
+            self.two_codon_map[seq] = i + 1
 
-    def get_proteome(self, seq: str) -> list[Protein]:
+        self.one_codon_map: dict[str, int] = {}
+        for i, seq in enumerate(nt_seqs(n=CODON_SIZE)):
+            self.one_codon_map[seq] = i + 1
+
+    def translate_genomes(
+        self, genomes: list[str]
+    ) -> list[list[list[tuple[int, int, int, int, int]]]]:
         """
-        Get all proteins encoded by a nucleotide sequence
+        Translate all genomes into proteomes
 
         Arguments:
-            seq: nucleotide sequence
+            genomes: list of nucleotide sequences
+
+        Returns:
+            List of proteomes. This is a list (proteomes) of lists (proteins)
+            of lists (domains) with each domain being a tuple of indices.
+            These indices will be mapped to specific
+            domain specifications by [Kinetics][magicsoup.kinetics.Kinetics].
 
         Both forward and reverse-complement are considered.
-        CDSs are extracted (see [get_coding_regions()][magicsoup.genetics.Genetics.get_coding_regions])
-        and a protein is translated for every CDS (see [translate_seq()][magicsoup.genetics.Genetics.translate_seq]).
+        CDSs are extracted and a protein is translated for every CDS.
         Unviable proteins (no domains or only regulatory domains) are discarded.
         """
-        bwd = reverse_complement(seq)
-        cds = list(set(self.get_coding_regions(seq) + self.get_coding_regions(bwd)))
-        proteins = [self.translate_seq(d) for d in cds]
-        proteins = [d for d in proteins if len(d) > 0]
-        proteins = [d for d in proteins if not all(dd.is_regulatory for dd in d)]
-        return [Protein(domains=d, label=f"P{i}") for i, d in enumerate(proteins)]
+        args = [
+            (
+                d,
+                self.dom_size,
+                self.start_codons,
+                self.stop_codons,
+                self.domain_map,
+                self.one_codon_map,
+                self.two_codon_map,
+            )
+            for d in genomes
+        ]
 
-    def get_coding_regions(self, seq: str) -> list[str]:
-        """
-        Get all coding regions in nucleotide sequence
+        with mp.Pool(self.workers) as pool:
+            dom_seqs = pool.starmap(_translate_genome, args)
 
-        Arguments:
-            seq: nucleotide sequence
-
-        Assuming coding region can start at any start codon
-        and is stopped with the first in-frame stop codon encountered.
-        Coding regions without a stop codon are not considerd.
-        """
-        n = len(seq)
-        max_start_idx = n - self.min_cds_size
-
-        start_idxs = []
-        for start_codon in self.start_codons:
-            i = 0
-            while i < max_start_idx:
-                try:
-                    hit = seq[i:].index(start_codon)
-                    start_idxs.append(i + hit)
-                    i = i + hit + CODON_SIZE
-                except ValueError:
-                    break
-
-        stop_idxs = []
-        for stop_codon in self.stop_codons:
-            i = 0
-            while i < n - CODON_SIZE:
-                try:
-                    hit = seq[i:].index(stop_codon)
-                    stop_idxs.append(i + hit)
-                    i = i + hit + CODON_SIZE
-                except ValueError:
-                    break
-
-        start_idxs.sort()
-        stop_idxs.sort()
-
-        by_frame: list[tuple[list[int], ...]] = [([], []), ([], []), ([], [])]
-        for start_idx in start_idxs:
-            if start_idx % 3 == 0:
-                by_frame[0][0].append(start_idx)
-            elif (start_idx + 1) % 3 == 0:
-                by_frame[1][0].append(start_idx)
-            else:
-                by_frame[2][0].append(start_idx)
-        for stop_idx in stop_idxs:
-            if stop_idx % 3 == 0:
-                by_frame[0][1].append(stop_idx)
-            elif (stop_idx + 1) % 3 == 0:
-                by_frame[1][1].append(stop_idx)
-            else:
-                by_frame[2][1].append(stop_idx)
-
-        cdss = []
-        for start_idxs, stop_idxs in by_frame:
-            for start_idx in start_idxs:
-                stop_idxs = [d for d in stop_idxs if d > start_idx + CODON_SIZE]
-                if len(stop_idxs) > 0:
-                    cds_end_idx = min(stop_idxs) + CODON_SIZE
-                    if cds_end_idx - start_idx > self.min_cds_size:
-                        cdss.append(seq[start_idx:cds_end_idx])
-                else:
-                    break
-
-        return cdss
-
-    def translate_seq(self, seq: str) -> list[Domain]:
-        """
-        Translate a coding region into a protein.
-        The CDS should be a desoxy-ribonucleotide sequence (i.e. TGCA).
-
-        Arguments:
-            seq: nucleotide sequence
-        """
-        i = 0
-        j = self.dom_type_size
-        doms: list[Domain] = []
-        while i + self.dom_size <= len(seq):
-            domfact = self.domain_map.get(seq[i:j])
-            if domfact is not None:
-                dom = domfact(seq[j : j + self.dom_details_size])
-                doms.append(dom)
-                i += self.dom_size
-                j += self.dom_size
-            else:
-                i += CODON_SIZE
-                j += CODON_SIZE
-
-        return doms
+        return dom_seqs

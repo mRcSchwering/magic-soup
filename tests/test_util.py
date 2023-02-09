@@ -33,4 +33,3 @@ def test_moores_ngbrhd():
 
     res = util.moore_nghbrhd(0, 0, size=len(m))
     assert set(res) == {(0, 1), (1, 0), (1, 1), (0, 3), (1, 3), (3, 3), (3, 0), (3, 1)}
-
