@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
-dist/
-src/magicsoup.egg-info/
 .mypy_cache
 .pytest_cache
+
+dist/
+src/magicsoup.egg-info/
+runs/

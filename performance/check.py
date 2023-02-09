@@ -1,7 +1,7 @@
 """
 Little helper script for checking the performance of some functions
 
-    python perf.py --n=1000 --s=1000
+    PYTHONPATH=./src python performance/check.py --n=1000 --s=1000
 
 """
 import time
