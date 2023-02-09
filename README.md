@@ -1,4 +1,14 @@
-## Magicsoup
+## MagicSoup
+
+---
+
+**Documentation**: [https://magic-soup.readthedocs.io/](https://magic-soup.readthedocs.io/)
+
+**Source Code**: [https://github.com/mRcSchwering/magic-soup](https://github.com/mRcSchwering/magic-soup)
+
+**PyPI**: [https://pypi.org/project/magicsoup/](https://pypi.org/project/magicsoup/)
+
+---
 
 This is a game that simulates cell metabolic and transduction pathway evolution.
 Define a 2D world with certain molecules and reactions.
@@ -17,9 +27,9 @@ pip install magicsoup
 ```
 
 This simulation relies on [PyTorch](https://pytorch.org/).
-You can move almost all calculations to a GPU.
+To increase performance you can move calculations to a GPU.
+In this case you should setup PyTorch first before installing MagicSoup.
 To setup pytorch correctly for your GPU see [Get Started (pytorch.org)](https://pytorch.org/get-started/locally/).
-
 
 ### Example
 
