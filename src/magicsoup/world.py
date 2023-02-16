@@ -2,6 +2,7 @@ from typing import Optional
 import random
 from itertools import product
 import math
+from io import BytesIO
 import pickle
 from pathlib import Path
 import torch
@@ -9,6 +10,25 @@ from magicsoup.containers import Cell, Chemistry
 from magicsoup.util import moore_nghbrhd
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
+
+
+def _torch_load(map_loc: Optional[str] = None):
+    # Closure rather than a lambda to preserve map_loc
+    return lambda b: torch.load(BytesIO(b), map_location=map_loc)
+
+
+class _CPU_Unpickler(pickle.Unpickler):
+    """Inject map_location when unpickling tensor objects"""
+
+    def __init__(self, *args, map_location: Optional[str] = None, **kwargs):
+        self._map_location = map_location
+        super().__init__(*args, **kwargs)
+
+    def find_class(self, module: str, name: str):
+        if module == "torch.storage" and name == "_load_from_bytes":
+            return _torch_load(map_loc=self._map_location)
+        else:
+            return super().find_class(module, name)
 
 
 class World:
@@ -494,15 +514,14 @@ class World:
         Use [from_file()][magicsoup.world.World.from_file] to restore it.
         For a small and quick save use [save_state()][magicsoup.world.World.save_state].
         """
-        # TODO: make this JSON, txt, (except for tensors), to make it possible
-        #       to continue using a different language
-        #       would need to organize domain factories differently to do that
         rundir.mkdir(parents=True, exist_ok=True)
         with open(rundir / name, "wb") as fh:
             pickle.dump(self, fh)
 
     @classmethod
-    def from_file(self, rundir: Path, name: str = "world.pkl") -> "World":
+    def from_file(
+        self, rundir: Path, name: str = "world.pkl", device: Optional[str] = None
+    ) -> "World":
         """
         Restore previously saved world from pickle file.
         The file had to be saved with [save()][magicsoup.world.World.save].
@@ -510,12 +529,15 @@ class World:
         Parameters:
             rundir: Directory of the pickle file
             name: Name of the pickle file
+            device: Optionally set device to which tensors should be loaded.
+                Default is the device they had when they were saved.
 
         Returns:
             A new `world` instance.
         """
         with open(rundir / name, "rb") as fh:
-            return pickle.load(fh)
+            unpickler = _CPU_Unpickler(fh, map_location=device)
+            return unpickler.load()
 
     def save_state(self, statedir: Path):
         """
@@ -545,27 +567,39 @@ class World:
             ]
             fh.write("\n".join(lines))
 
-    def load_state(self, statedir: Path, update_cell_params: bool = True):
+    def load_state(
+        self,
+        statedir: Path,
+        ignore_cell_params: bool = False,
+        device: Optional[str] = None,
+    ):
         """
         Load a saved world state.
         The state had to be saved with [save_state()][magicsoup.world.World.save_state] previously.
 
         Parameters:
             statedir: Directory that contains all files of that state
-            update_cell_params: Whether to update cell parameters as well.
+            ignore_cell_params: Whether to not update cell parameters as well.
                 If you are only interested in the cells' genomes and molecules
-                you can set this to `False` to make loading states faster.
+                you can set this to `True` to make loading a lot faster.
+            device: Optionally set device to which tensors should be loaded.
+                Default is the current `world.device`.
         """
-        cell_molecules: torch.Tensor = torch.load(statedir / "cell_molecules.pt")
-        self.cell_molecules = cell_molecules.to(self.device)
-        cell_map: torch.Tensor = torch.load(statedir / "cell_map.pt")
-        self.cell_map = cell_map.to(torch.bool).to(self.device)
-        molecule_map: torch.Tensor = torch.load(statedir / "molecule_map.pt")
-        self.molecule_map = molecule_map.to(self.device)
-        cell_survival: torch.Tensor = torch.load(statedir / "cell_survival.pt")
-        self.cell_survival = cell_survival.to(self.device).int()
-        cell_divisions: torch.Tensor = torch.load(statedir / "cell_divisions.pt")
-        self.cell_divisions = cell_divisions.to(self.device).int()
+        device = device or self.device
+
+        self.cell_molecules = torch.load(
+            statedir / "cell_molecules.pt", map_location=device
+        )
+        self.cell_map = torch.load(statedir / "cell_map.pt", map_location=device).bool()
+        self.molecule_map = torch.load(
+            statedir / "molecule_map.pt", map_location=device
+        )
+        self.cell_survival = torch.load(
+            statedir / "cell_survival.pt", map_location=device
+        ).int()
+        self.cell_divisions = torch.load(
+            statedir / "cell_divisions.pt", map_location=device
+        ).int()
 
         with open(statedir / "cells.fasta", "r", encoding="utf-8") as fh:
             text: str = fh.read()
@@ -585,7 +619,7 @@ class World:
             self.cells.append(cell)
             genome_idx_pairs.append((seq, idx))
 
-        if update_cell_params:
+        if ignore_cell_params:
             self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
     def _randomly_move_cells(self, cells: list[Cell]):

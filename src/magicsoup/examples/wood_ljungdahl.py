@@ -59,4 +59,3 @@ REACTIONS = [
 ]
 
 CHEMISTRY = Chemistry(molecules=MOLECULES, reactions=REACTIONS)
-
