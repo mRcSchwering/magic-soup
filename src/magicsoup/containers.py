@@ -378,7 +378,6 @@ class Protein:
     Container class to carry domains of a protein.
 
         domains: All domains of the protein
-        label: Can be used to label this protein. Has no effect.
 
     In the simulation proteins for all cells exist as a set of tensors.
     This object is just a representation of a single protein.
@@ -386,16 +385,12 @@ class Protein:
     Protein objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
-    def __init__(self, domains: list[DomainType], label: str = "P"):
+    def __init__(self, domains: list[DomainType]):
         self.domains = domains
-        self.label = label
         self.n_domains = len(domains)
 
     def __repr__(self) -> str:
-        kwargs = {
-            "domains": self.domains,
-            "label": self.label,
-        }
+        kwargs = {"domains": self.domains}
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
 
@@ -444,6 +439,8 @@ class Cell:
     The parent is the cell that stays on the same pixel, while the child is the new cell that will occupy another pixel.
     The child will have `n_survived_steps=0` and `n_replications=0` when it is born.
     The parent will keep these values. Both cells will have the same genome and proteome.
+    The child will inherit the parent's `label`.
+    This way you can track cells' origin.
     """
 
     def __init__(

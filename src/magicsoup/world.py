@@ -175,7 +175,6 @@ class World:
     def get_cell(
         self,
         by_idx: Optional[int] = None,
-        by_label: Optional[str] = None,
         by_position: Optional[tuple[int, int]] = None,
     ) -> Cell:
         """
@@ -184,7 +183,6 @@ class World:
 
         Parameters:
             by_idx: get cell by cell index (`cell.idx`)
-            by_label: get cell by cell label (`cell.label`)
             by_position: get cell by position (x, y)
 
         Returns:
@@ -198,12 +196,6 @@ class World:
         idx = -1
         if by_idx is not None:
             idx = by_idx
-        if by_label is not None:
-            cell_labels = [d.label for d in self.cells]
-            try:
-                idx = cell_labels.index(by_label)
-            except ValueError as err:
-                raise ValueError(f"Cell {by_label} not found") from err
         if by_position is not None:
             cell_positions = [d.position for d in self.cells]
             try:

@@ -415,7 +415,7 @@ class Kinetics:
                         )
                     )
 
-            prots.append(Protein(domains=doms, label=f"P{pi}"))
+            prots.append(Protein(domains=doms))
 
         return prots
 
