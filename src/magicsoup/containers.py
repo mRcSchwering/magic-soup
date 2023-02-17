@@ -10,7 +10,7 @@ class Molecule:
 
     Arguments:
         name: Used to uniquely identify this molecule species.
-        energy: In principle a standard free Gibbs energy of formation for 1 mol of this molecule species.
+        energy: Energy for 1 mol of this molecule species.
             This amount of energy is released if the molecule would be deconstructed.
             Energetically coupled in a protein it could power other activities.
         half_life: Half life of this molecule species in time steps.

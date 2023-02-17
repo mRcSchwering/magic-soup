@@ -65,10 +65,10 @@ REACTIONS = [
 ]
 ```
 
-Each molecule species was created with a unique name and an energy of formation.
-This energy has effects on reaction energies (more on this in [Formation energies](#formation-energies)).
+Each molecule species was created with a unique name and an energy.
+This energy has effects on reaction energies (more on this in [Molecule energies](#molecule-energies)).
 Any number of molecules in this simulation is expressed in _mol_
-and for this energy of formation it makes sense to think of it in terms of _J/mol_.
+and for this energy it makes sense to think of it in terms of _J/mol_.
 So, here _ATP_ is defined with _100 kJ/mol_.
 Except for _CO2_ all defaults are kept.
 For _CO2_ permeability and diffusivity is increased to account for the fact that
@@ -798,10 +798,9 @@ world.genetics = ms.Genetics(...)
 
 See the [Genetics reference][magicsoup.genetics.Genetics] for more details.
 
-## Formation energies
+## Molecule energies
 
-In the [experiment above](#simple-experiment) some molecule species were defined in _chemistry.py_ with formation energies.
-This is in principle akin to the [standard Gibbs free energy of formation](https://en.wikipedia.org/wiki/Standard_Gibbs_free_energy_of_formation).
+In the [experiment above](#simple-experiment) some molecule species were defined in _chemistry.py_ with energies.
 
 ```python
 formiat = Molecule("formiat", 20.0 * 1e3)
@@ -814,8 +813,8 @@ _I.e._ the reaction energy together with the world's temperature will define the
 (this is explained in detail in [Mechanics](./mechanics.md)).
 In the example above $CO2 \rightleftharpoons formiat$ has a reaction energy of 10 kJ/mol and would create a equilibrium constant of roughly 0.02.
 If the reaction energy would have been defined as only 10 J/mol, the equilibrium constant would be almost 1.0.
-So, the range in which these formation energy values exist have a big impact on the equilibrium constants of reactions in the simulations.
-For the plot below, chemistries with formation energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were created and
+So, the range of these energies have a big impact on the equilibrium constants of reactions in the simulations.
+For the plot below, chemistries with energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were created and
 random proteins were generated. The equilibrium constant distributions of reactions catalyzed by these proteins are shown.
 
 ![](img/equilibrium_constants.png)

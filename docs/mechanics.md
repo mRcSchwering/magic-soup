@@ -68,8 +68,7 @@ for a cell but also allows it to create more complex networks.
 Every defined reaction can occur in both directions ($substrates \rightleftharpoons products$).
 In which direction it will move for a particular cell and step is based on a mechanism
 based on [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy).
-Each molecule species has an energy value, similar in principle to the
-[Standard Gibbs free energy of formation](https://en.wikipedia.org/wiki/Standard_Gibbs_free_energy_of_formation).
+Each molecule species has an energy value.
 Every reaction is regarded as the deconstruction of the substrates and the synthesis of the products.
 During deconstruction the energy of all substrates is released, during synthesis the energy of all substrates is consumed.
 This energy difference is defined as
