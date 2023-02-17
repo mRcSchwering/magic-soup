@@ -16,7 +16,7 @@ Add a few cells and create evolutionary pressure by selectively replicating and 
 Then run and see what random mutations can do.
 
 ![co2 fixing](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/docs/img/co2fix.png)
-_In [this simulation](https://github.com/mRcSchwering/luca/tree/main/experiments/e1_co2_fixing) cells were made to fix CO2 from an artificial CO2 source in the middle of the map. (A) Total molecule counts of some molecule species over time. (B) Cell map with cells in white at chosen time points._
+_In [this simulation](https://github.com/mRcSchwering/luca/tree/main/e1_co2_fixing) cells were made to fix CO2 from an artificial CO2 source in the middle of the map. (A) Total molecule counts of some molecule species over time. (B) Cell map with cells in white at chosen time points._
 
 ### Installation
 
