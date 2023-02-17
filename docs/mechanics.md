@@ -9,6 +9,7 @@ When randomly changing the cell's genome, this network changes randomly, too.
 By selectively replicating certain cells while killing others, cells can be brought to evolve.
 
 ![transcription and translation](./img/transc_transl.png)
+
 _A cells genome is transcribed into multiple coding regions, each of which forms a protein. Each coding region can contain multiple domains of which each has a different purpose and different kinetics. Together these proteins form signal processing networks in the cell._
 
 I believe that most interesting behaviors take many time steps to evolve.
