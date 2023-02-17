@@ -24,9 +24,9 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="mm"
      showgrid="false"
-     inkscape:zoom="8.3352097"
-     inkscape:cx="328.00615"
-     inkscape:cy="92.259227"
+     inkscape:zoom="2.0838024"
+     inkscape:cx="183.79861"
+     inkscape:cy="110.37515"
      inkscape:window-width="1920"
      inkscape:window-height="1007"
      inkscape:window-x="0"
@@ -149,7 +149,10 @@
        id="circle9020"
        cx="98.37532"
        cy="29.896702"
-       r="0.61098886" />
+       r="0.61098886"
+       inkscape:export-filename="transc_transl.png"
+       inkscape:export-xdpi="180.96817"
+       inkscape:export-ydpi="180.96817" />
     <rect
        style="fill:#666666;stroke-width:0.0762007"
        id="rect111"
@@ -603,5 +606,31 @@
        inkscape:path-effect="#path-effect9370"
        inkscape:original-d="M 88.726557,28.774997 C 88.276481,28.407962 87.826151,28.040671 87.375537,27.673099 86.786426,27.567712 86.197076,27.462064 85.607448,27.35615"
        sodipodi:nodetypes="ccc" />
+    <rect
+       style="fill:#b3b3b3;stroke:none;stroke-width:0.478008;stroke-linecap:square;stroke-dasharray:none"
+       id="rect891"
+       width="5.1266832"
+       height="1.5935004"
+       x="-24.083"
+       y="73.094048"
+       transform="rotate(-90)" />
+    <path
+       sodipodi:type="star"
+       style="fill:#b3b3b3;stroke:none;stroke-width:3.365;stroke-linecap:square;stroke-dasharray:none"
+       id="path893"
+       inkscape:flatsided="true"
+       sodipodi:sides="3"
+       sodipodi:cx="35.864288"
+       sodipodi:cy="36.437115"
+       sodipodi:r1="0.1913337"
+       sodipodi:r2="0.095666848"
+       sodipodi:arg1="0.96236975"
+       sodipodi:arg2="2.0095673"
+       inkscape:rounded="0"
+       inkscape:randomized="0"
+       d="m 35.97365,36.594113 -0.300007,-0.140787 0.271929,-0.189421 z"
+       inkscape:transform-center-x="-0.38248343"
+       inkscape:transform-center-y="-0.0075750815"
+       transform="matrix(4.6234069,-17.855556,6.5861468,12.534416,-330.93473,205.19124)" />
   </g>
 </svg>
