@@ -4,9 +4,12 @@ The simulation is an agent-based 2D spatio-temporal simulation.
 Cells are agents. Each cell has a string, the genome, which unambigously encodes a set or proteins, the proteome.
 These proteins can change molecules in and around the cell.
 Through that each cell can process information.
-Each cell's proteome can form complex networks with feedback loops, cascades, and oscillators.
+Each cell's proteome can form complex networks with hubs, feedback loops, cascades, and oscillators.
 When randomly changing the cell's genome, this network changes randomly, too.
 By selectively replicating certain cells while killing others, cells can be brought to evolve.
+
+![transcription and translation](./img/schema.png)
+_A cells genome is transcribed into multiple coding regions, each of which forms a protein. Each coding region can contain multiple domains of which each has a different purpose and different kinetics. Together these proteins form signal processing networks in the cell._
 
 I believe that most interesting behaviors take many time steps to evolve.
 That's why this simulation is implemented with millions of time steps in mind.
