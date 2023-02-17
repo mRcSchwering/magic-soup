@@ -1,12 +1,12 @@
 # Magicsoup
 
-This is a game that simulates cell metabolic and transduction pathway evolution.
+This game simulates cell metabolic and transduction pathway evolution.
 Define a 2D world with certain molecules and reactions.
 Add a few cells and create evolutionary pressure by selectively replicating and killing them.
 Then run and see what random mutations can do.
 
-![monitoring run](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/docs/img/tensorboard_example.png)
-_Watching an ongoing simulation using TensorBoard. In [this simulation](https://github.com/mRcSchwering/luca/tree/main/experiments/e1_co2_fixing) cells were made to fix CO2 from an artificial CO2 source in the middle of the map._
+![co2 fixing](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/docs/img/co2fix.png)
+_In [this simulation](https://github.com/mRcSchwering/luca/tree/main/experiments/e1_co2_fixing) cells were made to fix CO2 from an artificial CO2 source in the middle of the map. (A) Total molecule counts of some molecule species over time. (B) Cell map with cells in white at chosen time points._
 
 Proteins in this simulation are made up of catalytic, transporter, and regulatory domains.
 They are energetically coupled within the same protein and mostly follow Michaelis-Menten-Kinetics.
