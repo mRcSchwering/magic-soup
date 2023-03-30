@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# 
-#
+# Version docs by creating and pushing a git tag.
 # Use:
 #
 # bash scripts/version-docs.sh 1.0.0

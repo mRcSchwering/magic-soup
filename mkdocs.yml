@@ -8,6 +8,13 @@ markdown_extensions:
   - mdx_math:
       enable_dollar_delimiter: True
 
+nav:
+  - "index.md"
+  - "mechanics.md"
+  - "tutorials.md"
+  - "reference.md"
+  - "other_simulations.md"
+
 plugins:
   - search
   - mkdocstrings:
