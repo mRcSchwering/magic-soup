@@ -75,7 +75,7 @@ class World:
             Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
         cell_divisions: Integer 1D tensor describing how many times each cell replicated.
             This tensor is for monitoring and doesn't have any other effect.
-            Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
+            Cells are in the same order as in `world.cells` and the same as on a cell object (`cell.idx`).
 
     Methods for advancing the simulation and to use during a simulation:
 
@@ -287,17 +287,17 @@ class World:
             parent_idxs: Cell indexes of the cells that should replicate.
 
         Returns:
-            A list of tuples of parent and child cell indexes for all successfully replicated cells.
+            A list of tuples of descendant cell indexes.
 
-        In this simulation the cell that was brought to replicate is the parent.
-        It still lives on the same pixel.
-        The child is the cell that was newly added next to the parent.
-        The child will start with 0 survived steps and 0 replications,
-        while the parent keeps its number of survived steps and increments its number of replications.
-        Half the parent's molecules will be given to the child.
+        A new descendant will be placed randomly next to its ancestor cell (Moore's neighborhood).
+        If every pixel in the ancestor's Moore's neighborhood is taken the cell will not replicate.
+        Both, the original ancestor cell and the newly placed cell will become the descendants.
+        Each descendant recieves half the molecules of their ancestor cell.
+        `cell_divisions` for both descendants is incremented by 1.
 
-        Each child will be placed randomly next to its parent (Moore's neighborhood).
-        If every pixel in the parent's Moore's neighborhood is taken the cell will not replicate.
+        Of the list of descendant index tuples,
+        the first descendant in each tuple is the one that still lived on the same pixel.
+        The second descendant in that tuple lives on a pixel next to the first one.
         """
         if len(parent_idxs) == 0:
             return []
@@ -305,7 +305,6 @@ class World:
         succ_parent_idxs, child_idxs = self._replicate_cells_as_possible(
             parent_idxs=parent_idxs
         )
-        self.cell_divisions[succ_parent_idxs] += 1
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
@@ -317,9 +316,11 @@ class World:
         self.kinetics.increase_max_cells(by_n=n_new_cells)
         self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
 
-        # cell shares molecules with parent
+        # cells share molecules and increment cell divisions
+        descendant_idxs = succ_parent_idxs + child_idxs
         self.cell_molecules[child_idxs] = self.cell_molecules[succ_parent_idxs]
-        self.cell_molecules[child_idxs + succ_parent_idxs] *= 0.5
+        self.cell_molecules[descendant_idxs] *= 0.5
+        self.cell_divisions[descendant_idxs] += 1
 
         return list(zip(succ_parent_idxs, child_idxs))
 
@@ -650,7 +651,7 @@ class World:
             new_x, new_y = pxls[random.randint(0, n - 1)].tolist()
             self.cell_map[new_x, new_y] = True
 
-            child = parent.copy(idx=idx, position=(new_x, new_y), n_survived_steps=0)
+            child = parent.copy(idx=idx, position=(new_x, new_y))
             successful_parent_idxs.append(parent_idx)
             child_idxs.append(idx)
             self.cells.append(child)

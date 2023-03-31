@@ -435,12 +435,10 @@ class Cell:
     By default the cell objects in `world.cells` only always have a genome, proteome, and a position.
     If you also want to know the other attributes of a specific cell use [get_cell()][magicsoup.world.World.get_cell].
 
-    During cell division this simulation has a concept of parent and child.
-    The parent is the cell that stays on the same pixel, while the child is the new cell that will occupy another pixel.
-    The child will have `n_survived_steps=0` and `n_replications=0` when it is born.
-    The parent will keep these values. Both cells will have the same genome and proteome.
-    The child will inherit the parent's `label`.
-    This way you can track cells' origin.
+    When a cell replicates its genome and proteome are copied.
+    Both descendants will recieve half of all molecules each.
+    The cell's `label` will be copied as well.
+    This way you can track cells' origins.
     """
 
     def __init__(
