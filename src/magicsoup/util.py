@@ -21,7 +21,7 @@ def randstr(n: int = 12) -> str:
     )
 
 
-def random_genome(s=100) -> str:
+def random_genome(s=500) -> str:
     """Generate a random nucleotide sequence of length `s`"""
     return "".join(random.choices(ALL_NTS, k=s))
 

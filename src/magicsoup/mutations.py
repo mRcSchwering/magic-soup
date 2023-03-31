@@ -17,25 +17,25 @@ def substitution(seq: str, idx: int) -> str:
 
 def indel(seq: str, idx: int) -> str:
     """
-    Create insertion or deletion (1:1 chance) at a specific place in a nucleotide sequence.
+    Create insertion or deletion (2:1 chance) at a specific place in a nucleotide sequence.
 
     Arguments:
         seq: nucleotide sequence
         idx: index of indel
     """
-    if random.choice([True, False]):
+    if random.choice([True, True, False]):
         return seq[:idx] + seq[idx + 1 :]
     nt = random.choice(ALL_NTS)
     return seq[:idx] + nt + seq[idx:]
 
 
 def point_mutations(
-    seqs: list[str], p: float = 1e-3, p_indel: float = 0.1
+    seqs: list[str], p: float = 1e-6, p_indel: float = 0.4
 ) -> list[tuple[str, int]]:
     """
     Add point mutations to a list of nucleotide sequences.
     Mutations are substitutions and indels.
-    If an indel occurs, there is a 1:1 chance of it being a deletion or insertion.
+    If an indel occurs, there is a 2:1 chance of it being a deletion vs insertion.
 
     Arguments:
         seqs: nucleotide sequences
@@ -81,7 +81,7 @@ def point_mutations(
 
 
 def recombinations(
-    seq_pairs: list[tuple[str, str]], p: float = 1e-3
+    seq_pairs: list[tuple[str, str]], p: float = 1e-6
 ) -> list[tuple[str, str, int]]:
     """
     Add random recombinations to pairs of nucleotide sequences.
