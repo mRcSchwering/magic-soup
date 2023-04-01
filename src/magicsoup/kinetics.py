@@ -272,7 +272,6 @@ class Kinetics:
         km_range: tuple[float, float] = (1e-5, 1.0),
         vmax_range: tuple[float, float] = (0.01, 10.0),
         device: str = "cpu",
-        workers: int = 2,
     ):
         self.abs_temp = abs_temp
         self.device = device
@@ -361,8 +360,18 @@ class Kinetics:
             proteomes=[proteome]
         )
 
+        # TODO: repeating some aggregation steps here to see whether
+        #       there were co-factors in reactions, and then add them
+        #       separatly as regulatory domain
+        #       can this be done more elegantly?
+        N = N_d.sum(dim=2)
+        A = A_d.sum(dim=2)
+        delta_N = N_d[:, :, 0].clamp(max=0.0) - N.clamp(max=0.0)
+
         prots: list[Protein] = []
         for pi in range(dom_types.size(1)):
+            N = N_d.sum(dim=2)
+
             doms: list[DomainType] = []
             for di in range(dom_types.size(2)):
 
@@ -397,7 +406,7 @@ class Kinetics:
                         )
                     )
 
-                # regulatory domain (A has one +1)
+                # regulatory domain (A has values != 0)
                 if dom_types[0][pi][di].item() == 3:
                     mi = int(torch.argwhere(A_d[0][pi][di] != 0)[0].item())
                     if mi in self.mi_2_mol:
@@ -411,6 +420,25 @@ class Kinetics:
                             effector=mol,
                             km=Km_d[0][pi][di][mi].item(),
                             is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
+                            is_transmembrane=is_trnsm,
+                        )
+                    )
+
+            # add regulatory domain for each co-factor
+            if (delta_N[0, pi] < 0).any():
+                for tmi in torch.argwhere(delta_N[0, pi] < 0).flatten().tolist():
+                    mi = int(tmi)
+                    if mi in self.mi_2_mol:
+                        is_trnsm = False
+                        mol = self.mi_2_mol[mi]
+                    else:
+                        is_trnsm = True
+                        mol = self.mi_2_mol[mi - len(self.mi_2_mol)]
+                    doms.append(
+                        RegulatoryDomain(
+                            effector=mol,
+                            km=Km_d[0][pi][0][mi].item(),
+                            is_inhibiting=False,
                             is_transmembrane=is_trnsm,
                         )
                     )
@@ -445,7 +473,11 @@ class Kinetics:
 
         # A (c, p, d, s)
         A = A_d.sum(dim=2)
-        self.A[cell_idxs] = A
+        # reactants on the first domain must be added as effectors
+        # if their stoichiometric number became 0 during summing up
+        delta_N = N_d[:, :, 0].clamp(max=0.0) - N.clamp(max=0.0)
+        # A += -1.0 * delta_N.clamp(max=0.0)
+        self.A[cell_idxs] = A - delta_N.clamp(max=0.0)
 
         # Km (c, p, d, s)
         Km = Km_d.nanmean(dim=2).nan_to_num(0.0)

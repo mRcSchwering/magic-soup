@@ -119,6 +119,115 @@ def test_unsetting_cell_params():
     assert torch.all(A == 0.0)
 
 
+def test_cell_params_with_catalytic_domains_and_co_factors():
+    # Dealing with stoichiometric numbers that cancel each other out
+    # in general, intermediate molecules should be 0 in N
+    # but the reaction must depend on abundance of the starting molecules
+    # the first domain defines these starting molecules
+    # if these are 0 in N, they must appear in A
+
+    # C0, P0:
+    # bc->d then d->2b so bc->2b, with N b=1 c=-1 d=0
+    # b needs to be added as activating effector A b=1
+    # C0, P1:
+    # d->2b then bc->d, with N b=1 c=-1 d=0
+    # d needs to be added as activating effector A d=1
+    #
+    # the stoichiometry in both proteins in C0 is the same, but
+    # the order in which domains were defined is different
+    # That's why they differ in A
+
+    # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
+    # fmt: off
+    c0 = [
+        [
+            (1, 3, 2, 15, 1), # catal, bc->d, Vmax 1.2, Km 1.5, fwd
+            (1, 4, 1, 5, 1), # catal, d->2b, Vmax 1.1, Km 0.5, fwd
+        ],
+        [
+            (1, 4, 1, 5, 1), # catal, d->2b, Vmax 1.1, Km 0.5, fwd
+            (1, 3, 2, 15, 1), # catal, bc->d, Vmax 1.2, Km 1.5, fwd
+        ]
+    ]
+
+    # fmt: on
+
+    Km = torch.zeros(1, 3, 8)
+    Vmax = torch.zeros(1, 3)
+    E = torch.zeros(1, 3)
+    N = torch.zeros(1, 3, 8)
+    A = torch.zeros(1, 3, 8)
+
+    # test
+    kinetics = get_kinetics()
+    kinetics.Km = Km
+    kinetics.Vmax = Vmax
+    kinetics.E = E
+    kinetics.N = N
+    kinetics.A = A
+    kinetics.set_cell_params(cell_idxs=[0], proteomes=[c0])
+
+    # proteins in C0 only differ in A
+    for p in [0, 1]:
+        assert Km[0, p, 1] == pytest.approx(avg(1.5, 1 / 0.5), abs=TOLERANCE)
+        assert Km[0, p, 2] == pytest.approx(1.5, abs=TOLERANCE)
+        assert Km[0, p, 3] == pytest.approx(avg(0.5, 1 / 1.5), abs=TOLERANCE)
+        for i in [0, 4, 5, 6, 7]:
+            assert Km[0, p, i] == 0.0
+
+        assert Vmax[0, p] == pytest.approx(avg(1.1, 1.2), abs=TOLERANCE)
+
+        assert E[0, p] == 10 - 10
+
+        assert N[0, p, 1] == 1
+        assert N[0, p, 2] == -1
+        assert N[0, p, 3] == 0
+        for i in [0, 4, 5, 6, 7]:
+            assert N[0, p, i] == 0
+
+    assert A[0, 0, 1] == 1
+    assert A[0, 1, 3] == 1
+    assert A.sum() == 2
+
+    # test proteome representation
+
+    proteins = kinetics.get_proteome(proteome=c0)
+
+    p0 = proteins[0]
+    assert isinstance(p0.domains[0], CatalyticDomain)
+    assert p0.domains[0].substrates == [mb, mc]
+    assert p0.domains[0].products == [md]
+    assert p0.domains[0].vmax == pytest.approx(1.2, abs=TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(1.5, abs=TOLERANCE)
+    assert isinstance(p0.domains[1], CatalyticDomain)
+    assert p0.domains[1].substrates == [md]
+    assert p0.domains[1].products == [mb, mb]
+    assert p0.domains[1].vmax == pytest.approx(1.1, abs=TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p0.domains[2], RegulatoryDomain)
+    assert p0.domains[2].effector == mb
+    assert not p0.domains[2].is_inhibiting
+    assert not p0.domains[2].is_transmembrane
+    assert p0.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
+
+    p1 = proteins[1]
+    assert isinstance(p1.domains[0], CatalyticDomain)
+    assert p1.domains[0].substrates == [md]
+    assert p1.domains[0].products == [mb, mb]
+    assert p1.domains[0].vmax == pytest.approx(1.1, abs=TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert isinstance(p1.domains[1], CatalyticDomain)
+    assert p1.domains[1].substrates == [mb, mc]
+    assert p1.domains[1].products == [md]
+    assert p1.domains[1].vmax == pytest.approx(1.2, abs=TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(1.5, abs=TOLERANCE)
+    assert isinstance(p1.domains[2], RegulatoryDomain)
+    assert p1.domains[2].effector == md
+    assert not p1.domains[2].is_inhibiting
+    assert not p1.domains[2].is_transmembrane
+    assert p1.domains[2].km == pytest.approx(0.5, abs=TOLERANCE)
+
+
 def test_cell_params_with_transporter_domains():
 
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
@@ -223,7 +332,10 @@ def test_cell_params_with_transporter_domains():
     for i in [2, 3, 5, 6, 7]:
         assert N[1, 1, i] == 0
 
-    assert not A.any()
+    # a was imported and exported, so its N=0
+    # but it must be added as effector
+    assert A[0, 1, 0] == 1
+    assert A.sum() == 1
 
     # test proteome representation
 
@@ -244,6 +356,11 @@ def test_cell_params_with_transporter_domains():
     assert p1.domains[1].molecule is ma
     assert p1.domains[1].vmax == pytest.approx(1.1, abs=TOLERANCE)
     assert p1.domains[1].km == pytest.approx(1 / 0.2, abs=TOLERANCE)
+    assert isinstance(p1.domains[2], RegulatoryDomain)
+    assert p1.domains[2].effector == ma
+    assert not p1.domains[2].is_inhibiting
+    assert not p1.domains[2].is_transmembrane
+    assert p1.domains[2].km == pytest.approx(0.5, abs=TOLERANCE)
 
     proteins = kinetics.get_proteome(proteome=c1)
 
@@ -378,7 +495,7 @@ def test_cell_params_with_regulatory_domains():
     for i in [4, 5, 6, 7]:
         assert N[0, 0, i] == 0
     assert N[0, 1, 0] == -1
-    assert N[0, 1, 1] == 1  # b is added and removed
+    assert N[0, 1, 1] == 1
     assert N[0, 1, 2] == 0
     assert N[0, 1, 3] == 0
     for i in [4, 5, 6, 7]:
@@ -387,14 +504,14 @@ def test_cell_params_with_regulatory_domains():
         assert N[0, 2, i] == 0
 
     assert N[1, 0, 0] == -1
-    assert N[1, 0, 1] == 1  # b is added and removed
+    assert N[1, 0, 1] == 1
     assert N[1, 0, 2] == 0
     assert N[1, 0, 3] == 0
     for i in [4, 5, 6, 7]:
         assert N[1, 0, i] == 0
     assert N[1, 1, 0] == -1
     assert N[1, 1, 1] == 1
-    assert N[1, 1, 2] == 0  # c is added and removed
+    assert N[1, 1, 2] == 0
     assert N[1, 1, 3] == 0
     for i in [4, 5, 6, 7]:
         assert N[1, 1, i] == 0
@@ -637,7 +754,12 @@ def test_cell_params_with_catalytic_domains():
     for i in range(8):
         assert N[1, 2, i] == 0
 
-    assert not A.any()
+    # b was a reactant in the first domain,
+    # but was then created again yielding N b=0
+    # it thus has to be added as activating effector
+    assert A[0, 1, 1] == 1
+    assert A[1, 0, 1] == 1
+    assert A.sum() == 2
 
     # test protein representation
 
@@ -666,6 +788,11 @@ def test_cell_params_with_catalytic_domains():
     assert p1.domains[1].products == [mb, mc]
     assert p1.domains[1].vmax == pytest.approx(1.3, abs=TOLERANCE)
     assert p1.domains[1].km == pytest.approx(1.2, abs=TOLERANCE)
+    assert isinstance(p1.domains[2], RegulatoryDomain)
+    assert p1.domains[2].effector == mb
+    assert not p1.domains[2].is_inhibiting
+    assert not p1.domains[2].is_transmembrane
+    assert p1.domains[2].km == pytest.approx(0.9, abs=TOLERANCE)
 
     p2 = proteins[2]
     assert isinstance(p2.domains[0], CatalyticDomain)
@@ -687,6 +814,11 @@ def test_cell_params_with_catalytic_domains():
     assert p0.domains[1].products == [mb, mc]
     assert p0.domains[1].vmax == pytest.approx(2.1, abs=TOLERANCE)
     assert p0.domains[1].km == pytest.approx(1.4, abs=TOLERANCE)
+    assert isinstance(p0.domains[2], RegulatoryDomain)
+    assert p0.domains[2].effector == mb
+    assert not p0.domains[2].is_inhibiting
+    assert not p0.domains[2].is_transmembrane
+    assert p0.domains[2].km == pytest.approx(0.3, abs=TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], CatalyticDomain)

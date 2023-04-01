@@ -140,7 +140,6 @@ class World:
             reactions=chemistry.reactions,
             abs_temp=abs_temp,
             device=self.device,
-            workers=self.workers,
         )
 
         mol_degrads: list[float] = []
