@@ -1,7 +1,7 @@
 import warnings
 import random
 import torch.multiprocessing as mp
-from magicsoup.util import reverse_complement, nt_seqs
+from magicsoup.util import reverse_complement, nt_seqs, random_genome
 from magicsoup.constants import CODON_SIZE
 
 
@@ -242,6 +242,11 @@ class Genetics:
                 "p_catal_dom, p_transp_dom, p_reg_dom together must not be greater 1.0"
             )
 
+        # TODO: nt_seqs also returns stop codons
+        #       so, domain specifications with these codons will effectively never
+        #       be used as they stop the CDS and thereby cancel the domain
+        #       Should I only use non-coding NTs for that?
+
         sets = nt_seqs(n_dom_type_nts)
         random.shuffle(sets)
         n = len(sets)
@@ -251,15 +256,15 @@ class Genetics:
         n_reg_doms = _get_n(p=p_reg_dom, s=n, name="allosteric domains")
 
         # 1=catalytic, 2=transporter, 3=regulatory
-        domain_types: dict[int, list[str]] = {}
-        domain_types[1] = sets[:n_catal_doms]
+        self.domain_types: dict[int, list[str]] = {}
+        self.domain_types[1] = sets[:n_catal_doms]
         del sets[:n_catal_doms]
-        domain_types[2] = sets[:n_transp_doms]
+        self.domain_types[2] = sets[:n_transp_doms]
         del sets[:n_transp_doms]
-        domain_types[3] = sets[:n_reg_doms]
+        self.domain_types[3] = sets[:n_reg_doms]
         del sets[:n_reg_doms]
 
-        self.domain_map = {d: k for k, v in domain_types.items() for d in v}
+        self.domain_map = {d: k for k, v in self.domain_types.items() for d in v}
 
         self.two_codon_map: dict[str, int] = {}
         for i, seq in enumerate(nt_seqs(n=2 * CODON_SIZE)):
@@ -305,3 +310,42 @@ class Genetics:
             dom_seqs = pool.starmap(_translate_genome, args)
 
         return dom_seqs
+
+    def random_noncds(
+        self,
+        size: int,
+        incl_start_codons: bool = False,
+        incl_stop_codons: bool = False,
+        excl_dom_type_defs: bool = False,
+    ):
+        """
+        Genrate random nucleotide sequence while avoiding coding sequences
+        """
+        # TODO: size=0 ok?, size=1 ok?
+        n = size
+        dom_type_seqs = list(self.domain_map.keys())
+        seq = random_genome(s=n)
+        if excl_dom_type_defs:
+            for dom_seq in dom_type_seqs:
+                seq = "".join(seq.split(dom_seq))
+        if not incl_start_codons:
+            for start in self.start_codons:
+                seq = "".join(seq.split(start))
+        if not incl_stop_codons:
+            for stop in self.stop_codons:
+                seq = "".join(seq.split(stop))
+
+        while len(seq) != size:
+            n = size - len(seq)
+            seq = seq + random_genome(s=n)
+            if excl_dom_type_defs:
+                for dom_seq in dom_type_seqs:
+                    seq = "".join(seq.split(dom_seq))
+            if not incl_start_codons:
+                for start in self.start_codons:
+                    seq = "".join(seq.split(start))
+            if not incl_stop_codons:
+                for stop in self.stop_codons:
+                    seq = "".join(seq.split(stop))
+
+        return seq

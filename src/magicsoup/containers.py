@@ -301,6 +301,13 @@ class CatalyticDomain:
         return f"CatalyticDomain({ins}->{outs},Km={self.km:.2e},Vmax{self.vmax:.2e})"
 
 
+class CatalyticDomainFact:
+    def __init__(self, reaction: tuple[list[Molecule], list[Molecule]]):
+        subs, prods = reaction
+        self.substrates = subs
+        self.products = prods
+
+
 class TransporterDomain:
     """
     Container holding the specification for a transporter domain.
@@ -329,6 +336,11 @@ class TransporterDomain:
         return (
             f"TransporterDomain({self.molecule},Km={self.km:.2e},Vmax={self.vmax:.2e})"
         )
+
+
+class TransporterDomainFact:
+    def __init__(self, molecule: Molecule):
+        self.molecule = molecule
 
 
 class RegulatoryDomain:
@@ -370,7 +382,14 @@ class RegulatoryDomain:
         return f"ReceptorDomain({self.effector},Km={self.km:.2e},{loc},{eff})"
 
 
+class RegulatoryDomainFact:
+    def __init__(self, effector: Molecule, is_transmembrane: bool):
+        self.effector = effector
+        self.is_transmembrane = is_transmembrane
+
+
 DomainType = Union[CatalyticDomain, TransporterDomain, RegulatoryDomain]
+DomainFactType = Union[CatalyticDomainFact, TransporterDomainFact, RegulatoryDomainFact]
 
 
 class Protein:
@@ -393,6 +412,12 @@ class Protein:
         kwargs = {"domains": self.domains}
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
+
+
+class ProteinFact:
+    def __init__(self, domain_facts: list[DomainFactType]):
+        self.domain_facts = domain_facts
+        self.n_domains = len(domain_facts)
 
 
 class Cell:

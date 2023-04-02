@@ -6,8 +6,17 @@ from io import BytesIO
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.containers import Cell, Chemistry
-from magicsoup.util import moore_nghbrhd
+from magicsoup.constants import CODON_SIZE
+from magicsoup.util import moore_nghbrhd, round_down
+from magicsoup.containers import (
+    Molecule,
+    Cell,
+    Chemistry,
+    ProteinFact,
+    CatalyticDomainFact,
+    TransporterDomainFact,
+    RegulatoryDomainFact,
+)
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
 
@@ -212,6 +221,189 @@ class World:
         cell.proteome = self.kinetics.get_proteome(proteome=cdss)
 
         return cell
+
+    def get_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
+        req_nts = 0
+        all_mols = self.chemistry.molecules
+        fwd_reacts = [
+            (tuple(sorted(s)), tuple(sorted(p))) for s, p in self.chemistry.reactions
+        ]
+        bwd_reacts = [
+            (tuple(sorted(p)), tuple(sorted(s))) for s, p in self.chemistry.reactions
+        ]
+        all_reacts = fwd_reacts + bwd_reacts
+
+        for pi, prot in enumerate(proteome):
+            req_nts += 2 * CODON_SIZE + self.genetics.dom_size * prot.n_domains
+            for dom in prot.domain_facts:
+                if isinstance(dom, TransporterDomainFact):
+                    if dom.molecule not in all_mols:
+                        raise ValueError(
+                            f"ProteinFact {pi} has this molecule defined: {dom.molecule.name}."
+                            " This world's chemistry doesn't define this molecule species."
+                        )
+                if isinstance(dom, RegulatoryDomainFact):
+                    if dom.effector not in all_mols:
+                        raise ValueError(
+                            f"ProteinFact {pi} has this effector defined: {dom.effector.name}."
+                            " This world's chemistry doesn't define this molecule species."
+                        )
+                if isinstance(dom, CatalyticDomainFact):
+                    subs = sorted(dom.substrates)
+                    prods = sorted(dom.products)
+                    react = (tuple(subs), tuple(prods))
+                    if react not in all_reacts:
+                        reactstr = f"{' + '.join(d.name for d in subs)} <-> {' + '.join(d.name for d in prods)}"
+                        raise ValueError(
+                            f"ProteinFact {pi} has this reaction defined: {reactstr}."
+                            " This world's chemistry doesn't define this reaction."
+                        )
+
+        if req_nts > size:
+            raise ValueError(
+                "Genome size too small."
+                f" The given proteome would require at least {req_nts} nucleotides."
+                f" But the given genome size is size={size}."
+            )
+
+        proteome = proteome.copy()
+        random.shuffle(proteome)
+
+        react_map: dict[
+            tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]
+        ] = {}
+        for subs, prods in self.chemistry.reactions:
+            sis = [self.kinetics.mol_2_mi[d] for d in subs]
+            pis = [self.kinetics.mol_2_mi[d] for d in prods]
+            t = torch.zeros(self.n_molecules * 2)
+            for si in sis:
+                t[si] -= 1
+            for pi in pis:
+                t[pi] += 1
+            M = self.kinetics.reaction_map.M
+            idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
+            react_map[(tuple(subs), tuple(prods))] = idxs
+
+        trnsp_map: dict[Molecule, list[int]] = {}
+        for mi, mol in enumerate(self.chemistry.molecules):
+            M = self.kinetics.transport_map.M
+            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
+            trnsp_map[mol] = idxs
+
+        reg_map: dict[Molecule, list[int]] = {}
+        for mi, mol in enumerate(self.chemistry.molecules):
+            M = self.kinetics.effector_map.M
+            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
+            reg_map[mol] = idxs
+
+        dom_type_map = self.genetics.domain_types
+
+        sign_map: dict[bool, list[int]] = {}
+        M = self.kinetics.sign_map.signs
+        sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
+        sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
+
+        two_codon_map: dict[int, list[str]] = {}
+        for k, v in self.genetics.two_codon_map.items():
+            if v not in two_codon_map:
+                two_codon_map[v] = []
+            two_codon_map[v].append(k)
+
+        one_codon_map: dict[int, list[str]] = {}
+        for k, v in self.genetics.one_codon_map.items():
+            if v not in one_codon_map:
+                one_codon_map[v] = []
+            one_codon_map[v].append(k)
+
+        cdss: list[list[str]] = []
+        for prot in proteome:
+            cds = []
+            for dom in prot.domain_facts:
+                # 0: domain type seq: 1=catalytic, 2=transporter, 3=regulatory
+                # 1: domain type specific 2-codon index (reaction, molecule, effector)
+                # 2+3: 1-codon index each for M.M. kinetics (Vmax and Km)
+                # 4: 1-codon index for orienation (sign)
+
+                if isinstance(dom, CatalyticDomainFact):
+                    react = (tuple(dom.substrates), tuple(dom.products))
+                    is_fwd = True
+                    if react not in react_map:
+                        react = (tuple(dom.products), tuple(dom.substrates))
+                        is_fwd = False
+                    # TODO: rm if solved
+                    try:
+                        i1 = random.choice(react_map[react])
+                    except KeyError as err:
+                        s, p = react
+                        print(
+                            f"Searching:\n"
+                            f"{' + '.join(d.name for d in s)} <-> {' + '.join(d.name for d in p)}"
+                        )
+                        print("Available in Map:\n")
+                        for s, p in react_map:
+                            print(
+                                f"{' + '.join(d.name for d in s)} <-> {' + '.join(d.name for d in p)}"
+                            )
+
+                        raise err
+                    i4 = random.choice(sign_map[is_fwd])
+                    dom_seq = random.choice(dom_type_map[1])
+                    mol_seq = random.choice(two_codon_map[i1])
+                    sign_seq = random.choice(one_codon_map[i4])
+                    mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
+                    cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
+
+                if isinstance(dom, TransporterDomainFact):
+                    i1 = random.choice(trnsp_map[dom.molecule])
+                    dom_seq = random.choice(dom_type_map[2])
+                    mol_seq = random.choice(two_codon_map[i1])
+                    mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
+                    sign_seq = self.genetics.random_noncds(size=CODON_SIZE)
+                    cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
+
+                if isinstance(dom, RegulatoryDomainFact):
+                    i1 = random.choice(reg_map[dom.effector])
+                    dom_seq = random.choice(dom_type_map[3])
+                    mol_seq = random.choice(two_codon_map[i1])
+                    mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
+                    sign_seq = self.genetics.random_noncds(size=CODON_SIZE)
+                    cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
+
+            cdss.append(cds)
+
+        n_prot_pads = len(cdss) + 1
+        n_dom_pads = sum(len(d) + 1 for d in cdss)
+
+        n_pad_nts = size - req_nts
+        pad_size = n_pad_nts / (n_prot_pads * 0.7 + n_dom_pads * 0.3)
+        dom_pad_size = round_down(pad_size * 0.3, to=3)
+        dom_pad_total = n_dom_pads * dom_pad_size
+        prot_pad_size = round_down((n_pad_nts - dom_pad_total) / n_prot_pads, to=1)
+        prot_pad_total = n_prot_pads * prot_pad_size
+        remaining_nts = n_pad_nts - dom_pad_total - prot_pad_total
+
+        prot_pads = [
+            self.genetics.random_noncds(size=prot_pad_size) for _ in range(n_prot_pads)
+        ]
+        dom_pads = [
+            self.genetics.random_noncds(size=dom_pad_size, excl_dom_type_defs=True)
+            for _ in range(n_dom_pads)
+        ]
+        tail = self.genetics.random_noncds(size=remaining_nts)
+
+        parts: list[str] = []
+        for cds in cdss:
+            parts.append(prot_pads.pop())
+            parts.append(random.choice(self.genetics.start_codons))
+            for dom_seq in cds:
+                parts.append(dom_pads.pop())
+                parts.append(dom_seq)
+            parts.append(dom_pads.pop())
+            parts.append(random.choice(self.genetics.stop_codons))
+        parts.append(prot_pads.pop())
+        parts.append(tail)
+
+        return "".join(parts)
 
     def add_random_cells(self, genomes: list[str]) -> list[int]:
         """

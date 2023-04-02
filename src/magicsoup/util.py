@@ -6,6 +6,11 @@ import math
 from magicsoup.constants import ALL_NTS
 
 
+def round_down(d: float, to: int = 3) -> int:
+    """Round down to declared integer"""
+    return math.floor(d / to) * to
+
+
 def randstr(n: int = 12) -> str:
     """
     Generate random string of length `n`.

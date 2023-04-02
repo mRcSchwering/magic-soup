@@ -207,3 +207,110 @@ def test_molecule_amount_integrity_during_reactions():
         world.enzymatic_activity()
         n = count(world)
         assert n == pytest.approx(n0, abs=1.0), step_i
+
+
+def test_generate_genome():
+    mi = ms.Molecule("i", 10 * 1e3)
+    mj = ms.Molecule("j", 20 * 1e3)
+    mk = ms.Molecule("k", 30 * 1e3)
+    molecules = [mi, mj, mk]
+    reactions = [([mi], [mj]), ([mi, mj], [mk])]
+
+    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
+    world = ms.World(chemistry=chemistry, map_size=128)
+
+    g = world.get_genome(proteome=[], size=10)
+    assert len(g) == 10
+    g = world.get_genome(proteome=[], size=100)
+    assert len(g) == 100
+
+    p0 = ms.ProteinFact(
+        domain_facts=[
+            ms.CatalyticDomainFact(reaction=([mi], [mj])),
+            ms.CatalyticDomainFact(reaction=([mk], [mi, mj])),
+        ]
+    )
+    with pytest.raises(ValueError):
+        g = world.get_genome(proteome=[p0], size=10)
+
+    g = world.get_genome(proteome=[p0], size=50)
+    assert len(g) == 50
+
+    g = world.get_genome(proteome=[p0], size=100)
+    assert len(g) == 100
+
+    p0 = ms.ProteinFact(
+        domain_facts=[
+            ms.CatalyticDomainFact(reaction=([mi], [mj])),
+            ms.CatalyticDomainFact(reaction=([mk], [mi, mj])),
+        ]
+    )
+    p1 = ms.ProteinFact(
+        domain_facts=[
+            ms.TransporterDomainFact(molecule=mi),
+            ms.RegulatoryDomainFact(effector=mk, is_transmembrane=True),
+        ]
+    )
+
+    # currently domain specifications can map to any combination of
+    # nucleotides, including stop codons
+    # so it is always possible a domain specification stops itself
+    # even though I am trying to avoid that when creating paddings
+    # in the generated genome
+    success = False
+    max_i = 5
+    i = 0
+    p0_found = 0
+    p1_found = 0
+    while not success:
+        g = world.get_genome(proteome=[p0, p1], size=200)
+        assert len(g) == 200
+
+        world.add_random_cells(genomes=[g])
+        cell = world.get_cell(by_idx=0)
+        has_p0 = False
+        has_p1 = False
+        for prot in cell.proteome:
+            has_cij = False
+            has_ckij = False
+            has_ti = False
+            has_rk = False
+
+            for dom in prot.domains:
+                if isinstance(dom, ms.CatalyticDomain):
+                    subs = dom.substrates
+                    prods = dom.products
+                    if subs == [mk] and prods == [mi, mj]:
+                        print("has ckij")
+                        has_ckij = True
+                    elif subs == [mi] and prods == [mk]:
+                        print("has cij")
+                        has_cij = True
+                if isinstance(dom, ms.TransporterDomain):
+                    if dom.molecule == mi:
+                        print("has ti")
+                        has_ti = True
+                if isinstance(dom, ms.RegulatoryDomain):
+                    if dom.effector == mk and dom.is_inhibiting:
+                        print("has rk")
+                        has_rk = True
+
+            if has_ckij and has_cij:
+                has_p0 = True
+                p0_found += 1
+            if has_ti and has_rk:
+                has_p1 = True
+                p1_found += 1
+
+        world.kill_cells(cell_idxs=[d.idx for d in world.cells])
+        if has_p0 and has_p1:
+            success = True
+            break
+        else:
+            i += 1
+
+        if i > max_i:
+            raise AssertionError(
+                f"Was not able to recreate proteome from generated genome after {max_i} tries."
+                f" P0 was {p0_found}x found, P1 was {p1_found}x found"
+            )

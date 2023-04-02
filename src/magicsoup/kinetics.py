@@ -365,7 +365,6 @@ class Kinetics:
         #       separatly as regulatory domain
         #       can this be done more elegantly?
         N = N_d.sum(dim=2)
-        A = A_d.sum(dim=2)
         delta_N = N_d[:, :, 0].clamp(max=0.0) - N.clamp(max=0.0)
 
         prots: list[Protein] = []
