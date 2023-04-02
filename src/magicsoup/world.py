@@ -339,7 +339,7 @@ class World:
                             f"Searching:\n"
                             f"{' + '.join(d.name for d in s)} <-> {' + '.join(d.name for d in p)}"
                         )
-                        print("Available in Map:\n")
+                        print("Available in Map:")
                         for s, p in react_map:
                             print(
                                 f"{' + '.join(d.name for d in s)} <-> {' + '.join(d.name for d in p)}"

@@ -423,6 +423,14 @@ class Kinetics:
                         )
                     )
 
+            # TODO: below I am adding a regulatory domain
+            #       for each case where a molecule acts as a co-factor in the protein
+            #       and was thus added in A (because it become 0 in N).
+            #       Does it make sense to do this? The reaction declaration of the
+            #       protein object lists domains, so the co-factor is still there
+            #       It's also confusing if I generate a genome, then translate it,
+            #       then do get_cell, and suddently see an extra regulatory domain
+
             # add regulatory domain for each co-factor
             if (delta_N[0, pi] < 0).any():
                 for tmi in torch.argwhere(delta_N[0, pi] < 0).flatten().tolist():

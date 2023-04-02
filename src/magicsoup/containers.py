@@ -154,8 +154,8 @@ class Molecule:
     def __hash__(self) -> int:
         return self._hash
 
-    def __lt__(self, other) -> bool:
-        return hash(self) < hash(other)
+    def __lt__(self, other: "Molecule") -> bool:
+        return self.name < other.name
 
     def __eq__(self, other) -> bool:
         return hash(self) == hash(other)

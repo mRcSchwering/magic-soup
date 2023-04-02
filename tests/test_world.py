@@ -263,14 +263,15 @@ def test_generate_genome():
     p0_found = 0
     p1_found = 0
     while not success:
-        g = world.get_genome(proteome=[p0, p1], size=200)
-        assert len(g) == 200
+        g = world.get_genome(proteome=[p0, p1], size=100)
+        assert len(g) == 100
 
         world.add_random_cells(genomes=[g])
         cell = world.get_cell(by_idx=0)
         has_p0 = False
         has_p1 = False
         for prot in cell.proteome:
+            print(prot)
             has_cij = False
             has_ckij = False
             has_ti = False
@@ -281,18 +282,14 @@ def test_generate_genome():
                     subs = dom.substrates
                     prods = dom.products
                     if subs == [mk] and prods == [mi, mj]:
-                        print("has ckij")
                         has_ckij = True
-                    elif subs == [mi] and prods == [mk]:
-                        print("has cij")
+                    elif subs == [mi] and prods == [mj]:
                         has_cij = True
                 if isinstance(dom, ms.TransporterDomain):
                     if dom.molecule == mi:
-                        print("has ti")
                         has_ti = True
                 if isinstance(dom, ms.RegulatoryDomain):
                     if dom.effector == mk and dom.is_inhibiting:
-                        print("has rk")
                         has_rk = True
 
             if has_ckij and has_cij:
@@ -312,5 +309,5 @@ def test_generate_genome():
         if i > max_i:
             raise AssertionError(
                 f"Was not able to recreate proteome from generated genome after {max_i} tries."
-                f" P0 was {p0_found}x found, P1 was {p1_found}x found"
+                f" P0 was found {p0_found} times, P1 was found {p1_found} times."
             )
