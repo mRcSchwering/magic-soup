@@ -226,8 +226,8 @@ def test_generate_genome():
 
     p0 = ms.ProteinFact(
         domain_facts=[
-            ms.CatalyticDomainFact(reaction=([mi], [mj])),
-            ms.CatalyticDomainFact(reaction=([mk], [mi, mj])),
+            ms.CatalyticDomainFact(substrates=[mi], products=[mj]),
+            ms.CatalyticDomainFact(substrates=[mk], products=[mi, mj]),
         ]
     )
     with pytest.raises(ValueError):
@@ -241,8 +241,8 @@ def test_generate_genome():
 
     p0 = ms.ProteinFact(
         domain_facts=[
-            ms.CatalyticDomainFact(reaction=([mi], [mj])),
-            ms.CatalyticDomainFact(reaction=([mk], [mi, mj])),
+            ms.CatalyticDomainFact(substrates=[mi], products=[mj]),
+            ms.CatalyticDomainFact(substrates=[mk], products=[mi, mj]),
         ]
     )
     p1 = ms.ProteinFact(

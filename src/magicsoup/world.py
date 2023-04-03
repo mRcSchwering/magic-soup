@@ -266,6 +266,9 @@ class World:
                 f" But the given genome size is size={size}."
             )
 
+        two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
+        one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
+
         proteome = proteome.copy()
         random.shuffle(proteome)
 
@@ -303,18 +306,6 @@ class World:
         sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
         sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
 
-        two_codon_map: dict[int, list[str]] = {}
-        for k, v in self.genetics.two_codon_map.items():
-            if v not in two_codon_map:
-                two_codon_map[v] = []
-            two_codon_map[v].append(k)
-
-        one_codon_map: dict[int, list[str]] = {}
-        for k, v in self.genetics.one_codon_map.items():
-            if v not in one_codon_map:
-                one_codon_map[v] = []
-            one_codon_map[v].append(k)
-
         cdss: list[list[str]] = []
         for prot in proteome:
             cds = []
@@ -330,33 +321,18 @@ class World:
                     if react not in react_map:
                         react = (tuple(dom.products), tuple(dom.substrates))
                         is_fwd = False
-                    # TODO: rm if solved
-                    try:
-                        i1 = random.choice(react_map[react])
-                    except KeyError as err:
-                        s, p = react
-                        print(
-                            f"Searching:\n"
-                            f"{' + '.join(d.name for d in s)} <-> {' + '.join(d.name for d in p)}"
-                        )
-                        print("Available in Map:")
-                        for s, p in react_map:
-                            print(
-                                f"{' + '.join(d.name for d in s)} <-> {' + '.join(d.name for d in p)}"
-                            )
-
-                        raise err
+                    i1 = random.choice(react_map[react])
                     i4 = random.choice(sign_map[is_fwd])
                     dom_seq = random.choice(dom_type_map[1])
-                    mol_seq = random.choice(two_codon_map[i1])
-                    sign_seq = random.choice(one_codon_map[i4])
+                    mol_seq = two_codon_map[i1]
+                    sign_seq = one_codon_map[i4]
                     mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
                     cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
 
                 if isinstance(dom, TransporterDomainFact):
                     i1 = random.choice(trnsp_map[dom.molecule])
                     dom_seq = random.choice(dom_type_map[2])
-                    mol_seq = random.choice(two_codon_map[i1])
+                    mol_seq = two_codon_map[i1]
                     mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
                     sign_seq = self.genetics.random_noncds(size=CODON_SIZE)
                     cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
@@ -364,7 +340,7 @@ class World:
                 if isinstance(dom, RegulatoryDomainFact):
                     i1 = random.choice(reg_map[dom.effector])
                     dom_seq = random.choice(dom_type_map[3])
-                    mol_seq = random.choice(two_codon_map[i1])
+                    mol_seq = two_codon_map[i1]
                     mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
                     sign_seq = self.genetics.random_noncds(size=CODON_SIZE)
                     cds.append(dom_seq + mol_seq + mm_seq + sign_seq)

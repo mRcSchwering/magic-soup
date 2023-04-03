@@ -283,6 +283,8 @@ class CatalyticDomain:
     These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
+    # TODO: rather have substrates/products as arguments?
+
     def __init__(
         self,
         reaction: tuple[list[Molecule], list[Molecule]],
@@ -302,10 +304,9 @@ class CatalyticDomain:
 
 
 class CatalyticDomainFact:
-    def __init__(self, reaction: tuple[list[Molecule], list[Molecule]]):
-        subs, prods = reaction
-        self.substrates = subs
-        self.products = prods
+    def __init__(self, substrates: list[Molecule], products: list[Molecule]):
+        self.substrates = substrates
+        self.products = products
 
 
 class TransporterDomain:
