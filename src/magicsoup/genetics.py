@@ -247,7 +247,8 @@ class Genetics:
         #       be used as they stop the CDS and thereby cancel the domain
         #       Should I only use non-coding NTs for that?
 
-        sets = nt_seqs(n_dom_type_nts)
+        # sequences including stop codons are useless, since they would terminate the CDS
+        sets = self._get_non_stop_seqs(n_codons=int(n_dom_type_nts / CODON_SIZE))
         random.shuffle(sets)
         n = len(sets)
 
@@ -265,6 +266,19 @@ class Genetics:
         del sets[:n_reg_doms]
 
         self.domain_map = {d: k for k, v in self.domain_types.items() for d in v}
+
+        # note that I should be reducing the amount of sequences in the 2 codon map here
+        # `self._get_non_stop_seqs(n_codons=2)` for the 2 codon map
+        # with 3 stop codons total sequences would be reduced by 9 to 4087
+        # the corresponding idx-to-vector maps in kinetics however still have 4096 rows
+        # currently I am not doing that, but with the TODO below it might make sense
+
+        # TODO: it would make sense to re-order the domain definitions in a way that
+        #       the 2 codon map comes at the end. a domain can stop with a stop codon
+        #       so the 2nd of the codon-tuple would be allowed to be a stop codon
+        #       then I would reduce the amount of sequences in that codon map less
+        #       with 3 stop codons it would be only reduced by 3 to 4096 sequences total
+        #       for the other indexes (floats, boolean) the number is less important
 
         self.two_codon_map: dict[str, int] = {}
         for i, seq in enumerate(nt_seqs(n=2 * CODON_SIZE)):
@@ -311,6 +325,7 @@ class Genetics:
 
         return dom_seqs
 
+    # TODO: get rid of
     def random_noncds(
         self,
         size: int,
@@ -349,3 +364,17 @@ class Genetics:
                     seq = "".join(seq.split(stop))
 
         return seq
+
+    def _get_non_stop_seqs(self, n_codons: int) -> list[str]:
+        all_seqs = nt_seqs(n=n_codons * CODON_SIZE)
+        seqs = []
+        for seq in all_seqs:
+            has_stop = False
+            for i in range(n_codons):
+                a = i * CODON_SIZE
+                b = (i + 1) * CODON_SIZE
+                if seq[a:b] in self.stop_codons:
+                    has_stop = True
+            if not has_stop:
+                seqs.append(seq)
+        return seqs

@@ -7,7 +7,7 @@ import pickle
 from pathlib import Path
 import torch
 from magicsoup.constants import CODON_SIZE
-from magicsoup.util import moore_nghbrhd, round_down
+from magicsoup.util import moore_nghbrhd, round_down, random_genome
 from magicsoup.containers import (
     Molecule,
     Cell,
@@ -222,7 +222,7 @@ class World:
 
         return cell
 
-    def get_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
+    def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
         req_nts = 0
         all_mols = self.chemistry.molecules
         fwd_reacts = [
@@ -266,42 +266,37 @@ class World:
                 f" But the given genome size is size={size}."
             )
 
-        two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
-        one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
-
         proteome = proteome.copy()
         random.shuffle(proteome)
 
-        react_map: dict[
-            tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]
-        ] = {}
+        two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
+        one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
+        dom_type_map = self.genetics.domain_types
+
+        react_map = {}
         for subs, prods in self.chemistry.reactions:
-            sis = [self.kinetics.mol_2_mi[d] for d in subs]
-            pis = [self.kinetics.mol_2_mi[d] for d in prods]
             t = torch.zeros(self.n_molecules * 2)
-            for si in sis:
-                t[si] -= 1
-            for pi in pis:
-                t[pi] += 1
+            for sub in subs:
+                t[self.kinetics.mol_2_mi[sub]] -= 1
+            for prod in prods:
+                t[self.kinetics.mol_2_mi[prod]] += 1
             M = self.kinetics.reaction_map.M
             idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
             react_map[(tuple(subs), tuple(prods))] = idxs
 
-        trnsp_map: dict[Molecule, list[int]] = {}
+        trnsp_map = {}
         for mi, mol in enumerate(self.chemistry.molecules):
             M = self.kinetics.transport_map.M
             idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
             trnsp_map[mol] = idxs
 
-        reg_map: dict[Molecule, list[int]] = {}
+        reg_map = {}
         for mi, mol in enumerate(self.chemistry.molecules):
             M = self.kinetics.effector_map.M
             idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
             reg_map[mol] = idxs
 
-        dom_type_map = self.genetics.domain_types
-
-        sign_map: dict[bool, list[int]] = {}
+        sign_map = {}
         M = self.kinetics.sign_map.signs
         sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
         sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
@@ -347,36 +342,33 @@ class World:
 
             cdss.append(cds)
 
-        n_prot_pads = len(cdss) + 1
-        n_dom_pads = sum(len(d) + 1 for d in cdss)
+        n_p_pads = len(cdss) + 1
+        n_d_pads = sum(len(d) + 1 for d in cdss)
 
         n_pad_nts = size - req_nts
-        pad_size = n_pad_nts / (n_prot_pads * 0.7 + n_dom_pads * 0.3)
-        dom_pad_size = round_down(pad_size * 0.3, to=3)
-        dom_pad_total = n_dom_pads * dom_pad_size
-        prot_pad_size = round_down((n_pad_nts - dom_pad_total) / n_prot_pads, to=1)
-        prot_pad_total = n_prot_pads * prot_pad_size
-        remaining_nts = n_pad_nts - dom_pad_total - prot_pad_total
+        pad_size = n_pad_nts / (n_p_pads * 0.7 + n_d_pads * 0.3)
+        d_pad_size = round_down(pad_size * 0.3, to=3)
+        d_pad_total = n_d_pads * d_pad_size
+        p_pad_size = round_down((n_pad_nts - d_pad_total) / n_p_pads, to=1)
+        p_pad_total = n_p_pads * p_pad_size
+        remaining_nts = n_pad_nts - d_pad_total - p_pad_total
 
-        prot_pads = [
-            self.genetics.random_noncds(size=prot_pad_size) for _ in range(n_prot_pads)
-        ]
-        dom_pads = [
-            self.genetics.random_noncds(size=dom_pad_size, excl_dom_type_defs=True)
-            for _ in range(n_dom_pads)
-        ]
-        tail = self.genetics.random_noncds(size=remaining_nts)
+        non_cdss = list(self.genetics.start_codons + self.genetics.stop_codons)
+        in_cdss = list(self.genetics.stop_codons) + list(self.genetics.domain_map)
+        p_pads = [random_genome(s=p_pad_size, excl=non_cdss) for _ in range(n_p_pads)]
+        d_pads = [random_genome(s=d_pad_size, excl=in_cdss) for _ in range(n_d_pads)]
+        tail = random_genome(s=remaining_nts, excl=non_cdss)
 
         parts: list[str] = []
         for cds in cdss:
-            parts.append(prot_pads.pop())
+            parts.append(p_pads.pop())
             parts.append(random.choice(self.genetics.start_codons))
             for dom_seq in cds:
-                parts.append(dom_pads.pop())
+                parts.append(d_pads.pop())
                 parts.append(dom_seq)
-            parts.append(dom_pads.pop())
+            parts.append(d_pads.pop())
             parts.append(random.choice(self.genetics.stop_codons))
-        parts.append(prot_pads.pop())
+        parts.append(p_pads.pop())
         parts.append(tail)
 
         return "".join(parts)

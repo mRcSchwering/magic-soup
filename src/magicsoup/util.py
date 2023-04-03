@@ -1,4 +1,4 @@
-from typing import TypeVar, Sequence
+from typing import TypeVar, Sequence, Optional
 from itertools import product
 import string
 import random
@@ -26,9 +26,38 @@ def randstr(n: int = 12) -> str:
     )
 
 
-def random_genome(s=500) -> str:
-    """Generate a random nucleotide sequence of length `s`"""
-    return "".join(random.choices(ALL_NTS, k=s))
+def random_genome(s=500, excl: Optional[list[str]] = None) -> str:
+    """
+    Generate a random nucleotide sequence
+
+    Parameters:
+            s: Length of genome in nucleotides or base pairs
+            excl: Exclude certain sequences from the genome
+
+        Returns:
+            Generated genome as string
+
+    The resulting genome is a string of all possible nucleotide letters.
+    If `excl` is given, all sequences in `excl` will be removed.
+    However, these sequences might still appear in the reverse-complement of
+    the resulting genome.
+    If you also want to get rid of those, you have to also provide their
+    reverse-complement in `excl`.
+    """
+    # TODO: size=0 ok?, size=1 ok?
+    n = s
+    out = "".join(random.choices(ALL_NTS, k=s))
+
+    if excl is not None:
+        for seq in excl:
+            out = "".join(out.split(seq))
+        while len(out) != s:
+            n = s - len(out)
+            out += random_genome(s=n)
+            for seq in excl:
+                out = "".join(out.split(seq))
+
+    return out
 
 
 def reverse_complement(seq: str) -> str:

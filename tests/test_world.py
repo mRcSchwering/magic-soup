@@ -219,9 +219,9 @@ def test_generate_genome():
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry, map_size=128)
 
-    g = world.get_genome(proteome=[], size=10)
+    g = world.generate_genome(proteome=[], size=10)
     assert len(g) == 10
-    g = world.get_genome(proteome=[], size=100)
+    g = world.generate_genome(proteome=[], size=100)
     assert len(g) == 100
 
     p0 = ms.ProteinFact(
@@ -231,12 +231,12 @@ def test_generate_genome():
         ]
     )
     with pytest.raises(ValueError):
-        g = world.get_genome(proteome=[p0], size=10)
+        g = world.generate_genome(proteome=[p0], size=10)
 
-    g = world.get_genome(proteome=[p0], size=50)
+    g = world.generate_genome(proteome=[p0], size=50)
     assert len(g) == 50
 
-    g = world.get_genome(proteome=[p0], size=100)
+    g = world.generate_genome(proteome=[p0], size=100)
     assert len(g) == 100
 
     p0 = ms.ProteinFact(
@@ -252,18 +252,21 @@ def test_generate_genome():
         ]
     )
 
-    # currently domain specifications can map to any combination of
-    # nucleotides, including stop codons
-    # so it is always possible a domain specification stops itself
-    # even though I am trying to avoid that when creating paddings
-    # in the generated genome
+    # codon-to-indices mappings (1-codon/2-codon maps) can also map to
+    # stop codons, so there's a 4.6% chance per such codon that a domain
+    # is pre-maturely terminated by a stop codon. With 5 such domains
+    # in every domain, there's only a 78% chance that everything goes right
+    # with 4 domains in the proteome, theres only a 38% chance of succeeding
+    # (having 0 pre-mature terminations)
+    # repeating the genome generation 7 times, reduces the chance of 7 pre-mature
+    # terminations to below 5% (>95% chance that at least one proteome is correct)
     success = False
-    max_i = 5
+    max_i = 7
     i = 0
     p0_found = 0
     p1_found = 0
     while not success:
-        g = world.get_genome(proteome=[p0, p1], size=100)
+        g = world.generate_genome(proteome=[p0, p1], size=100)
         assert len(g) == 100
 
         world.add_random_cells(genomes=[g])
