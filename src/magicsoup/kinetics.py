@@ -360,16 +360,8 @@ class Kinetics:
             proteomes=[proteome]
         )
 
-        # TODO: repeating some aggregation steps here to see whether
-        #       there were co-factors in reactions, and then add them
-        #       separatly as regulatory domain
-        #       can this be done more elegantly?
-        N = N_d.sum(dim=2)
-        delta_N = N_d[:, :, 0].clamp(max=0.0) - N.clamp(max=0.0)
-
         prots: list[Protein] = []
         for pi in range(dom_types.size(1)):
-            N = N_d.sum(dim=2)
 
             doms: list[DomainType] = []
             for di in range(dom_types.size(2)):
@@ -419,33 +411,6 @@ class Kinetics:
                             effector=mol,
                             km=Km_d[0][pi][di][mi].item(),
                             is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
-                            is_transmembrane=is_trnsm,
-                        )
-                    )
-
-            # TODO: below I am adding a regulatory domain
-            #       for each case where a molecule acts as a co-factor in the protein
-            #       and was thus added in A (because it become 0 in N).
-            #       Does it make sense to do this? The reaction declaration of the
-            #       protein object lists domains, so the co-factor is still there
-            #       It's also confusing if I generate a genome, then translate it,
-            #       then do get_cell, and suddently see an extra regulatory domain
-
-            # add regulatory domain for each co-factor
-            if (delta_N[0, pi] < 0).any():
-                for tmi in torch.argwhere(delta_N[0, pi] < 0).flatten().tolist():
-                    mi = int(tmi)
-                    if mi in self.mi_2_mol:
-                        is_trnsm = False
-                        mol = self.mi_2_mol[mi]
-                    else:
-                        is_trnsm = True
-                        mol = self.mi_2_mol[mi - len(self.mi_2_mol)]
-                    doms.append(
-                        RegulatoryDomain(
-                            effector=mol,
-                            km=Km_d[0][pi][0][mi].item(),
-                            is_inhibiting=False,
                             is_transmembrane=is_trnsm,
                         )
                     )

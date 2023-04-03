@@ -1,7 +1,6 @@
 import pytest
 import torch
 from magicsoup.containers import (
-    Protein,
     Molecule,
     CatalyticDomain,
     RegulatoryDomain,
@@ -204,11 +203,6 @@ def test_cell_params_with_catalytic_domains_and_co_factors():
     assert p0.domains[1].products == [mb, mb]
     assert p0.domains[1].vmax == pytest.approx(1.1, abs=TOLERANCE)
     assert p0.domains[1].km == pytest.approx(0.5, abs=TOLERANCE)
-    assert isinstance(p0.domains[2], RegulatoryDomain)
-    assert p0.domains[2].effector == mb
-    assert not p0.domains[2].is_inhibiting
-    assert not p0.domains[2].is_transmembrane
-    assert p0.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], CatalyticDomain)
@@ -221,11 +215,6 @@ def test_cell_params_with_catalytic_domains_and_co_factors():
     assert p1.domains[1].products == [md]
     assert p1.domains[1].vmax == pytest.approx(1.2, abs=TOLERANCE)
     assert p1.domains[1].km == pytest.approx(1.5, abs=TOLERANCE)
-    assert isinstance(p1.domains[2], RegulatoryDomain)
-    assert p1.domains[2].effector == md
-    assert not p1.domains[2].is_inhibiting
-    assert not p1.domains[2].is_transmembrane
-    assert p1.domains[2].km == pytest.approx(0.5, abs=TOLERANCE)
 
 
 def test_cell_params_with_transporter_domains():
@@ -356,11 +345,6 @@ def test_cell_params_with_transporter_domains():
     assert p1.domains[1].molecule is ma
     assert p1.domains[1].vmax == pytest.approx(1.1, abs=TOLERANCE)
     assert p1.domains[1].km == pytest.approx(1 / 0.2, abs=TOLERANCE)
-    assert isinstance(p1.domains[2], RegulatoryDomain)
-    assert p1.domains[2].effector == ma
-    assert not p1.domains[2].is_inhibiting
-    assert not p1.domains[2].is_transmembrane
-    assert p1.domains[2].km == pytest.approx(0.5, abs=TOLERANCE)
 
     proteins = kinetics.get_proteome(proteome=c1)
 
@@ -788,11 +772,6 @@ def test_cell_params_with_catalytic_domains():
     assert p1.domains[1].products == [mb, mc]
     assert p1.domains[1].vmax == pytest.approx(1.3, abs=TOLERANCE)
     assert p1.domains[1].km == pytest.approx(1.2, abs=TOLERANCE)
-    assert isinstance(p1.domains[2], RegulatoryDomain)
-    assert p1.domains[2].effector == mb
-    assert not p1.domains[2].is_inhibiting
-    assert not p1.domains[2].is_transmembrane
-    assert p1.domains[2].km == pytest.approx(0.9, abs=TOLERANCE)
 
     p2 = proteins[2]
     assert isinstance(p2.domains[0], CatalyticDomain)
@@ -814,11 +793,6 @@ def test_cell_params_with_catalytic_domains():
     assert p0.domains[1].products == [mb, mc]
     assert p0.domains[1].vmax == pytest.approx(2.1, abs=TOLERANCE)
     assert p0.domains[1].km == pytest.approx(1.4, abs=TOLERANCE)
-    assert isinstance(p0.domains[2], RegulatoryDomain)
-    assert p0.domains[2].effector == mb
-    assert not p0.domains[2].is_inhibiting
-    assert not p0.domains[2].is_transmembrane
-    assert p0.domains[2].km == pytest.approx(0.3, abs=TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], CatalyticDomain)
