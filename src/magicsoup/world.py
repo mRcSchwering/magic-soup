@@ -223,18 +223,41 @@ class World:
         return cell
 
     def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
-        req_nts = 0
+        """
+        Generate a random genome that encodes a desired proteome
+
+        Arguments:
+            proteome: list of [ProteinFactories][magicsoup.containers.ProteinFact] that describe each protein
+            size: total length of the resulting genome (in nucleotides/base pairs)
+
+        Returns:
+            Genome as string of nucleotide letters
+
+        This function uses the mappings from [Genetics][magicsoup.genetics.Genetics]
+        and [Kinetics][magicsoup.kinetics.Kinetics] in reverse to generate a genome.
+        So, the same [World][magicsoup.world.World] object should be used when running a simulation
+        with these generated genomes.
+        Some domain specifications are given in `proteome`, some (such as the kinetics parameters)
+        will be assigned randomly.
+
+        Note, this function is neither particularly intelligent nor performant.
+        It can happen that some proteins of the desired proteome are missing.
+        This can happen for example when a stop codon appear accidentally inside a domain definition,
+        terminating this protein pre-maturely.
+        At the same time, the resulting genome can also include proteins that were not defined.
+        E.g. the reverse-complement can encode additional proteins.
+        This function tries to avoid this, but is not capable of avoiding it all the time.
+        """
         all_mols = self.chemistry.molecules
-        fwd_reacts = [
-            (tuple(sorted(s)), tuple(sorted(p))) for s, p in self.chemistry.reactions
-        ]
-        bwd_reacts = [
-            (tuple(sorted(p)), tuple(sorted(s))) for s, p in self.chemistry.reactions
-        ]
-        all_reacts = fwd_reacts + bwd_reacts
+        all_reacts = self.chemistry.reactions
+        dom_size = self.genetics.dom_size
+
+        req_nts = 0
+        reacts = [(tuple(sorted(s)), tuple(sorted(p))) for s, p in all_reacts]
+        fwd_bwd_reacts = reacts + [(p, s) for s, p in reacts]
 
         for pi, prot in enumerate(proteome):
-            req_nts += 2 * CODON_SIZE + self.genetics.dom_size * prot.n_domains
+            req_nts += 2 * CODON_SIZE + dom_size * prot.n_domains
             for dom in prot.domain_facts:
                 if isinstance(dom, TransporterDomainFact):
                     if dom.molecule not in all_mols:
@@ -252,7 +275,7 @@ class World:
                     subs = sorted(dom.substrates)
                     prods = sorted(dom.products)
                     react = (tuple(subs), tuple(prods))
-                    if react not in all_reacts:
+                    if react not in fwd_bwd_reacts:
                         reactstr = f"{' + '.join(d.name for d in subs)} <-> {' + '.join(d.name for d in prods)}"
                         raise ValueError(
                             f"ProteinFact {pi} has this reaction defined: {reactstr}."
@@ -266,15 +289,52 @@ class World:
                 f" But the given genome size is size={size}."
             )
 
+        cdss = self._get_genome_sequences(proteome=proteome)
+        n_p_pads = len(cdss) + 1
+        n_d_pads = sum(len(d) + 1 for d in cdss)
+
+        n_pad_nts = size - req_nts
+        pad_size = n_pad_nts / (n_p_pads * 0.7 + n_d_pads * 0.3)
+        d_pad_size = round_down(pad_size * 0.3, to=3)
+        d_pad_total = n_d_pads * d_pad_size
+        p_pad_size = round_down((n_pad_nts - d_pad_total) / n_p_pads, to=1)
+        p_pad_total = n_p_pads * p_pad_size
+        remaining_nts = n_pad_nts - d_pad_total - p_pad_total
+
+        excl_cdss = list(self.genetics.start_codons) + list(self.genetics.stop_codons)
+        excl_doms = excl_cdss + list(self.genetics.domain_map)
+        p_pads = [random_genome(s=p_pad_size, excl=excl_cdss) for _ in range(n_p_pads)]
+        d_pads = [random_genome(s=d_pad_size, excl=excl_doms) for _ in range(n_d_pads)]
+        tail = random_genome(s=remaining_nts, excl=excl_cdss)
+
+        parts: list[str] = []
+        for cds in cdss:
+            parts.append(p_pads.pop())
+            parts.append(random.choice(self.genetics.start_codons))
+            for dom_seq in cds:
+                parts.append(d_pads.pop())
+                parts.append(dom_seq)
+            parts.append(d_pads.pop())
+            parts.append(random.choice(self.genetics.stop_codons))
+        parts.append(p_pads.pop())
+        parts.append(tail)
+
+        return "".join(parts)
+
+    def _get_genome_sequences(self, proteome: list[ProteinFact]) -> list[list[str]]:
         proteome = proteome.copy()
         random.shuffle(proteome)
+
+        all_mols = self.chemistry.molecules
+        all_reacts = self.chemistry.reactions
+        stops = list(self.genetics.start_codons)
 
         two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
         one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
         dom_type_map = self.genetics.domain_types
 
         react_map = {}
-        for subs, prods in self.chemistry.reactions:
+        for subs, prods in all_reacts:
             t = torch.zeros(self.n_molecules * 2)
             for sub in subs:
                 t[self.kinetics.mol_2_mi[sub]] -= 1
@@ -285,13 +345,13 @@ class World:
             react_map[(tuple(subs), tuple(prods))] = idxs
 
         trnsp_map = {}
-        for mi, mol in enumerate(self.chemistry.molecules):
+        for mi, mol in enumerate(all_mols):
             M = self.kinetics.transport_map.M
             idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
             trnsp_map[mol] = idxs
 
         reg_map = {}
-        for mi, mol in enumerate(self.chemistry.molecules):
+        for mi, mol in enumerate(all_mols):
             M = self.kinetics.effector_map.M
             idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
             reg_map[mol] = idxs
@@ -321,57 +381,28 @@ class World:
                     dom_seq = random.choice(dom_type_map[1])
                     mol_seq = two_codon_map[i1]
                     sign_seq = one_codon_map[i4]
-                    mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
                     cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
 
                 if isinstance(dom, TransporterDomainFact):
                     i1 = random.choice(trnsp_map[dom.molecule])
                     dom_seq = random.choice(dom_type_map[2])
                     mol_seq = two_codon_map[i1]
-                    mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
-                    sign_seq = self.genetics.random_noncds(size=CODON_SIZE)
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
+                    sign_seq = random_genome(s=CODON_SIZE, excl=stops)
                     cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
 
                 if isinstance(dom, RegulatoryDomainFact):
                     i1 = random.choice(reg_map[dom.effector])
                     dom_seq = random.choice(dom_type_map[3])
                     mol_seq = two_codon_map[i1]
-                    mm_seq = self.genetics.random_noncds(size=2 * CODON_SIZE)
-                    sign_seq = self.genetics.random_noncds(size=CODON_SIZE)
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
+                    sign_seq = random_genome(s=CODON_SIZE, excl=stops)
                     cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
 
             cdss.append(cds)
 
-        n_p_pads = len(cdss) + 1
-        n_d_pads = sum(len(d) + 1 for d in cdss)
-
-        n_pad_nts = size - req_nts
-        pad_size = n_pad_nts / (n_p_pads * 0.7 + n_d_pads * 0.3)
-        d_pad_size = round_down(pad_size * 0.3, to=3)
-        d_pad_total = n_d_pads * d_pad_size
-        p_pad_size = round_down((n_pad_nts - d_pad_total) / n_p_pads, to=1)
-        p_pad_total = n_p_pads * p_pad_size
-        remaining_nts = n_pad_nts - d_pad_total - p_pad_total
-
-        non_cdss = list(self.genetics.start_codons + self.genetics.stop_codons)
-        in_cdss = list(self.genetics.stop_codons) + list(self.genetics.domain_map)
-        p_pads = [random_genome(s=p_pad_size, excl=non_cdss) for _ in range(n_p_pads)]
-        d_pads = [random_genome(s=d_pad_size, excl=in_cdss) for _ in range(n_d_pads)]
-        tail = random_genome(s=remaining_nts, excl=non_cdss)
-
-        parts: list[str] = []
-        for cds in cdss:
-            parts.append(p_pads.pop())
-            parts.append(random.choice(self.genetics.start_codons))
-            for dom_seq in cds:
-                parts.append(d_pads.pop())
-                parts.append(dom_seq)
-            parts.append(d_pads.pop())
-            parts.append(random.choice(self.genetics.stop_codons))
-        parts.append(p_pads.pop())
-        parts.append(tail)
-
-        return "".join(parts)
+        return cdss
 
     def add_random_cells(self, genomes: list[str]) -> list[int]:
         """
@@ -388,6 +419,7 @@ class World:
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
         """
+        # TODO: rename to "add_cells" ?
         genomes = [d for d in genomes if len(d) > 0]
         n_new_cells = len(genomes)
         if n_new_cells == 0:

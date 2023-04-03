@@ -242,11 +242,6 @@ class Genetics:
                 "p_catal_dom, p_transp_dom, p_reg_dom together must not be greater 1.0"
             )
 
-        # TODO: nt_seqs also returns stop codons
-        #       so, domain specifications with these codons will effectively never
-        #       be used as they stop the CDS and thereby cancel the domain
-        #       Should I only use non-coding NTs for that?
-
         # sequences including stop codons are useless, since they would terminate the CDS
         sets = self._get_non_stop_seqs(n_codons=int(n_dom_type_nts / CODON_SIZE))
         random.shuffle(sets)
@@ -324,46 +319,6 @@ class Genetics:
             dom_seqs = pool.starmap(_translate_genome, args)
 
         return dom_seqs
-
-    # TODO: get rid of
-    def random_noncds(
-        self,
-        size: int,
-        incl_start_codons: bool = False,
-        incl_stop_codons: bool = False,
-        excl_dom_type_defs: bool = False,
-    ):
-        """
-        Genrate random nucleotide sequence while avoiding coding sequences
-        """
-        # TODO: size=0 ok?, size=1 ok?
-        n = size
-        dom_type_seqs = list(self.domain_map.keys())
-        seq = random_genome(s=n)
-        if excl_dom_type_defs:
-            for dom_seq in dom_type_seqs:
-                seq = "".join(seq.split(dom_seq))
-        if not incl_start_codons:
-            for start in self.start_codons:
-                seq = "".join(seq.split(start))
-        if not incl_stop_codons:
-            for stop in self.stop_codons:
-                seq = "".join(seq.split(stop))
-
-        while len(seq) != size:
-            n = size - len(seq)
-            seq = seq + random_genome(s=n)
-            if excl_dom_type_defs:
-                for dom_seq in dom_type_seqs:
-                    seq = "".join(seq.split(dom_seq))
-            if not incl_start_codons:
-                for start in self.start_codons:
-                    seq = "".join(seq.split(start))
-            if not incl_stop_codons:
-                for stop in self.stop_codons:
-                    seq = "".join(seq.split(stop))
-
-        return seq
 
     def _get_non_stop_seqs(self, n_codons: int) -> list[str]:
         all_seqs = nt_seqs(n=n_codons * CODON_SIZE)

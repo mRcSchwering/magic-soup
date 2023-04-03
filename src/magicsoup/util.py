@@ -31,11 +31,11 @@ def random_genome(s=500, excl: Optional[list[str]] = None) -> str:
     Generate a random nucleotide sequence
 
     Parameters:
-            s: Length of genome in nucleotides or base pairs
-            excl: Exclude certain sequences from the genome
+        s: Length of genome in nucleotides or base pairs
+        excl: Exclude certain sequences from the genome
 
-        Returns:
-            Generated genome as string
+    Returns:
+        Generated genome as string
 
     The resulting genome is a string of all possible nucleotide letters.
     If `excl` is given, all sequences in `excl` will be removed.
@@ -44,7 +44,6 @@ def random_genome(s=500, excl: Optional[list[str]] = None) -> str:
     If you also want to get rid of those, you have to also provide their
     reverse-complement in `excl`.
     """
-    # TODO: size=0 ok?, size=1 ok?
     n = s
     out = "".join(random.choices(ALL_NTS, k=s))
 

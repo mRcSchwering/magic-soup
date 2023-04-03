@@ -283,8 +283,6 @@ class CatalyticDomain:
     These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
-    # TODO: rather have substrates/products as arguments?
-
     def __init__(
         self,
         reaction: tuple[list[Molecule], list[Molecule]],
@@ -304,7 +302,20 @@ class CatalyticDomain:
 
 
 class CatalyticDomainFact:
-    def __init__(self, substrates: list[Molecule], products: list[Molecule]):
+    """
+    Container for describing a catalytic domain.
+
+    Arguments:
+        reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
+            For stoichiometric coefficients > 1, list the molecule species multiple times.
+
+    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
+    Use this factory to describe a domain that should eventually be encoded.
+    Domain factories can be stringed together into a protein in [ProteinFact][magicsoup.containers.ProteinFact]
+    """
+
+    def __init__(self, reaction: tuple[list[Molecule], list[Molecule]]):
+        substrates, products = reaction
         self.substrates = substrates
         self.products = products
 
@@ -340,6 +351,17 @@ class TransporterDomain:
 
 
 class TransporterDomainFact:
+    """
+    Container for describing a transporter domain.
+
+    Arguments:
+        molecule: The molecule species which can be transported into or out of the cell by this domain.
+
+    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
+    Use this factory to describe a domain that should eventually be encoded.
+    Domain factories can be stringed together into a protein in [ProteinFact][magicsoup.containers.ProteinFact]
+    """
+
     def __init__(self, molecule: Molecule):
         self.molecule = molecule
 
@@ -384,6 +406,19 @@ class RegulatoryDomain:
 
 
 class RegulatoryDomainFact:
+    """
+    Container for describing a regulatory domain.
+
+    Arguments:
+        effector: The molecule species which will be the effector molecule.
+        is_transmembrane: Whether this is also a transmembrane domain.
+            If true, the domain will react to extracellular molecules instead of intracellular ones.
+
+    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
+    Use this factory to describe a domain that should eventually be encoded.
+    Domain factories can be stringed together into a protein in [ProteinFact][magicsoup.containers.ProteinFact]
+    """
+
     def __init__(self, effector: Molecule, is_transmembrane: bool):
         self.effector = effector
         self.is_transmembrane = is_transmembrane
@@ -397,6 +432,7 @@ class Protein:
     """
     Container class to carry domains of a protein.
 
+    Arguments:
         domains: All domains of the protein
 
     In the simulation proteins for all cells exist as a set of tensors.
@@ -416,6 +452,19 @@ class Protein:
 
 
 class ProteinFact:
+    """
+    Container for describing a protein
+
+    Arguments:
+        domain_facts: List of all domains, each described by a domain factory.
+
+    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
+    Use this factory to describe a protein that should eventually be encoded.
+    Domain factories can be [CatalyticDomainFact][magicsoup.containers.CatalyticDomainFact],
+    [TransporterDomainFact][magicsoup.containers.TransporterDomainFact],
+    [RegulatoryDomainFact][magicsoup.containers.RegulatoryDomainFact].
+    """
+
     def __init__(self, domain_facts: list[DomainFactType]):
         self.domain_facts = domain_facts
         self.n_domains = len(domain_facts)

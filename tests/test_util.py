@@ -33,3 +33,24 @@ def test_moores_ngbrhd():
 
     res = util.moore_nghbrhd(0, 0, size=len(m))
     assert set(res) == {(0, 1), (1, 0), (1, 1), (0, 3), (1, 3), (3, 3), (3, 0), (3, 1)}
+
+
+@pytest.mark.parametrize(
+    "s, excl",
+    [
+        (0, []),
+        (1, []),
+        (10, []),
+        (100, []),
+        (0, ["TGA", "TAG", "TAA"]),
+        (1, ["TGA", "TAG", "TAA"]),
+        (10, ["TGA", "TAG", "TAA"]),
+        (100, ["TGA", "TAG", "TAA"]),
+    ],
+)
+def test_random_genome(s, excl):
+    g = util.random_genome(s=s, excl=excl)
+    assert len(g) == s
+
+    for seq in excl:
+        assert seq not in g
