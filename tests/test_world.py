@@ -215,6 +215,21 @@ def test_run_world_without_reactions():
         world.enzymatic_activity()
 
 
+def test_cells_unable_to_replicate():
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=3)
+
+    genomes = [ms.random_genome(s=500) for _ in range(3)]
+    world.add_cells(genomes=genomes)
+
+    for _ in range(5):
+        idxs = [d.idx for d in world.cells]
+        world.replicate_cells(parent_idxs=idxs)
+
+    descendants = world.replicate_cells(parent_idxs=idxs)
+    assert len(descendants) == 0
+
+
 def test_get_cell_by_position():
     chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=5)

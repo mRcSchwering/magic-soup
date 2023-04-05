@@ -28,7 +28,7 @@ def timeit(label: str, step: int, writer: SummaryWriter):
 def main(args: Namespace):
     writer = SummaryWriter(log_dir=_this_dir / "runs" / _now)
 
-    world = ms.World(chemistry=CHEMISTRY, device=args.device)
+    world = ms.World(chemistry=CHEMISTRY, map_size=256, device=args.device)
     world.save(rundir=_this_dir / "runs" / _now)
 
     mol_2_idx = {d.name: i for i, d in enumerate(CHEMISTRY.molecules)}

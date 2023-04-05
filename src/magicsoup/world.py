@@ -512,7 +512,7 @@ class World:
 
         # position new cells
         # cell_map was already set in loop before
-        self.cell_positions[child_idxs] = child_pos
+        self.cell_positions[child_idxs] = torch.stack(child_pos)
 
         # cells share molecules and increment cell divisions
         descendant_idxs = succ_parent_idxs + child_idxs
@@ -833,7 +833,7 @@ class World:
 
     def _replicate_cells_as_possible(
         self, parent_idxs: list[int]
-    ) -> tuple[list[int], list[int], torch.Tensor]:
+    ) -> tuple[list[int], list[int], list[torch.Tensor]]:
         idx = len(self.cells)
         child_idxs = []
         successful_parent_idxs = []
@@ -862,7 +862,7 @@ class World:
             self.cells.append(child)
             idx += 1
 
-        return successful_parent_idxs, child_idxs, torch.stack(new_positions)
+        return successful_parent_idxs, child_idxs, new_positions
 
     def _find_free_random_positions(self, n_cells: int) -> torch.Tensor:
         # available spots on map
