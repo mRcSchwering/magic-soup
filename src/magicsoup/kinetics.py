@@ -538,11 +538,11 @@ class Kinetics:
         Arguments:
             by_n: By how many rows to increase the cell dimension
         """
-        self.Km = self._expand(t=self.Km, n=by_n, d=0)
-        self.Vmax = self._expand(t=self.Vmax, n=by_n, d=0)
-        self.E = self._expand(t=self.E, n=by_n, d=0)
-        self.N = self._expand(t=self.N, n=by_n, d=0)
-        self.A = self._expand(t=self.A, n=by_n, d=0)
+        self.Km = self._expand_c(t=self.Km, n=by_n)
+        self.Vmax = self._expand_c(t=self.Vmax, n=by_n)
+        self.E = self._expand_c(t=self.E, n=by_n)
+        self.N = self._expand_c(t=self.N, n=by_n)
+        self.A = self._expand_c(t=self.A, n=by_n)
 
     def increase_max_proteins(self, max_n: int):
         """
@@ -554,11 +554,11 @@ class Kinetics:
         n_prots = int(self.Km.shape[1])
         if max_n > n_prots:
             by_n = max_n - n_prots
-            self.Km = self._expand(t=self.Km, n=by_n, d=1)
-            self.Vmax = self._expand(t=self.Vmax, n=by_n, d=1)
-            self.E = self._expand(t=self.E, n=by_n, d=1)
-            self.N = self._expand(t=self.N, n=by_n, d=1)
-            self.A = self._expand(t=self.A, n=by_n, d=1)
+            self.Km = self._expand_p(t=self.Km, n=by_n)
+            self.Vmax = self._expand_p(t=self.Vmax, n=by_n)
+            self.E = self._expand_p(t=self.E, n=by_n)
+            self.N = self._expand_p(t=self.N, n=by_n)
+            self.A = self._expand_p(t=self.A, n=by_n)
 
     def _get_proteome_tensors(
         self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
@@ -696,13 +696,15 @@ class Kinetics:
         V = (lact * act_N).sum(2).exp()  # (c, p)
         return torch.where(torch.any(self.A > 0.0, dim=2), V, 1.0)  # (c, p)
 
-    def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
-        # TODO: this might be faster and easier to read if I just make it
-        #       2 functions: expand_c and expand_p
-        pre = t.shape[slice(d)]
-        post = t.shape[slice(d + 1, t.dim())]
-        zeros = self._tensor(*pre, n, *post)
-        return torch.cat([t, zeros], dim=d)
+    def _expand_c(self, t: torch.Tensor, n: int) -> torch.Tensor:
+        size = t.size()
+        zeros = self._tensor(n, *size[1:])
+        return torch.cat([t, zeros], dim=0)
+
+    def _expand_p(self, t: torch.Tensor, n: int) -> torch.Tensor:
+        size = t.size()
+        zeros = self._tensor(size[0], n, *size[2:])
+        return torch.cat([t, zeros], dim=1)
 
     def _tensor(self, *args, d: Optional[float] = None) -> torch.Tensor:
         if d is None:

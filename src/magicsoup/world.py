@@ -450,9 +450,9 @@ class World:
             cell = Cell(idx=cell_i, genome=genome, proteome=[], position=(x, y))
             self.cells.append(cell)
 
-        self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
-        self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
-        self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
+        self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
+        self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
+        self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
 
         n_max_prots = max(len(d) for d in proteomes)
         self.kinetics.increase_max_proteins(max_n=n_max_prots)
@@ -501,9 +501,9 @@ class World:
         if n_new_cells == 0:
             return []
 
-        self.cell_survival = self._expand(t=self.cell_survival, n=n_new_cells, d=0)
-        self.cell_divisions = self._expand(t=self.cell_divisions, n=n_new_cells, d=0)
-        self.cell_molecules = self._expand(t=self.cell_molecules, n=n_new_cells, d=0)
+        self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
+        self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
+        self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
         self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
 
@@ -925,11 +925,10 @@ class World:
         conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
         return conv
 
-    def _expand(self, t: torch.Tensor, n: int, d: int) -> torch.Tensor:
-        pre = t.shape[slice(d)]
-        post = t.shape[slice(d + 1, t.dim())]
-        zeros = torch.zeros(*pre, n, *post, dtype=t.dtype).to(self.device)
-        return torch.cat([t, zeros], dim=d)
+    def _expand_c(self, t: torch.Tensor, n: int) -> torch.Tensor:
+        size = t.size()
+        zeros = torch.zeros(n, *size[1:], dtype=t.dtype).to(self.device)
+        return torch.cat([t, zeros], dim=0)
 
     def __repr__(self) -> str:
         kwargs = {
