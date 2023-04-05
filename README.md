@@ -65,7 +65,7 @@ in random places on the 2D world map.
 
 ```python
 genomes = [ms.random_genome(s=500) for _ in range(100)]
-world.add_random_cells(genomes=genomes)
+world.add_cells(genomes=genomes)
 ```
 
 Cells discover new proteins by chance through mutations.

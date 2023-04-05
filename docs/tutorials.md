@@ -183,7 +183,7 @@ reactions that use up CO2 will be favoured by the reaction quotient.
 ### Adding cells
 
 So far, there are no cells yet.
-Cells can be added through [add_random_cells()][magicsoup.world.World.add_random_cells]
+Cells can be added through [add_cells()][magicsoup.world.World.add_cells]
 by providing genomes.
 They will be placed in random positions on the map and take up half the molecules
 that were on that position.
@@ -202,7 +202,7 @@ def add_cells(world: ms.World):
     dn = 1000 - len(world.cells)
     if dn > 0:
       genomes = [ms.random_genome(s=500) for _ in range(dn)]
-      world.add_random_cells(genomes=genomes)
+      world.add_cells(genomes=genomes)
 ```
 
 In the example above up to 1000 cells with random genomes are added every round.
@@ -324,7 +324,7 @@ def add_cells(world: ms.World):
     dn = 1000 - len(world.cells)
     if dn > 0:
         genomes = [ms.random_genome(s=500) for _ in range(dn)]
-        world.add_random_cells(genomes=genomes)
+        world.add_cells(genomes=genomes)
 
 
 def sample(p: torch.Tensor) -> list[int]:
@@ -750,7 +750,7 @@ def add_cells(world: ms.World):
     dn = 1000 - len(world.cells)
     if dn > 0:
         genomes = [ms.random_genome(s=500) for _ in range(dn)]
-        world.add_random_cells(genomes=genomes)
+        world.add_cells(genomes=genomes)
 ```
 
 During the simulation these genomes can become shorter or longer through random mutations.

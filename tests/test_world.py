@@ -83,7 +83,7 @@ def test_add_cells():
     old_molmap = world.molecule_map.clone()
 
     genomes = [ms.random_genome(s=500) for _ in range(3)]
-    world.add_random_cells(genomes=genomes)
+    world.add_cells(genomes=genomes)
 
     xs = []
     ys = []
@@ -101,7 +101,7 @@ def test_replicate_cells():
     world = ms.World(chemistry=chemistry, map_size=5)
 
     genomes = [ms.random_genome(s=500) for _ in range(3)]
-    cell_idxs = world.add_random_cells(genomes=genomes)
+    cell_idxs = world.add_cells(genomes=genomes)
     parent_child_idxs = world.replicate_cells(parent_idxs=cell_idxs)
 
     parents, children = list(map(list, zip(*parent_child_idxs)))
@@ -116,7 +116,7 @@ def test_molecule_amount_integrity_when_changing_cells():
     exp = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
 
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    cell_idxs = world.add_random_cells(genomes=genomes)
+    cell_idxs = world.add_cells(genomes=genomes)
     res0 = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
     assert torch.all(torch.abs(res0 - exp) < tolerance)
 
@@ -140,7 +140,7 @@ def test_cell_index_integrity_when_changing_cells():
     # there can be unviable genomes
     # with with s=1000 almost all genomes should be viable
     genomes = [ms.random_genome(s=1000) for _ in range(1000)]
-    cell_idxs = world.add_random_cells(genomes=genomes)
+    cell_idxs = world.add_cells(genomes=genomes)
     n = len(world.cells)
     assert n > 900
     assert len(cell_idxs) == n
@@ -193,7 +193,7 @@ def test_molecule_amount_integrity_during_reactions():
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry, map_size=128)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.add_random_cells(genomes=genomes)
+    world.add_cells(genomes=genomes)
 
     def count(world: ms.World) -> float:
         mij = world.molecule_map[[0, 1]].sum().item()
@@ -269,7 +269,7 @@ def test_generate_genome():
         g = world.generate_genome(proteome=[p0, p1], size=100)
         assert len(g) == 100
 
-        world.add_random_cells(genomes=[g])
+        world.add_cells(genomes=[g])
         cell = world.get_cell(by_idx=0)
         has_p0 = False
         has_p1 = False

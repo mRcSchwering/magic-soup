@@ -88,7 +88,7 @@ class World:
 
     Methods for advancing the simulation and to use during a simulation:
 
-    - [add_random_cells()][magicsoup.world.World.add_random_cells] add new cells and place them randomly on the map
+    - [add_cells()][magicsoup.world.World.add_cells] add new cells and place them randomly on the map
     - [replicate_cells()][magicsoup.world.World.replicate_cells] replicate existing cells
     - [update_cells()][magicsoup.world.World.update_cells] update existing cells if their genome has changed
     - [kill_cells()][magicsoup.world.World.kill_cells] kill existing cells
@@ -404,7 +404,7 @@ class World:
 
         return cdss
 
-    def add_random_cells(self, genomes: list[str]) -> list[int]:
+    def add_cells(self, genomes: list[str]) -> list[int]:
         """
         Create new cells and place them on randomly on the map.
         All lists and tensors that reference cells will be updated.
@@ -419,7 +419,6 @@ class World:
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
         """
-        # TODO: rename to "add_cells" ?
         genomes = [d for d in genomes if len(d) > 0]
         n_new_cells = len(genomes)
         if n_new_cells == 0:
