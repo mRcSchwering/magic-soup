@@ -54,7 +54,7 @@ class Molecule:
     The molecule map is `world.molecule_map`.
     It is a 3D tensor where dimension 0 represents all molecule species of the simulation.
     They are ordered in the same way the attribute `molecules` is ordered in the [Chemistry][magicsoup.containers.Chemistry] you defined.
-    Dimension 1 represents x positions and dimension 2 y positions.
+    Dimension 1 represents x-positions and dimension 2 y-positions.
     Diffusion is implemented as a 2D convolution over the x-y tensor for each molecule species.
     This convolution has a 9x9 kernel.
     So, it alters the Moore's neighborhood of each pixel.
@@ -71,7 +71,7 @@ class Molecule:
     The cell index (`cell.idx`) for any cell equals the index in `world.cell_molecules`.
     So, the amount of molecule species currently in cell with index 100 are defined in `world.cell_molecules[100]`.
     `permeability` defines how much molecules can permeate from `world.molecule_map` into `world.cell_molecules`.
-    Each cell lives on a certain pixel with x and y position.
+    Each cell lives on a certain pixel with x- and y-position.
     And although there are already molecules on this pixel, the cell has its own molecules.
     You could imagine the cell as a bag of molecule hovering over the pixel.
     `permeability` allows molecules from that pixel in the molecule map to permeate into the cell that lives on that pixel (and vice versa).
@@ -505,7 +505,7 @@ class Cell:
     and how many times each cell was replicated.
     For performance reasons the simulation is working with these tensors.
     Their values are not copied into the list of cell objects `world.cells` during the simulation.
-    By default the cell objects in `world.cells` only always have a genome, proteome, and a position.
+    By default the cell objects in `world.cells` only always have a genome and index.
     If you also want to know the other attributes of a specific cell use [get_cell()][magicsoup.world.World.get_cell].
 
     When a cell replicates its genome and proteome are copied.

@@ -114,11 +114,6 @@ class World:
     But, if you want to override them or look into some details, see the docstrings of their classes for more information.
     """
 
-    # TODO: Cell positions could be maintained in a tensor only.
-    #       That way I could keep them on the GPU
-    #       Often I move them from CPU to GPU, just to add them to cell.position
-    #       But their actual use is always on the GPU: indexing on self.cell_map
-
     def __init__(
         self,
         chemistry: Chemistry,
@@ -173,6 +168,7 @@ class World:
 
         self.cells: list[Cell] = []
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
+        self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).long()
         self.cell_survival: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_divisions: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_molecules: torch.Tensor = torch.zeros(0, self.n_molecules).to(device)
@@ -198,22 +194,25 @@ class World:
 
         When accessing `world.cells` directly, the cell object will not have all information.
         For performance reasons most cell attributes are maintained in tensors during the simulation.
-        Only index, genome and position are kept up-to-date in the cell object during the simulation.
+        Only index and genome are kept up-to-date in the cell object during the simulation.
         When you call `world.get_cell()` all missing information will be added to the object.
         """
         idx = -1
         if by_idx is not None:
             idx = by_idx
         if by_position is not None:
-            cell_positions = [d.position for d in self.cells]
-            try:
-                idx = cell_positions.index(by_position)
-            except ValueError as err:
-                raise ValueError(f"Cell at {by_position} not found") from err
+            pos = torch.tensor(by_position)
+            mask = (self.cell_positions == pos).all(dim=1)
+            idxs = torch.argwhere(mask).flatten().tolist()
+            if len(idxs) == 0:
+                raise ValueError(f"Cell at {by_position} not found")
+            idx = idxs[0]
 
+        pos = self.cell_positions[idx]
         cell = self.cells[idx]
+        cell.position = tuple(pos.tolist())  # type: ignore
         cell.int_molecules = self.cell_molecules[idx, :]
-        cell.ext_molecules = self.molecule_map[:, cell.position[0], cell.position[1]]
+        cell.ext_molecules = self.molecule_map[:, pos[0], pos[1]]
         cell.n_survived_steps = int(self.cell_survival[idx].item())
         cell.n_replications = int(self.cell_divisions[idx].item())
 
@@ -424,8 +423,8 @@ class World:
         if n_new_cells == 0:
             return []
 
-        xs, ys = self._find_free_random_positions(n_cells=n_new_cells)
-        n_avail_pos = len(xs)
+        free_pos = self._find_free_random_positions(n_cells=n_new_cells)
+        n_avail_pos = len(free_pos)
         if n_avail_pos == 0:
             return []
 
@@ -440,16 +439,15 @@ class World:
         if n_new_cells == 0:
             return []
 
-        xs = xs[:n_new_cells]
-        ys = ys[:n_new_cells]
-
         n_cells = len(self.cells)
+        new_pos = free_pos[:n_new_cells]
         new_idxs = list(range(n_cells, n_cells + n_new_cells))
-        for cell_i, genome, x, y in zip(new_idxs, genomes, xs, ys):
-            cell = Cell(idx=cell_i, genome=genome, proteome=[], position=(x, y))
+        for cell_i, genome in zip(new_idxs, genomes):
+            cell = Cell(idx=cell_i, genome=genome, proteome=[])
             self.cells.append(cell)
 
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
+        self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
         self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
 
@@ -459,7 +457,10 @@ class World:
         self.kinetics.set_cell_params(cell_idxs=new_idxs, proteomes=proteomes)
 
         # occupy positions
+        xs = new_pos[:, 0]
+        ys = new_pos[:, 1]
         self.cell_map[xs, ys] = True
+        self.cell_positions[new_idxs] = new_pos
 
         # cell is picking up half the molecules of the pxl it is born on
         pickup = self.molecule_map[:, xs, ys] * 0.5
@@ -492,19 +493,26 @@ class World:
         if len(parent_idxs) == 0:
             return []
 
-        succ_parent_idxs, child_idxs = self._replicate_cells_as_possible(
-            parent_idxs=parent_idxs
-        )
+        (
+            succ_parent_idxs,
+            child_idxs,
+            child_pos,
+        ) = self._replicate_cells_as_possible(parent_idxs=parent_idxs)
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
             return []
 
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
+        self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
         self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
         self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
+
+        # position new cells
+        # cell_map was already set in loop before
+        self.cell_positions[child_idxs] = child_pos
 
         # cells share molecules and increment cell divisions
         descendant_idxs = succ_parent_idxs + child_idxs
@@ -572,15 +580,18 @@ class World:
         if len(cell_idxs) == 0:
             return
 
-        xs, ys = list(map(list, zip(*[self.cells[i].position for i in cell_idxs])))
+        xs = self.cell_positions[cell_idxs, 0]
+        ys = self.cell_positions[cell_idxs, 1]
         self.cell_map[xs, ys] = False
 
         spillout = self.cell_molecules[cell_idxs, :]
         self.molecule_map[:, xs, ys] += spillout.T
 
-        keep = torch.ones(self.cell_survival.size(0), dtype=torch.bool).to(self.device)
+        n_cells = self.cell_survival.size(0)
+        keep = torch.ones(n_cells, dtype=torch.bool).to(self.device)
         keep[cell_idxs] = False
         self.cell_survival = self.cell_survival[keep]
+        self.cell_positions = self.cell_positions[keep]
         self.cell_divisions = self.cell_divisions[keep]
         self.cell_molecules = self.cell_molecules[keep]
         self.kinetics.remove_cell_params(keep=keep)
@@ -618,7 +629,8 @@ class World:
         if len(self.cells) == 0:
             return
 
-        xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
+        xs = self.cell_positions[:, 0]
+        ys = self.cell_positions[:, 1]
         X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
         X = self.kinetics.integrate_signals(X=X)
 
@@ -652,7 +664,8 @@ class World:
         if len(self.cells) == 0:
             return
 
-        xs, ys = list(map(list, zip(*[d.position for d in self.cells])))
+        xs = self.cell_positions[:, 0]
+        ys = self.cell_positions[:, 1]
         X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
 
         for mol_i, permeate in enumerate(self._permeation):
@@ -681,8 +694,7 @@ class World:
         Increment `world.cell_survival` by 1.
         This is for monitoring and doesn't have any other effect.
         """
-        idxs = list(range(len(self.cells)))
-        self.cell_survival[idxs] += 1
+        self.cell_survival += 1
 
     def save(self, rundir: Path, name: str = "world.pkl"):
         """
@@ -741,13 +753,11 @@ class World:
         torch.save(self.cell_map, statedir / "cell_map.pt")
         torch.save(self.molecule_map, statedir / "molecule_map.pt")
         torch.save(self.cell_survival, statedir / "cell_survival.pt")
+        torch.save(self.cell_positions, statedir / "cell_positions.pt")
         torch.save(self.cell_divisions, statedir / "cell_divisions.pt")
 
         with open(statedir / "cells.fasta", "w", encoding="utf-8") as fh:
-            lines = [
-                f">{d.idx} {d.label} ({d.position[0]},{d.position[1]})\n{d.genome}"
-                for d in self.cells
-            ]
+            lines = [f">{d.idx} {d.label}\n{d.genome}" for d in self.cells]
             fh.write("\n".join(lines))
 
     def load_state(
@@ -780,6 +790,9 @@ class World:
         self.cell_survival = torch.load(
             statedir / "cell_survival.pt", map_location=device
         ).int()
+        self.cell_positions = torch.load(
+            statedir / "cell_positions.pt", map_location=device
+        ).int()
         self.cell_divisions = torch.load(
             statedir / "cell_divisions.pt", map_location=device
         ).int()
@@ -792,13 +805,10 @@ class World:
         self.cells = []
         for entry in entries:
             descr, seq = entry.split("\n")
-            names_part, pos_part = descr.split("(")
-            x, y = pos_part.split(")")[0].split(",")
-            names = names_part.split()
+            names = descr.split()
             idx = int(names[0].strip())
-            pos = (int(x.strip()), int(y.strip()))
             label = names[1].strip() if len(names) > 1 else ""
-            cell = Cell(idx=idx, label=label, genome=seq, proteome=[], position=pos)
+            cell = Cell(idx=idx, label=label, genome=seq, proteome=[])
             self.cells.append(cell)
             genome_idx_pairs.append((seq, idx))
 
@@ -807,8 +817,8 @@ class World:
 
     def _randomly_move_cells(self, cells: list[Cell]):
         for cell in cells:
-            x, y = cell.position
-            nghbrhd = self._nghbrhd_map[(x, y)]
+            old_pos = self.cell_positions[cell.idx]
+            nghbrhd = self._nghbrhd_map[tuple(old_pos.tolist())]  # type: ignore
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
             n = pxls.size(0)
 
@@ -816,40 +826,45 @@ class World:
                 continue
 
             # move cells
-            new_x, new_y = pxls[random.randint(0, n - 1)].tolist()
-            self.cell_map[x, y] = False
-            self.cell_map[new_x, new_y] = True
-            cell.position = (new_x, new_y)
+            new_pos = pxls[random.randint(0, n - 1)]
+            self.cell_map[old_pos[0], old_pos[1]] = False
+            self.cell_map[new_pos[0], new_pos[1]] = True
+            self.cell_positions[cell.idx] = new_pos
 
     def _replicate_cells_as_possible(
         self, parent_idxs: list[int]
-    ) -> tuple[list[int], list[int]]:
+    ) -> tuple[list[int], list[int], torch.Tensor]:
         idx = len(self.cells)
         child_idxs = []
         successful_parent_idxs = []
+        new_positions = []
         for parent_idx in parent_idxs:
             parent = self.cells[parent_idx]
 
-            x, y = parent.position
-            nghbrhd = self._nghbrhd_map[(x, y)]
+            pos = self.cell_positions[parent_idx]
+            nghbrhd = self._nghbrhd_map[tuple(pos.tolist())]  # type:ignore
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = pxls.size(0)
 
+            n = pxls.size(0)
             if n == 0:
                 continue
 
-            new_x, new_y = pxls[random.randint(0, n - 1)].tolist()
-            self.cell_map[new_x, new_y] = True
+            new_pos = pxls[random.randint(0, n - 1)]
+            new_positions.append(new_pos)
 
-            child = parent.copy(idx=idx, position=(new_x, new_y))
+            # immediately set, so that it is already
+            # True for the next iteration
+            self.cell_map[new_pos[0], new_pos[1]] = True
+
+            child = parent.copy(idx=idx)
             successful_parent_idxs.append(parent_idx)
             child_idxs.append(idx)
             self.cells.append(child)
             idx += 1
 
-        return successful_parent_idxs, child_idxs
+        return successful_parent_idxs, child_idxs, torch.stack(new_positions)
 
-    def _find_free_random_positions(self, n_cells: int) -> tuple[list[int], list[int]]:
+    def _find_free_random_positions(self, n_cells: int) -> torch.Tensor:
         # available spots on map
         pxls = torch.argwhere(~self.cell_map)
         n_pxls = pxls.size(0)
@@ -859,8 +874,7 @@ class World:
         # place cells on map
         idxs = random.sample(range(n_pxls), k=n_cells)
         chosen = pxls[idxs]
-        xs, ys = chosen.T.tolist()
-        return xs, ys
+        return chosen
 
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]

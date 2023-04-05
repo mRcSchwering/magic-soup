@@ -85,13 +85,8 @@ def test_add_cells():
     genomes = [ms.random_genome(s=500) for _ in range(3)]
     world.add_cells(genomes=genomes)
 
-    xs = []
-    ys = []
-    for cell in world.cells:
-        x, y = cell.position
-        xs.append(x)
-        ys.append(y)
-
+    xs = world.cell_positions[:, 0]
+    ys = world.cell_positions[:, 1]
     assert torch.all(old_molmap[:, xs, ys] / 2 == world.molecule_map[:, xs, ys])
     assert torch.all(old_molmap[:, xs, ys] / 2 == world.cell_molecules.T)
 
@@ -207,6 +202,31 @@ def test_molecule_amount_integrity_during_reactions():
         world.enzymatic_activity()
         n = count(world)
         assert n == pytest.approx(n0, abs=1.0), step_i
+
+
+def test_run_world_without_reactions():
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry)
+
+    genomes = [ms.random_genome(s=500) for _ in range(1000)]
+    world.add_cells(genomes=genomes)
+
+    for _ in range(100):
+        world.enzymatic_activity()
+
+
+def test_get_cell_by_position():
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=5)
+
+    genomes = [ms.random_genome(s=500) for _ in range(3)]
+    world.add_cells(genomes=genomes)
+
+    pos = tuple(world.cell_positions[1].tolist())
+    cell = world.get_cell(by_position=pos)  # type: ignore
+
+    assert cell.idx == 1
+    assert cell.position == pos
 
 
 def test_generate_genome():

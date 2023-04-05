@@ -356,14 +356,15 @@ class Kinetics:
                             rgts.extend(([self.mi_2_mol[mi]] * int(n)))
                         elif n <= -1:
                             lfts.extend(([self.mi_2_mol[mi]] * -int(n)))
-                    mi = self.mol_2_mi[lfts[0]]
-                    doms.append(
-                        CatalyticDomain(
-                            reaction=(lfts, rgts),
-                            km=Km_d[0][pi][di][mi].item(),
-                            vmax=Vmax_d[0][pi][di].item(),
+                    if len(lfts) > 0:
+                        mi = self.mol_2_mi[lfts[0]]
+                        doms.append(
+                            CatalyticDomain(
+                                reaction=(lfts, rgts),
+                                km=Km_d[0][pi][di][mi].item(),
+                                vmax=Vmax_d[0][pi][di].item(),
+                            )
                         )
-                    )
 
                 # transporter domain (N has one +1 and one -1)
                 if dom_types[0][pi][di].item() == 2:
