@@ -252,7 +252,6 @@ class Kinetics:
     Updated signals are returned and [World][magicsoup.world.World] writes them back to `world.cell_molecules` and `world.molecule_map`.
 
     Another method, which ended up here, is [set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params]
-    (and [unset_cell_params()][magicsoup.kinetics.Kinetics.unset_cell_params])
     which reads proteomes and updates cell parameters accordingly.
     This is called whenever the proteomes of some cells changed.
     Currently, this is also the main bottleneck in performance.
@@ -323,24 +322,6 @@ class Kinetics:
         self.effector_map = _RegulatoryMapFact(
             n_molecules=len(molecules), max_token=two_codon_size, device=device
         )
-
-    def unset_cell_params(self, cell_prots: list[tuple[int, int]]):
-        """
-        Set cell params for these proteins to 0.0.
-        This is useful for cells that lost some of their proteins.
-
-        Arguments:
-            cell_prots: List of tuples of cell indexes and protein indexes
-        """
-        # TODO: is this method still needed?
-        if len(cell_prots) == 0:
-            return
-        cells, prots = list(map(list, zip(*cell_prots)))
-        self.E[cells, prots] = 0.0
-        self.Vmax[cells, prots] = 0.0
-        self.Km[cells, prots] = 0.0
-        self.A[cells, prots] = 0.0
-        self.N[cells, prots] = 0.0
 
     def get_proteome(
         self, proteome: list[list[tuple[int, int, int, int, int]]]

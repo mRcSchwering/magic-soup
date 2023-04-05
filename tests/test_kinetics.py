@@ -92,32 +92,6 @@ def avg(*x):
     return sum(x) / len(x)
 
 
-def test_unsetting_cell_params():
-    Km = torch.randn(2, 3, 8)
-    Vmax = torch.randn(2, 3)
-    E = torch.randn(2, 3)
-    N = torch.randn(2, 3, 8)
-    A = torch.randn(2, 3, 8)
-
-    cell_prots0 = [(0, i) for i in range(3)]
-    cell_prots1 = [(1, i) for i in range(3)]
-
-    # test
-    kinetics = get_kinetics()
-    kinetics.Km = Km
-    kinetics.Vmax = Vmax
-    kinetics.E = E
-    kinetics.N = N
-    kinetics.A = A
-    kinetics.unset_cell_params(cell_prots=cell_prots0 + cell_prots1)
-
-    assert torch.all(Km == 0.0)
-    assert torch.all(Vmax == 0.0)
-    assert torch.all(E == 0.0)
-    assert torch.all(N == 0.0)
-    assert torch.all(A == 0.0)
-
-
 def test_cell_params_with_catalytic_domains_and_co_factors():
     # Dealing with stoichiometric numbers that cancel each other out
     # in general, intermediate molecules should be 0 in N

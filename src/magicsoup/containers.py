@@ -261,8 +261,6 @@ class Chemistry:
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
 
-    # TODO: method to print reactions in mathjax
-
 
 class CatalyticDomain:
     """
