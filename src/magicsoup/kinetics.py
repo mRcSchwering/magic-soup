@@ -276,7 +276,7 @@ class Kinetics:
         vmax_range: tuple[float, float] = (0.01, 10.0),
         device: str = "cpu",
         scalar_enc_size: int = 64 - 3,
-        vector_enc_size: int = 4096 - 3,
+        vector_enc_size: int = 4096 - 3 * 64,
     ):
         self.abs_temp = abs_temp
         self.device = device
