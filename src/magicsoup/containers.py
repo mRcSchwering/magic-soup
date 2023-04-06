@@ -486,28 +486,16 @@ class Cell:
         n_survived_steps: Number of time steps this cell has survived.
         n_replications: Number of times this cell has divided itself.
 
-    When new cells are added to [World][magicsoup.world.World] (directly or by replication),
-    they are automatically placed, their genomes are translated, and they are given an index.
-    Then they are added as an entry to a list `world.cells`.
-    So, usually you would not directly instantiate a cell.
-
-    [World][magicsoup.world.World] maintains this list of cells `world.cells` during the simulation,
-    removing killed cells and adding new or replicated cells.
-    However, for performance reasons not all attributes on this list of cell objects is always updated.
-    If you want to get a cell object with all its current attributes, use [get_cell()][magicsoup.world.World].
-
-    A map of all pixels occupied by a cell exists as a tensor `world.cell_map`.
-    A map of all extracellular molecules exists as tensor `world.molecule_map`.
-    All intracellular molecules are defined as a tensor `world.cell_molecules`.
-    `world.cell_survival` and `world.cell_divisions` are tensors that define how many round each cell has survived
-    and how many times each cell was replicated.
-    For performance reasons the simulation is working with these tensors.
-    Their values are not copied into the list of cell objects `world.cells` during the simulation.
-    By default the cell objects in `world.cells` only always have a genome and index.
-    If you also want to know the other attributes of a specific cell use [get_cell()][magicsoup.world.World.get_cell].
+    Usually, you wouldn't instantiate this object.
+    You get it when calling [get_cell()][magicsoup.world.World.get_cell] after you have added some
+    cells to a world (via [add_cells()][magicsoup.world.World.add_cells]).
+    On the `world` object all cells are actually represented as a combination of lists and tensors.
+    [get_cell()][magicsoup.world.World.get_cell] gathers all information for one cell and
+    represents it as this `Cell` object.
 
     When a cell replicates its genome and proteome are copied.
     Both descendants will recieve half of all molecules each.
+    Both their `n_replications` attributes are incremented.
     The cell's `label` will be copied as well.
     This way you can track cells' origins.
     """

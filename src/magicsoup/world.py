@@ -60,14 +60,18 @@ class World:
 
     Most attributes on this class describe the current state of molecules and cells.
     Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
-    Likewise, cells are always ordered the same way as in `world.cells` (see below).
-    The index of a certain cell is the index of that cell in `world.cells`.
+    Likewise, cells are always ordered the same way as in `world.genomes` (see below).
+    The index of a certain cell is the index of that cell in `world.genomes`.
     It is the same index as `cell.idx` of a cell object you retrieved with `world.get_cell()`.
     But whenever an operation modifies the number of cells (like `world.kill_cells()` or `world.replicate_cells()`),
     cells get new indexes. Here are the most important attributes:
 
     Attributes:
-        cells: A list of cell objects. These cell objects hold e.g. each cell's genome and proteome.
+        genomes: A list of cell genomes. Each cell's index in this list is what is referred to as the cell index.
+            The cell index is used for the same cell in other orderings of cells (_e.g._ `labels`, `cell_divisions`, `cell_molecules`).
+        labels: List of cell labels. Cells are ordered as in `world.genomes`. Labels are strings that can be used to
+            track cell origins. When adding new cells (`world.add_cells()`) a random label is assigned to each cell.
+            If a cell replicates, its descendants will have the same label.
         cell_map: Boolean 2D tensor referencing which pixels are occupied by a cell.
             Dimension 0 represents the x, dimension 1 y.
         molecule_map: Float 3D tensor describing how many molecules (in mol) of each molecule species exist on every pixel in this world.
@@ -75,15 +79,15 @@ class World:
             Dimension 1 represents x, dimension 2 y.
             So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species on pixel 1, 2.
         cell_molecules: Float 2D tensor describing the number of molecules (in mol) for each molecule species in each cell.
-            Dimension 0 is the cell index. It is the same as in `world.cells` and the same as on a cell object (`cell.idx`).
+            Dimension 0 is the cell index. It is the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
             Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
             So, `world.cell_molecules[0, 1]` represents how many mol of the 1st molecule species the 0th cell contains.
         cell_survival: Integer 1D tensor describing how many time steps each cell survived.
             This tensor is for monitoring and doesn't have any other effect.
-            Cells are in the same as in `world.cells` and the same as on a cell object (`cell.idx`).
+            Cells are in the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
         cell_divisions: Integer 1D tensor describing how many times each cell replicated.
             This tensor is for monitoring and doesn't have any other effect.
-            Cells are in the same order as in `world.cells` and the same as on a cell object (`cell.idx`).
+            Cells are in the same order as in `world.genomes` and the same as on a cell object (`cell.idx`).
 
     Methods for advancing the simulation and to use during a simulation:
 
@@ -195,10 +199,10 @@ class World:
         Returns:
             The searched cell.
 
-        When accessing `world.cells` directly, the cell object will not have all information.
         For performance reasons most cell attributes are maintained in tensors during the simulation.
-        Only index and genome are kept up-to-date in the cell object during the simulation.
-        When you call `world.get_cell()` all missing information will be added to the object.
+        When you call `world.get_cell()` all information about a cell is gathered in one object.
+        This is a convenience function for interactive use.
+        It's not very performant.
         """
         idx = -1
         if by_idx is not None:
@@ -328,7 +332,7 @@ class World:
 
     def add_cells(self, genomes: list[str]) -> list[int]:
         """
-        Create new cells and place them on randomly on the map.
+        Create new cells and place them randomly on the map.
         All lists and tensors that reference cells will be updated.
 
         Parameters:
@@ -340,6 +344,7 @@ class World:
         Each cell will be placed randomly on the map and receive half the molecules of the pixel where it was added.
         If there are less pixels left on the cell map than cells you want to add,
         only the remaining pixels will be filled with new cells.
+        Each cell will also receive a random label.
         """
         genomes = [d for d in genomes if len(d) > 0]
         n_new_cells = len(genomes)
@@ -412,6 +417,7 @@ class World:
         the first descendant in each tuple is the one that still lived on the same pixel.
         The second descendant in that tuple lives on a pixel next to the first one.
         """
+        # TODO: rename "divide"?
         if len(parent_idxs) == 0:
             return []
 
@@ -455,7 +461,6 @@ class World:
 
         The indexes refer to the index of each cell that is changed.
         The genomes refer to the genome of each cell that is changed.
-        `world.cells` will be updated with new genomes and proteomes.
         """
         if len(genome_idx_pairs) == 0:
             return

@@ -237,7 +237,7 @@ class Kinetics:
     So, there are twice as many signals as molecule species.
     The order of molecule species is always the same as in `chemistry.molecules`.
     First, all intracellular molecule species are listed, then all extracellular.
-    The order of cells is always the same as in `world.cells` and the order of proteins
+    The order of cells is always the same as in `world.genomes` and the order of proteins
     for every cell is always the same as the order of proteins in a cell object `cell.proteome`.
 
     Attributes on this class describe cell parameters:
@@ -459,7 +459,7 @@ class Kinetics:
         Returns:
             New tensor of the same shape which represents the updated signals for every cell.
 
-        The order of cells in `X` is the same as in `world.cells`
+        The order of cells in `X` is the same as in `world.genomes`
         The order of signals is first all intracellular molecule species in the same order as `chemistry.molecules`,
         then again all molecule species in the same order but this time describing extracellular molecule species.
         The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
@@ -511,7 +511,7 @@ class Kinetics:
             to_idxs: List of cell indexes to copy to
 
         `from_idxs` and `to_idxs` must have the same length.
-        They refer to the same cell indexes as in `world.cells`.
+        They refer to the same cell indexes as in `world.genomes`.
         """
         self.Km[to_idxs] = self.Km[from_idxs]
         self.Vmax[to_idxs] = self.Vmax[from_idxs]
@@ -527,8 +527,8 @@ class Kinetics:
             keep: Bool tensor (c,) which is true for every cell that should not be removed
                 and false for every cell that should be removed.
 
-        `keep` must have the same length as `world.cells`.
-        The indexes on `keep` reflect the indexes in `world.cells`.
+        `keep` must have the same length as `world.genomes`.
+        The indexes on `keep` reflect the indexes in `world.genomes`.
         """
         self.Km = self.Km[keep]
         self.Vmax = self.Vmax[keep]

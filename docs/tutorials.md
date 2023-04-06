@@ -199,7 +199,7 @@ To not gradually fill up the map with inviable cells we can just keep a certain 
 
 ```python
 def add_cells(world: ms.World):
-    dn = 1000 - len(world.cells)
+    dn = 1000 - world.n_cells
     if dn > 0:
       genomes = [ms.random_genome(s=500) for _ in range(dn)]
       world.add_cells(genomes=genomes)
@@ -281,7 +281,7 @@ point mutations with a rate of 1e-3 per nucleotide. 10% of them are InDels.
 
 ```python
 def mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=[d.genome for d in world.cells])
+    mutated = ms.point_mutations(seqs=world.genomes)
     world.update_cells(genome_idx_pairs=mutated)
 ```
 
@@ -321,7 +321,7 @@ def add_molecules(world: ms.World, co2: int, atp: int, adp: int, nadph: int, nad
 
 
 def add_cells(world: ms.World):
-    dn = 1000 - len(world.cells)
+    dn = 1000 - world.n_cells
     if dn > 0:
         genomes = [ms.random_genome(s=500) for _ in range(dn)]
         world.add_cells(genomes=genomes)
@@ -359,7 +359,7 @@ def replicate_cells(world: ms.World, aca: int, hca: int):
 
 
 def mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=[d.genome for d in world.cells])
+    mutated = ms.point_mutations(seqs=world.genomes)
     world.update_cells(genome_idx_pairs=mutated)
 
 
@@ -483,7 +483,7 @@ THIS_DIR = Path(__file__).parent
 ...
 
 def write_scalars(world: ms.World, writer: SummaryWriter, step: int):
-    writer.add_scalar("Cells/total[n]", len(world.cells), step)
+    writer.add_scalar("Cells/total[n]", world.n_cells, step)
     writer.add_scalar("Cells/Survival[avg]", world.cell_survival.mean(), step)
     writer.add_scalar("Cells/Divisions[avg]", world.cell_divisions.mean(), step)
 
@@ -747,7 +747,7 @@ They each had a random genome of 500 base pairs length.
 
 ```python
 def add_cells(world: ms.World):
-    dn = 1000 - len(world.cells)
+    dn = 1000 - world.n_cells
     if dn > 0:
         genomes = [ms.random_genome(s=500) for _ in range(dn)]
         world.add_cells(genomes=genomes)
