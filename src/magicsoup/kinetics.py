@@ -227,6 +227,10 @@ class Kinetics:
         device: Device to use for tensors
             (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
             This has to be the same device that is used by `world`.
+        scalar_enc_size: Number of tokens that can be used to encode the scalars Vmax, Km, and sign.
+            This should be the output of `max(genetics.one_codon_map.values())`.
+        vector_enc_size: Number of tokens that can be used to encode the vectors for reactions and molecules.
+            This should be the output of `max(genetics.two_codon_map.values())`.
 
     There are `c` cells, `p` proteins, `s` signals.
     Signals are basically molecule species, but we have to differentiate between intra- and extracellular molecule species.
@@ -271,6 +275,8 @@ class Kinetics:
         km_range: tuple[float, float] = (1e-5, 1.0),
         vmax_range: tuple[float, float] = (0.01, 10.0),
         device: str = "cpu",
+        scalar_enc_size: int = 64 - 3,
+        vector_enc_size: int = 4096 - 3,
     ):
         self.abs_temp = abs_temp
         self.device = device
@@ -289,38 +295,36 @@ class Kinetics:
         self.A = self._tensor(0, 0, n_signals)
 
         # the domain specifications return 4 indexes
-        # idx0 is a 2-codon idx for big mappings (4096)
-        # idx1-3 are 1-codon mappings for floats (64)
-        one_codon_size = len(ALL_CODONS)
-        two_codon_size = one_codon_size**2
+        # idx 0-2 are 1-codon idxs for scalars (n=64)
+        # idx3 is a 2-codon idx for vetors (n=4096)
 
         self.km_map = _LogWeightMapFact(
-            max_token=one_codon_size,
+            max_token=scalar_enc_size,
             weight_range=km_range,
             device=device,
         )
 
         self.vmax_map = _LogWeightMapFact(
-            max_token=one_codon_size,
+            max_token=scalar_enc_size,
             weight_range=vmax_range,
             device=device,
         )
 
-        self.sign_map = _SignMapFact(max_token=one_codon_size, device=device)
+        self.sign_map = _SignMapFact(max_token=scalar_enc_size, device=device)
 
         self.reaction_map = _ReactionMapFact(
             molmap=self.mol_2_mi,
             reactions=reactions,
-            max_token=two_codon_size,
+            max_token=vector_enc_size,
             device=device,
         )
 
         self.transport_map = _TransporterMapFact(
-            n_molecules=len(molecules), max_token=two_codon_size, device=device
+            n_molecules=len(molecules), max_token=vector_enc_size, device=device
         )
 
         self.effector_map = _RegulatoryMapFact(
-            n_molecules=len(molecules), max_token=two_codon_size, device=device
+            n_molecules=len(molecules), max_token=vector_enc_size, device=device
         )
 
     def get_proteome(
@@ -579,13 +583,17 @@ class Kinetics:
         # map indices of domain specifications to concrete values
         # idx0 is a 2-codon index specific for every domain type (n=4096)
         # idx1-3 are 1-codon used for the floats (n=64)
-        reacts = self.reaction_map(idxs0)  # float (c, p, d, s)
-        trnspts = self.transport_map(idxs0)  # float (c, p, d, s)
-        effectors = self.effector_map(idxs0)  # float (c, p, d, s)
 
-        Vmaxs = self.vmax_map(idxs1)  # float (c, p, d)
-        Kms = self.km_map(idxs2)  # float (c, p, d)
-        signs = self.sign_map(idxs3)  # float (c, p, d)
+        # map indices of domain specifications to scalars/vectors
+        # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
+        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
+        Vmaxs = self.vmax_map(idxs0)  # float (c, p, d)
+        Kms = self.km_map(idxs1)  # float (c, p, d)
+        signs = self.sign_map(idxs2)  # float (c, p, d)
+
+        reacts = self.reaction_map(idxs3)  # float (c, p, d, s)
+        trnspts = self.transport_map(idxs3)  # float (c, p, d, s)
+        effectors = self.effector_map(idxs3)  # float (c, p, d, s)
 
         # N (c, p, d, s)
         N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask)

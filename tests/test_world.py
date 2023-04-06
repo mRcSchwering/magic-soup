@@ -309,7 +309,6 @@ def test_generate_genome():
         has_p0 = False
         has_p1 = False
         for prot in cell.proteome:
-            print(prot)
             has_cij = False
             has_ckij = False
             has_ti = False

@@ -114,12 +114,12 @@ def test_cell_params_with_catalytic_domains_and_co_factors():
     # fmt: off
     c0 = [
         [
-            (1, 3, 2, 15, 1), # catal, bc->d, Vmax 1.2, Km 1.5, fwd
-            (1, 4, 1, 5, 1), # catal, d->2b, Vmax 1.1, Km 0.5, fwd
+            (1, 2, 15, 1, 3), # catal, Vmax 1.2, Km 1.5, fwd, bc->d
+            (1, 1, 5, 1, 4), # catal, Vmax 1.1, Km 0.5, fwd, d->2b
         ],
         [
-            (1, 4, 1, 5, 1), # catal, d->2b, Vmax 1.1, Km 0.5, fwd
-            (1, 3, 2, 15, 1), # catal, bc->d, Vmax 1.2, Km 1.5, fwd
+            (1, 1, 5, 1, 4), # catal, Vmax 1.1, Km 0.5, fwd, d->2b
+            (1, 2, 15, 1, 3), # catal, Vmax 1.2, Km 1.5, fwd, bc->d
         ]
     ]
 
@@ -197,23 +197,23 @@ def test_cell_params_with_transporter_domains():
     # fmt: off
     c0 = [
         [
-            (2, 1, 5, 5, 1)  # transporter, mol a, Vmax 1.5, Km 0.5, fwd
+            (2, 5, 5, 1, 1)  # transporter, Vmax 1.5, Km 0.5, fwd, mol a
         ],
         [
-            (2, 1, 5, 5, 1), # transporter, mol a, Vmax 1.5, Km 0.5, fwd
-            (2, 1, 1, 2, 2)  # transporter, mol a, Vmax 1.1, Km 0.2, bwd
+            (2, 5, 5, 1, 1), # transporter, Vmax 1.5, Km 0.5, fwd, mol a
+            (2, 1, 2, 2, 1)  # transporter, Vmax 1.1, Km 0.2, bwd, mol a
         ],
     ]
     c1 = [
         [
-            (2, 1, 5, 4, 1), # transporter, mol a, Vmax 1.5, Km 0.4, fwd
-            (2, 1, 4, 5, 1), # transporter, mol a, Vmax 1.4, Km 0.5, fwd
-            (2, 2, 3, 6, 1), # transporter, mol b, Vmax 1.3, Km 0.6, fwd
-            (2, 3, 2, 7, 1)  # transporter, mol c, Vmax 1.2, Km 0.7, fwd
+            (2, 5, 4, 1, 1), # transporter, Vmax 1.5, Km 0.4, fwd, mol a
+            (2, 4, 5, 1, 1), # transporter, Vmax 1.4, Km 0.5, fwd, mol a
+            (2, 3, 6, 1, 2), # transporter, Vmax 1.3, Km 0.6, fwd, mol b
+            (2, 2, 7, 1, 3)  # transporter, Vmax 1.2, Km 0.7, fwd, mol c
         ],
         [
-            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
-            (2, 1, 5, 5, 1)   # transporter, mol a, Vmax 1.5, Km 0.5, fwd
+            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+            (2, 5, 5, 1, 1)   # transporter, Vmax 1.5, Km 0.5, fwd, mol a
         ],
     ]
     # fmt: on
@@ -358,27 +358,27 @@ def test_cell_params_with_regulatory_domains():
     # fmt: off
     c0 = [
         [
-            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
-            (3, 3, 0, 10, 1), # reg, c, Km 1.0, cyto, act
-            (3, 4, 0, 20, 2), # reg, d, Km 2.0, cyto, inh
+            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+            (3, 0, 10, 1, 3), # reg, Km 1.0, cyto, act, c
+            (3, 0, 20, 2, 4), # reg, Km 2.0, cyto, inh, d
         ],
         [
-            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
-            (3, 1, 0, 10, 1), # reg, a, Km 1.0, cyto, act
-            (3, 5, 0, 15, 1), # reg, a, Km 1.5, transm, act
+            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+            (3, 0, 10, 1, 1), # reg, Km 1.0, cyto, act, a
+            (3, 0, 15, 1, 5), # reg, Km 1.5, transm, act, a
         ]
     ]
 
     c1 = [
         [
-            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
-            (3, 2, 0, 10, 2), # reg, b, Km 1.0, cyto, inh
-            (3, 6, 0, 15, 2), # reg, b, Km 1.5, transm, inh
+            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+            (3, 0, 10, 2, 2), # reg, Km 1.0, cyto, inh, b
+            (3, 0, 15, 2, 6), # reg, Km 1.5, transm, inh, b
         ],
         [
-            (1, 1, 10, 5, 1), # catal, a->b, Vmax 2.0, Km 0.5, fwd
-            (3, 4, 0, 10, 1), # reg, d, Km 1.0, cyto, act
-            (3, 4, 0, 15, 1), # reg, d, Km 1.5, cyto, act
+            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+            (3, 0, 10, 1, 4), # reg, Km 1.0, cyto, act, d
+            (3, 0, 15, 1, 4), # reg, Km 1.5, cyto, act, d
         ]
     ]
     # fmt: on
@@ -589,25 +589,25 @@ def test_cell_params_with_catalytic_domains():
     # fmt: off
     c0 = [
         [
-            (1, 1, 1, 5, 1), # catal, a->b, Vmax 1.1, Km 0.5, fwd
-            (1, 3, 2, 15, 2), # catal, bc->d, Vmax 1.2, Km 1.5, bwd
+            (1, 1, 5, 1, 1), # catal, Vmax 1.1, Km 0.5, fwd, a->b
+            (1, 2, 15, 2, 3), # catal, Vmax 1.2, Km 1.5, bwd, bc->d
         ],
         [
-            (1, 2, 10, 9, 1), # catal, b->c, Vmax 2.0, Km 0.9, fwd
-            (1, 3, 3, 12, 2), # catal, bc->d, Vmax 1.3, Km 1.2, bwd
+            (1, 10, 9, 1, 2), # catal, Vmax 2.0, Km 0.9, fwd, b->c
+            (1, 3, 12, 2, 3), # catal, Vmax 1.3, Km 1.2, bwd, bc->d
         ],
         [
-            (1, 4, 19, 29, 1), # catal, d->bb, Vmax 2.9, Km 2.9, fwd
+            (1, 19, 29, 1, 4), # catal, Vmax 2.9, Km 2.9, fwd, d->bb
         ]
     ]
     c1 = [
         [
-            (1, 1, 1, 3, 2), # catal, a->b, Vmax 1.1, Km 0.3, bwd
-            (1, 3, 11, 14, 2), # catal, bc->d, Vmax 2.1, Km 1.4, bwd
+            (1, 1, 3, 2, 1), # catal, Vmax 1.1, Km 0.3, bwd, a->b
+            (1, 11, 14, 2, 3), # catal, Vmax 2.1, Km 1.4, bwd, bc->d
         ],
         [
-            (1, 2, 9, 3, 1), # catal, b->c, Vmax 1.9, Km 0.3, fwd
-            (1, 3, 13, 17, 1), # catal, bc->d, Vmax 2.3, Km 1.7, fwd
+            (1, 9, 3, 1, 2), # catal, Vmax 1.9, Km 0.3, fwd, b->c
+            (1, 13, 17, 1, 3), # catal, Vmax 2.3, Km 1.7, fwd, bc->d
         ]
     ]
 

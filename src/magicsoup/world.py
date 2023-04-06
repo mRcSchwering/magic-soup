@@ -9,7 +9,6 @@ import torch
 from magicsoup.constants import CODON_SIZE
 from magicsoup.util import moore_nghbrhd, round_down, random_genome
 from magicsoup.containers import (
-    Molecule,
     Cell,
     Chemistry,
     ProteinFact,
@@ -144,6 +143,8 @@ class World:
             reactions=chemistry.reactions,
             abs_temp=abs_temp,
             device=self.device,
+            scalar_enc_size=max(self.genetics.one_codon_map.values()),
+            vector_enc_size=max(self.genetics.two_codon_map.values()),
         )
 
         mol_degrads: list[float] = []
@@ -328,9 +329,9 @@ class World:
         all_reacts = self.chemistry.reactions
         stops = list(self.genetics.start_codons)
 
-        two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
-        one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
         dom_type_map = self.genetics.domain_types
+        one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
+        two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
 
         react_map = {}
         for subs, prods in all_reacts:
@@ -364,10 +365,10 @@ class World:
         for prot in proteome:
             cds = []
             for dom in prot.domain_facts:
-                # 0: domain type seq: 1=catalytic, 2=transporter, 3=regulatory
-                # 1: domain type specific 2-codon index (reaction, molecule, effector)
-                # 2+3: 1-codon index each for M.M. kinetics (Vmax and Km)
-                # 4: 1-codon index for orienation (sign)
+                # Domain structure:
+                # 0: domain type definition (1=catalytic, 2=transporter, 3=regulatory)
+                # 1-3: 3 x 1-codon specifications (Vmax, Km, sign)
+                # 4: 1 x 2-codon specification (reaction, molecule, effector)
 
                 if isinstance(dom, CatalyticDomainFact):
                     react = (tuple(dom.substrates), tuple(dom.products))
@@ -375,29 +376,29 @@ class World:
                     if react not in react_map:
                         react = (tuple(dom.products), tuple(dom.substrates))
                         is_fwd = False
-                    i1 = random.choice(react_map[react])
-                    i4 = random.choice(sign_map[is_fwd])
+                    i3 = random.choice(sign_map[is_fwd])
+                    i4 = random.choice(react_map[react])
                     dom_seq = random.choice(dom_type_map[1])
-                    mol_seq = two_codon_map[i1]
-                    sign_seq = one_codon_map[i4]
+                    sign_seq = one_codon_map[i3]
+                    react_seq = two_codon_map[i4]
                     mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
-                    cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
+                    cds.append(dom_seq + mm_seq + sign_seq + react_seq)
 
                 if isinstance(dom, TransporterDomainFact):
-                    i1 = random.choice(trnsp_map[dom.molecule])
+                    i4 = random.choice(trnsp_map[dom.molecule])
                     dom_seq = random.choice(dom_type_map[2])
-                    mol_seq = two_codon_map[i1]
+                    mol_seq = two_codon_map[i4]
                     mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
                     sign_seq = random_genome(s=CODON_SIZE, excl=stops)
-                    cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
+                    cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
 
                 if isinstance(dom, RegulatoryDomainFact):
-                    i1 = random.choice(reg_map[dom.effector])
+                    i4 = random.choice(reg_map[dom.effector])
                     dom_seq = random.choice(dom_type_map[3])
-                    mol_seq = two_codon_map[i1]
+                    mol_seq = two_codon_map[i4]
                     mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
                     sign_seq = random_genome(s=CODON_SIZE, excl=stops)
-                    cds.append(dom_seq + mol_seq + mm_seq + sign_seq)
+                    cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
 
             cdss.append(cds)
 

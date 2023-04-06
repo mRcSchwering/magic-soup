@@ -1,7 +1,7 @@
 import warnings
 import random
 import torch.multiprocessing as mp
-from magicsoup.util import reverse_complement, nt_seqs, random_genome
+from magicsoup.util import reverse_complement, nt_seqs
 from magicsoup.constants import CODON_SIZE
 
 
@@ -88,10 +88,10 @@ def _extract_domains(
     one_codon_map: dict[str, int],
     two_codon_map: dict[str, int],
 ) -> list[list[tuple[int, int, int, int, int]]]:
-    idx0_slice = slice(0, 2 * CODON_SIZE)
-    idx1_slice = slice(2 * CODON_SIZE, 3 * CODON_SIZE)
-    idx2_slice = slice(3 * CODON_SIZE, 4 * CODON_SIZE)
-    idx3_slice = slice(4 * CODON_SIZE, 5 * CODON_SIZE)
+    idx0_slice = slice(0, CODON_SIZE)
+    idx1_slice = slice(CODON_SIZE, 2 * CODON_SIZE)
+    idx2_slice = slice(2 * CODON_SIZE, 3 * CODON_SIZE)
+    idx3_slice = slice(3 * CODON_SIZE, 5 * CODON_SIZE)
 
     prot_doms = []
     for cds in cdss:
@@ -110,10 +110,10 @@ def _extract_domains(
                     is_useful_prot = True
 
                 dom_spec_seq = cds[i + dom_type_size : i + dom_size]
-                idx0 = two_codon_map[dom_spec_seq[idx0_slice]]
+                idx0 = one_codon_map[dom_spec_seq[idx0_slice]]
                 idx1 = one_codon_map[dom_spec_seq[idx1_slice]]
                 idx2 = one_codon_map[dom_spec_seq[idx2_slice]]
-                idx3 = one_codon_map[dom_spec_seq[idx3_slice]]
+                idx3 = two_codon_map[dom_spec_seq[idx3_slice]]
                 doms.append((dom_type, idx0, idx1, idx2, idx3))
                 i += dom_size
                 j += dom_size
@@ -175,7 +175,7 @@ class Genetics:
         p_catal_dom: Chance of encountering a catalytic domain in a random nucleotide sequence.
         p_transp_dom: Chance of encountering a transporter domain in a random nucleotide sequence.
         p_reg_dom: Chance of encountering a regulatory domain in a random nucleotide sequence.
-        n_dom_type_nts: Number of nucleotides that encodes the domain type (catalytic, transporter, regulatory).
+        n_dom_type_codons: Number of codons that encode the domain type (catalytic, transporter, regulatory).
         workers: number of workers
 
     During the simulation [World][magicsoup.world.World] uses [translate_genomes][magicsoup.genetics.Genetics.translate_genomes].
@@ -212,7 +212,7 @@ class Genetics:
         p_catal_dom: float = 0.01,
         p_transp_dom: float = 0.01,
         p_reg_dom: float = 0.01,
-        n_dom_type_nts: int = 6,
+        n_dom_type_codons: int = 2,
         workers: int = 2,
     ):
         if any(len(d) != CODON_SIZE for d in start_codons):
@@ -224,26 +224,26 @@ class Genetics:
                 "Overlapping start and stop codons:"
                 f" {','.join(str(d) for d in set(start_codons) & set(stop_codons))}"
             )
-        if n_dom_type_nts % CODON_SIZE != 0:
-            raise ValueError(f"n_dom_type_nts should be a multiple of {CODON_SIZE}.")
-
-        self.start_codons = start_codons
-        self.stop_codons = stop_codons
-        self.workers = workers
-
-        # Domain: domain_type (catal, trnsp, reg) + specification
-        # specification: 1 x 2-codon token, 3 x 1-codon tokens
-        # Domain can start and finish with start and stop codons, so this
-        # is also the minimum CDS size
-        self.dom_size = n_dom_type_nts + 5 * CODON_SIZE
-
         if p_catal_dom + p_transp_dom + p_reg_dom > 1.0:
             raise ValueError(
                 "p_catal_dom, p_transp_dom, p_reg_dom together must not be greater 1.0"
             )
 
+        self.start_codons = start_codons
+        self.stop_codons = stop_codons
+        self.workers = workers
+
+        # Domain structure:
+        # domain type definition (domain type codons)
+        # 3 x 1-codon specifications (3 simple tokens)
+        # 1 x 2-codon specification (1 complex token)
+        # a domain can begin and end with start/stop codons
+        # so min CDS size = dom_size
+        self.dom_size = (n_dom_type_codons + 5) * CODON_SIZE
+
+        # setup domain type definitions
         # sequences including stop codons are useless, since they would terminate the CDS
-        sets = self._get_non_stop_seqs(n_codons=int(n_dom_type_nts / CODON_SIZE))
+        sets = self._get_non_stop_seqs(n_codons=n_dom_type_codons)
         random.shuffle(sets)
         n = len(sets)
 
@@ -262,26 +262,15 @@ class Genetics:
 
         self.domain_map = {d: k for k, v in self.domain_types.items() for d in v}
 
-        # note that I should be reducing the amount of sequences in the 2 codon map here
-        # `self._get_non_stop_seqs(n_codons=2)` for the 2 codon map
-        # with 3 stop codons total sequences would be reduced by 9 to 4087
-        # the corresponding idx-to-vector maps in kinetics however still have 4096 rows
-        # currently I am not doing that, but with the TODO below it might make sense
-
-        # TODO: it would make sense to re-order the domain definitions in a way that
-        #       the 2 codon map comes at the end. a domain can stop with a stop codon
-        #       so the 2nd of the codon-tuple would be allowed to be a stop codon
-        #       then I would reduce the amount of sequences in that codon map less
-        #       with 3 stop codons it would be only reduced by 3 to 4096 sequences total
-        #       for the other indexes (floats, boolean) the number is less important
-
-        self.two_codon_map: dict[str, int] = {}
-        for i, seq in enumerate(nt_seqs(n=2 * CODON_SIZE)):
-            self.two_codon_map[seq] = i + 1
-
+        # pre-mature stop codons are excluded
         self.one_codon_map: dict[str, int] = {}
-        for i, seq in enumerate(nt_seqs(n=CODON_SIZE)):
+        for i, seq in enumerate(self._get_single_codons()):
             self.one_codon_map[seq] = i + 1
+
+        # the second codon is allowed to be a stop codon
+        self.two_codon_map: dict[str, int] = {}
+        for i, seq in enumerate(self._get_double_codons()):
+            self.two_codon_map[seq] = i + 1
 
     def translate_genomes(
         self, genomes: list[str]
@@ -332,4 +321,14 @@ class Genetics:
                     has_stop = True
             if not has_stop:
                 seqs.append(seq)
+        return seqs
+
+    def _get_single_codons(self) -> list[str]:
+        seqs = nt_seqs(n=CODON_SIZE)
+        seqs = [d for d in seqs if d not in self.stop_codons]
+        return seqs
+
+    def _get_double_codons(self) -> list[str]:
+        seqs = nt_seqs(n=2 * CODON_SIZE)
+        seqs = [d for d in seqs if d[:CODON_SIZE] not in self.stop_codons]
         return seqs
