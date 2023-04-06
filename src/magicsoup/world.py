@@ -904,8 +904,8 @@ class World:
         if mol_diff_rate < 0.0:
             mol_diff_rate = -mol_diff_rate
 
-        # TODO: mol_diff_rate > 1.0 could also mean expanding the kernel
-        #       so that molecules can diffuse more than just 1 pxl per round
+        # mol_diff_rate > 1.0 could also mean expanding the kernel
+        # so that molecules can diffuse more than just 1 pxl per round
         if mol_diff_rate > 1.0:
             mol_diff_rate = 1.0
 
