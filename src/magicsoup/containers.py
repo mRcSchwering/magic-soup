@@ -518,21 +518,24 @@ class Cell:
         self,
         genome: str,
         proteome: list[Protein],
+        int_molecules: torch.Tensor,
+        ext_molecules: torch.Tensor,
         position: tuple[int, int] = (-1, -1),
         idx: int = -1,
         label: str = "C",
         n_survived_steps: int = -1,
         n_replications: int = -1,
     ):
+        # TODO: args for molecules
         self.genome = genome
         self.proteome = proteome
+        self.int_molecules = int_molecules
+        self.ext_molecules = ext_molecules
         self.label = label
         self.position = position
         self.idx = idx
         self.n_survived_steps = n_survived_steps
         self.n_replications = n_replications
-        self.int_molecules: Optional[torch.Tensor] = None
-        self.ext_molecules: Optional[torch.Tensor] = None
 
     def copy(self, **kwargs) -> "Cell":
         old_kwargs = {

@@ -7,7 +7,7 @@ import pickle
 from pathlib import Path
 import torch
 from magicsoup.constants import CODON_SIZE
-from magicsoup.util import moore_nghbrhd, round_down, random_genome
+from magicsoup.util import moore_nghbrhd, round_down, random_genome, randstr
 from magicsoup.containers import (
     Cell,
     Chemistry,
@@ -167,7 +167,10 @@ class World:
             for x, y in product(range(map_size), range(map_size))
         }
 
-        self.cells: list[Cell] = []
+        # self.cells: list[Cell] = []
+        self.n_cells = 0
+        self.genomes: list[str] = []
+        self.labels: list[str] = []
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
         self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).long()
         self.cell_survival: torch.Tensor = torch.zeros(0).to(device).int()
@@ -210,17 +213,20 @@ class World:
             idx = idxs[0]
 
         pos = self.cell_positions[idx]
-        cell = self.cells[idx]
-        cell.position = tuple(pos.tolist())  # type: ignore
-        cell.int_molecules = self.cell_molecules[idx, :]
-        cell.ext_molecules = self.molecule_map[:, pos[0], pos[1]]
-        cell.n_survived_steps = int(self.cell_survival[idx].item())
-        cell.n_replications = int(self.cell_divisions[idx].item())
+        genome = self.genomes[idx]
+        (cdss,) = self.genetics.translate_genomes(genomes=[genome])
 
-        (cdss,) = self.genetics.translate_genomes(genomes=[cell.genome])
-        cell.proteome = self.kinetics.get_proteome(proteome=cdss)
-
-        return cell
+        return Cell(
+            idx=idx,
+            label=self.labels[idx],
+            genome=genome,
+            proteome=self.kinetics.get_proteome(proteome=cdss),
+            int_molecules=self.cell_molecules[idx, :],
+            ext_molecules=self.molecule_map[:, pos[0], pos[1]],
+            position=tuple(pos.tolist()),  # type: ignore
+            n_survived_steps=int(self.cell_survival[idx].item()),
+            n_replications=int(self.cell_divisions[idx].item()),
+        )
 
     def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
         """
@@ -404,7 +410,7 @@ class World:
 
         return cdss
 
-    def add_cells(self, genomes: list[str]) -> list[int]:
+    def add_cells(self, genomes: list[str]) -> torch.Tensor:
         """
         Create new cells and place them on randomly on the map.
         All lists and tensors that reference cells will be updated.
@@ -413,7 +419,7 @@ class World:
             genomes: List of genomes of the newly added cells
 
         Returns:
-            The indexes of successfully added cells.
+            A 1D long tensor with the indexes of the newly added cells.
 
         Each cell will be placed randomly on the map and receive half the molecules of the pixel where it was added.
         If there are less pixels left on the cell map than cells you want to add,
@@ -422,12 +428,12 @@ class World:
         genomes = [d for d in genomes if len(d) > 0]
         n_new_cells = len(genomes)
         if n_new_cells == 0:
-            return []
+            return torch.tensor([]).to(self.device).long()
 
         free_pos = self._find_free_random_positions(n_cells=n_new_cells)
-        n_avail_pos = len(free_pos)
+        n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
-            return []
+            return torch.tensor([]).to(self.device).long()
 
         if n_avail_pos < n_new_cells:
             n_new_cells = n_avail_pos
@@ -438,14 +444,16 @@ class World:
         proteomes = [d for d in proteomes if len(d) > 0]
         n_new_cells = len(proteomes)
         if n_new_cells == 0:
-            return []
+            return torch.tensor([]).to(self.device).long()
 
-        n_cells = len(self.cells)
         new_pos = free_pos[:n_new_cells]
-        new_idxs = list(range(n_cells, n_cells + n_new_cells))
-        for cell_i, genome in zip(new_idxs, genomes):
-            cell = Cell(idx=cell_i, genome=genome, proteome=[])
-            self.cells.append(cell)
+        new_idxs = (
+            torch.arange(self.n_cells, self.n_cells + n_new_cells)
+            .to(self.device)
+            .long()
+        )
+        self.genomes.extend(genomes)
+        self.labels.extend(randstr(n=12) for _ in range(n_new_cells))
 
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
@@ -455,6 +463,7 @@ class World:
         n_max_prots = max(len(d) for d in proteomes)
         self.kinetics.increase_max_proteins(max_n=n_max_prots)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
+        # TODO: switch to tensor
         self.kinetics.set_cell_params(cell_idxs=new_idxs, proteomes=proteomes)
 
         # occupy positions
@@ -470,16 +479,18 @@ class World:
 
         return new_idxs
 
-    def replicate_cells(self, parent_idxs: list[int]) -> list[tuple[int, int]]:
+    def replicate_cells(self, parent_idxs: torch.Tensor) -> torch.Tensor:
         """
         Bring cells to replicate.
         All lists and tensors that reference cells will be updated.
 
         Parameters:
-            parent_idxs: Cell indexes of the cells that should replicate.
+            parent_idxs: 1D long tensor for indexes of cells that should divide.
 
         Returns:
-            A list of tuples of descendant cell indexes.
+            2D long tensor with n rows (dim 0) and 2 columns (dim 1).
+            Each row describes a cell that was able to successfully divide.
+            Both columns of the same row contain the descendant indexes.
 
         A new descendant will be placed randomly next to its ancestor cell (Moore's neighborhood).
         If every pixel in the ancestor's Moore's neighborhood is taken the cell will not replicate.
@@ -491,8 +502,9 @@ class World:
         the first descendant in each tuple is the one that still lived on the same pixel.
         The second descendant in that tuple lives on a pixel next to the first one.
         """
-        if len(parent_idxs) == 0:
-            return []
+        # TODO: name "divide_cells"?
+        if parent_idxs.size(0) == 0:
+            return torch.tensor([]).to(self.device).long()
 
         (
             succ_parent_idxs,
@@ -502,28 +514,29 @@ class World:
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
-            return []
+            return torch.tensor([]).to(self.device).long()
 
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
         self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
+        # TODO: switch to tensor
         self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
 
         # position new cells
         # cell_map was already set in loop before
-        self.cell_positions[child_idxs] = torch.stack(child_pos)
+        self.cell_positions[child_idxs] = child_pos
 
         # cells share molecules and increment cell divisions
-        descendant_idxs = succ_parent_idxs + child_idxs
+        descendant_idxs = torch.cat([succ_parent_idxs, child_idxs], dim=0)
         self.cell_molecules[child_idxs] = self.cell_molecules[succ_parent_idxs]
         self.cell_molecules[descendant_idxs] *= 0.5
         self.cell_divisions[descendant_idxs] += 1
 
-        return list(zip(succ_parent_idxs, child_idxs))
+        return torch.stack([succ_parent_idxs, child_idxs], dim=1)
 
-    def update_cells(self, genome_idx_pairs: list[tuple[str, int]]):
+    def update_cells(self, genomes: list[str], idxs: torch.Tensor):
         """
         Update existing cells with new genomes.
 
@@ -534,7 +547,7 @@ class World:
         The genomes refer to the genome of each cell that is changed.
         `world.cells` will be updated with new genomes and proteomes.
         """
-        if len(genome_idx_pairs) == 0:
+        if len(genomes) == 0:
             return
 
         kill_idxs = []
@@ -563,13 +576,13 @@ class World:
         self.kinetics.set_cell_params(cell_idxs=set_idxs, proteomes=set_proteomes)
         self.kill_cells(cell_idxs=kill_idxs)
 
-    def kill_cells(self, cell_idxs: list[int]):
+    def kill_cells(self, cell_idxs: torch.Tensor):
         """
         Remove existing cells.
         All lists and tensors referencing cells will be updated.
 
         Parameters:
-            cell_idxs: Indexes of the cells that should die
+            cell_idxs: 1D long tensor for indexes of cells that should die.
 
         Cells that are killed dump their molecule contents onto the pixel they used to live on.
 
@@ -578,7 +591,7 @@ class World:
         E.g. if there are 10 cells and you kill the cell with index 8 (the 9th cell),
         the cell that used to have index 9 (10th cell) will now have index 9.
         """
-        if len(cell_idxs) == 0:
+        if cell_idxs.size(0) == 0:
             return
 
         xs = self.cell_positions[cell_idxs, 0]
@@ -597,16 +610,11 @@ class World:
         self.cell_molecules = self.cell_molecules[keep]
         self.kinetics.remove_cell_params(keep=keep)
 
-        new_idx = 0
-        new_cells = []
-        for old_idx, cell in enumerate(self.cells):
-            if old_idx not in cell_idxs:
-                cell.idx = new_idx
-                new_idx += 1
-                new_cells.append(cell)
-        self.cells = new_cells
+        for idx in cell_idxs.tolist():
+            self.genomes.pop(idx)
+            self.labels.pop(idx)
 
-    def move_cells(self, cell_idxs: list[int]):
+    def move_cells(self, cell_idxs: torch.Tensor):
         """
         Move cells to a random position in their Moore's neighborhood.
         If every pixel in the cells' Moore neighborhood is taken the cell will not be moved.
@@ -615,7 +623,7 @@ class World:
         Parameters:
             cell_idxs: Indexes of cells that should be moved
         """
-        if len(cell_idxs) == 0:
+        if cell_idxs.size(0) == 0:
             return
 
         cells = [self.cells[i] for i in cell_idxs]
@@ -833,15 +841,13 @@ class World:
             self.cell_positions[cell.idx] = new_pos
 
     def _replicate_cells_as_possible(
-        self, parent_idxs: list[int]
-    ) -> tuple[list[int], list[int], list[torch.Tensor]]:
-        idx = len(self.cells)
+        self, parent_idxs: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        idx = self.n_cells
         child_idxs = []
         successful_parent_idxs = []
         new_positions = []
-        for parent_idx in parent_idxs:
-            parent = self.cells[parent_idx]
-
+        for parent_idx in parent_idxs.tolist():
             pos = self.cell_positions[parent_idx]
             nghbrhd = self._nghbrhd_map[tuple(pos.tolist())]  # type:ignore
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
@@ -857,13 +863,18 @@ class World:
             # True for the next iteration
             self.cell_map[new_pos[0], new_pos[1]] = True
 
-            child = parent.copy(idx=idx)
+            self.genomes.append(self.genomes[parent_idx])
+            self.labels.append(self.labels[parent_idx])
+
             successful_parent_idxs.append(parent_idx)
             child_idxs.append(idx)
-            self.cells.append(child)
             idx += 1
 
-        return successful_parent_idxs, child_idxs, new_positions
+        return (
+            torch.tensor(successful_parent_idxs).to(self.device).long(),
+            torch.tensor(child_idxs).to(self.device).long(),
+            torch.stack(new_positions),
+        )
 
     def _find_free_random_positions(self, n_cells: int) -> torch.Tensor:
         # available spots on map
