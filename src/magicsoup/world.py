@@ -168,6 +168,7 @@ class World:
         }
 
         self.cells: list[Cell] = []
+        self.n_cells = 0
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
         self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).long()
         self.cell_survival: torch.Tensor = torch.zeros(0).to(device).int()
@@ -321,89 +322,6 @@ class World:
 
         return "".join(parts)
 
-    def _get_genome_sequences(self, proteome: list[ProteinFact]) -> list[list[str]]:
-        proteome = proteome.copy()
-        random.shuffle(proteome)
-
-        all_mols = self.chemistry.molecules
-        all_reacts = self.chemistry.reactions
-        stops = list(self.genetics.start_codons)
-
-        dom_type_map = self.genetics.domain_types
-        one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
-        two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
-
-        react_map = {}
-        for subs, prods in all_reacts:
-            t = torch.zeros(self.n_molecules * 2)
-            for sub in subs:
-                t[self.kinetics.mol_2_mi[sub]] -= 1
-            for prod in prods:
-                t[self.kinetics.mol_2_mi[prod]] += 1
-            M = self.kinetics.reaction_map.M
-            idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
-            react_map[(tuple(subs), tuple(prods))] = idxs
-
-        trnsp_map = {}
-        for mi, mol in enumerate(all_mols):
-            M = self.kinetics.transport_map.M
-            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
-            trnsp_map[mol] = idxs
-
-        reg_map = {}
-        for mi, mol in enumerate(all_mols):
-            M = self.kinetics.effector_map.M
-            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
-            reg_map[mol] = idxs
-
-        sign_map = {}
-        M = self.kinetics.sign_map.signs
-        sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
-        sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
-
-        cdss: list[list[str]] = []
-        for prot in proteome:
-            cds = []
-            for dom in prot.domain_facts:
-                # Domain structure:
-                # 0: domain type definition (1=catalytic, 2=transporter, 3=regulatory)
-                # 1-3: 3 x 1-codon specifications (Vmax, Km, sign)
-                # 4: 1 x 2-codon specification (reaction, molecule, effector)
-
-                if isinstance(dom, CatalyticDomainFact):
-                    react = (tuple(dom.substrates), tuple(dom.products))
-                    is_fwd = True
-                    if react not in react_map:
-                        react = (tuple(dom.products), tuple(dom.substrates))
-                        is_fwd = False
-                    i3 = random.choice(sign_map[is_fwd])
-                    i4 = random.choice(react_map[react])
-                    dom_seq = random.choice(dom_type_map[1])
-                    sign_seq = one_codon_map[i3]
-                    react_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
-                    cds.append(dom_seq + mm_seq + sign_seq + react_seq)
-
-                if isinstance(dom, TransporterDomainFact):
-                    i4 = random.choice(trnsp_map[dom.molecule])
-                    dom_seq = random.choice(dom_type_map[2])
-                    mol_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
-                    sign_seq = random_genome(s=CODON_SIZE, excl=stops)
-                    cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
-
-                if isinstance(dom, RegulatoryDomainFact):
-                    i4 = random.choice(reg_map[dom.effector])
-                    dom_seq = random.choice(dom_type_map[3])
-                    mol_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
-                    sign_seq = random_genome(s=CODON_SIZE, excl=stops)
-                    cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
-
-            cdss.append(cds)
-
-        return cdss
-
     def add_cells(self, genomes: list[str]) -> list[int]:
         """
         Create new cells and place them on randomly on the map.
@@ -440,13 +358,13 @@ class World:
         if n_new_cells == 0:
             return []
 
-        n_cells = len(self.cells)
         new_pos = free_pos[:n_new_cells]
-        new_idxs = list(range(n_cells, n_cells + n_new_cells))
+        new_idxs = list(range(self.n_cells, self.n_cells + n_new_cells))
         for cell_i, genome in zip(new_idxs, genomes):
             cell = Cell(idx=cell_i, genome=genome, proteome=[])
             self.cells.append(cell)
 
+        self.n_cells += n_new_cells
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
@@ -504,6 +422,7 @@ class World:
         if n_new_cells == 0:
             return []
 
+        self.n_cells += n_new_cells
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
@@ -605,6 +524,7 @@ class World:
                 new_idx += 1
                 new_cells.append(cell)
         self.cells = new_cells
+        self.n_cells = len(self.cells)
 
     def move_cells(self, cell_idxs: list[int]):
         """
@@ -627,7 +547,7 @@ class World:
         This includes molecule transport into or out of the cell.
         `world.molecule_map` and `world.cell_molecules` are updated.
         """
-        if len(self.cells) == 0:
+        if self.n_cells == 0:
             return
 
         xs = self.cell_positions[:, 0]
@@ -662,7 +582,7 @@ class World:
             self.molecule_map[mol_i] += (total_before - total_after) / n_pxls
             self.molecule_map[mol_i] = self.molecule_map[mol_i].clamp(0.0)
 
-        if len(self.cells) == 0:
+        if self.n_cells == 0:
             return
 
         xs = self.cell_positions[:, 0]
@@ -813,6 +733,8 @@ class World:
             self.cells.append(cell)
             genome_idx_pairs.append((seq, idx))
 
+        self.n_cells = len(self.cells)
+
         if ignore_cell_params:
             self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
@@ -835,7 +757,7 @@ class World:
     def _replicate_cells_as_possible(
         self, parent_idxs: list[int]
     ) -> tuple[list[int], list[int], list[torch.Tensor]]:
-        idx = len(self.cells)
+        idx = self.n_cells
         child_idxs = []
         successful_parent_idxs = []
         new_positions = []
@@ -876,6 +798,89 @@ class World:
         idxs = random.sample(range(n_pxls), k=n_cells)
         chosen = pxls[idxs]
         return chosen
+
+    def _get_genome_sequences(self, proteome: list[ProteinFact]) -> list[list[str]]:
+        proteome = proteome.copy()
+        random.shuffle(proteome)
+
+        all_mols = self.chemistry.molecules
+        all_reacts = self.chemistry.reactions
+        stops = list(self.genetics.start_codons)
+
+        dom_type_map = self.genetics.domain_types
+        one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
+        two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
+
+        react_map = {}
+        for subs, prods in all_reacts:
+            t = torch.zeros(self.n_molecules * 2)
+            for sub in subs:
+                t[self.kinetics.mol_2_mi[sub]] -= 1
+            for prod in prods:
+                t[self.kinetics.mol_2_mi[prod]] += 1
+            M = self.kinetics.reaction_map.M
+            idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
+            react_map[(tuple(subs), tuple(prods))] = idxs
+
+        trnsp_map = {}
+        for mi, mol in enumerate(all_mols):
+            M = self.kinetics.transport_map.M
+            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
+            trnsp_map[mol] = idxs
+
+        reg_map = {}
+        for mi, mol in enumerate(all_mols):
+            M = self.kinetics.effector_map.M
+            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
+            reg_map[mol] = idxs
+
+        sign_map = {}
+        M = self.kinetics.sign_map.signs
+        sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
+        sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
+
+        cdss: list[list[str]] = []
+        for prot in proteome:
+            cds = []
+            for dom in prot.domain_facts:
+                # Domain structure:
+                # 0: domain type definition (1=catalytic, 2=transporter, 3=regulatory)
+                # 1-3: 3 x 1-codon specifications (Vmax, Km, sign)
+                # 4: 1 x 2-codon specification (reaction, molecule, effector)
+
+                if isinstance(dom, CatalyticDomainFact):
+                    react = (tuple(dom.substrates), tuple(dom.products))
+                    is_fwd = True
+                    if react not in react_map:
+                        react = (tuple(dom.products), tuple(dom.substrates))
+                        is_fwd = False
+                    i3 = random.choice(sign_map[is_fwd])
+                    i4 = random.choice(react_map[react])
+                    dom_seq = random.choice(dom_type_map[1])
+                    sign_seq = one_codon_map[i3]
+                    react_seq = two_codon_map[i4]
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
+                    cds.append(dom_seq + mm_seq + sign_seq + react_seq)
+
+                if isinstance(dom, TransporterDomainFact):
+                    i4 = random.choice(trnsp_map[dom.molecule])
+                    dom_seq = random.choice(dom_type_map[2])
+                    mol_seq = two_codon_map[i4]
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
+                    sign_seq = random_genome(s=CODON_SIZE, excl=stops)
+                    cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
+
+                if isinstance(dom, RegulatoryDomainFact):
+                    i4 = random.choice(reg_map[dom.effector])
+                    dom_seq = random.choice(dom_type_map[3])
+                    mol_seq = two_codon_map[i4]
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
+                    sign_seq = random_genome(s=CODON_SIZE, excl=stops)
+                    cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
+
+            cdss.append(cds)
+
+        return cdss
 
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
