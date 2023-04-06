@@ -128,7 +128,7 @@ def test_cell_index_integrity_when_changing_cells():
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry, map_size=128)
 
-    n = len(world.cells)
+    n = world.n_cells
     assert n == 0
     assert world.cell_map.sum().item() == n
 
@@ -136,32 +136,39 @@ def test_cell_index_integrity_when_changing_cells():
     # with with s=1000 almost all genomes should be viable
     genomes = [ms.random_genome(s=1000) for _ in range(1000)]
     cell_idxs = world.add_cells(genomes=genomes)
-    n = len(world.cells)
-    assert n > 900
-    assert len(cell_idxs) == n
-    assert set(cell_idxs) == set(d.idx for d in world.cells)
-    assert set(d.idx for d in world.cells) == set(range(len(cell_idxs)))
-    assert world.cell_map.sum().item() == n
+    n0 = world.n_cells
+    assert n0 > 900
+    assert len(cell_idxs) == n0
+    assert len(world.genomes) == n0
+    assert len(world.labels) == n0
+    assert len(set(world.labels)) == n0
+    assert world.cell_map.sum().item() == n0
 
     replicated = world.replicate_cells(parent_idxs=cell_idxs)
-    n = len(world.cells)
-    new_idxs = [d[1] for d in replicated]
+    n1 = world.n_cells
     assert len(replicated) > 1
-    assert n == len(replicated) + len(cell_idxs)
-    assert set(d.idx for d in world.cells) == set(cell_idxs) | set(new_idxs)
-    assert set(d.idx for d in world.cells) == set(range(n))
-    assert world.cell_map.sum().item() == n
+    assert n1 == len(replicated) + len(cell_idxs)
+    assert len(world.genomes) == n1
+    assert len(world.labels) == n1
+    assert len(set(world.labels)) == n0
+    assert world.cell_map.sum().item() == n1
+
+    parents = [d[0] for d in replicated]
+    children = [d[1] for d in replicated]
+    assert set(parents) <= set(cell_idxs)
+    assert set(children) & set(cell_idxs) == set()
 
     world.kill_cells(cell_idxs=cell_idxs)
-    n = len(world.cells)
-    assert n == len(replicated)
-    assert set(d.idx for d in world.cells) == set(range(n))
-    assert world.cell_map.sum().item() == n
+    n2 = world.n_cells
+    assert n2 == len(replicated)
+    assert len(world.genomes) == n2
+    assert len(world.labels) == n2
+    assert world.cell_map.sum().item() == n2
 
-    world.kill_cells(cell_idxs=list(range(n)))
-    n = len(world.cells)
-    assert n == 0
-    assert world.cell_map.sum().item() == n
+    world.kill_cells(cell_idxs=list(range(n2)))
+    n3 = world.n_cells
+    assert n3 == 0
+    assert world.cell_map.sum().item() == n3
 
 
 def test_molecule_amount_integrity_during_diffusion():
@@ -223,7 +230,7 @@ def test_cells_unable_to_replicate():
     world.add_cells(genomes=genomes)
 
     for _ in range(5):
-        idxs = [d.idx for d in world.cells]
+        idxs = list(range(world.n_cells))
         world.replicate_cells(parent_idxs=idxs)
 
     descendants = world.replicate_cells(parent_idxs=idxs)
@@ -293,10 +300,10 @@ def test_generate_genome():
     # in every domain, there's only a 78% chance that everything goes right
     # with 4 domains in the proteome, theres only a 38% chance of succeeding
     # (having 0 pre-mature terminations)
-    # repeating the genome generation 7 times, reduces the chance of 7 pre-mature
-    # terminations to below 5% (>95% chance that at least one proteome is correct)
+    # repeating the genome generation 10 times, reduces the chance of 10 pre-mature
+    # terminations to below 1% (>95% chance that at least one proteome is correct)
     success = False
-    max_i = 7
+    max_i = 10
     i = 0
     p0_found = 0
     p1_found = 0
@@ -336,7 +343,7 @@ def test_generate_genome():
                 has_p1 = True
                 p1_found += 1
 
-        world.kill_cells(cell_idxs=[d.idx for d in world.cells])
+        world.kill_cells(cell_idxs=list(range(world.n_cells)))
         if has_p0 and has_p1:
             success = True
             break

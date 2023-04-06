@@ -39,7 +39,7 @@ def main(args: Namespace):
             world.save_state(statedir=_this_dir / "runs" / _now / f"step={step_i}")
 
         with timeit("perStep", step_i, writer):
-            n_cells = len(world.cells)
+            n_cells = world.n_cells
             if n_cells < 1000:
                 with timeit("addCells", step_i, writer):
                     genomes = [
@@ -68,10 +68,7 @@ def main(args: Namespace):
                 world.cell_molecules[repl, ATP_IDX] -= 4.0
                 replicated = world.replicate_cells(parent_idxs=repl)
 
-                genomes = [
-                    (world.cells[p].genome, world.cells[c].genome)
-                    for p, c in replicated
-                ]
+                genomes = [(world.genomes[p], world.genomes[c]) for p, c in replicated]
                 mutated = ms.recombinations(seq_pairs=genomes)
 
                 genome_idx_pairs = []
@@ -82,7 +79,7 @@ def main(args: Namespace):
                 world.update_cells(genome_idx_pairs=genome_idx_pairs)
 
             with timeit("mutateGenomes", step_i, writer):
-                mutated = ms.point_mutations(seqs=[d.genome for d in world.cells])
+                mutated = ms.point_mutations(seqs=world.genomes)
 
             with timeit("getMutatedProteomes", step_i, writer):
                 world.update_cells(genome_idx_pairs=mutated)
@@ -92,7 +89,7 @@ def main(args: Namespace):
                 world.diffuse_molecules()
                 world.increment_cell_survival()
 
-        writer.add_scalar("Cells/total", len(world.cells), step_i)
+        writer.add_scalar("Cells/total", world.n_cells, step_i)
 
     writer.close()
 

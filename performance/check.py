@@ -71,7 +71,7 @@ def update_cells(w: int, n: int, s: int):
         world.add_cells(genomes=genomes)
 
         t0 = time.time()
-        pairs = [(d.genome, d.idx) for d in world.cells]
+        pairs = [(d, i) for i, d in enumerate(world.genomes)]
         world.update_cells(genome_idx_pairs=pairs)
         tds.append(time.time() - t0)
 

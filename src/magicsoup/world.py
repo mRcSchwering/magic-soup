@@ -7,7 +7,7 @@ import pickle
 from pathlib import Path
 import torch
 from magicsoup.constants import CODON_SIZE
-from magicsoup.util import moore_nghbrhd, round_down, random_genome
+from magicsoup.util import moore_nghbrhd, round_down, random_genome, randstr
 from magicsoup.containers import (
     Cell,
     Chemistry,
@@ -167,8 +167,9 @@ class World:
             for x, y in product(range(map_size), range(map_size))
         }
 
-        self.cells: list[Cell] = []
         self.n_cells = 0
+        self.genomes: list[str] = []
+        self.labels: list[str] = []
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
         self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).long()
         self.cell_survival: torch.Tensor = torch.zeros(0).to(device).int()
@@ -210,18 +211,21 @@ class World:
                 raise ValueError(f"Cell at {by_position} not found")
             idx = idxs[0]
 
+        genome = self.genomes[idx]
+        (cdss,) = self.genetics.translate_genomes(genomes=[genome])
         pos = self.cell_positions[idx]
-        cell = self.cells[idx]
-        cell.position = tuple(pos.tolist())  # type: ignore
-        cell.int_molecules = self.cell_molecules[idx, :]
-        cell.ext_molecules = self.molecule_map[:, pos[0], pos[1]]
-        cell.n_survived_steps = int(self.cell_survival[idx].item())
-        cell.n_replications = int(self.cell_divisions[idx].item())
 
-        (cdss,) = self.genetics.translate_genomes(genomes=[cell.genome])
-        cell.proteome = self.kinetics.get_proteome(proteome=cdss)
-
-        return cell
+        return Cell(
+            idx=idx,
+            genome=genome,
+            proteome=self.kinetics.get_proteome(proteome=cdss),
+            position=tuple(pos.tolist()),  # type: ignore
+            int_molecules=self.cell_molecules[idx, :],
+            ext_molecules=self.molecule_map[:, pos[0], pos[1]],
+            label=self.labels[idx],
+            n_survived_steps=int(self.cell_survival[idx].item()),
+            n_replications=int(self.cell_divisions[idx].item()),
+        )
 
     def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
         """
@@ -343,7 +347,7 @@ class World:
             return []
 
         free_pos = self._find_free_random_positions(n_cells=n_new_cells)
-        n_avail_pos = len(free_pos)
+        n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             return []
 
@@ -359,12 +363,11 @@ class World:
             return []
 
         new_pos = free_pos[:n_new_cells]
+        self.genomes.extend(genomes)
+        self.labels.extend(randstr(n=12) for _ in range(n_new_cells))
         new_idxs = list(range(self.n_cells, self.n_cells + n_new_cells))
-        for cell_i, genome in zip(new_idxs, genomes):
-            cell = Cell(idx=cell_i, genome=genome, proteome=[])
-            self.cells.append(cell)
-
         self.n_cells += n_new_cells
+
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
@@ -423,6 +426,7 @@ class World:
             return []
 
         self.n_cells += n_new_cells
+
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
@@ -477,9 +481,11 @@ class World:
             else:
                 kill_idxs.append(idx)
 
-        max_prots = max(len(d) for d in set_proteomes)
-        self.kinetics.increase_max_proteins(max_n=max_prots)
-        self.kinetics.set_cell_params(cell_idxs=set_idxs, proteomes=set_proteomes)
+        if len(set_proteomes) > 0:
+            max_prots = max(len(d) for d in set_proteomes)
+            self.kinetics.increase_max_proteins(max_n=max_prots)
+            self.kinetics.set_cell_params(cell_idxs=set_idxs, proteomes=set_proteomes)
+
         self.kill_cells(cell_idxs=kill_idxs)
 
     def kill_cells(self, cell_idxs: list[int]):
@@ -497,7 +503,8 @@ class World:
         E.g. if there are 10 cells and you kill the cell with index 8 (the 9th cell),
         the cell that used to have index 9 (10th cell) will now have index 9.
         """
-        if len(cell_idxs) == 0:
+        n_killed_cells = len(cell_idxs)
+        if n_killed_cells == 0:
             return
 
         xs = self.cell_positions[cell_idxs, 0]
@@ -516,15 +523,11 @@ class World:
         self.cell_molecules = self.cell_molecules[keep]
         self.kinetics.remove_cell_params(keep=keep)
 
-        new_idx = 0
-        new_cells = []
-        for old_idx, cell in enumerate(self.cells):
-            if old_idx not in cell_idxs:
-                cell.idx = new_idx
-                new_idx += 1
-                new_cells.append(cell)
-        self.cells = new_cells
-        self.n_cells = len(self.cells)
+        for idx in sorted(cell_idxs, reverse=True):
+            self.genomes.pop(idx)
+            self.labels.pop(idx)
+
+        self.n_cells -= n_killed_cells
 
     def move_cells(self, cell_idxs: list[int]):
         """
@@ -538,8 +541,20 @@ class World:
         if len(cell_idxs) == 0:
             return
 
-        cells = [self.cells[i] for i in cell_idxs]
-        self._randomly_move_cells(cells=cells)
+        for cell_idx in cell_idxs:
+            old_pos = self.cell_positions[cell_idx]
+            nghbrhd = self._nghbrhd_map[tuple(old_pos.tolist())]  # type: ignore
+            pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
+            n = pxls.size(0)
+
+            if n == 0:
+                continue
+
+            # move cells
+            new_pos = pxls[random.randint(0, n - 1)]
+            self.cell_map[old_pos[0], old_pos[1]] = False
+            self.cell_map[new_pos[0], new_pos[1]] = True
+            self.cell_positions[cell_idx] = new_pos
 
     def enzymatic_activity(self):
         """
@@ -677,8 +692,11 @@ class World:
         torch.save(self.cell_positions, statedir / "cell_positions.pt")
         torch.save(self.cell_divisions, statedir / "cell_divisions.pt")
 
+        lines: list[str] = []
+        for idx, (genome, label) in enumerate(zip(self.genomes, self.labels)):
+            lines.append(f">{idx} {label}\n{genome}")
+
         with open(statedir / "cells.fasta", "w", encoding="utf-8") as fh:
-            lines = [f">{d.idx} {d.label}\n{d.genome}" for d in self.cells]
             fh.write("\n".join(lines))
 
     def load_state(
@@ -723,36 +741,19 @@ class World:
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
         genome_idx_pairs: list[tuple[str, int]] = []
-        self.cells = []
         for entry in entries:
             descr, seq = entry.split("\n")
             names = descr.split()
             idx = int(names[0].strip())
             label = names[1].strip() if len(names) > 1 else ""
-            cell = Cell(idx=idx, label=label, genome=seq, proteome=[])
-            self.cells.append(cell)
+            self.genomes.append(seq)
+            self.labels.append(label)
             genome_idx_pairs.append((seq, idx))
 
-        self.n_cells = len(self.cells)
+        self.n_cells = len(genome_idx_pairs)
 
         if ignore_cell_params:
             self.update_cells(genome_idx_pairs=genome_idx_pairs)
-
-    def _randomly_move_cells(self, cells: list[Cell]):
-        for cell in cells:
-            old_pos = self.cell_positions[cell.idx]
-            nghbrhd = self._nghbrhd_map[tuple(old_pos.tolist())]  # type: ignore
-            pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = pxls.size(0)
-
-            if n == 0:
-                continue
-
-            # move cells
-            new_pos = pxls[random.randint(0, n - 1)]
-            self.cell_map[old_pos[0], old_pos[1]] = False
-            self.cell_map[new_pos[0], new_pos[1]] = True
-            self.cell_positions[cell.idx] = new_pos
 
     def _replicate_cells_as_possible(
         self, parent_idxs: list[int]
@@ -762,8 +763,6 @@ class World:
         successful_parent_idxs = []
         new_positions = []
         for parent_idx in parent_idxs:
-            parent = self.cells[parent_idx]
-
             pos = self.cell_positions[parent_idx]
             nghbrhd = self._nghbrhd_map[tuple(pos.tolist())]  # type:ignore
             pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
@@ -779,10 +778,11 @@ class World:
             # True for the next iteration
             self.cell_map[new_pos[0], new_pos[1]] = True
 
-            child = parent.copy(idx=idx)
+            self.genomes.append(self.genomes[parent_idx])
+            self.labels.append(self.labels[parent_idx])
+
             successful_parent_idxs.append(parent_idx)
             child_idxs.append(idx)
-            self.cells.append(child)
             idx += 1
 
         return successful_parent_idxs, child_idxs, new_positions

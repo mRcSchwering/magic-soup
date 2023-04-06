@@ -475,6 +475,11 @@ class Cell:
     Arguments:
         genome: Full genome sequence of this cell.
         proteome: List of proteins this cell has.
+        int_molecules: Intracellular molecules. A tensor with one dimension that represents
+            each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+        ext_molecules: Extracellular molecules. A tensor with one dimension that represents
+            each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+            These are the molecules of the pixel the cell is currently living on.
         position: Position on the cell map.
         idx: The current index of this cell.
         label: Label which can be used to track cells. Has no effect.
@@ -490,13 +495,6 @@ class Cell:
     removing killed cells and adding new or replicated cells.
     However, for performance reasons not all attributes on this list of cell objects is always updated.
     If you want to get a cell object with all its current attributes, use [get_cell()][magicsoup.world.World].
-
-    Apart from the initialization arguments, there are some other useful attributes:
-    - `int_molecules` Intracellular molecules.
-      A tensor with one dimension that represents each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
-    - `ext_molecules` Extracellular molecules.
-      A tensor with one dimension that represents each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
-      These are the molecules of the pixel the cell is currently living on.
 
     A map of all pixels occupied by a cell exists as a tensor `world.cell_map`.
     A map of all extracellular molecules exists as tensor `world.molecule_map`.
@@ -518,6 +516,8 @@ class Cell:
         self,
         genome: str,
         proteome: list[Protein],
+        int_molecules: torch.Tensor,
+        ext_molecules: torch.Tensor,
         position: tuple[int, int] = (-1, -1),
         idx: int = -1,
         label: str = "C",
@@ -527,12 +527,12 @@ class Cell:
         self.genome = genome
         self.proteome = proteome
         self.label = label
+        self.int_molecules = int_molecules
+        self.ext_molecules = ext_molecules
         self.position = position
         self.idx = idx
         self.n_survived_steps = n_survived_steps
         self.n_replications = n_replications
-        self.int_molecules: Optional[torch.Tensor] = None
-        self.ext_molecules: Optional[torch.Tensor] = None
 
     def copy(self, **kwargs) -> "Cell":
         old_kwargs = {
