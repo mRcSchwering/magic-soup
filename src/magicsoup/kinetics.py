@@ -347,10 +347,10 @@ class Kinetics:
 
         prots: list[Protein] = []
         for pi in range(dom_types.size(1)):
+            is_useful = False
 
             doms: list[DomainType] = []
             for di in range(dom_types.size(2)):
-
                 # catalytic domain (N has positive and negative integers)
                 if dom_types[0][pi][di].item() == 1:
                     lfts: list[Molecule] = []
@@ -369,6 +369,7 @@ class Kinetics:
                                 vmax=Vmax_d[0][pi][di].item(),
                             )
                         )
+                        is_useful = True
 
                 # transporter domain (N has one +1 and one -1)
                 if dom_types[0][pi][di].item() == 2:
@@ -382,6 +383,7 @@ class Kinetics:
                             vmax=Vmax_d[0][pi][di].item(),
                         )
                     )
+                    is_useful = True
 
                 # regulatory domain (A has values != 0)
                 if dom_types[0][pi][di].item() == 3:
@@ -401,7 +403,9 @@ class Kinetics:
                         )
                     )
 
-            prots.append(Protein(domains=doms))
+            # ignore proteins without a non-regulatory domain
+            if is_useful:
+                prots.append(Protein(domains=doms))
 
         return prots
 
