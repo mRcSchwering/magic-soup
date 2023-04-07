@@ -13,13 +13,14 @@ _E.g._ **Deep Learning AMI GPU PyTorch 1.12.1 (Ubuntu 20.04) 20221114** (ami-01e
 After starting the instance you can initialize conda and directly install the environment.
 
 ```bash
-conda init && source ~/.bashrc  # init conda
-conda env create -f environment_cuda11.6.yml  # install environment
-conda activate magicsoup_dev  # activate envrionment
-
 nvcc --version  # check CUDA version
+
+conda init && source ~/.bashrc  # init conda
+conda update conda  # might help with "solving environment"
+conda install pytorch pytorch-cuda=11.7 -c pytorch -c nvidia  # with correct version
 python -c 'import torch; print(torch.cuda.is_available())'  # check torch was compiled for it
 
+pip install tensorboard  # needed for this run
 PYTHONPATH=./src python performance/run.py --n_steps=100 --device=cuda  # start run using GPU
 nvidia-smi -l 1  # monitor GPU
 ```

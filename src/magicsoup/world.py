@@ -1,4 +1,3 @@
-from typing import Optional
 import random
 from itertools import product
 import math
@@ -20,7 +19,7 @@ from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
 
 
-def _torch_load(map_loc: Optional[str] = None):
+def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
     return lambda b: torch.load(BytesIO(b), map_location=map_loc)
 
@@ -28,7 +27,7 @@ def _torch_load(map_loc: Optional[str] = None):
 class _CPU_Unpickler(pickle.Unpickler):
     """Inject map_location when unpickling tensor objects"""
 
-    def __init__(self, *args, map_location: Optional[str] = None, **kwargs):
+    def __init__(self, *args, map_location: str | None = None, **kwargs):
         self._map_location = map_location
         super().__init__(*args, **kwargs)
 
@@ -185,8 +184,8 @@ class World:
 
     def get_cell(
         self,
-        by_idx: Optional[int] = None,
-        by_position: Optional[tuple[int, int]] = None,
+        by_idx: int | None = None,
+        by_position: tuple[int, int] | None = None,
     ) -> Cell:
         """
         Get a cell with information about its current environment.
@@ -669,7 +668,7 @@ class World:
 
     @classmethod
     def from_file(
-        self, rundir: Path, name: str = "world.pkl", device: Optional[str] = None
+        self, rundir: Path, name: str = "world.pkl", device: str | None = None
     ) -> "World":
         """
         Restore previously saved world from pickle file.
@@ -721,7 +720,7 @@ class World:
         self,
         statedir: Path,
         ignore_cell_params: bool = False,
-        device: Optional[str] = None,
+        device: str | None = None,
     ):
         """
         Load a saved world state.

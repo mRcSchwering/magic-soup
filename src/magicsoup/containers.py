@@ -1,4 +1,3 @@
-from typing import Optional, Union
 import warnings
 import torch
 
@@ -422,8 +421,8 @@ class RegulatoryDomainFact:
         self.is_transmembrane = is_transmembrane
 
 
-DomainType = Union[CatalyticDomain, TransporterDomain, RegulatoryDomain]
-DomainFactType = Union[CatalyticDomainFact, TransporterDomainFact, RegulatoryDomainFact]
+DomainType = CatalyticDomain | TransporterDomain | RegulatoryDomain
+DomainFactType = CatalyticDomainFact | TransporterDomainFact | RegulatoryDomainFact
 
 
 class Protein:

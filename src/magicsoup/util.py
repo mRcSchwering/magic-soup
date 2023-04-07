@@ -1,4 +1,4 @@
-from typing import TypeVar, Sequence, Optional
+from typing import TypeVar, Sequence
 from itertools import product
 import string
 import random
@@ -26,7 +26,7 @@ def randstr(n: int = 12) -> str:
     )
 
 
-def random_genome(s=500, excl: Optional[list[str]] = None) -> str:
+def random_genome(s=500, excl: list[str] | None = None) -> str:
     """
     Generate a random nucleotide sequence
 

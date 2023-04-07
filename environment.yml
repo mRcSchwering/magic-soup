@@ -1,11 +1,12 @@
 name: magicsoup_dev
 
 dependencies:
-  - python=3.9
+  - python=3.10
   - pylint
   - black
   - mypy
   - twine
+  - pip
   - pip:
       - build
       - -r src/requirements.txt

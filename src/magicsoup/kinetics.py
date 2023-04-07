@@ -1,8 +1,8 @@
-from typing import Optional, Any
+from typing import Any
 import math
 import random
 import torch
-from magicsoup.constants import GAS_CONSTANT, ALL_CODONS
+from magicsoup.constants import GAS_CONSTANT
 from magicsoup.containers import (
     Molecule,
     Protein,
@@ -715,7 +715,7 @@ class Kinetics:
         zeros = self._tensor(size[0], n, *size[2:])
         return torch.cat([t, zeros], dim=1)
 
-    def _tensor(self, *args, d: Optional[float] = None) -> torch.Tensor:
+    def _tensor(self, *args, d: float | None = None) -> torch.Tensor:
         if d is None:
             return torch.zeros(*args).to(self.device)
         return torch.full(tuple(args), d).to(self.device)
