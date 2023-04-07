@@ -247,7 +247,7 @@ Cell replication should be based on acetyl-CoA.
 Here, we could make the cell invest some energy in form of acetyl-CoA by converting it back to HS-CoA (taking away the acetyl group).
 That way a cell has to continuously produce acetyl-CoA in order to replicate.
 The better it can do that, the more frequent it will replicate.
-Cells can be replicated with [replicate_cells()][magicsoup.world.World.replicate_cells] by supplying their indexes.
+Cells can be replicate with [divide_cells()][magicsoup.world.World.divide_cells] by supplying their indexes.
 The indexes of successfully replicated cells are returned (if the cell has no space to replicate, it will not do so).
 
 ```python
@@ -258,7 +258,7 @@ def replicate_cells(world: ms.World, aca: int, hca: int):
     allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
     idxs = list(set(chosen) & set(allowed))
 
-    replicated = world.replicate_cells(parent_idxs=idxs)
+    replicated = world.divide_cells(cell_idxs=idxs)
     if len(replicated) > 0:
         parents, children = list(map(list, zip(*replicated)))
         world.cell_molecules[parents + children, aca] -= 1.0
@@ -351,7 +351,7 @@ def replicate_cells(world: ms.World, aca: int, hca: int):
     allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
     idxs = list(set(chosen) & set(allowed))
 
-    replicated = world.replicate_cells(parent_idxs=idxs)
+    replicated = world.divide_cells(cell_idxs=idxs)
     if len(replicated) > 0:
         parents, children = list(map(list, zip(*replicated)))
         world.cell_molecules[parents + children, aca] -= 1.0
@@ -636,7 +636,7 @@ def replicate_cells(world: ms.World, aca: int, hca: int):
     allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
     idxs = list(set(chosen) & set(allowed))
 
-    replicated = world.replicate_cells(parent_idxs=idxs)
+    replicated = world.divide_cells(cell_idxs=idxs)
     if len(replicated) > 0:
         parents, children = list(map(list, zip(*replicated)))
         world.cell_molecules[parents + children, aca] -= 1.0

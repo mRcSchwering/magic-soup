@@ -2,6 +2,8 @@
 Dummy run to test simulation performance in realistic environment
 
     PYTHONPATH=./src python performance/run.py --n_steps=100
+    ...
+    tensorboard --host 0.0.0.0 --logdir=./performance/runs
 
 """
 from argparse import ArgumentParser, Namespace
@@ -66,7 +68,7 @@ def main(args: Namespace):
                     .tolist()
                 )
                 world.cell_molecules[repl, ATP_IDX] -= 4.0
-                replicated = world.replicate_cells(parent_idxs=repl)
+                replicated = world.divide_cells(cell_idxs=repl)
 
                 genomes = [(world.genomes[p], world.genomes[c]) for p, c in replicated]
                 mutated = ms.recombinations(seq_pairs=genomes)

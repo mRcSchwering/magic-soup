@@ -95,7 +95,7 @@ def kill_cells():
 def replicate_cells():
     x = world.cell_molecules[:, 2]
     idxs = sample(x ** 3 / (x ** 3 + 20.0 ** 3))
-    world.replicate_cells(parent_idxs=idxs)
+    world.divide_cells(cell_idxs=idxs)
 ```
 
 Finally, the simulation itself is run in a python loop by repetitively calling the different steps.

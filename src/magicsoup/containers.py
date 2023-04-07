@@ -484,7 +484,7 @@ class Cell:
         idx: The current index of this cell.
         label: Label which can be used to track cells. Has no effect.
         n_survived_steps: Number of time steps this cell has survived.
-        n_replications: Number of times this cell has divided itself.
+        n_divisions: Number of times this cell's ancestors already divided.
 
     Usually, you wouldn't instantiate this object.
     You get it when calling [get_cell()][magicsoup.world.World.get_cell] after you have added some
@@ -510,7 +510,7 @@ class Cell:
         idx: int = -1,
         label: str = "C",
         n_survived_steps: int = -1,
-        n_replications: int = -1,
+        n_divisions: int = -1,
     ):
         self.genome = genome
         self.proteome = proteome
@@ -520,7 +520,7 @@ class Cell:
         self.position = position
         self.idx = idx
         self.n_survived_steps = n_survived_steps
-        self.n_replications = n_replications
+        self.n_divisions = n_divisions
 
     def copy(self, **kwargs) -> "Cell":
         old_kwargs = {
@@ -530,7 +530,7 @@ class Cell:
             "idx": self.idx,
             "label": self.label,
             "n_survived_steps": self.n_survived_steps,
-            "n_replications": self.n_replications,
+            "n_divisions": self.n_divisions,
         }
         return Cell(**{**old_kwargs, **kwargs})  # type: ignore
 
@@ -542,7 +542,7 @@ class Cell:
             "idx": self.idx,
             "label": self.label,
             "n_survived_steps": self.n_survived_steps,
-            "n_replications": self.n_replications,
+            "n_divisions": self.n_divisions,
         }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"

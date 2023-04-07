@@ -91,13 +91,13 @@ def test_add_cells():
     assert torch.all(old_molmap[:, xs, ys] / 2 == world.cell_molecules.T)
 
 
-def test_replicate_cells():
+def test_divide_cells():
     chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=5)
 
     genomes = [ms.random_genome(s=500) for _ in range(3)]
     cell_idxs = world.add_cells(genomes=genomes)
-    parent_child_idxs = world.replicate_cells(parent_idxs=cell_idxs)
+    parent_child_idxs = world.divide_cells(cell_idxs=cell_idxs)
 
     parents, children = list(map(list, zip(*parent_child_idxs)))
     assert torch.all(world.cell_molecules[parents] == world.cell_molecules[children])
@@ -115,7 +115,7 @@ def test_molecule_amount_integrity_when_changing_cells():
     res0 = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
     assert torch.all(torch.abs(res0 - exp) < tolerance)
 
-    replicated = world.replicate_cells(parent_idxs=cell_idxs)
+    replicated = world.divide_cells(cell_idxs=cell_idxs)
     res1 = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
     assert torch.all(torch.abs(res1 - exp) < tolerance)
 
@@ -144,7 +144,7 @@ def test_cell_index_integrity_when_changing_cells():
     assert len(set(world.labels)) == n0
     assert world.cell_map.sum().item() == n0
 
-    replicated = world.replicate_cells(parent_idxs=cell_idxs)
+    replicated = world.divide_cells(cell_idxs=cell_idxs)
     n1 = world.n_cells
     assert len(replicated) > 1
     assert n1 == len(replicated) + len(cell_idxs)
@@ -222,18 +222,14 @@ def test_run_world_without_reactions():
         world.enzymatic_activity()
 
 
-def test_cells_unable_to_replicate():
+def test_cells_unable_to_divide():
     chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=3)
 
-    genomes = [ms.random_genome(s=500) for _ in range(3)]
+    genomes = [ms.random_genome(s=500) for _ in range(9)]
     world.add_cells(genomes=genomes)
 
-    for _ in range(5):
-        idxs = list(range(world.n_cells))
-        world.replicate_cells(parent_idxs=idxs)
-
-    descendants = world.replicate_cells(parent_idxs=idxs)
+    descendants = world.divide_cells(cell_idxs=list(range(9)))
     assert len(descendants) == 0
 
 

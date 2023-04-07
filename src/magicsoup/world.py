@@ -63,7 +63,7 @@ class World:
     Likewise, cells are always ordered the same way as in `world.genomes` (see below).
     The index of a certain cell is the index of that cell in `world.genomes`.
     It is the same index as `cell.idx` of a cell object you retrieved with `world.get_cell()`.
-    But whenever an operation modifies the number of cells (like `world.kill_cells()` or `world.replicate_cells()`),
+    But whenever an operation modifies the number of cells (like `world.kill_cells()` or `world.divide_cells()`),
     cells get new indexes. Here are the most important attributes:
 
     Attributes:
@@ -71,7 +71,7 @@ class World:
             The cell index is used for the same cell in other orderings of cells (_e.g._ `labels`, `cell_divisions`, `cell_molecules`).
         labels: List of cell labels. Cells are ordered as in `world.genomes`. Labels are strings that can be used to
             track cell origins. When adding new cells (`world.add_cells()`) a random label is assigned to each cell.
-            If a cell replicates, its descendants will have the same label.
+            If a cell divides, its descendants will have the same label.
         cell_map: Boolean 2D tensor referencing which pixels are occupied by a cell.
             Dimension 0 represents the x, dimension 1 y.
         molecule_map: Float 3D tensor describing how many molecules (in mol) of each molecule species exist on every pixel in this world.
@@ -85,14 +85,14 @@ class World:
         cell_survival: Integer 1D tensor describing how many time steps each cell survived.
             This tensor is for monitoring and doesn't have any other effect.
             Cells are in the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
-        cell_divisions: Integer 1D tensor describing how many times each cell replicated.
+        cell_divisions: Integer 1D tensor describing how many times each cell's ancestors divided.
             This tensor is for monitoring and doesn't have any other effect.
             Cells are in the same order as in `world.genomes` and the same as on a cell object (`cell.idx`).
 
     Methods for advancing the simulation and to use during a simulation:
 
     - [add_cells()][magicsoup.world.World.add_cells] add new cells and place them randomly on the map
-    - [replicate_cells()][magicsoup.world.World.replicate_cells] replicate existing cells
+    - [divide_cells()][magicsoup.world.World.divide_cells] replicate existing cells
     - [update_cells()][magicsoup.world.World.update_cells] update existing cells if their genome has changed
     - [kill_cells()][magicsoup.world.World.kill_cells] kill existing cells
     - [move_cells()][magicsoup.world.World.move_cells] move existing cells to a random position in their Moore's neighborhood
@@ -228,7 +228,7 @@ class World:
             ext_molecules=self.molecule_map[:, pos[0], pos[1]],
             label=self.labels[idx],
             n_survived_steps=int(self.cell_survival[idx].item()),
-            n_replications=int(self.cell_divisions[idx].item()),
+            n_divisions=int(self.cell_divisions[idx].item()),
         )
 
     def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
@@ -362,26 +362,35 @@ class World:
             genomes = genomes[:n_new_cells]
 
         proteomes = self.genetics.translate_genomes(genomes=genomes)
-        proteomes = [d for d in proteomes if len(d) > 0]
-        n_new_cells = len(proteomes)
+
+        new_genomes = []
+        new_proteomes = []
+        new_labels = []
+        for proteome, genome in zip(proteomes, genomes):
+            if len(proteome) > 0:
+                new_genomes.append(genome)
+                new_proteomes.append(proteome)
+                new_labels.append(randstr(n=12))
+
+        n_new_cells = len(new_genomes)
         if n_new_cells == 0:
             return []
 
         new_pos = free_pos[:n_new_cells]
-        self.genomes.extend(genomes)
-        self.labels.extend(randstr(n=12) for _ in range(n_new_cells))
         new_idxs = list(range(self.n_cells, self.n_cells + n_new_cells))
         self.n_cells += n_new_cells
+        self.genomes.extend(new_genomes)
+        self.labels.extend(new_labels)
 
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
         self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
 
-        n_max_prots = max(len(d) for d in proteomes)
+        n_max_prots = max(len(d) for d in new_proteomes)
         self.kinetics.increase_max_proteins(max_n=n_max_prots)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.set_cell_params(cell_idxs=new_idxs, proteomes=proteomes)
+        self.kinetics.set_cell_params(cell_idxs=new_idxs, proteomes=new_proteomes)
 
         # occupy positions
         xs = new_pos[:, 0]
@@ -396,36 +405,40 @@ class World:
 
         return new_idxs
 
-    def replicate_cells(self, parent_idxs: list[int]) -> list[tuple[int, int]]:
+    def divide_cells(self, cell_idxs: list[int]) -> list[tuple[int, int]]:
         """
-        Bring cells to replicate.
+        Bring cells to divide.
         All lists and tensors that reference cells will be updated.
 
         Parameters:
-            parent_idxs: Cell indexes of the cells that should replicate.
+            cell_idxs: Cell indexes of the cells that should divide.
 
         Returns:
             A list of tuples of descendant cell indexes.
 
-        A new descendant will be placed randomly next to its ancestor cell (Moore's neighborhood).
-        If every pixel in the ancestor's Moore's neighborhood is taken the cell will not replicate.
+        Each cell divides by creating a clone of itself on a random pixel next to itself (Moore's neighborhood).
+        If every pixel in its Moore's neighborhood is taken, it will not be able to divide.
         Both, the original ancestor cell and the newly placed cell will become the descendants.
-        Each descendant recieves half the molecules of their ancestor cell.
-        `cell_divisions` for both descendants is incremented by 1.
+        They will have the same genome, proteome, survived steps, and label.
+        Both descendants share all molecules equally.
+        So each descendant cell will get half the molecules of the ancestor cell.
+
+        Both descendants will share the same number of divisions.
+        It is incremented by 1 for both cells.
+        So, _e.g._ if a cell with `n_divisions=2` divides, its descendants both have `n_divisions=3`.
 
         Of the list of descendant index tuples,
-        the first descendant in each tuple is the one that still lived on the same pixel.
-        The second descendant in that tuple lives on a pixel next to the first one.
+        the first descendant in each tuple is the cell that still lives on the same pixel.
+        The second descendant in that tuple is the cell that was newly created.
         """
-        # TODO: rename "divide"?
-        if len(parent_idxs) == 0:
+        if len(cell_idxs) == 0:
             return []
 
         (
-            succ_parent_idxs,
+            parent_idxs,
             child_idxs,
             child_pos,
-        ) = self._replicate_cells_as_possible(parent_idxs=parent_idxs)
+        ) = self._divide_cells_as_possible(parent_idxs=cell_idxs)
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
@@ -438,19 +451,19 @@ class World:
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
         self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.copy_cell_params(from_idxs=succ_parent_idxs, to_idxs=child_idxs)
+        self.kinetics.copy_cell_params(from_idxs=parent_idxs, to_idxs=child_idxs)
 
         # position new cells
         # cell_map was already set in loop before
         self.cell_positions[child_idxs] = torch.stack(child_pos)
 
         # cells share molecules and increment cell divisions
-        descendant_idxs = succ_parent_idxs + child_idxs
-        self.cell_molecules[child_idxs] = self.cell_molecules[succ_parent_idxs]
+        descendant_idxs = parent_idxs + child_idxs
+        self.cell_molecules[child_idxs] = self.cell_molecules[parent_idxs]
         self.cell_molecules[descendant_idxs] *= 0.5
         self.cell_divisions[descendant_idxs] += 1
 
-        return list(zip(succ_parent_idxs, child_idxs))
+        return list(zip(parent_idxs, child_idxs))
 
     def update_cells(self, genome_idx_pairs: list[tuple[str, int]]):
         """
@@ -467,15 +480,15 @@ class World:
 
         kill_idxs = []
         transl_idxs = []
-        genomes = []
+        transl_genomes = []
         for genome, idx in genome_idx_pairs:
             if len(genome) > 0:
-                genomes.append(genome)
+                transl_genomes.append(genome)
                 transl_idxs.append(idx)
             else:
                 kill_idxs.append(idx)
 
-        proteomes = self.genetics.translate_genomes(genomes=genomes)
+        proteomes = self.genetics.translate_genomes(genomes=transl_genomes)
 
         set_idxs = []
         set_proteomes = []
@@ -760,10 +773,10 @@ class World:
         if ignore_cell_params:
             self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
-    def _replicate_cells_as_possible(
+    def _divide_cells_as_possible(
         self, parent_idxs: list[int]
     ) -> tuple[list[int], list[int], list[torch.Tensor]]:
-        idx = self.n_cells
+        run_idx = self.n_cells
         child_idxs = []
         successful_parent_idxs = []
         new_positions = []
@@ -787,8 +800,8 @@ class World:
             self.labels.append(self.labels[parent_idx])
 
             successful_parent_idxs.append(parent_idx)
-            child_idxs.append(idx)
-            idx += 1
+            child_idxs.append(run_idx)
+            run_idx += 1
 
         return successful_parent_idxs, child_idxs, new_positions
 

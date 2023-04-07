@@ -88,7 +88,7 @@ def replicate_cells(w: int, n: int, s: int):
         idxs = world.add_cells(genomes=genomes)
 
         t0 = time.time()
-        world.replicate_cells(parent_idxs=idxs)
+        world.divide_cells(cell_idxs=idxs)
         tds.append(time.time() - t0)
 
     m = sum(tds) / R
