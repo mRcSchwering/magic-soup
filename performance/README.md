@@ -15,7 +15,7 @@ After starting the instance you can initialize conda and directly install the en
 ```bash
 conda init && source ~/.bashrc  # init conda
 conda env create -f environment_cuda11.6.yml  # install environment
-conda activate luca  # activate envrionment
+conda activate magicsoup_dev  # activate envrionment
 
 nvcc --version  # check CUDA version
 python -c 'import torch; print(torch.cuda.is_available())'  # check torch was compiled for it
