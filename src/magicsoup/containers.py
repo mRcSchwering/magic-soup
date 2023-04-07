@@ -313,8 +313,8 @@ class CatalyticDomainFact:
 
     def __init__(self, reaction: tuple[list[Molecule], list[Molecule]]):
         substrates, products = reaction
-        self.substrates = substrates
-        self.products = products
+        self.substrates = sorted(substrates)
+        self.products = sorted(products)
 
 
 class TransporterDomain:

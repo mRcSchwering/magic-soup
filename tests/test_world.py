@@ -351,3 +351,29 @@ def test_generate_genome():
                 f"Was not able to recreate proteome from generated genome after {max_i} tries."
                 f" P0 was found {p0_found} times, P1 was found {p1_found} times."
             )
+
+
+def test_generate_genome_with_different_reaction_sorting():
+    mi = ms.Molecule("i", 10 * 1e3)
+    mj = ms.Molecule("j", 20 * 1e3)
+    mk = ms.Molecule("k", 30 * 1e3)
+    molecules = [mi, mj, mk]
+    reactions = [([mj, mi], [mk])]
+
+    # reaction gets sorted to i + j <-> k
+    # when initializing chemistry object
+    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
+    world = ms.World(chemistry=chemistry, map_size=128)
+
+    # if reaction is not properly reordered
+    # it will fail
+    doms = [ms.CatalyticDomainFact(reaction=reactions[0])]
+    g = world.generate_genome(proteome=[ms.ProteinFact(domain_facts=doms)], size=100)
+    assert len(g) == 100
+
+    # in contrast this should fail,
+    # because the reaction wasnt defined
+    doms = [ms.CatalyticDomainFact(reaction=([mj], [mk]))]
+    with pytest.raises(ValueError):
+        world.generate_genome(proteome=[ms.ProteinFact(domain_facts=doms)], size=100)
+    
