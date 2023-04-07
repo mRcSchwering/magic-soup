@@ -1,0 +1,15 @@
+name: magicsoup_dev
+
+dependencies:
+  - python=3.9
+  - pylint
+  - black
+  - mypy
+  - twine
+  - pytorch
+  - pytorch-cuda=11.6
+  - pip
+  - pip:
+      - build
+      - -r src/requirements.txt
+      - -r tests/requirements.txt
