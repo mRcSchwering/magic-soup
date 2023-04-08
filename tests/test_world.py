@@ -1,3 +1,5 @@
+import tempfile
+from pathlib import Path
 import pytest
 import torch
 import magicsoup as ms
@@ -376,4 +378,68 @@ def test_generate_genome_with_different_reaction_sorting():
     doms = [ms.CatalyticDomainFact(reaction=([mj], [mk]))]
     with pytest.raises(ValueError):
         world.generate_genome(proteome=[ms.ProteinFact(domain_facts=doms)], size=100)
-    
+
+
+def test_saving_and_loading_world_obj():
+    mi = ms.Molecule("i", 10 * 1e3)
+    mj = ms.Molecule("j", 20 * 1e3)
+    chemistry = ms.Chemistry(molecules=[mi, mj], reactions=[([mi], [mj])])
+
+    world = ms.World(chemistry=chemistry, map_size=7)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rundir = Path(tmpdir)
+        world.save(rundir=rundir)
+        del world
+        world = ms.World.from_file(rundir=rundir)
+
+    assert world.abs_temp == 310.0
+    assert world.map_size == 7
+    assert world.workers == 2
+    assert world.genetics.workers == 2
+    assert world.device == "cpu"
+    assert world.chemistry.molecules[0] is mi
+    assert world.chemistry.molecules[1] is mj
+    assert world.chemistry.reactions == [([mi], [mj])]
+    del world
+
+    world = ms.World(chemistry=chemistry, map_size=9, workers=2, abs_temp=300.0)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rundir = Path(tmpdir)
+        world.save(rundir=rundir)
+        del world
+        world = ms.World.from_file(rundir=rundir, workers=4)
+
+    assert world.abs_temp == 300.0
+    assert world.map_size == 9
+    assert world.workers == 4
+    assert world.genetics.workers == 4
+    assert world.device == "cpu"
+    assert world.chemistry.molecules[0] is mi
+    assert world.chemistry.molecules[1] is mj
+    assert world.chemistry.reactions == [([mi], [mj])]
+    del world
+
+
+def test_saving_and_loading_state():
+    mi = ms.Molecule("i", 10 * 1e3)
+    mj = ms.Molecule("j", 20 * 1e3)
+    chemistry = ms.Chemistry(molecules=[mi, mj], reactions=[([mi], [mj])])
+
+    world = ms.World(chemistry=chemistry, map_size=7)
+    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
+
+    cell_map = world.cell_map.clone()
+    molecule_map = world.molecule_map.clone()
+    assert cell_map.sum() == 3.0
+    assert molecule_map.mean() > 0.0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        statedir = Path(tmpdir)
+        world.save_state(statedir=statedir)
+
+        del world
+        world = ms.World(chemistry=chemistry, map_size=7)
+        world.load_state(statedir=statedir)
+
+    assert (cell_map == world.cell_map).all()
+    assert (molecule_map == world.molecule_map).all()

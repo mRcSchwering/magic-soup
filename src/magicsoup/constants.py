@@ -6,6 +6,7 @@ GAS_CONSTANT = 8.31446261815324  # in J/(K*mol)
 ALL_NTS = tuple("TCGA")  # "N" represents any one of these
 ALL_CODONS = set("".join(d) for d in product(ALL_NTS, ALL_NTS, ALL_NTS))
 
+
 # fmt: off
 CODON_TABLE = {
     "TTT": 1,   "TCT": 2,   "TAT": 3,   "TGT": 4,

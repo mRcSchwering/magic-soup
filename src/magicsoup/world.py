@@ -137,8 +137,7 @@ class World:
         self.chemistry = chemistry
 
         self.genetics = Genetics(
-            start_codons=start_codons,
-            stop_codons=stop_codons,
+            start_codons=start_codons, stop_codons=stop_codons, workers=workers
         )
 
         self.kinetics = Kinetics(
@@ -668,7 +667,11 @@ class World:
 
     @classmethod
     def from_file(
-        self, rundir: Path, name: str = "world.pkl", device: str | None = None
+        self,
+        rundir: Path,
+        name: str = "world.pkl",
+        device: str | None = None,
+        workers: int | None = None,
     ) -> "World":
         """
         Restore previously saved world from pickle file.
@@ -685,7 +688,13 @@ class World:
         """
         with open(rundir / name, "rb") as fh:
             unpickler = _CPU_Unpickler(fh, map_location=device)
-            return unpickler.load()
+            obj: "World" = unpickler.load()
+
+        if workers is not None:
+            obj.workers = workers
+            obj.genetics.workers = workers
+
+        return obj
 
     def save_state(self, statedir: Path):
         """
