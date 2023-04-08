@@ -417,13 +417,14 @@ class World:
         Each cell divides by creating a clone of itself on a random pixel next to itself (Moore's neighborhood).
         If every pixel in its Moore's neighborhood is taken, it will not be able to divide.
         Both, the original ancestor cell and the newly placed cell will become the descendants.
-        They will have the same genome, proteome, survived steps, and label.
+        They will have the same genome, proteome, and label.
         Both descendants share all molecules equally.
         So each descendant cell will get half the molecules of the ancestor cell.
 
         Both descendants will share the same number of divisions.
         It is incremented by 1 for both cells.
         So, _e.g._ if a cell with `n_divisions=2` divides, its descendants both have `n_divisions=3`.
+        For both of them the number of survived steps is 0 after the division.
 
         Of the list of descendant index tuples,
         the first descendant in each tuple is the cell that still lives on the same pixel.
@@ -459,7 +460,9 @@ class World:
         descendant_idxs = parent_idxs + child_idxs
         self.cell_molecules[child_idxs] = self.cell_molecules[parent_idxs]
         self.cell_molecules[descendant_idxs] *= 0.5
+        self.cell_divisions[child_idxs] = self.cell_divisions[parent_idxs]
         self.cell_divisions[descendant_idxs] += 1
+        self.cell_survival[descendant_idxs] = 0
 
         return list(zip(parent_idxs, child_idxs))
 

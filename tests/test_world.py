@@ -443,3 +443,33 @@ def test_saving_and_loading_state():
 
     assert (cell_map == world.cell_map).all()
     assert (molecule_map == world.molecule_map).all()
+
+
+def test_divisions_and_survival_after_replication():
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+
+    world = ms.World(chemistry=chemistry)
+    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(2)])
+    assert world.n_cells == 2
+    world.cell_divisions[0] = 1
+    world.cell_divisions[1] = 11
+    world.cell_survival[0] = 5
+    world.cell_survival[1] = 15
+
+    world.divide_cells(cell_idxs=[0])
+    assert world.n_cells == 3
+    assert world.cell_divisions[0] == 2
+    assert world.cell_divisions[1] == 11
+    assert world.cell_divisions[2] == 2
+    assert world.cell_survival[0] == 0
+    assert world.cell_survival[1] == 15
+    assert world.cell_survival[2] == 0
+
+    world.increment_cell_survival()
+    assert world.n_cells == 3
+    assert world.cell_divisions[0] == 2
+    assert world.cell_divisions[1] == 11
+    assert world.cell_divisions[2] == 2
+    assert world.cell_survival[0] == 1
+    assert world.cell_survival[1] == 16
+    assert world.cell_survival[2] == 1
