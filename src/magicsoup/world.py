@@ -575,6 +575,32 @@ class World:
             self.cell_map[new_pos[0], new_pos[1]] = True
             self.cell_positions[cell_idx] = new_pos
 
+    def reposition_cells(self, cell_idxs: list[int]):
+        """
+        Reposition cells randomly on cell map without changing them.
+
+        Parameters:
+            cell_idxs: Indexes of cells that should be moved
+
+        Cells are removed from their current pixels on the cell map
+        and repositioned randomly on any free pixel on the cell map.
+        Only cell positions change (_e.g._ genomes, proteomes, cell molecules, cell indexes stay the same).
+        """
+        n_cells = len(cell_idxs)
+        if n_cells == 0:
+            return
+
+        old_xs = self.cell_positions[cell_idxs, 0]
+        old_ys = self.cell_positions[cell_idxs, 1]
+        self.cell_map[old_xs, old_ys] = False
+
+        new_pos = self._find_free_random_positions(n_cells=n_cells)
+        new_xs = new_pos[:, 0]
+        new_ys = new_pos[:, 1]
+
+        self.cell_map[new_xs, new_ys] = True
+        self.cell_positions[cell_idxs] = new_pos
+
     def enzymatic_activity(self):
         """
         Catalyze reactions for one time step.

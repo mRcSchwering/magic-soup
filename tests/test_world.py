@@ -515,3 +515,31 @@ def test_reference_to_tensors_not_lost():
     assert id(world.molecule_map) == id(a.world.molecule_map)
     assert id(world.cell_molecules) == id(a.world.cell_molecules)
     assert id(world.cell_map) == id(a.world.cell_map)
+
+
+def test_reposition_cells():
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+    world = ms.World(chemistry=chemistry)
+    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
+
+    c0_0 = world.get_cell(by_idx=0)
+    c1_0 = world.get_cell(by_idx=1)
+    c2_0 = world.get_cell(by_idx=2)
+
+    world.reposition_cells(cell_idxs=[0, 2])
+    c0_1 = world.get_cell(by_idx=0)
+    c1_1 = world.get_cell(by_idx=1)
+    c2_1 = world.get_cell(by_idx=2)
+
+    assert c0_1.position != c0_0.position
+    assert c1_1.position == c1_0.position
+    assert c2_1.position != c2_0.position
+    assert (c0_1.int_molecules == c0_0.int_molecules).all()
+    assert (c1_1.int_molecules == c1_0.int_molecules).all()
+    assert (c2_1.int_molecules == c2_0.int_molecules).all()
+    assert c0_1.genome == c0_0.genome
+    assert c1_1.genome == c1_0.genome
+    assert c2_1.genome == c2_0.genome
+    assert c0_1.label == c0_0.label
+    assert c1_1.label == c1_0.label
+    assert c2_1.label == c2_0.label
