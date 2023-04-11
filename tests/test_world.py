@@ -473,3 +473,45 @@ def test_divisions_and_survival_after_replication():
     assert world.cell_survival[0] == 1
     assert world.cell_survival[1] == 16
     assert world.cell_survival[2] == 1
+
+
+def test_reference_to_tensors_not_lost():
+    class A:
+        def __init__(self, world: ms.World):
+            self.world = world
+
+        def f(self, d: float):
+            self.world.molecule_map = torch.full_like(self.world.molecule_map, d)
+            self.world.cell_molecules = torch.full_like(self.world.cell_molecules, d)
+
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=3, mol_map_init="zeros")
+    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(2)])
+    a = A(world=world)
+
+    assert id(world.molecule_map) == id(a.world.molecule_map)
+    assert id(world.cell_molecules) == id(a.world.cell_molecules)
+    assert id(world.cell_map) == id(a.world.cell_map)
+    assert world.molecule_map.mean() == 0.0
+
+    world.diffuse_molecules()
+    world.enzymatic_activity()
+    world.degrade_molecules()
+
+    assert id(world.molecule_map) == id(a.world.molecule_map)
+    assert id(world.cell_molecules) == id(a.world.cell_molecules)
+    assert id(world.cell_map) == id(a.world.cell_map)
+
+    a.f(2.0)
+    assert id(world.molecule_map) == id(a.world.molecule_map)
+    assert id(world.cell_molecules) == id(a.world.cell_molecules)
+    assert id(world.cell_map) == id(a.world.cell_map)
+    assert world.molecule_map.mean() == 2.0
+
+    world.diffuse_molecules()
+    world.enzymatic_activity()
+    world.degrade_molecules()
+
+    assert id(world.molecule_map) == id(a.world.molecule_map)
+    assert id(world.cell_molecules) == id(a.world.cell_molecules)
+    assert id(world.cell_map) == id(a.world.cell_map)
