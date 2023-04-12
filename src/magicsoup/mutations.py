@@ -104,7 +104,7 @@ def recombinations(
         return []
 
     combined_seqs = [(a + b, len(a)) for a, b in seq_pairs]
-    lens = [len(d) for d in combined_seqs]
+    lens = [len(d[0]) for d in combined_seqs]
     s_max = max(lens)
 
     mask = torch.zeros(n, s_max)
