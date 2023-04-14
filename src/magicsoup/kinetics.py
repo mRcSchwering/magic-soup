@@ -57,6 +57,13 @@ class _SignMapFact:
         """t: long (c, p, d)"""
         return self.signs[t]
 
+    def inverse(self) -> dict[bool, list[int]]:
+        sign_map = {}
+        M = self.signs
+        sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
+        sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
+        return sign_map
+
 
 class _VectorMapFact:
     """
@@ -142,6 +149,24 @@ class _ReactionMapFact(_VectorMapFact):
             zero_value=zero_value,
         )
 
+    def inverse(
+        self,
+        molmap: dict[Molecule, int],
+        reactions: list[tuple[list[Molecule], list[Molecule]]],
+        n_signals: int,
+    ) -> dict[tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]]:
+        react_map = {}
+        for subs, prods in reactions:
+            t = torch.zeros(n_signals)
+            for sub in subs:
+                t[molmap[sub]] -= 1
+            for prod in prods:
+                t[molmap[prod]] += 1
+            M = self.M
+            idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
+            react_map[(tuple(subs), tuple(prods))] = idxs
+        return react_map
+
 
 class _TransporterMapFact(_VectorMapFact):
     """
@@ -175,6 +200,14 @@ class _TransporterMapFact(_VectorMapFact):
             zero_value=zero_value,
         )
 
+    def inverse(self, molecules: list[Molecule]) -> dict[Molecule, list[int]]:
+        trnsp_map = {}
+        for mi, mol in enumerate(molecules):
+            M = self.M
+            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
+            trnsp_map[mol] = idxs
+        return trnsp_map
+
 
 class _RegulatoryMapFact(_VectorMapFact):
     """
@@ -205,6 +238,14 @@ class _RegulatoryMapFact(_VectorMapFact):
             device=device,
             zero_value=zero_value,
         )
+
+    def inverse(self, molecules: list[Molecule]) -> dict[Molecule, list[int]]:
+        reg_map = {}
+        for mi, mol in enumerate(molecules):
+            M = self.M
+            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
+            reg_map[mol] = idxs
+        return reg_map
 
 
 class Kinetics:
@@ -325,6 +366,14 @@ class Kinetics:
 
         self.effector_map = _RegulatoryMapFact(
             n_molecules=len(molecules), max_token=vector_enc_size, device=device
+        )
+
+        # derive inverse maps for genome generation
+        self.sign_2_idxs = self.sign_map.inverse()
+        self.trnsp_2_idxs = self.transport_map.inverse(molecules=molecules)
+        self.regul_2_idxs = self.effector_map.inverse(molecules=molecules)
+        self.catal_2_idxs = self.reaction_map.inverse(
+            molmap=self.mol_2_mi, reactions=reactions, n_signals=n_signals
         )
 
     def get_proteome(

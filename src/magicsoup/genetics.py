@@ -18,8 +18,8 @@ def _get_n(p: float, s: int, name: str) -> int:
 def _get_coding_regions(
     seq: str,
     min_cds_size: int,
-    start_codons: tuple[str, ...],
-    stop_codons: tuple[str, ...],
+    start_codons: list[str],
+    stop_codons: list[str],
 ) -> list[str]:
     s = CODON_SIZE
     n = len(seq)
@@ -103,7 +103,6 @@ def _extract_domains(
         while i + dom_size <= len(cds):
             dom_type_seq = cds[i : i + dom_type_size]
             if dom_type_seq in dom_type_map:
-
                 # 1=catal, 2=trnsp, 3=reg
                 dom_type = dom_type_map[dom_type_seq]
                 if dom_type != 3:
@@ -131,8 +130,8 @@ def _extract_domains(
 def _translate_genome(
     genome: str,
     dom_size: int,
-    start_codons: tuple[str, ...],
-    stop_codons: tuple[str, ...],
+    start_codons: list[str],
+    stop_codons: list[str],
     dom_type_map: dict[str, int],
     one_codon_map: dict[str, int],
     two_codon_map: dict[str, int],
@@ -229,8 +228,8 @@ class Genetics:
                 "p_catal_dom, p_transp_dom, p_reg_dom together must not be greater 1.0"
             )
 
-        self.start_codons = start_codons
-        self.stop_codons = stop_codons
+        self.start_codons = list(start_codons)
+        self.stop_codons = list(stop_codons)
         self.workers = workers
 
         # Domain structure:
@@ -271,6 +270,10 @@ class Genetics:
         self.two_codon_map: dict[str, int] = {}
         for i, seq in enumerate(self._get_double_codons()):
             self.two_codon_map[seq] = i + 1
+
+        # inverse maps for genome generation
+        self.idx_2_one_codon = {v: k for k, v in self.one_codon_map.items()}
+        self.idx_2_two_codon = {v: k for k, v in self.two_codon_map.items()}
 
     def translate_genomes(
         self, genomes: list[str]

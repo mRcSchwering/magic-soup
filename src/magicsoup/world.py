@@ -9,6 +9,7 @@ from magicsoup.constants import CODON_SIZE
 from magicsoup.util import moore_nghbrhd, round_down, random_genome, randstr
 from magicsoup.containers import (
     Cell,
+    Molecule,
     Chemistry,
     ProteinFact,
     CatalyticDomainFact,
@@ -17,6 +18,8 @@ from magicsoup.containers import (
 )
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
+
+import time
 
 
 def _torch_load(map_loc: str | None = None):
@@ -181,6 +184,21 @@ class World:
             n=self.n_molecules, size=map_size, init=mol_map_init
         )
 
+    def _get_catal_2_idxs(
+        self,
+    ) -> dict[tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]]:
+        react_map = {}
+        for subs, prods in self.chemistry.reactions:
+            t = torch.zeros(self.n_molecules * 2)
+            for sub in subs:
+                t[self.kinetics.mol_2_mi[sub]] -= 1
+            for prod in prods:
+                t[self.kinetics.mol_2_mi[prod]] += 1
+            M = self.kinetics.reaction_map.M
+            idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
+            react_map[(tuple(subs), tuple(prods))] = idxs
+        return react_map
+
     def get_cell(
         self,
         by_idx: int | None = None,
@@ -308,7 +326,9 @@ class World:
         p_pad_total = n_p_pads * p_pad_size
         remaining_nts = n_pad_nts - d_pad_total - p_pad_total
 
-        excl_cdss = list(self.genetics.start_codons) + list(self.genetics.stop_codons)
+        start_codons = self.genetics.start_codons
+        stop_codons = self.genetics.stop_codons
+        excl_cdss = start_codons + stop_codons
         excl_doms = excl_cdss + list(self.genetics.domain_map)
         p_pads = [random_genome(s=p_pad_size, excl=excl_cdss) for _ in range(n_p_pads)]
         d_pads = [random_genome(s=d_pad_size, excl=excl_doms) for _ in range(n_d_pads)]
@@ -317,12 +337,12 @@ class World:
         parts: list[str] = []
         for cds in cdss:
             parts.append(p_pads.pop())
-            parts.append(random.choice(self.genetics.start_codons))
+            parts.append(random.choice(start_codons))
             for dom_seq in cds:
                 parts.append(d_pads.pop())
                 parts.append(dom_seq)
             parts.append(d_pads.pop())
-            parts.append(random.choice(self.genetics.stop_codons))
+            parts.append(random.choice(stop_codons))
         parts.append(p_pads.pop())
         parts.append(tail)
 
@@ -860,41 +880,14 @@ class World:
         proteome = proteome.copy()
         random.shuffle(proteome)
 
-        all_mols = self.chemistry.molecules
-        all_reacts = self.chemistry.reactions
-        stops = list(self.genetics.start_codons)
-
+        stop_codons = self.genetics.start_codons
         dom_type_map = self.genetics.domain_types
-        one_codon_map = {v: k for k, v in self.genetics.one_codon_map.items()}
-        two_codon_map = {v: k for k, v in self.genetics.two_codon_map.items()}
-
-        react_map = {}
-        for subs, prods in all_reacts:
-            t = torch.zeros(self.n_molecules * 2)
-            for sub in subs:
-                t[self.kinetics.mol_2_mi[sub]] -= 1
-            for prod in prods:
-                t[self.kinetics.mol_2_mi[prod]] += 1
-            M = self.kinetics.reaction_map.M
-            idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
-            react_map[(tuple(subs), tuple(prods))] = idxs
-
-        trnsp_map = {}
-        for mi, mol in enumerate(all_mols):
-            M = self.kinetics.transport_map.M
-            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
-            trnsp_map[mol] = idxs
-
-        reg_map = {}
-        for mi, mol in enumerate(all_mols):
-            M = self.kinetics.effector_map.M
-            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
-            reg_map[mol] = idxs
-
-        sign_map = {}
-        M = self.kinetics.sign_map.signs
-        sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
-        sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
+        one_codon_map = self.genetics.idx_2_one_codon
+        two_codon_map = self.genetics.idx_2_two_codon
+        react_map = self.kinetics.catal_2_idxs
+        trnsp_map = self.kinetics.trnsp_2_idxs
+        reg_map = self.kinetics.regul_2_idxs
+        sign_map = self.kinetics.sign_2_idxs
 
         cdss: list[list[str]] = []
         for prot in proteome:
@@ -916,23 +909,23 @@ class World:
                     dom_seq = random.choice(dom_type_map[1])
                     sign_seq = one_codon_map[i3]
                     react_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stop_codons)
                     cds.append(dom_seq + mm_seq + sign_seq + react_seq)
 
                 if isinstance(dom, TransporterDomainFact):
                     i4 = random.choice(trnsp_map[dom.molecule])
                     dom_seq = random.choice(dom_type_map[2])
                     mol_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
-                    sign_seq = random_genome(s=CODON_SIZE, excl=stops)
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stop_codons)
+                    sign_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
                     cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
 
                 if isinstance(dom, RegulatoryDomainFact):
                     i4 = random.choice(reg_map[dom.effector])
                     dom_seq = random.choice(dom_type_map[3])
                     mol_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stops)
-                    sign_seq = random_genome(s=CODON_SIZE, excl=stops)
+                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stop_codons)
+                    sign_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
                     cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
 
             cdss.append(cds)
