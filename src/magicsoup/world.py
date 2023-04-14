@@ -719,6 +719,10 @@ class World:
             unpickler = _CPU_Unpickler(fh, map_location=device)
             obj: "World" = unpickler.load()
 
+        if device is not None:
+            obj.device = device
+            obj.kinetics.device = device
+
         if workers is not None:
             obj.workers = workers
             obj.genetics.workers = workers
@@ -758,7 +762,6 @@ class World:
         self,
         statedir: Path,
         ignore_cell_params: bool = False,
-        device: str | None = None,
     ):
         """
         Load a saved world state.
@@ -769,26 +772,25 @@ class World:
             ignore_cell_params: Whether to not update cell parameters as well.
                 If you are only interested in the cells' genomes and molecules
                 you can set this to `True` to make loading a lot faster.
-            device: Optionally set device to which tensors should be loaded.
-                Default is the current `world.device`.
         """
-        device = device or self.device
 
         self.cell_molecules = torch.load(
-            statedir / "cell_molecules.pt", map_location=device
+            statedir / "cell_molecules.pt", map_location=self.device
         )
-        self.cell_map = torch.load(statedir / "cell_map.pt", map_location=device).bool()
+        self.cell_map = torch.load(
+            statedir / "cell_map.pt", map_location=self.device
+        ).bool()
         self.molecule_map = torch.load(
-            statedir / "molecule_map.pt", map_location=device
+            statedir / "molecule_map.pt", map_location=self.device
         )
         self.cell_survival = torch.load(
-            statedir / "cell_survival.pt", map_location=device
+            statedir / "cell_survival.pt", map_location=self.device
         ).int()
         self.cell_positions = torch.load(
-            statedir / "cell_positions.pt", map_location=device
+            statedir / "cell_positions.pt", map_location=self.device
         ).int()
         self.cell_divisions = torch.load(
-            statedir / "cell_divisions.pt", map_location=device
+            statedir / "cell_divisions.pt", map_location=self.device
         ).int()
 
         with open(statedir / "cells.fasta", "r", encoding="utf-8") as fh:
