@@ -829,7 +829,8 @@ class World:
 
         self.n_cells = len(genome_idx_pairs)
 
-        if ignore_cell_params:
+        if not ignore_cell_params:
+            self.kinetics.increase_max_cells(by_n=self.n_cells)
             self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
     def _divide_cells_as_possible(
