@@ -7,7 +7,6 @@ from magicsoup.containers import (
     TransporterDomain,
 )
 from magicsoup.kinetics import Kinetics
-from magicsoup.constants import GAS_CONSTANT
 
 TOLERANCE = 1e-4
 
@@ -192,7 +191,6 @@ def test_cell_params_with_catalytic_domains_and_co_factors():
 
 
 def test_cell_params_with_transporter_domains():
-
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
     c0 = [
@@ -353,7 +351,6 @@ def test_cell_params_with_transporter_domains():
 
 
 def test_cell_params_with_regulatory_domains():
-
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
     c0 = [
@@ -584,7 +581,6 @@ def test_cell_params_with_regulatory_domains():
 
 
 def test_cell_params_with_catalytic_domains():
-
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
     c0 = [
@@ -1392,7 +1388,6 @@ def test_equilibrium_constants():
     E[0, 1] = -2000 # ln(Q) - ln(Ke) = -0.76 (reduce V)
     E[1, 0] = -2000 # ln(Q) - ln(Ke) = 0.02 (switch off)
     E[1, 1] = -2000 # ln(Q) - ln(Ke) = 0.28 (switch N, reduce V)
-    lKe = -E / 310.0 / GAS_CONSTANT
 
     # fmt: on
 

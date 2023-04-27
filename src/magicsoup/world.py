@@ -19,8 +19,6 @@ from magicsoup.containers import (
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
 
-import time
-
 
 def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
@@ -546,6 +544,8 @@ class World:
         if n_killed_cells == 0:
             return
 
+        # TODO: do list(set(cell_idxs))?
+        #       because further down .pop would fail if duplicates
         xs = self.cell_positions[cell_idxs, 0]
         ys = self.cell_positions[cell_idxs, 1]
         self.cell_map[xs, ys] = False
