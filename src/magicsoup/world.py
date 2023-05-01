@@ -511,10 +511,11 @@ class World:
 
         set_idxs = []
         set_proteomes = []
-        for proteome, idx in zip(proteomes, transl_idxs):
+        for proteome, idx, genome in zip(proteomes, transl_idxs, transl_genomes):
             if len(proteome) > 0:
                 set_proteomes.append(proteome)
                 set_idxs.append(idx)
+                self.genomes[idx] = genome
             else:
                 kill_idxs.append(idx)
 

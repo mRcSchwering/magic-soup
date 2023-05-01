@@ -543,3 +543,31 @@ def test_reposition_cells():
     assert c0_1.label == c0_0.label
     assert c1_1.label == c1_0.label
     assert c2_1.label == c2_0.label
+
+
+def test_change_genomes():
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+    world = ms.World(chemistry=chemistry)
+
+    g0 = ms.random_genome(s=500)
+    world.add_cells(genomes=[g0] * 2)
+    assert world.genomes == [g0] * 2
+
+    g1 = ms.random_genome(s=1000)
+    world.add_cells(genomes=[g1])
+    assert world.genomes == [g0] * 2 + [g1]
+
+    g2 = ms.random_genome(s=600)
+    world.update_cells(genome_idx_pairs=[(g2, 1)])
+    assert world.genomes == [g0, g2, g1]
+
+    world.kill_cells(cell_idxs=[0])
+    assert world.genomes == [g2, g1]
+
+    g3 = ms.random_genome(s=700)
+    world.update_cells(genome_idx_pairs=[(g3, 1)])
+    assert world.genomes == [g2, g3]
+
+    g4 = ms.random_genome(s=500)
+    world.add_cells(genomes=[g4])
+    assert world.genomes == [g2, g3, g4]
