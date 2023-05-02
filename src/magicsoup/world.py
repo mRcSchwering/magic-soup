@@ -818,11 +818,12 @@ class World:
             text: str = fh.read()
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
+        self.labels = []
+        self.genomes = []
         genome_idx_pairs: list[tuple[str, int]] = []
-        for entry in entries:
+        for idx, entry in enumerate(entries):
             descr, seq = entry.split("\n")
             names = descr.split()
-            idx = int(names[0].strip())
             label = names[1].strip() if len(names) > 1 else ""
             self.genomes.append(seq)
             self.labels.append(label)
