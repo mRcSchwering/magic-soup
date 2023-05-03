@@ -571,3 +571,62 @@ def test_change_genomes():
     g4 = ms.random_genome(s=500)
     world.add_cells(genomes=[g4])
     assert world.genomes == [g2, g3, g4]
+
+
+def test_get_neighbours():
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=9)
+
+    # fmt: off
+    world.cell_map = torch.tensor([
+        [0, 1, 0, 0, 0, 0, 0, 0, 1],
+        [0, 1, 1, 0, 0, 0, 0, 0, 0],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 1, 1, 1]
+    ]).bool()
+    
+    world.cell_positions = torch.tensor([
+        [1, 1],  # 0
+        [1, 2],  # 1
+        [0, 1],  # 2
+        [2, 1],  # 3
+        [8, 8],  # 4
+        [0, 8],  # 5
+        [2, 0],  # 6
+        [8, 6],  # 7
+        [8, 7],  # 8
+    ])
+
+    # always sorted lower idx first
+    nghbrs = [
+        {(0, 2), (0, 1), (0, 6), (0, 3)},  # 0
+        {(1, 2), (0, 1), (1, 3)},  # 1
+        {(0, 2), (1, 2)},  # 2
+        {(0, 3), (1, 3), (3, 6)},  # 3
+        {(4, 8), (4, 5)},  # 4
+        {(5, 8), (4, 5)},  # 5
+        {(0, 6), (3, 6)},  # 6
+        {(7, 8)},  # 7
+        {(7, 8), (4, 8), (5, 8)},  # 8
+    ]
+    # fmt: on
+
+    for idx, exp in enumerate(nghbrs):
+        res = world.get_neighbors(cell_idxs=[idx])
+        assert len(res) == len(exp), idx
+        assert set(res) == exp, idx
+
+    res = world.get_neighbors(cell_idxs=[0, 1, 2])
+    exp = nghbrs[0] | nghbrs[1] | nghbrs[2]
+    assert len(res) == len(exp), idx
+    assert set(res) == exp, idx
+
+    res = world.get_neighbors(cell_idxs=[1, 4, 8])
+    exp = nghbrs[1] | nghbrs[4] | nghbrs[8]
+    assert len(res) == len(exp), idx
+    assert set(res) == exp, idx

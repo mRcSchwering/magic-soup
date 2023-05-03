@@ -245,6 +245,37 @@ class World:
             n_divisions=int(self.cell_divisions[idx].item()),
         )
 
+    def get_neighbors(self, cell_idxs: list[int]) -> list[tuple[int, int]]:
+        """
+        For a list of cells get pairs of cell indexes of cells which are (Moore's) neighbors.
+        Each pair of neighboring cells is only returned once.
+
+        Parameters:
+            cell_idxs: Indexes of cells for which to find neighbors
+
+        Returns:
+            List of tuples of cell indexes of 2 unique neighboring cells each.
+        """
+
+        if len(cell_idxs) == 0:
+            return []
+
+        nghbrs: list[tuple[int, int]] = []
+        for c_idx in cell_idxs:
+            c_pos = self.cell_positions[c_idx]
+            nghbrhd = self._nghbrhd_map[tuple(c_pos.tolist())]  # type: ignore
+            pxls = nghbrhd[self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
+            n = pxls.size(0)
+
+            if n == 0:
+                continue
+
+            idx_ts = [(self.cell_positions == d).all(dim=1).argwhere() for d in pxls]
+            n_idxs: list[int] = torch.cat(idx_ts).flatten().tolist()
+            nghbrs.extend(tuple(sorted([c_idx, d])) for d in n_idxs)  # type:ignore
+
+        return list(set(nghbrs))
+
     def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
         """
         Generate a random genome that encodes a desired proteome
