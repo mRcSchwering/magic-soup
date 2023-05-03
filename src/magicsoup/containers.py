@@ -462,7 +462,9 @@ class ProteinFact:
     [RegulatoryDomainFact][magicsoup.containers.RegulatoryDomainFact].
     """
 
-    def __init__(self, domain_facts: list[DomainFactType]):
+    def __init__(self, domain_facts: list[DomainFactType] | DomainFactType):
+        if not isinstance(domain_facts, list):
+            domain_facts = [domain_facts]
         self.domain_facts = domain_facts
         self.n_domains = len(domain_facts)
 
