@@ -16,10 +16,10 @@ from magicsoup.containers import (
 _EPS = 1e-5
 
 
-class _LogWeightMapFact:
+class _LogNormWeightMapFact:
     """
     Creates an object that maps tokens to a float
-    which is sampled from a log uniform distribution.
+    which is sampled from a log normal distribution.
     """
 
     def __init__(
@@ -29,12 +29,19 @@ class _LogWeightMapFact:
         device: str = "cpu",
         zero_value: float = torch.nan,
     ):
-        l_min_w = math.log(min(weight_range))
-        l_max_w = math.log(max(weight_range))
-        weights = torch.tensor(
-            [zero_value]
-            + [math.exp(random.uniform(l_min_w, l_max_w)) for _ in range(max_token)]
-        )
+        min_w = min(weight_range)
+        max_w = max(weight_range)
+        l_min_w = math.log(min_w)
+        l_max_w = math.log(max_w)
+        mu = (l_min_w + l_max_w) / 2
+        sig = l_max_w - l_min_w
+        non_zero_weights: list[float] = []
+        for _ in range(max_token):
+            sample = math.exp(random.gauss(mu, sig))
+            while not min_w <= sample <= max_w:
+                sample = math.exp(random.gauss(mu, sig))
+            non_zero_weights.append(sample)
+        weights = torch.tensor([zero_value] + non_zero_weights)
         self.weights = weights.to(device)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
@@ -261,10 +268,10 @@ class Kinetics:
             All reactions can happen in both directions (left to right or vice versa).
         abs_temp: Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
             Higher temperature will give the reaction quotient term higher importance.
-        km_range: The range from which to sample Michaelis Menten constants for domains (in mol).
-            The sampling will happen in the log transformed intervall, so all values must be > 0.
-        vmax_range: The range from which to sample maximum velocities for domains (in mol per time step).
-            The sampling will happen in the log transformed intervall, so all values must be > 0.
+        km_range: The range from which to sample Michaelis Menten constants for domains (in mM).
+            They are sampled from a lognormal distribution, so all values must be > 0.
+        vmax_range: The range from which to sample maximum velocities for domains (in mM/s).
+            They are sampled from a lognormal distribution, so all values must be > 0.
         device: Device to use for tensors
             (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
             This has to be the same device that is used by `world`.
@@ -313,8 +320,8 @@ class Kinetics:
         molecules: list[Molecule],
         reactions: list[tuple[list[Molecule], list[Molecule]]],
         abs_temp: float = 310.0,
-        km_range: tuple[float, float] = (1e-5, 1.0),
-        vmax_range: tuple[float, float] = (0.01, 10.0),
+        km_range: tuple[float, float] = (1e-2, 100.0),
+        vmax_range: tuple[float, float] = (1e-3, 100.0),
         device: str = "cpu",
         scalar_enc_size: int = 64 - 3,
         vector_enc_size: int = 4096 - 3 * 64,
@@ -339,13 +346,13 @@ class Kinetics:
         # idx 0-2 are 1-codon idxs for scalars (n=64)
         # idx3 is a 2-codon idx for vetors (n=4096)
 
-        self.km_map = _LogWeightMapFact(
+        self.km_map = _LogNormWeightMapFact(
             max_token=scalar_enc_size,
             weight_range=km_range,
             device=device,
         )
 
-        self.vmax_map = _LogWeightMapFact(
+        self.vmax_map = _LogNormWeightMapFact(
             max_token=scalar_enc_size,
             weight_range=vmax_range,
             device=device,
