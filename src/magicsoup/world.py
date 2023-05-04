@@ -9,7 +9,6 @@ from magicsoup.constants import CODON_SIZE
 from magicsoup.util import moore_nghbrhd, round_down, random_genome, randstr
 from magicsoup.containers import (
     Cell,
-    Molecule,
     Chemistry,
     ProteinFact,
     CatalyticDomainFact,
@@ -182,21 +181,6 @@ class World:
             n=self.n_molecules, size=map_size, init=mol_map_init
         )
 
-    def _get_catal_2_idxs(
-        self,
-    ) -> dict[tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]]:
-        react_map = {}
-        for subs, prods in self.chemistry.reactions:
-            t = torch.zeros(self.n_molecules * 2)
-            for sub in subs:
-                t[self.kinetics.mol_2_mi[sub]] -= 1
-            for prod in prods:
-                t[self.kinetics.mol_2_mi[prod]] += 1
-            M = self.kinetics.reaction_map.M
-            idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
-            react_map[(tuple(subs), tuple(prods))] = idxs
-        return react_map
-
     def get_cell(
         self,
         by_idx: int | None = None,
@@ -259,6 +243,9 @@ class World:
 
         if len(cell_idxs) == 0:
             return []
+
+        # rm duplicates to avoid unnecessary compute
+        cell_idxs = list(set(cell_idxs))
 
         nghbrs: list[tuple[int, int]] = []
         for c_idx in cell_idxs:
@@ -482,6 +469,9 @@ class World:
         if len(cell_idxs) == 0:
             return []
 
+        # duplicates could lead to unexpected results
+        cell_idxs = list(set(cell_idxs))
+
         (
             parent_idxs,
             child_idxs,
@@ -576,8 +566,9 @@ class World:
         if n_killed_cells == 0:
             return
 
-        # TODO: do list(set(cell_idxs))?
-        #       because further down .pop would fail if duplicates
+        # duplicates could raise error later
+        cell_idxs = list(set(cell_idxs))
+
         xs = self.cell_positions[cell_idxs, 0]
         ys = self.cell_positions[cell_idxs, 1]
         self.cell_map[xs, ys] = False
@@ -612,6 +603,9 @@ class World:
         if len(cell_idxs) == 0:
             return
 
+        # duplicates could lead to unexpected results
+        cell_idxs = list(set(cell_idxs))
+
         for cell_idx in cell_idxs:
             old_pos = self.cell_positions[cell_idx]
             nghbrhd = self._nghbrhd_map[tuple(old_pos.tolist())]  # type: ignore
@@ -641,6 +635,9 @@ class World:
         n_cells = len(cell_idxs)
         if n_cells == 0:
             return
+
+        # duplicates could lead to unexpected results
+        cell_idxs = list(set(cell_idxs))
 
         old_xs = self.cell_positions[cell_idxs, 0]
         old_ys = self.cell_positions[cell_idxs, 1]
