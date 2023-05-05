@@ -577,8 +577,7 @@ class World:
         E.g. if there are 10 cells and you kill the cell with index 8 (the 9th cell),
         the cell that used to have index 9 (10th cell) will now have index 9.
         """
-        n_killed_cells = len(cell_idxs)
-        if n_killed_cells == 0:
+        if len(cell_idxs) == 0:
             return
 
         # duplicates could raise error later
@@ -604,7 +603,7 @@ class World:
             self.genomes.pop(idx)
             self.labels.pop(idx)
 
-        self.n_cells -= n_killed_cells
+        self.n_cells -= len(cell_idxs)
 
     def move_cells(self, cell_idxs: list[int]):
         """
@@ -647,8 +646,7 @@ class World:
         and repositioned randomly on any free pixel on the cell map.
         Only cell positions change (_e.g._ genomes, proteomes, cell molecules, cell indexes stay the same).
         """
-        n_cells = len(cell_idxs)
-        if n_cells == 0:
+        if len(cell_idxs) == 0:
             return
 
         # duplicates could lead to unexpected results
@@ -658,7 +656,7 @@ class World:
         old_ys = self.cell_positions[cell_idxs, 1]
         self.cell_map[old_xs, old_ys] = False
 
-        new_pos = self._find_free_random_positions(n_cells=n_cells)
+        new_pos = self._find_free_random_positions(n_cells=len(cell_idxs))
         new_xs = new_pos[:, 0]
         new_ys = new_pos[:, 1]
 
