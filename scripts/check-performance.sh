@@ -9,4 +9,4 @@
 
 set -e
 
-PYTHONPATH=$PYTHONPATH:./src python performance/check.py
+PYTHONPATH=$PYTHONPATH:./src python performance/check.py "$@"

@@ -233,10 +233,8 @@ class World:
         """
         For a list of cells get pairs of cell indexes of cells which are (Moore's) neighbors.
         Each pair of neighboring cells is only returned once.
-
         Parameters:
             cell_idxs: Indexes of cells for which to find neighbors
-
         Returns:
             List of tuples of cell indexes of 2 unique neighboring cells each.
         """
@@ -262,6 +260,41 @@ class World:
             nghbrs.extend(tuple(sorted([c_idx, d])) for d in n_idxs)  # type:ignore
 
         return list(set(nghbrs))
+
+    def get_neighbors2(self, cell_idxs: list[int]) -> list[tuple[int, int]]:
+        """
+        For a list of cells get pairs of cell indexes of cells which are (Moore's) neighbors.
+        Each pair of neighboring cells is only returned once.
+
+        Parameters:
+            cell_idxs: Indexes of cells for which to find neighbors
+
+        Returns:
+            List of tuples of cell indexes of 2 unique neighboring cells each.
+        """
+
+        if len(cell_idxs) == 0:
+            return []
+
+        # rm duplicates to avoid unnecessary compute
+        cell_idxs = list(set(cell_idxs))
+
+        idxts: list[torch.Tensor] = []
+        for c_idx in cell_idxs:
+            c_pos = self.cell_positions[c_idx]
+            nghbrhd = self._nghbrhd_map[tuple(c_pos.tolist())]  # type: ignore
+            pxls = nghbrhd[self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
+            n = pxls.size(0)
+
+            if n == 0:
+                continue
+
+            n_idxs = [(self.cell_positions == d).all(dim=1).argwhere() for d in pxls]
+            n_t = torch.cat(n_idxs).flatten()
+            idxts.append(torch.stack([torch.full_like(n_t, c_idx), n_t]).T)
+
+        nghbrs = [tuple(sorted(d)) for d in torch.cat(idxts).tolist()]
+        return list(set(nghbrs))  # type: ignore
 
     def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
         """

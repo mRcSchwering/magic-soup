@@ -313,6 +313,15 @@ class Kinetics:
     If you initialize this class again, these mappings will be different.
     Initializing [World][magicsoup.world.World] will also create one `Kinetics` instance. It is on `world.kinetics`.
     If you want to access nucleotide to domain mappings of your simulation, you should use `world.kinetics`.
+
+    As all reactions are calculated step by step, there are some corrections for spcial cases.
+    E.g. some corrections make sure that a very sensitive, high-velocity enzyme doesn't accidentally
+    deconstruct more substrate than available. To make kinetic calculations smoother, one could reduce
+    the maximum velocity by e.g. 10 (`vmax_range=(1e-4, 10.0)`).
+    [enzymatic_activity][magicsoup.world.World.enzymatic_activity] would then represent 0.1s instead of 1s.
+    The same can be done for diffusion and degradations by lowering the [Molecule][magicsoup.containers.Molecule]
+    parameters. I haven't tried around with this a lot, but on a GPU diffusion and enzymatic activity are very
+    efficient. So, calling them 10x instead of only once only slightly increases the computation time per step.
     """
 
     def __init__(
