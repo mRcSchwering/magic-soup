@@ -132,42 +132,23 @@ def get_neighbors(w: int, n: int, s: int):
     return m, s
 
 
-def get_neighbors2(w: int, n: int, s: int):
-    tds = []
-    for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, workers=w)
-        genomes = [ms.random_genome(s) for _ in range(n)]
-        world.add_cells(genomes=genomes)
-
-        t0 = time.time()
-        _ = world.get_neighbors2(cell_idxs=list(range(world.n_cells)))
-        tds.append(time.time() - t0)
-
-    m = sum(tds) / R
-    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
-    return m, s
-
-
 def main(n: int, s: int, w: int):
     print(f"{n:,} genomes, {s:,} size, {w} workers")
 
-    # mu, sd = add_cells(w=w, n=n, s=s)
-    # print(f"({mu:.2f}+-{sd:.2f})s - add cells")
+    mu, sd = add_cells(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - add cells")
 
-    # mu, sd = update_cells(w=w, n=n, s=s)
-    # print(f"({mu:.2f}+-{sd:.2f})s - update cells")
+    mu, sd = update_cells(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - update cells")
 
-    # mu, sd = replicate_cells(w=w, n=n, s=s)
-    # print(f"({mu:.2f}+-{sd:.2f})s - replicate cells")
+    mu, sd = replicate_cells(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - replicate cells")
 
-    # mu, sd = enzymatic_activity(w=w, n=n, s=s)
-    # print(f"({mu:.2f}+-{sd:.2f})s - enzymatic activity")
+    mu, sd = enzymatic_activity(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - enzymatic activity")
 
     mu, sd = get_neighbors(w=w, n=n, s=s)
     print(f"({mu:.2f}+-{sd:.2f})s - get neighbors")
-
-    mu, sd = get_neighbors2(w=w, n=n, s=s)
-    print(f"({mu:.2f}+-{sd:.2f})s - get neighbors2")
 
 
 if __name__ == "__main__":

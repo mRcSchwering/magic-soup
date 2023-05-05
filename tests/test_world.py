@@ -621,12 +621,36 @@ def test_get_neighbours():
         assert len(res) == len(exp), idx
         assert set(res) == exp, idx
 
+        # should effectively be the same
+        res = world.get_neighbors(cell_idxs=[idx], nghbr_idxs=list(range(len(nghbrs))))
+        assert len(res) == len(exp), idx
+        assert set(res) == exp, idx
+
     res = world.get_neighbors(cell_idxs=[0, 1, 2])
     exp = nghbrs[0] | nghbrs[1] | nghbrs[2]
-    assert len(res) == len(exp), idx
-    assert set(res) == exp, idx
+    assert len(res) == len(exp)
+    assert set(res) == exp
 
     res = world.get_neighbors(cell_idxs=[1, 4, 8])
     exp = nghbrs[1] | nghbrs[4] | nghbrs[8]
-    assert len(res) == len(exp), idx
-    assert set(res) == exp, idx
+    assert len(res) == len(exp)
+    assert set(res) == exp
+
+    res = world.get_neighbors(cell_idxs=[1, 4, 8])
+    exp = nghbrs[1] | nghbrs[4] | nghbrs[8]
+    assert len(res) == len(exp)
+    assert set(res) == exp
+
+    nghbr_idxs = [2, 3]
+    res = world.get_neighbors(cell_idxs=[0], nghbr_idxs=nghbr_idxs)
+    exp = nghbrs[0]
+    exp = set(d for d in exp if d[0] in nghbr_idxs or d[1] in nghbr_idxs)
+    assert len(res) == len(exp)
+    assert set(res) == exp
+
+    nghbr_idxs = [6, 2]
+    res = world.get_neighbors(cell_idxs=[0, 3], nghbr_idxs=nghbr_idxs)
+    exp = nghbrs[0] | nghbrs[3]
+    exp = set(d for d in exp if d[0] in nghbr_idxs or d[1] in nghbr_idxs)
+    assert len(res) == len(exp)
+    assert set(res) == exp

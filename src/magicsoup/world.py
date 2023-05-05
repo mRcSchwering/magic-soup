@@ -229,14 +229,23 @@ class World:
             n_divisions=int(self.cell_divisions[idx].item()),
         )
 
-    def get_neighbors(self, cell_idxs: list[int]) -> list[tuple[int, int]]:
+    def get_neighbors(
+        self, cell_idxs: list[int], nghbr_idxs: list[int] | None = None
+    ) -> list[tuple[int, int]]:
         """
-        For a list of cells get pairs of cell indexes of cells which are (Moore's) neighbors.
-        Each pair of neighboring cells is only returned once.
+        For each cell from a list of cell indexes find all other cells that
+        are in the Moore's neighborhood of this cell.
+
         Parameters:
             cell_idxs: Indexes of cells for which to find neighbors
+            nghbr_idxs: Optional list of cells regarded as neighbors.
+                If `None` (default) each cell in `cell_idxs` can form a pair
+                with any other neighboring cell. With `nghbr_idxs` provided
+                each cell in `cell_idxs` can only form a pair with a neighboring
+                cell that is in `nghbr_idxs`.
+
         Returns:
-            List of tuples of cell indexes of 2 unique neighboring cells each.
+            List of tuples of cell indexes for each unique neighboring pair.
         """
 
         if len(cell_idxs) == 0:
@@ -245,11 +254,19 @@ class World:
         # rm duplicates to avoid unnecessary compute
         cell_idxs = list(set(cell_idxs))
 
+        if nghbr_idxs is None:
+            nghbr_map = self.cell_map
+        else:
+            nghbr_idxs = list(set(nghbr_idxs))
+            nghbr_map = torch.zeros_like(self.cell_map).bool()
+            pos = self.cell_positions[nghbr_idxs]
+            nghbr_map[pos[:, 0], pos[:, 1]] = True
+
         nghbrs: list[tuple[int, int]] = []
         for c_idx in cell_idxs:
             c_pos = self.cell_positions[c_idx]
             nghbrhd = self._nghbrhd_map[tuple(c_pos.tolist())]  # type: ignore
-            pxls = nghbrhd[self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
+            pxls = nghbrhd[nghbr_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
             n = pxls.size(0)
 
             if n == 0:
@@ -260,41 +277,6 @@ class World:
             nghbrs.extend(tuple(sorted([c_idx, d])) for d in n_idxs)  # type:ignore
 
         return list(set(nghbrs))
-
-    def get_neighbors2(self, cell_idxs: list[int]) -> list[tuple[int, int]]:
-        """
-        For a list of cells get pairs of cell indexes of cells which are (Moore's) neighbors.
-        Each pair of neighboring cells is only returned once.
-
-        Parameters:
-            cell_idxs: Indexes of cells for which to find neighbors
-
-        Returns:
-            List of tuples of cell indexes of 2 unique neighboring cells each.
-        """
-
-        if len(cell_idxs) == 0:
-            return []
-
-        # rm duplicates to avoid unnecessary compute
-        cell_idxs = list(set(cell_idxs))
-
-        idxts: list[torch.Tensor] = []
-        for c_idx in cell_idxs:
-            c_pos = self.cell_positions[c_idx]
-            nghbrhd = self._nghbrhd_map[tuple(c_pos.tolist())]  # type: ignore
-            pxls = nghbrhd[self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = pxls.size(0)
-
-            if n == 0:
-                continue
-
-            n_idxs = [(self.cell_positions == d).all(dim=1).argwhere() for d in pxls]
-            n_t = torch.cat(n_idxs).flatten()
-            idxts.append(torch.stack([torch.full_like(n_t, c_idx), n_t]).T)
-
-        nghbrs = [tuple(sorted(d)) for d in torch.cat(idxts).tolist()]
-        return list(set(nghbrs))  # type: ignore
 
     def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
         """
