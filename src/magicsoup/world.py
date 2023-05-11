@@ -850,7 +850,7 @@ class World:
         ).int()
         self.cell_positions = torch.load(
             statedir / "cell_positions.pt", map_location=self.device
-        ).int()
+        ).long()
         self.cell_divisions = torch.load(
             statedir / "cell_divisions.pt", map_location=self.device
         ).int()
