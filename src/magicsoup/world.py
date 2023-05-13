@@ -379,13 +379,15 @@ class World:
 
         return "".join(parts)
 
-    def add_cells(self, genomes: list[str]) -> list[int]:
+    def add_cells(self, genomes: list[str], batch_size: int = 1000) -> list[int]:
         """
         Create new cells and place them randomly on the map.
         All lists and tensors that reference cells will be updated.
 
         Parameters:
             genomes: List of genomes of the newly added cells
+            batch_size: Batch size used for updating cell kinetics. Reduce this number
+                to reduce memory required during update.
 
         Returns:
             The indexes of successfully added cells.
@@ -439,7 +441,12 @@ class World:
         n_max_prots = max(len(d) for d in new_proteomes)
         self.kinetics.increase_max_proteins(max_n=n_max_prots)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-        self.kinetics.set_cell_params(cell_idxs=new_idxs, proteomes=new_proteomes)
+
+        for a in range(0, n_new_cells, batch_size):
+            b = a + batch_size
+            self.kinetics.set_cell_params(
+                cell_idxs=new_idxs[a:b], proteomes=new_proteomes[a:b]
+            )
 
         # occupy positions
         xs = new_pos[:, 0]
@@ -520,12 +527,16 @@ class World:
 
         return list(zip(parent_idxs, child_idxs))
 
-    def update_cells(self, genome_idx_pairs: list[tuple[str, int]]):
+    def update_cells(
+        self, genome_idx_pairs: list[tuple[str, int]], batch_size: int = 1000
+    ):
         """
         Update existing cells with new genomes.
 
         Parameters:
             genome_idx_pairs: List of tuples of genomes and cell indexes
+            batch_size: Batch size used for updating cell kinetics. Reduce this number
+                to reduce memory required during update.
 
         The indexes refer to the index of each cell that is changed.
         The genomes refer to the genome of each cell that is changed.
@@ -555,10 +566,15 @@ class World:
             else:
                 kill_idxs.append(idx)
 
-        if len(set_proteomes) > 0:
+        n_proteomes = len(set_proteomes)
+        if n_proteomes > 0:
             max_prots = max(len(d) for d in set_proteomes)
             self.kinetics.increase_max_proteins(max_n=max_prots)
-            self.kinetics.set_cell_params(cell_idxs=set_idxs, proteomes=set_proteomes)
+            for a in range(0, n_proteomes, batch_size):
+                b = a + batch_size
+                self.kinetics.set_cell_params(
+                    cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
+                )
 
         self.kill_cells(cell_idxs=kill_idxs)
 
@@ -821,9 +837,7 @@ class World:
             fh.write("\n".join(lines))
 
     def load_state(
-        self,
-        statedir: Path,
-        ignore_cell_params: bool = False,
+        self, statedir: Path, ignore_cell_params: bool = False, batch_size: int = 1000
     ):
         """
         Load a saved world state.
@@ -834,8 +848,10 @@ class World:
             ignore_cell_params: Whether to not update cell parameters as well.
                 If you are only interested in the cells' genomes and molecules
                 you can set this to `True` to make loading a lot faster.
+            batch_size: Batch size used for updating cell kinetics. Reduce this number
+                to reduce memory required during update. This is irrelevant with
+                `ignore_cell_params=True`.
         """
-
         self.cell_molecules = torch.load(
             statedir / "cell_molecules.pt", map_location=self.device
         )
@@ -874,7 +890,7 @@ class World:
 
         if not ignore_cell_params:
             self.kinetics.increase_max_cells(by_n=self.n_cells)
-            self.update_cells(genome_idx_pairs=genome_idx_pairs)
+            self.update_cells(genome_idx_pairs=genome_idx_pairs, batch_size=batch_size)
 
     def _divide_cells_as_possible(
         self, parent_idxs: list[int]
