@@ -214,13 +214,14 @@ class World:
             idx = idxs[0]
 
         genome = self.genomes[idx]
-        (cdss,) = self.genetics.translate_genomes(genomes=[genome])
         pos = self.cell_positions[idx]
+        (cdss,) = self.genetics.translate_genomes(genomes=[genome])
+        proteome = self.kinetics.get_proteome(proteome=cdss) if len(cdss) > 0 else []
 
         return Cell(
             idx=idx,
             genome=genome,
-            proteome=self.kinetics.get_proteome(proteome=cdss),
+            proteome=proteome,
             position=tuple(pos.tolist()),  # type: ignore
             int_molecules=self.cell_molecules[idx, :],
             ext_molecules=self.molecule_map[:, pos[0], pos[1]],
