@@ -868,7 +868,9 @@ class World:
         self.genomes = []
         genome_idx_pairs: list[tuple[str, int]] = []
         for idx, entry in enumerate(entries):
-            descr, seq = entry.split("\n")
+            parts = entry.split("\n")
+            descr = parts[0]
+            seq = "" if len(parts) < 2 else parts[1]
             names = descr.split()
             label = names[1].strip() if len(names) > 1 else ""
             self.genomes.append(seq)
