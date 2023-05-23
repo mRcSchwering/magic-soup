@@ -518,6 +518,20 @@ class Kinetics:
         E = torch.einsum("cps,s->cp", N, self.mol_energies)
         self.E[cell_idxs] = E
 
+    def unset_cell_params(self, cell_idxs: list[int]):
+        """
+        Unset cell parameters (Vmax, Km, ...) for cells with empty
+        or non-viable proteomes.
+
+        Arguments:
+            cell_idxs: Indexes of cells
+        """
+        self.N[cell_idxs] = 0.0
+        self.A[cell_idxs] = 0.0
+        self.Km[cell_idxs] = 0.0
+        self.Vmax[cell_idxs] = 0.0
+        self.E[cell_idxs] = 0.0
+
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """
         Simulate protein work by integrating all signals.
@@ -688,7 +702,7 @@ class Kinetics:
 
     def _collect_proteome_idxs(
         self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor,]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         n_prots = self.N.size(1)
         n_doms = max(len(dd) for d in proteomes for dd in d)
         empty_seq = [0] * n_doms
@@ -784,10 +798,8 @@ class Kinetics:
         zeros = self._tensor(size[0], n, *size[2:])
         return torch.cat([t, zeros], dim=1)
 
-    def _tensor(self, *args, d: float | None = None) -> torch.Tensor:
-        if d is None:
-            return torch.zeros(*args).to(self.device)
-        return torch.full(tuple(args), d).to(self.device)
+    def _tensor(self, *args) -> torch.Tensor:
+        return torch.zeros(*args).to(self.device)
 
     def _tensor_from(self, d: Any) -> torch.Tensor:
         return torch.tensor(d).to(self.device)

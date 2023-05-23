@@ -87,6 +87,25 @@ def test_add_cells():
     genomes = [ms.random_genome(s=500) for _ in range(3)]
     world.add_cells(genomes=genomes)
 
+    assert world.n_cells == 3
+    xs = world.cell_positions[:, 0]
+    ys = world.cell_positions[:, 1]
+    assert torch.all(old_molmap[:, xs, ys] / 2 == world.molecule_map[:, xs, ys])
+    assert torch.all(old_molmap[:, xs, ys] / 2 == world.cell_molecules.T)
+
+    genomes = ["" for _ in range(2)]
+    world.add_cells(genomes=genomes)
+
+    assert world.n_cells == 5
+    xs = world.cell_positions[:, 0]
+    ys = world.cell_positions[:, 1]
+    assert torch.all(old_molmap[:, xs, ys] / 2 == world.molecule_map[:, xs, ys])
+    assert torch.all(old_molmap[:, xs, ys] / 2 == world.cell_molecules.T)
+
+    genomes = [ms.random_genome(100), "", ms.random_genome(100)]
+    world.add_cells(genomes=genomes)
+
+    assert world.n_cells == 8
     xs = world.cell_positions[:, 0]
     ys = world.cell_positions[:, 1]
     assert torch.all(old_molmap[:, xs, ys] / 2 == world.molecule_map[:, xs, ys])
@@ -552,10 +571,12 @@ def test_change_genomes():
     g0 = ms.random_genome(s=500)
     world.add_cells(genomes=[g0] * 2)
     assert world.genomes == [g0] * 2
+    assert (world.kinetics.N[0] == world.kinetics.N[1]).all()
 
     g1 = ms.random_genome(s=1000)
     world.add_cells(genomes=[g1])
     assert world.genomes == [g0] * 2 + [g1]
+    assert (world.kinetics.N[0] == world.kinetics.N[1]).all()
 
     g2 = ms.random_genome(s=600)
     world.update_cells(genome_idx_pairs=[(g2, 1)])
@@ -571,6 +592,18 @@ def test_change_genomes():
     g4 = ms.random_genome(s=500)
     world.add_cells(genomes=[g4])
     assert world.genomes == [g2, g3, g4]
+
+    g5 = ""
+    world.update_cells(genome_idx_pairs=[(g4, 0), (g5, 1), (g4, 2)])
+    assert world.genomes == [g4, g5, g4]
+    assert (world.kinetics.N[0] == world.kinetics.N[2]).all()
+    assert (world.kinetics.N[1] == 0.0).all()
+
+    world.update_cells(genome_idx_pairs=[(g5, 0), (g5, 1), (g5, 2)])
+    assert world.genomes == [g5, g5, g5]
+    assert (world.kinetics.N[0] == 0.0).all()
+    assert (world.kinetics.N[1] == 0.0).all()
+    assert (world.kinetics.N[2] == 0.0).all()
 
 
 def test_get_neighbours():

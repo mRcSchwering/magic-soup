@@ -397,7 +397,6 @@ class World:
         only the remaining pixels will be filled with new cells.
         Each cell will also receive a random label.
         """
-        genomes = [d for d in genomes if len(d) > 0]
         n_new_cells = len(genomes)
         if n_new_cells == 0:
             return []
@@ -412,41 +411,17 @@ class World:
             random.shuffle(genomes)
             genomes = genomes[:n_new_cells]
 
-        proteomes = self.genetics.translate_genomes(genomes=genomes)
-
-        new_genomes = []
-        new_proteomes = []
-        new_labels = []
-        for proteome, genome in zip(proteomes, genomes):
-            if len(proteome) > 0:
-                new_genomes.append(genome)
-                new_proteomes.append(proteome)
-                new_labels.append(randstr(n=12))
-
-        n_new_cells = len(new_genomes)
-        if n_new_cells == 0:
-            return []
-
         new_pos = free_pos[:n_new_cells]
         new_idxs = list(range(self.n_cells, self.n_cells + n_new_cells))
         self.n_cells += n_new_cells
-        self.genomes.extend(new_genomes)
-        self.labels.extend(new_labels)
+        self.genomes.extend(genomes)
+        self.labels.extend(randstr(n=12) for _ in range(n_new_cells))
 
         self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
         self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
-
-        n_max_prots = max(len(d) for d in new_proteomes)
-        self.kinetics.increase_max_proteins(max_n=n_max_prots)
         self.kinetics.increase_max_cells(by_n=n_new_cells)
-
-        for a in range(0, n_new_cells, batch_size):
-            b = a + batch_size
-            self.kinetics.set_cell_params(
-                cell_idxs=new_idxs[a:b], proteomes=new_proteomes[a:b]
-            )
 
         # occupy positions
         xs = new_pos[:, 0]
@@ -458,6 +433,28 @@ class World:
         pickup = self.molecule_map[:, xs, ys] * 0.5
         self.cell_molecules[new_idxs, :] += pickup.T
         self.molecule_map[:, xs, ys] -= pickup
+
+        proteomes = self.genetics.translate_genomes(genomes=genomes)
+
+        set_proteomes = []
+        set_idxs = []
+        for proteome, idx in zip(proteomes, new_idxs):
+            if len(proteome) > 0:
+                set_proteomes.append(proteome)
+                set_idxs.append(idx)
+
+        n_new_proteomes = len(set_proteomes)
+        if n_new_proteomes == 0:
+            return []
+
+        n_max_prots = max(len(d) for d in set_proteomes)
+        self.kinetics.increase_max_proteins(max_n=n_max_prots)
+
+        for a in range(0, n_new_proteomes, batch_size):
+            b = a + batch_size
+            self.kinetics.set_cell_params(
+                cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
+            )
 
         return new_idxs
 
@@ -544,39 +541,31 @@ class World:
         if len(genome_idx_pairs) == 0:
             return
 
-        kill_idxs = []
-        transl_idxs = []
-        transl_genomes = []
-        for genome, idx in genome_idx_pairs:
-            if len(genome) > 0:
-                transl_genomes.append(genome)
-                transl_idxs.append(idx)
-            else:
-                kill_idxs.append(idx)
+        genomes = [d[0] for d in genome_idx_pairs]
+        proteomes = self.genetics.translate_genomes(genomes=genomes)
 
-        proteomes = self.genetics.translate_genomes(genomes=transl_genomes)
-
-        set_idxs = []
-        set_proteomes = []
-        for proteome, idx, genome in zip(proteomes, transl_idxs, transl_genomes):
+        set_idxs: list[int] = []
+        unset_idxs: list[int] = []
+        set_proteomes: list[list[list[tuple[int, int, int, int, int]]]] = []
+        for (genome, idx), proteome in zip(genome_idx_pairs, proteomes):
+            self.genomes[idx] = genome
             if len(proteome) > 0:
-                set_proteomes.append(proteome)
                 set_idxs.append(idx)
-                self.genomes[idx] = genome
+                set_proteomes.append(proteome)
             else:
-                kill_idxs.append(idx)
+                unset_idxs.append(idx)
 
-        n_proteomes = len(set_proteomes)
-        if n_proteomes > 0:
+        self.kinetics.unset_cell_params(cell_idxs=unset_idxs)
+
+        n_set_proteomes = len(set_proteomes)
+        if n_set_proteomes > 0:
             max_prots = max(len(d) for d in set_proteomes)
             self.kinetics.increase_max_proteins(max_n=max_prots)
-            for a in range(0, n_proteomes, batch_size):
+            for a in range(0, n_set_proteomes, batch_size):
                 b = a + batch_size
                 self.kinetics.set_cell_params(
                     cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
                 )
-
-        self.kill_cells(cell_idxs=kill_idxs)
 
     def kill_cells(self, cell_idxs: list[int]):
         """
