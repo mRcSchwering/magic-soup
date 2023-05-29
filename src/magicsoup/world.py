@@ -81,7 +81,7 @@ class World:
             Dimension 0 is the cell index. It is the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
             Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
             So, `world.cell_molecules[0, 1]` represents how many mol of the 1st molecule species the 0th cell contains.
-        cell_survival: Integer 1D tensor describing how many time steps each cell survived.
+        cell_lifetimes: Integer 1D tensor describing how many time steps each cell survived since the last division.
             This tensor is for monitoring and doesn't have any other effect.
             Cells are in the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
         cell_divisions: Integer 1D tensor describing how many times each cell's ancestors divided.
@@ -97,7 +97,7 @@ class World:
     - [move_cells()][magicsoup.world.World.move_cells] move existing cells to a random position in their Moore's neighborhood
     - [diffuse_molecules()][magicsoup.world.World.diffuse_molecules] let molecules diffuse and permeate by one time step
     - [degrade_molecules()][magicsoup.world.World.degrade_molecules] let molecules degrade by one time step
-    - [increment_cell_survival()][magicsoup.world.World.increment_cell_survival] increment `world.cell_survival` by 1
+    - [increment_cell_lifetimes()][magicsoup.world.World.increment_cell_lifetimes] increment `world.cell_lifetimes` by 1
     - [enzymatic_activity()][magicsoup.world.World.enzymatic_activity] let cell proteins work for one time step
 
     If you want to get a cell with all information about its contents and its current environment use [get_cell()][magicsoup.world.World.get_cell].
@@ -174,7 +174,7 @@ class World:
         self.labels: list[str] = []
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
         self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).long()
-        self.cell_survival: torch.Tensor = torch.zeros(0).to(device).int()
+        self.cell_lifetimes: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_divisions: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_molecules: torch.Tensor = torch.zeros(0, self.n_molecules).to(device)
         self.molecule_map: torch.Tensor = self._get_molecule_map(
@@ -226,7 +226,7 @@ class World:
             int_molecules=self.cell_molecules[idx, :],
             ext_molecules=self.molecule_map[:, pos[0], pos[1]],
             label=self.labels[idx],
-            n_survived_steps=int(self.cell_survival[idx].item()),
+            n_steps_alive=int(self.cell_lifetimes[idx].item()),
             n_divisions=int(self.cell_divisions[idx].item()),
         )
 
@@ -418,7 +418,7 @@ class World:
         self.genomes.extend(genomes)
         self.labels.extend(randstr(n=12) for _ in range(n_new_cells))
 
-        self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
+        self.cell_lifetimes = self._expand_c(t=self.cell_lifetimes, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
         self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
@@ -504,7 +504,7 @@ class World:
 
         self.n_cells += n_new_cells
 
-        self.cell_survival = self._expand_c(t=self.cell_survival, n=n_new_cells)
+        self.cell_lifetimes = self._expand_c(t=self.cell_lifetimes, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
         self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
         self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
@@ -521,7 +521,7 @@ class World:
         self.cell_molecules[descendant_idxs] *= 0.5
         self.cell_divisions[child_idxs] = self.cell_divisions[parent_idxs]
         self.cell_divisions[descendant_idxs] += 1
-        self.cell_survival[descendant_idxs] = 0
+        self.cell_lifetimes[descendant_idxs] = 0
 
         return list(zip(parent_idxs, child_idxs))
 
@@ -596,10 +596,10 @@ class World:
         spillout = self.cell_molecules[cell_idxs, :]
         self.molecule_map[:, xs, ys] += spillout.T
 
-        n_cells = self.cell_survival.size(0)
+        n_cells = self.cell_lifetimes.size(0)
         keep = torch.ones(n_cells, dtype=torch.bool).to(self.device)
         keep[cell_idxs] = False
-        self.cell_survival = self.cell_survival[keep]
+        self.cell_lifetimes = self.cell_lifetimes[keep]
         self.cell_positions = self.cell_positions[keep]
         self.cell_divisions = self.cell_divisions[keep]
         self.cell_molecules = self.cell_molecules[keep]
@@ -738,12 +738,12 @@ class World:
             self.molecule_map[mol_i] *= degrad
             self.cell_molecules[:, mol_i] *= degrad
 
-    def increment_cell_survival(self):
+    def increment_cell_lifetimes(self):
         """
-        Increment `world.cell_survival` by 1.
+        Increment `world.cell_lifetimes` by 1.
         This is for monitoring and doesn't have any other effect.
         """
-        self.cell_survival += 1
+        self.cell_lifetimes += 1
 
     def save(self, rundir: Path, name: str = "world.pkl"):
         """
@@ -815,7 +815,7 @@ class World:
         torch.save(self.cell_molecules, statedir / "cell_molecules.pt")
         torch.save(self.cell_map, statedir / "cell_map.pt")
         torch.save(self.molecule_map, statedir / "molecule_map.pt")
-        torch.save(self.cell_survival, statedir / "cell_survival.pt")
+        torch.save(self.cell_lifetimes, statedir / "cell_lifetimes.pt")
         torch.save(self.cell_positions, statedir / "cell_positions.pt")
         torch.save(self.cell_divisions, statedir / "cell_divisions.pt")
 
@@ -851,8 +851,8 @@ class World:
         self.molecule_map = torch.load(
             statedir / "molecule_map.pt", map_location=self.device
         )
-        self.cell_survival = torch.load(
-            statedir / "cell_survival.pt", map_location=self.device
+        self.cell_lifetimes = torch.load(
+            statedir / "cell_lifetimes.pt", map_location=self.device
         ).int()
         self.cell_positions = torch.load(
             statedir / "cell_positions.pt", map_location=self.device

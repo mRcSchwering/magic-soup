@@ -484,7 +484,7 @@ class Cell:
         position: Position on the cell map.
         idx: The current index of this cell.
         label: Label which can be used to track cells. Has no effect.
-        n_survived_steps: Number of time steps this cell has survived.
+        n_steps_alive: Number of time steps this cell has lived since last division.
         n_divisions: Number of times this cell's ancestors already divided.
 
     Usually, you wouldn't instantiate this object.
@@ -510,7 +510,7 @@ class Cell:
         position: tuple[int, int] = (-1, -1),
         idx: int = -1,
         label: str = "C",
-        n_survived_steps: int = -1,
+        n_steps_alive: int = -1,
         n_divisions: int = -1,
     ):
         self.genome = genome
@@ -520,7 +520,7 @@ class Cell:
         self.ext_molecules = ext_molecules
         self.position = position
         self.idx = idx
-        self.n_survived_steps = n_survived_steps
+        self.n_steps_alive = n_steps_alive
         self.n_divisions = n_divisions
 
     def copy(self, **kwargs) -> "Cell":
@@ -530,7 +530,7 @@ class Cell:
             "position": self.position,
             "idx": self.idx,
             "label": self.label,
-            "n_survived_steps": self.n_survived_steps,
+            "n_steps_alive": self.n_steps_alive,
             "n_divisions": self.n_divisions,
         }
         return Cell(**{**old_kwargs, **kwargs})  # type: ignore
@@ -542,7 +542,7 @@ class Cell:
             "position": self.position,
             "idx": self.idx,
             "label": self.label,
-            "n_survived_steps": self.n_survived_steps,
+            "n_steps_alive": self.n_steps_alive,
             "n_divisions": self.n_divisions,
         }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]

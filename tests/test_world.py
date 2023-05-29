@@ -475,26 +475,26 @@ def test_divisions_and_survival_after_replication():
     assert world.n_cells == 2
     world.cell_divisions[0] = 1
     world.cell_divisions[1] = 11
-    world.cell_survival[0] = 5
-    world.cell_survival[1] = 15
+    world.cell_lifetimes[0] = 5
+    world.cell_lifetimes[1] = 15
 
     world.divide_cells(cell_idxs=[0])
     assert world.n_cells == 3
     assert world.cell_divisions[0] == 2
     assert world.cell_divisions[1] == 11
     assert world.cell_divisions[2] == 2
-    assert world.cell_survival[0] == 0
-    assert world.cell_survival[1] == 15
-    assert world.cell_survival[2] == 0
+    assert world.cell_lifetimes[0] == 0
+    assert world.cell_lifetimes[1] == 15
+    assert world.cell_lifetimes[2] == 0
 
-    world.increment_cell_survival()
+    world.increment_cell_lifetimes()
     assert world.n_cells == 3
     assert world.cell_divisions[0] == 2
     assert world.cell_divisions[1] == 11
     assert world.cell_divisions[2] == 2
-    assert world.cell_survival[0] == 1
-    assert world.cell_survival[1] == 16
-    assert world.cell_survival[2] == 1
+    assert world.cell_lifetimes[0] == 1
+    assert world.cell_lifetimes[1] == 16
+    assert world.cell_lifetimes[2] == 1
 
 
 def test_reference_to_tensors_not_lost():

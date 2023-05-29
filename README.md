@@ -111,7 +111,7 @@ for _ in range(1000):
     replicate_cells()
     mutate_cells()
     world.diffuse_molecules()
-    world.increment_cell_survival()
+    world.increment_cell_lifetimes()
 ```
 
 See the [Docs](https://magic-soup.readthedocs.io/) for more examples and a description of all the mechanics of this simulation

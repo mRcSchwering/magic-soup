@@ -89,7 +89,7 @@ def main(args: Namespace):
             with timeit("wrapUp", step_i, writer):
                 world.degrade_molecules()
                 world.diffuse_molecules()
-                world.increment_cell_survival()
+                world.increment_cell_lifetimes()
 
         writer.add_scalar("Cells/total", world.n_cells, step_i)
 

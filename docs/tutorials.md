@@ -122,7 +122,7 @@ def main():
         kill_cells()
         replicate_cells()
         mutate_cells()
-        world.increment_cell_survival()
+        world.increment_cell_lifetimes()
 
 if __name__ == "__main__":
     main()
@@ -392,7 +392,7 @@ def main():
         kill_cells(world=world, atp=ATP_IDX, nadph=NADPH_IDX)
         replicate_cells(world=world, aca=ACA_IDX, hca=HCA_IDX)
         mutate_cells(world=world)
-        world.increment_cell_survival()
+        world.increment_cell_lifetimes()
 
 if __name__ == "__main__":
     main()
@@ -484,7 +484,7 @@ THIS_DIR = Path(__file__).parent
 
 def write_scalars(world: ms.World, writer: SummaryWriter, step: int):
     writer.add_scalar("Cells/total[n]", world.n_cells, step)
-    writer.add_scalar("Cells/Survival[avg]", world.cell_survival.mean(), step)
+    writer.add_scalar("Cells/Survival[avg]", world.cell_lifetimes.mean(), step)
     writer.add_scalar("Cells/Divisions[avg]", world.cell_divisions.mean(), step)
 
 def write_images(world: ms.World, writer: SummaryWriter, step: int):
