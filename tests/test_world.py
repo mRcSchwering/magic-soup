@@ -406,8 +406,12 @@ def test_saving_and_loading_world_obj():
     mi = ms.Molecule("i", 10 * 1e3)
     mj = ms.Molecule("j", 20 * 1e3)
     chemistry = ms.Chemistry(molecules=[mi, mj], reactions=[([mi], [mj])])
-
     world = ms.World(chemistry=chemistry, map_size=7)
+
+    for i, mol in enumerate(chemistry.molecules):
+        assert world.chemistry.mol_2_idx[mol] == i
+        assert world.chemistry.molname_2_idx[mol.name] == i
+
     with tempfile.TemporaryDirectory() as tmpdir:
         rundir = Path(tmpdir)
         world.save(rundir=rundir)
@@ -422,6 +426,11 @@ def test_saving_and_loading_world_obj():
     assert world.chemistry.molecules[0] is mi
     assert world.chemistry.molecules[1] is mj
     assert world.chemistry.reactions == [([mi], [mj])]
+    
+    for i, mol in enumerate(chemistry.molecules):
+        assert world.chemistry.mol_2_idx[mol] == i
+        assert world.chemistry.molname_2_idx[mol.name] == i
+    
     del world
 
     world = ms.World(chemistry=chemistry, map_size=9, workers=2, abs_temp=300.0)
@@ -439,6 +448,11 @@ def test_saving_and_loading_world_obj():
     assert world.chemistry.molecules[0] is mi
     assert world.chemistry.molecules[1] is mj
     assert world.chemistry.reactions == [([mi], [mj])]
+    
+    for i, mol in enumerate(chemistry.molecules):
+        assert world.chemistry.mol_2_idx[mol] == i
+        assert world.chemistry.molname_2_idx[mol.name] == i
+    
     del world
 
 

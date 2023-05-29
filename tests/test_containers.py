@@ -24,3 +24,11 @@ def test_similar_molecule_warning():
         cntnrs.Molecule(name="x", energy=10)
     assert len(warn) > 0
     assert issubclass(warn[-1].category, UserWarning)
+
+
+def test_molecule_mappings():
+    chem = cntnrs.Chemistry(molecules=[X, Y], reactions=[])
+    assert chem.mol_2_idx[X] == 0
+    assert chem.mol_2_idx[Y] == 1
+    assert chem.molname_2_idx["X"] == 0
+    assert chem.molname_2_idx["Y"] == 1

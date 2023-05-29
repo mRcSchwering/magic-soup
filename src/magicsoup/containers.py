@@ -192,7 +192,7 @@ class Chemistry:
             All reactions can happen in both directions (left to right or vice versa).
 
     `molecules` should include at least all molecule species that are mentioned in `reactions`.
-    But it is possible to define more molecule species. Cells could use any molecule species in transporer or regulatory domains.
+    But it is possible to define more molecule species. Cells can use any molecule species in transporer or regulatory domains.
 
     Duplicate reactions and molecules will be removed on initialization.
     As any reaction can take place in both directions, it is not necessary to define both directions.
@@ -200,6 +200,15 @@ class Chemistry:
 
     The chemistry object is used by [World][magicsoup.world.World] to know what molecule species exist.
     Reactions and molecule species are used to set up the world and create mappings for domains.
+    On the [world][magicsoup.world.World] object there are some tensors that refer to molecule species (e.g. `world.molecule_map`).
+    The molecule ordering in such tensors is always the same as the ordering in `chemistry.molecules`.
+    So, e.g. if `chemistry.molecules[2]` is pyruvate, `world.molecule_map[2]` refers to the pyruvate concentration
+    of the world molecule map.
+    For convenience mappings are provided:
+
+    - `chemistry.mol_2_idx` to map a [Molecule][magicsoup.containers.Molecule] object
+    - `chemistry.molname_2_idx` to map a [Molecule][magicsoup.containers.Molecule] name string to its index.
+
     """
 
     def __init__(
@@ -226,6 +235,9 @@ class Chemistry:
                 f" {', '.join(str(d) for d in react_mols - dfnd_mols)}."
                 "Please define all molecules."
             )
+
+        self.mol_2_idx = {d: i for i, d in enumerate(self.molecules)}
+        self.molname_2_idx = {d.name: i for i, d in enumerate(self.molecules)}
 
     def __and__(self, other: "Chemistry") -> "Chemistry":
         return Chemistry(
