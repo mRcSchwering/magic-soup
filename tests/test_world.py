@@ -5,6 +5,9 @@ import torch
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES
 
+# TODO: loading cells with empty sequence (fasta)
+# TODO: get_cell with empty genome/proteome
+
 
 def test_diffuse():
     # fmt: off
