@@ -12,7 +12,6 @@ from magicsoup.containers import (
     DomainType,
 )
 
-
 _EPS = 1e-5
 
 
@@ -494,11 +493,11 @@ class Kinetics:
         """
         N_d, A_d, Km_d, Vmax_d, _ = self._get_proteome_tensors(proteomes=proteomes)
 
-        # N (c, p, d, s)
+        # N_d (c, p, d, s)
         N = N_d.sum(dim=2)
         self.N[cell_idxs] = N
 
-        # A (c, p, d, s)
+        # A_d (c, p, d, s)
         A = A_d.sum(dim=2)
         # reactants on the first domain must be added as effectors
         # if their stoichiometric number became 0 during summing up
@@ -506,7 +505,7 @@ class Kinetics:
         # A += -1.0 * delta_N.clamp(max=0.0)
         self.A[cell_idxs] = A - delta_N.clamp(max=0.0)
 
-        # Km (c, p, d, s)
+        # Km_d (c, p, d, s)
         Km = Km_d.nanmean(dim=2).nan_to_num(0.0)
         self.Km[cell_idxs] = Km
 
@@ -514,7 +513,7 @@ class Kinetics:
         Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
         self.Vmax[cell_idxs] = Vmax
 
-        # N (c, p, s)
+        # E (c, p)
         E = torch.einsum("cps,s->cp", N, self.mol_energies)
         self.E[cell_idxs] = E
 
@@ -550,21 +549,22 @@ class Kinetics:
         """
         # adjust direction
         lKe = -self.E / self.abs_temp / GAS_CONSTANT  # (c, p)
+
         lQ = self._get_ln_reaction_quotients(X=X)  # (c, p)
         adj_N = torch.where(lQ > lKe, -1.0, 1.0)  # (c, p)
         N_adj = torch.einsum("cps,cp->cps", self.N, adj_N)
+
+        # trim velocities when approaching equilibrium Q -> Ke
+        # and stop reaction if Q ~= Ke
+        # f(x) = {1.0 if x > 1.0; 0.0 if x <= 0.01; x otherwise}
+        # with x being the abs(ln(Q) - ln(Ke))
+        trim = (lQ - lKe).abs().clamp(max=1.0)  # (c, p)
+        trim[trim.abs() <= 0.1] = 0.0
 
         # activations
         a_inh = self._get_inhibitor_activity(X=X)  # (c, p)
         a_act = self._get_activator_activity(X=X)  # (c, p)
         a_cat = self._get_catalytic_activity(X=X, N=N_adj)  # (c, p)
-
-        # trim velocities when approaching equilibrium Q -> Ke
-        # and stop reaction if Q ~= Ke
-        # f(x) = {1.0 if x > 1.0; 0.0 if x <= 0.1; x otherwise}
-        # with x being the abs(ln(Q) - ln(Ke))
-        trim = (lQ - lKe).abs().clamp(max=1.0)  # (c, p)
-        trim[trim.abs() <= 0.1] = 0.0
 
         # velocity and naive Xd
         V = self.Vmax * a_cat * (1 - a_inh) * a_act * trim  # (c, p)
@@ -583,7 +583,9 @@ class Kinetics:
         fact = torch.where(X + Xd < 0.0, X * 0.99 / -Xd, 1.0)  # (c, s)
         Xd = torch.einsum("cs,c->cs", Xd, fact.amin(1))
 
-        return (X + Xd).clamp(min=0.0)
+        X = (X + Xd).clamp(min=0.0)
+
+        return X
 
     def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
         """
