@@ -12,7 +12,7 @@ from magicsoup.containers import (
     DomainType,
 )
 
-_EPS = 1e-5
+_EPS = 1e-8
 
 
 # def mm(N, X, Kmf, Kmb):
@@ -646,43 +646,51 @@ class Kinetics:
         # - masks for substrates and products
         # - Ns for substrates and products
         # - Ns for activators and inhibitors
+        # TODO: https://pytorch.org/docs/stable/generated/torch.copysign.html#torch.copysign copy+sign
+        # TODO: https://pytorch.org/docs/stable/generated/torch.sign.html#torch.sign sign of tensor
+
         Vmax = self.Vmax / self.n_computations
+        Kmf = self.Kmf
+        Kmb = self.Kmb
+        Kmr = self.Kmr
 
         for _ in range(self.n_computations):
             # catalytical activity
             sub_mask = self.N < 0.0
             sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
             sub_N = sub_mask * -self.N  # (c, p, s)
-            ks = (
-                torch.exp((torch.log(sub_X + _EPS) * sub_N).sum(2)) / self.Kmf
-            )  # (c, p)
+            # ks = torch.exp((torch.log(sub_X + _EPS) * sub_N).sum(2)) / Kmf  # (c, p)
+            ks = torch.exp(
+                ((torch.log(sub_X + _EPS) * sub_N).sum(2) - torch.log(Kmf + _EPS))
+            )
 
             prod_mask = self.N > 0.0
             prod_X = torch.einsum("cps,cs->cps", prod_mask, X)  # (c, p, s)
             prod_N = prod_mask * self.N  # (c, p, s)
-            kp = (
-                torch.exp((torch.log(prod_X + _EPS) * prod_N).sum(2)) / self.Kmb
-            )  # (c, p)
+            # kp = torch.exp((torch.log(prod_X + _EPS) * prod_N).sum(2)) / Kmb  # (c, p)
+            kp = torch.exp(
+                ((torch.log(prod_X + _EPS) * prod_N).sum(2) - torch.log(Kmb + _EPS))
+            )
 
             a_cat = (ks - kp) / (1 + ks + kp)  # (c, p)
             # the formula yields 2 * (ks - kp) / (1 + ks + kp)
             # but then there can be a maximum activity of 200%
             # chose 1/2 to keep it consistent with Vmax declarations
 
-            # TODO: doublecheck effector kinetics
-
             # inhibitor activity
-            inh_N = (-self.A).clamp(0)  # (c, p, s)
+            inh_mask = (self.A < 0.0).float()  # (c, p, s)
+            inh_N = -self.A * inh_mask  # (c, p, s)
             inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
-            agg_inh_X = torch.log(inh_X + _EPS).sum(2).exp()  # (c, p)
-            inh_V = agg_inh_X / (agg_inh_X + self.Kmr)  # (c, p)
+            agg_inh_X = (torch.log(inh_X + _EPS) * inh_mask).sum(2).exp()  # (c, p)
+            inh_V = (agg_inh_X / (agg_inh_X + Kmr)).float()  # (c, p)
             a_inh = torch.where(torch.any(self.A < 0.0, dim=2), inh_V, 0.0)  # (c, p)
 
             # activator activity
-            act_N = self.A.clamp(0)  # (c, p, s)
+            act_mask = (self.A > 0.0).float()  # (c, p, s)
+            act_N = self.A * act_mask  # (c, p, s)
             act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
-            agg_act_X = torch.log(act_X + _EPS).sum(2).exp()  # (c, p)
-            act_V = agg_act_X / (agg_act_X + self.Kmr)  # (c, p)
+            agg_act_X = (torch.log(act_X + _EPS) * act_mask).sum(2).exp()  # (c, p)
+            act_V = agg_act_X / (agg_act_X + Kmr)  # (c, p)
             a_act = torch.where(torch.any(self.A > 0.0, dim=2), act_V, 1.0)  # (c, p)
 
             # velocity and naive Xd
@@ -699,7 +707,7 @@ class Kinetics:
             # on the construction of another molecule species, which could then
             # create the same problem again.
             # By reducing all proteins by the same factor, this cannot happen.
-            fact = torch.where(X + Xd < 0.0, X * 0.99 / -Xd, 1.0)  # (c, s)
+            fact = torch.where(X + Xd < 0.0, (X - _EPS) / -Xd, 1.0)  # (c, s)
             Xd = torch.einsum("cs,c->cs", Xd, fact.amin(1))
 
             X = (X + Xd).clamp(min=0.0)
