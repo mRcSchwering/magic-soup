@@ -626,6 +626,55 @@ class Kinetics:
         self.E[cell_idxs] = 0.0
         self.Ke[cell_idxs] = 0.0
 
+    def _get_k(
+        self, X: torch.Tensor, Km: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
+    ) -> torch.Tensor:
+        # I want to calculate in log-space but I want to avoid
+        # adding EPS because it creates a small value from 0
+        # which can trigger the creation of molecules from nothing
+        x = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
+        x[x == 0.0] = torch.nan  # NaNs for log
+        n = mask * N  # (c, p, s)
+
+        # NaN to 0 is fine for rows which have at least
+        # 1 non-0, but for an all 0 row it creates 1 for a row that should
+        # create 0, that's why they have to be explicitly set back to 0
+        k = torch.exp((torch.log(x) * n).nansum(2)) / Km  # (c, p)
+        k[x.isnan().all(dim=2)] = 0.0  # all 0 rows could create 1
+        return k
+
+    def _get_a(
+        self, X: torch.Tensor, Km: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
+    ):
+        x = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
+        x[x == 0.0] = torch.nan  # NaNs for log
+        n = mask * N  # (c, p, s)
+
+        xx = torch.exp((torch.log(x) * n).nansum(2))
+        a = xx / (xx + Km)
+        a[x.isnan().all(dim=2)] = 0.0  # all 0 rows could create 1
+        return a
+
+    def _get_regulatory_activity(self, X: torch.Tensor) -> torch.Tensor:
+        # TODO für den inhibitor gings für den activator aber nicht...
+        a_inh = self._get_a(X=X, Km=self.Kmr, mask=self.A < 0.0, N=-self.A)
+        self._get_a(X=X, Km=self.Kmr, mask=self.A > 0.0, N=self.A)
+        return a_inh
+
+    def _get_catalytic_activity(self, X: torch.Tensor) -> torch.Tensor:
+        kf = self._get_k(X=X, Km=self.Kmf, mask=self.N < 0.0, N=-self.N)
+        kb = self._get_k(X=X, Km=self.Kmb, mask=self.N > 0.0, N=self.N)
+
+        # the correct formula yields 2 * (ks - kp) / (1 + ks + kp)
+        # but then there can be a maximum activity of 200%
+        # chose 1/2 to keep it consistent with Vmax declarations
+        a = (kf - kb) / (1 + kf + kb)  # (c, p)
+
+        # NaNs from 0 Kms were so far propagated
+        # they mean 0 velocity
+        a = a.nan_to_num(0.0)
+        return a
+
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """
         Simulate protein work by integrating all signals.
@@ -646,52 +695,36 @@ class Kinetics:
         # - masks for substrates and products
         # - Ns for substrates and products
         # - Ns for activators and inhibitors
+        # TODO: smallest Kms should be sampled, so the one with negative E
+        #       so that the reverse Km will be larger (avoid super small Kms)
         # TODO: https://pytorch.org/docs/stable/generated/torch.copysign.html#torch.copysign copy+sign
         # TODO: https://pytorch.org/docs/stable/generated/torch.sign.html#torch.sign sign of tensor
 
         Vmax = self.Vmax / self.n_computations
-        Kmf = self.Kmf
-        Kmb = self.Kmb
-        Kmr = self.Kmr
 
         for _ in range(self.n_computations):
             # catalytical activity
-            sub_mask = self.N < 0.0
-            sub_X = torch.einsum("cps,cs->cps", sub_mask, X)  # (c, p, s)
-            sub_N = sub_mask * -self.N  # (c, p, s)
-            # ks = torch.exp((torch.log(sub_X + _EPS) * sub_N).sum(2)) / Kmf  # (c, p)
-            ks = torch.exp(
-                ((torch.log(sub_X + _EPS) * sub_N).sum(2) - torch.log(Kmf + _EPS))
-            )
-
-            prod_mask = self.N > 0.0
-            prod_X = torch.einsum("cps,cs->cps", prod_mask, X)  # (c, p, s)
-            prod_N = prod_mask * self.N  # (c, p, s)
-            # kp = torch.exp((torch.log(prod_X + _EPS) * prod_N).sum(2)) / Kmb  # (c, p)
-            kp = torch.exp(
-                ((torch.log(prod_X + _EPS) * prod_N).sum(2) - torch.log(Kmb + _EPS))
-            )
-
-            a_cat = (ks - kp) / (1 + ks + kp)  # (c, p)
-            # the formula yields 2 * (ks - kp) / (1 + ks + kp)
-            # but then there can be a maximum activity of 200%
-            # chose 1/2 to keep it consistent with Vmax declarations
+            a_cat = self._get_catalytic_activity(X=X)
 
             # inhibitor activity
-            inh_mask = (self.A < 0.0).float()  # (c, p, s)
-            inh_N = -self.A * inh_mask  # (c, p, s)
-            inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
-            agg_inh_X = (torch.log(inh_X + _EPS) * inh_mask).sum(2).exp()  # (c, p)
-            inh_V = (agg_inh_X / (agg_inh_X + Kmr)).float()  # (c, p)
-            a_inh = torch.where(torch.any(self.A < 0.0, dim=2), inh_V, 0.0)  # (c, p)
+            a_inh = self._get_a(X=X, Km=self.Kmr, mask=self.A < 0.0, N=-self.A)
+
+            # inh_mask = (self.A < 0.0).float()  # (c, p, s)
+            # inh_N = -self.A * inh_mask  # (c, p, s)
+            # inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
+            # agg_inh_X = (torch.log(inh_X + _EPS) * inh_mask).sum(2).exp()  # (c, p)
+            # inh_V = (agg_inh_X / (agg_inh_X + Kmr)).float()  # (c, p)
+            # a_inh = torch.where(torch.any(self.A < 0.0, dim=2), inh_V, 0.0)  # (c, p)
 
             # activator activity
             act_mask = (self.A > 0.0).float()  # (c, p, s)
             act_N = self.A * act_mask  # (c, p, s)
             act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
             agg_act_X = (torch.log(act_X + _EPS) * act_mask).sum(2).exp()  # (c, p)
-            act_V = agg_act_X / (agg_act_X + Kmr)  # (c, p)
+            act_V = agg_act_X / (agg_act_X + self.Kmr)  # (c, p)
             a_act = torch.where(torch.any(self.A > 0.0, dim=2), act_V, 1.0)  # (c, p)
+            # TODO: hier get der Versuch leider nicht
+            # a_act = self._get_a(X=X, Km=self.Kmr, mask=self.A > 0.0, N=self.A)
 
             # velocity and naive Xd
             V = Vmax * a_cat * (1 - a_inh) * a_act  # (c, p)

@@ -6,7 +6,6 @@ from magicsoup.containers import (
     RegulatoryDomain,
     TransporterDomain,
 )
-from magicsoup.constants import GAS_CONSTANT
 from magicsoup.kinetics2 import Kinetics
 
 TOLERANCE = 1e-4
@@ -822,9 +821,6 @@ def test_simple_mm_kinetic():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # reaction energies (c, p)
-    E = torch.full((2, 3), -99999.9)
-
     # fmt: on
 
     def mm(s, p, kf, kb, v):
@@ -854,7 +850,6 @@ def test_simple_mm_kinetic():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
@@ -912,9 +907,6 @@ def test_mm_kinetic_with_proportions():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # reaction energies (c, p)
-    E = torch.full((2, 3), -99999.9)
-
     # fmt: on
 
     def mm12(s, p, kf, kb, v):
@@ -953,7 +945,6 @@ def test_mm_kinetic_with_proportions():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
@@ -1011,9 +1002,6 @@ def test_mm_kinetic_with_multiple_substrates():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # reaction energies (c, p)
-    E = torch.full((2, 3), -99999.9)
-
     # fmt: on
 
     def mm111(s1, s2, p, kf, kb, v):
@@ -1050,7 +1038,6 @@ def test_mm_kinetic_with_multiple_substrates():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
@@ -1118,9 +1105,6 @@ def test_mm_kinetic_with_allosteric_action():
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
 
-    # reaction energies (c, p)
-    E = torch.full((2, 3), -99999.9)
-
     # fmt: on
 
     def mm(s, p, kf, kb, v):
@@ -1174,7 +1158,6 @@ def test_mm_kinetic_with_allosteric_action():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
@@ -1232,9 +1215,6 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # reaction energies (c, p)
-    E = torch.full((2, 3), -99999.9)
-
     # fmt: on
 
     def mm(s, p, kf, kb, v):
@@ -1280,7 +1260,6 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
@@ -1298,7 +1277,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     assert not torch.any(X1 < 0.0)
 
 
-def atest_reduce_velocity_in_multiple_proteins():
+def test_reduce_velocity_in_multiple_proteins():
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
     # cell 0: P0: a -> b, P1: 2a -> d
     # cell 1: P0: a -> b
@@ -1322,14 +1301,15 @@ def atest_reduce_velocity_in_multiple_proteins():
     ])
 
     # affinities (c, p, s)
-    Km = torch.tensor([
-        [   [0.5, 1.5, 0.0, 0.0],
-            [0.5, 0.0, 0.0, 3.5],
-            [0.0, 0.0, 0.0, 0.0] ],
-        [   [0.5, 1.5, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0] ],
+    Kmf = torch.tensor([
+        [0.1, 2.1, 0.0],
+        [0.1, 0.0, 0.0],
     ])
+    Kmb = torch.tensor([
+        [10.3, 1.1, 0.0],
+        [1.5, 0.0, 0.0],
+    ])
+    Kmr = torch.zeros(2, 3)
 
     # max velocities (c, p)
     Vmax = torch.tensor([
@@ -1341,42 +1321,50 @@ def atest_reduce_velocity_in_multiple_proteins():
     A = torch.zeros(2, 3, 4)
 
     # reaction energies (c, p)
-    E = torch.full((2, 3), -99999.9)
+    torch.full((2, 3), -99999.9)
 
     # fmt: on
 
-    def mm(x, k, v, n=1):
-        return v * x**n / (k + x) ** n
+    def mm(s, p, kf, kb, v):
+        vf = v * (s / kf - p / kb) / (1 + s / kf + p / kb)
+        vb = v * (p / kb - s / kf) / (1 + s / kf + p / kb)
+        return (vf - vb) / 2
+
+    def mm21(s, p, kf, kb, v):
+        vf = v * (s**2 / kf - p / kb) / (1 + s**2 / kf + p / kb)
+        vb = v * (p / kb - s**2 / kf) / (1 + s**2 / kf + p / kb)
+        return (vf - vb) / 2
 
     # expected outcome
-    v0_c0 = mm(x=X0[0, 0], v=Vmax[0, 0], k=Km[0, 0, 0])
-    v1_c0 = mm(x=X0[0, 0], v=Vmax[0, 1], k=Km[0, 1, 0], n=2)
+    v_c0_0 = mm(X0[0, 0], X0[0, 1], Kmf[0, 0], Kmb[0, 0], Vmax[0, 0])
+    v_c0_1 = mm21(X0[0, 0], X0[0, 3], Kmf[0, 1], Kmb[0, 1], Vmax[0, 1])
     # but this would lead to a < 0.0
-    naive_dx_c0_a = -v0_c0 - 2 * v1_c0
+    naive_dx_c0_a = -v_c0_0 - 2 * v_c0_1
     assert X0[0, 0] + naive_dx_c0_a < 0.0
     # so velocity should be reduced to by a factor to not deconstruct too much a
     # all other proteins have to be reduced by the same factor to not cause downstream problems
-    f = X0[0, 0] * 0.99 / -naive_dx_c0_a
-    v0_c0 = v0_c0 * f
-    v1_c0 = v1_c0 * f
-    dx_c0_a = -v0_c0 - v1_c0 * 2
-    dx_c0_b = v0_c0
+    f = (X0[0, 0] - EPS) / -naive_dx_c0_a
+    v_c0_0 = v_c0_0 * f
+    v_c0_1 = v_c0_1 * f
+    dx_c0_a = -v_c0_0 - v_c0_1 * 2
+    dx_c0_b = v_c0_0
     dx_c0_c = 0.0
-    dx_c0_d = v1_c0
+    dx_c0_d = v_c0_1
 
     # cell1 is business as usual
-    v0_c0 = mm(x=X0[1, 0], v=Vmax[1, 0], k=Km[1, 0, 0])
-    dx_c1_a = -v0_c0
-    dx_c1_b = v0_c0
+    v_c1_0 = mm(X0[1, 0], X0[1, 1], Kmf[1, 0], Kmb[1, 0], Vmax[1, 0])
+    dx_c1_a = -v_c1_0
+    dx_c1_b = v_c1_0
     dx_c1_c = 0.0
     dx_c1_d = 0.0
 
     # test
     kinetics = get_kinetics()
     kinetics.N = N
-    kinetics.Km = Km
+    kinetics.Kmf = Kmf
+    kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
@@ -1394,136 +1382,148 @@ def atest_reduce_velocity_in_multiple_proteins():
     assert not torch.any(X1 < 0.0)
 
 
-def atest_equilibrium_constants():
+def test_equilibrium_is_reached():
+    # molecules should reach equilibrium after a few steps
+    # with Vmax > 1.0 higher order reactions cant reach equilibrium
+    # because they overshoot
+    n_steps = 40
+
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
-    # cell 0: P0: a -> b (but b/a > Ke), P1: b -> d (but Q almost Ke)
-    # cell 1: P0: c -> d (but Q ~= Ke), P1: a -> d (but d/a > Ke, and Q almost Ke)
+    # cell 0: P0: a -> b (Ke=1.0), P1: c -> d (Ke=20.0)
+    # cell 1: P0: a,2b -> c (Ke=10.0)
 
     # fmt: off
 
     # concentrations (c, s)
     X0 = torch.tensor([
-        [2.0, 20.0, 2.9, 20.0],
-        [1.0, 3.1, 1.3, 2.9],
+        [2.0, 20.0, 5.0, 5.0],
+        [2.0, 3.1, 1.3, 2.9],
     ])
 
     # reactions (c, p, s)
     N = torch.tensor([
         [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]    ],
-        [   [0.0, 0.0, -1.0, 1.0],
-            [-1.0, 0.0, 0.0, 1.0],
+        [   [-1.0, -2.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
 
     # affinities (c, p, s)
-    Km = torch.tensor([
-        [   [1.2, 1.5, 0.0, 0.0],
-            [0.0, 0.5, 0.0, 3.5],
-            [0.0, 0.0, 0.0, 0.0] ],
-        [   [0.0, 0.0, 0.5, 1.5],
-            [1.2, 0.0, 0.0, 1.9],
-            [0.0, 0.0, 0.0, 0.0] ],
+    Kmf = torch.tensor([
+        [1.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
     ])
+    Kmb = torch.tensor([
+        [1.0, 20.0, 0.0],
+        [10.0, 0.0, 0.0],
+    ])
+    Kmr = torch.zeros(2, 3)
 
     # max velocities (c, p)
     Vmax = torch.tensor([
-        [2.1, 4.0, 0.0],
-        [1.1, 3.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
     ])
 
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # reaction energies (c, p)
-    E = torch.full((2, 3), -99999.9)
-    # E = -2000 ^= # ln(Ke) = 0.77
-    E[0, 0] = -2000 # ln(Q) - ln(Ke) = 1.53 (switch N)
-    E[0, 1] = -2000 # ln(Q) - ln(Ke) = -0.76 (reduce V)
-    E[1, 0] = -2000 # ln(Q) - ln(Ke) = 0.02 (switch off)
-    E[1, 1] = -2000 # ln(Q) - ln(Ke) = 0.28 (switch N, reduce V)
-
-    # fmt: on
-
-    def mm(x, k, v):
-        return v * x / (k + x)
-
-    # expected outcome
-    # v0 is turned around, v1 is reduced by a factor of around 0.37
-    v0_c0 = mm(x=X0[0, 1], v=Vmax[0, 0], k=Km[0, 0, 1]) * -1.0
-    v1_c0 = mm(x=X0[0, 1], v=Vmax[0, 1], k=Km[0, 1, 1]) * 0.76
-    dx_c0_a = -v0_c0
-    dx_c0_b = v0_c0 - v1_c0
-    dx_c0_c = 0.0
-    dx_c0_d = v1_c0
-
-    # v0 is switched off, v1 is reduced by 0.28 and turned around
-    v0_c1 = 0.0
-    v1_c1 = mm(x=X0[1, 3], v=Vmax[1, 1], k=Km[1, 1, 3]) * -0.28
-    dx_c1_a = -v1_c1
-    dx_c1_b = 0.0
-    dx_c1_c = -v0_c1
-    dx_c1_d = v0_c1 + v1_c1
-
     # test
     kinetics = get_kinetics()
     kinetics.N = N
-    kinetics.Km = Km
+    kinetics.Kmf = Kmf
+    kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.A = A
-    Xd = kinetics.integrate_signals(X=X0) - X0
 
-    tolerance = 1e-1  # floating point problems
-    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
-    assert (Xd[0, 1] - dx_c0_b).abs() < tolerance
-    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
-    assert (Xd[0, 3] - dx_c0_d).abs() < tolerance
+    for _ in range(n_steps):
+        X0 = kinetics.integrate_signals(X=X0)
 
-    assert (Xd[1, 0] - dx_c1_a).abs() < tolerance
-    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
-    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
-    assert (Xd[1, 3] - dx_c1_d).abs() < tolerance
+    q_c0_0 = X0[0, 1] / X0[0, 0]
+    q_c0_1 = X0[0, 3] / X0[0, 2]
+    q_c1_0 = X0[1, 2] / (X0[1, 0] * X0[1, 1] * X0[1, 1])
+
+    assert (q_c0_0 - 1.0).abs() < 0.1
+    assert (q_c0_1 - 20.0).abs() < 0.1
+    assert (q_c1_0 - 10.0).abs() < 0.1
 
 
-@pytest.mark.parametrize("gen", [torch.zeros, torch.randn])
-def test_substrate_concentrations_are_always_finite_and_positive(gen):
+def test_zero_substrates_stay_zero():
+    # Typical reasons for cells creating signals from 0:
+    # 1. when using exp(ln(x)) 1s can accidentally be created
+    # 2. when doing a^b 1s can be created (0^1=0 but 0^0=1)
+
     n_cells = 100
     n_prots = 100
     n_steps = 100
 
     kinetics = get_kinetics()
-    # kinetics.n_computations = 11
     n_mols = len(MOLECULES) * 2
 
     # concentrations (c, s)
-    X = gen(n_cells, n_mols).abs()
+    X = torch.zeros(n_cells, n_mols).abs()
 
     # reactions (c, p, s)
     kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols)).float()
 
     # max velocities (c, p)
-    kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 10
+    kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 100
 
     # allosterics (c, p, s)
     kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
 
     # reaction energies (c, p)
-    kinetics.E = torch.randn(n_cells, n_prots)
-    kinetics.Ke = torch.exp(-kinetics.E / kinetics.abs_temp / GAS_CONSTANT)
+    kinetics.Ke = torch.randn(n_cells, n_prots)
 
     # affinities (c, p)
-    kinetics.Kmf = torch.randn(n_cells, n_prots).abs().clamp(min=0.01)
+    kinetics.Kmf = torch.randn(n_cells, n_prots).abs()
     kinetics.Kmb = kinetics.Kmf * kinetics.Ke
     kinetics.Kmr = kinetics.Kmf
 
     # test
     for _ in range(n_steps):
-        print(X.mean(), X.max())
+        X = kinetics.integrate_signals(X=X)
+        assert X.min() == 0.0
+        assert X.max() == 0.0
+
+
+def test_substrate_concentrations_are_always_finite_and_positive():
+    # interaction terms can overflow float32 when they become too big
+    # i.g. exponents too high and many substrates
+    # this will create infinites which will eventually become NaN
+    n_cells = 100
+    n_prots = 100
+    n_steps = 100
+
+    kinetics = get_kinetics()
+    n_mols = len(MOLECULES) * 2
+
+    # concentrations (c, s)
+    X = torch.randn(n_cells, n_mols).abs()
+
+    # reactions (c, p, s)
+    kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols)).float()
+
+    # max velocities (c, p)
+    kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 100
+
+    # allosterics (c, p, s)
+    kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
+
+    # reaction energies (c, p)
+    kinetics.Ke = torch.randn(n_cells, n_prots)
+
+    # affinities (c, p)
+    kinetics.Kmf = torch.randn(n_cells, n_prots).abs()
+    kinetics.Kmb = kinetics.Kmf * kinetics.Ke
+    kinetics.Kmr = kinetics.Kmf
+
+    # test
+    for _ in range(n_steps):
         X = kinetics.integrate_signals(X=X)
         assert not torch.any(X < 0.0), X[X < 0.0].min()
         assert not torch.any(X.isnan()), X.isnan().sum()
         assert torch.all(X.isfinite()), ~X.isfinite().sum()
-
-    assert False
