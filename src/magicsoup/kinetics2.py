@@ -599,6 +599,10 @@ class Kinetics:
         E = torch.einsum("cps,s->cp", N, self.mol_energies)
         self.E[cell_idxs] = E
         self.Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
+        # TODO: smallest Kms should be sampled, so the one with negative E
+        #       so that the reverse Km will be larger (avoid super small Kms)
+        #       basically there should be no Km smaller 0.001 while Kes are still consistent
+        # TODO: do I even need E?
 
         # Km_d (c, p, d)
         Km = Km_d.nanmean(dim=2).nan_to_num(0.0)
@@ -646,12 +650,12 @@ class Kinetics:
         # - masks for substrates and products
         # - Ns for substrates and products
         # - Ns for activators and inhibitors
-        # TODO: smallest Kms should be sampled, so the one with negative E
-        #       so that the reverse Km will be larger (avoid super small Kms)
 
         Vmax = self.Vmax / self.n_computations
+        dirs = torch.full_like(X, 0.0).bool()
+        trim = torch.full_like(X, 1.0)
 
-        for _ in range(self.n_computations):
+        for i in range(self.n_computations):
             # catalytic activity
 
             # signals are aggregated for forward and backward reaction
@@ -701,11 +705,20 @@ class Kinetics:
             fact = torch.where(X + Xd < 0.0, (X - _EPS) / -Xd, 1.0)  # (c, s)
             Xd = torch.einsum("cs,c->cs", Xd, fact.amin(1))
 
-            X = (X + Xd).clamp(min=0.0)
+            # if direction of Xd switches back and forth it might be that a protein
+            # in the cell is constantly overshooting the equilibrium state
+            # with each repetition the cells Xd gets reduced more and more
+            # like above this is done for the whole cell in order to avoid creating
+            # downstream conflicts with other proteins/signals
+            if i == 0:
+                dirs = Xd > 0.0
+            else:
+                new_dirs = Xd > 0.0
+                trim[dirs != new_dirs] *= 0.5
+                Xd = torch.einsum("cs,c->cs", Xd, trim.amin(1))
+                dirs = new_dirs
 
-            # TODO: Ich muss berechnen, wie die quotienten nach dem schritt aussehen
-            #       wenn die proteine über ihr equilibrium geschossen sind, dann müssen
-            #       sie auch wieder verlangsamt werden
+            X = (X + Xd).clamp(min=0.0)
 
         return X
 
@@ -827,6 +840,24 @@ class Kinetics:
         xx[involved_prots & zero_prots] = 0.0
 
         return xx, involved_prots
+
+    def _get_ln_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
+        # TODO: is this save against proteins without N or proteins with all 0s
+
+        # substrates
+        smask = self.N < 0.0
+        sub_X = torch.einsum("cps,cs->cps", smask, X)  # (c, p, s)
+        sub_N = smask * -self.N  # (c, p, s)
+
+        # products
+        pmask = self.N > 0.0
+        pro_X = torch.einsum("cps,cs->cps", pmask, X)  # (c, p, s)
+        pro_N = pmask * self.N  # (c, p, s)
+
+        # quotients
+        prods = (torch.log(pro_X + _EPS) * pro_N).sum(2)  # (c, p)
+        subs = (torch.log(sub_X + _EPS) * sub_N).sum(2)  # (c, p)
+        return prods - subs  # (c, p)
 
     def _get_proteome_tensors(
         self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]

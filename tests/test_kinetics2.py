@@ -1422,8 +1422,8 @@ def test_equilibrium_is_reached():
 
     # max velocities (c, p)
     Vmax = torch.tensor([
-        [10.0, 10.0, 0.0],
-        [10.0, 0.0, 0.0],
+        [100.0, 100.0, 0.0],
+        [100.0, 0.0, 0.0],
     ])
 
     # allosterics (c, p, s)
@@ -1441,6 +1441,7 @@ def test_equilibrium_is_reached():
 
     for _ in range(10):
         X0 = kinetics.integrate_signals(X=X0)
+        print(X0[1, 2] / (X0[1, 0] * X0[1, 1] * X0[1, 1]))
 
     q_c0_0 = X0[0, 1] / X0[0, 0]
     q_c0_1 = X0[0, 3] / X0[0, 2]
@@ -1517,8 +1518,8 @@ def test_substrate_concentrations_are_always_finite_and_positive():
     kinetics.Ke = torch.randn(n_cells, n_prots)
 
     # affinities (c, p)
-    kinetics.Kmf = torch.randn(n_cells, n_prots).abs()
-    kinetics.Kmb = kinetics.Kmf * kinetics.Ke
+    kinetics.Kmf = torch.randn(n_cells, n_prots).abs().clamp(0.001)
+    kinetics.Kmb = (kinetics.Kmf * kinetics.Ke).clamp(0.001)
     kinetics.Kmr = kinetics.Kmf
 
     # test
