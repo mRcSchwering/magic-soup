@@ -15,40 +15,6 @@ from magicsoup.containers import (
 _EPS = 1e-8
 
 
-# def mm(N, X, Kmf, Kmb):
-#     mask = N < 0.0
-#     sub_X = torch.einsum("s,s->s", mask, X)  # (s)
-#     sub_N = mask * -N  # (s)
-#     ks = torch.exp((torch.log(sub_X + _EPS) * sub_N).sum(0)) / Kmf
-
-#     mask = N > 0.0
-#     sub_X = torch.einsum("s,s->s", mask, X)  # (s)
-#     sub_N = mask * N  # (s)
-#     kp = torch.exp((torch.log(sub_X + _EPS) * sub_N).sum(0)) / Kmb
-
-#     # catalytical activation
-#     a_cat = (ks - kp) / (1 + ks + kp)
-
-#     # velocity and naive Xd
-#     V = Vmax * a_cat
-#     return V * N
-
-
-# Vmax = 0.4
-# Kmf = 0.5
-# Ke = 0.2
-# N = torch.tensor([-2.0, -1.0, 2.0])
-# X = torch.tensor([0.1, 0.1, 10.0])
-# for _ in range(20):
-#     Xd = mm(N, X, Kmf, Kmf * Ke)
-#     X += Xd
-#     a = X[0].item()
-#     b = X[1].item()
-#     c = X[2].item()
-#     q = c * c / (a * a * b)
-#     print(f"a: {a:.2f}, b: {b:.2f}, c: {c:.2f}, Q: {q:.2f}")
-
-
 class _LogNormWeightMapFact:
     """
     Creates an object that maps tokens to a float
@@ -382,10 +348,7 @@ class Kinetics:
         n_signals = 2 * len(molecules)
         self.Kmf = self._tensor(0, 0)
         self.Kmb = self._tensor(0, 0)
-        self.Kmr = self._tensor(0, 0)
         self.Vmax = self._tensor(0, 0)
-        self.E = self._tensor(0, 0)
-        self.Ke = self._tensor(0, 0)
         self.N = self._tensor(0, 0, n_signals)
         self.A = self._tensor(0, 0, n_signals)
 
@@ -591,23 +554,18 @@ class Kinetics:
         delta_N = N_d[:, :, 0].clamp(max=0.0) - N.clamp(max=0.0)
         # A += -1.0 * delta_N.clamp(max=0.0)
         A = A - delta_N.clamp(max=0.0)
-        Kmr_d = Km_d * (A_d != 0.0).any(dim=3).float()  # (c, p, d)
         self.A[cell_idxs] = A
-        self.Kmr[cell_idxs] = Kmr_d.nanmean(dim=2).nan_to_num(0.0)
-
-        # E, Ke (c, p)
-        E = torch.einsum("cps,s->cp", N, self.mol_energies)
-        self.E[cell_idxs] = E
-        self.Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
-        # TODO: smallest Kms should be sampled, so the one with negative E
-        #       so that the reverse Km will be larger (avoid super small Kms)
-        #       basically there should be no Km smaller 0.001 while Kes are still consistent
-        # TODO: do I even need E?
 
         # Km_d (c, p, d)
+        # make sure the sampled Km is the smaller one while keeping Ke the same
+        E = torch.einsum("cps,s->cp", N, self.mol_energies)
+        Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
+        ke_ge_1 = Ke >= 1.0
         Km = Km_d.nanmean(dim=2).nan_to_num(0.0)
-        self.Kmf[cell_idxs] = Km
-        self.Kmb[cell_idxs] = Km * self.Ke
+        self.Kmf[cell_idxs] = Km.clone()
+        self.Kmb[cell_idxs] = Km.clone()
+        self.Kmf[~ke_ge_1] /= Ke
+        self.Kmb[ke_ge_1] *= Ke
 
         # Vmax_d (c, p, d)
         Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
@@ -625,10 +583,7 @@ class Kinetics:
         self.A[cell_idxs] = 0.0
         self.Kmf[cell_idxs] = 0.0
         self.Kmb[cell_idxs] = 0.0
-        self.Kmr[cell_idxs] = 0.0
         self.Vmax[cell_idxs] = 0.0
-        self.E[cell_idxs] = 0.0
-        self.Ke[cell_idxs] = 0.0
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -652,8 +607,8 @@ class Kinetics:
         # - Ns for activators and inhibitors
 
         Vmax = self.Vmax / self.n_computations
-        dirs = torch.full_like(X, 0.0).bool()
-        trim = torch.full_like(X, 1.0)
+        fwd_mask = torch.full_like(X, 0.0).bool()
+        incr_trim = torch.full_like(X, 1.0)
 
         for i in range(self.n_computations):
             # catalytic activity
@@ -680,30 +635,17 @@ class Kinetics:
 
             # inhibitor activity
             xxi, i_prots = self._aggregate_signals(X=X, mask=self.A < 0.0, N=-self.A)
-            a_inh = xxi / (xxi + self.Kmr)
+            a_inh = xxi / (xxi + self.Kmf)
             a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
 
             # activator activity
             xxa, a_prots = self._aggregate_signals(X=X, mask=self.A > 0.0, N=self.A)
-            a_act = xxa / (xxa + self.Kmr)
+            a_act = xxa / (xxa + self.Kmf)
             a_act[~a_prots] = 1.0  # proteins without activator should be active
 
             # velocity and naive Xd
             V = Vmax * a_cat * (1 - a_inh) * a_act  # (c, p)
             Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
-
-            # proteins can deconstruct more of a molecule than available in a cell
-            # Here, I am reducing the velocity of all proteins in a cell by the same
-            # amount to just not deconstruct more of any molecule species than
-            # available in this cell
-            # One can also reduce only the velocity of the proteins which are part
-            # of deconstructing the molecule species that is becomming the problem
-            # but these reduced protein speeds could also have a downstream effect
-            # on the construction of another molecule species, which could then
-            # create the same problem again.
-            # By reducing all proteins by the same factor, this cannot happen.
-            fact = torch.where(X + Xd < 0.0, (X - _EPS) / -Xd, 1.0)  # (c, s)
-            Xd = torch.einsum("cs,c->cs", Xd, fact.amin(1))
 
             # if direction of Xd switches back and forth it might be that a protein
             # in the cell is constantly overshooting the equilibrium state
@@ -711,13 +653,29 @@ class Kinetics:
             # like above this is done for the whole cell in order to avoid creating
             # downstream conflicts with other proteins/signals
             if i == 0:
-                dirs = Xd > 0.0
+                fwd_mask[Xd > 0.0] = True
             else:
-                new_dirs = Xd > 0.0
-                trim[dirs != new_dirs] *= 0.5
-                Xd = torch.einsum("cs,c->cs", Xd, trim.amin(1))
-                dirs = new_dirs
+                new_fwd_mask = Xd > 0.0
+                incr_trim[fwd_mask != new_fwd_mask] *= 0.5
+                Xd = torch.einsum("cs,c->cs", Xd, incr_trim.amin(1))
+                fwd_mask = new_fwd_mask
 
+            # proteins can deconstruct more of a molecule than available in a cell
+            # but I can't just clip X at 0 because then reactions would not adhere
+            # to their stoichiometry anymore
+            # instead I need to reduce protein velocity
+            # However, a cell's Xd is the sum of all its protein's activities
+            # if I reduce the velocity of 1 protein, it could create a new
+            # below-zero situation for another one
+            # One would have to repeat this action until all conflicts are satisfied
+            # Here, I am instead reducing all the cell's proteins by the same factor
+            # that way these secondary below-zero situations cannot appear
+            trim_to_zero = torch.where(X + Xd < 0.0, (X - _EPS) / -Xd, 1.0)  # (c, s)
+            Xd = torch.einsum("cs,c->cs", Xd, trim_to_zero.amin(1))
+
+            # should not be necessary but floating point precision
+            # can still create very small negative values (<1e-7)
+            # these are so small that they should not matter in the overall simulation
             X = (X + Xd).clamp(min=0.0)
 
         return X
@@ -736,7 +694,6 @@ class Kinetics:
         self.Kmf[to_idxs] = self.Kmf[from_idxs]
         self.Kmb[to_idxs] = self.Kmb[from_idxs]
         self.Vmax[to_idxs] = self.Vmax[from_idxs]
-        self.E[to_idxs] = self.E[from_idxs]
         self.N[to_idxs] = self.N[from_idxs]
         self.A[to_idxs] = self.A[from_idxs]
 
@@ -753,10 +710,7 @@ class Kinetics:
         """
         self.Kmf = self.Kmf[keep]
         self.Kmb = self.Kmb[keep]
-        self.Kmr = self.Kmr[keep]
         self.Vmax = self.Vmax[keep]
-        self.E = self.E[keep]
-        self.Ke = self.Ke[keep]
         self.N = self.N[keep]
         self.A = self.A[keep]
 
@@ -769,10 +723,7 @@ class Kinetics:
         """
         self.Kmf = self._expand_c(t=self.Kmf, n=by_n)
         self.Kmb = self._expand_c(t=self.Kmb, n=by_n)
-        self.Kmr = self._expand_c(t=self.Kmr, n=by_n)
         self.Vmax = self._expand_c(t=self.Vmax, n=by_n)
-        self.E = self._expand_c(t=self.E, n=by_n)
-        self.Ke = self._expand_c(t=self.Ke, n=by_n)
         self.N = self._expand_c(t=self.N, n=by_n)
         self.A = self._expand_c(t=self.A, n=by_n)
 
@@ -788,10 +739,7 @@ class Kinetics:
             by_n = max_n - n_prots
             self.Kmf = self._expand_p(t=self.Kmf, n=by_n)
             self.Kmb = self._expand_p(t=self.Kmb, n=by_n)
-            self.Kmr = self._expand_p(t=self.Kmr, n=by_n)
             self.Vmax = self._expand_p(t=self.Vmax, n=by_n)
-            self.E = self._expand_p(t=self.E, n=by_n)
-            self.Ke = self._expand_p(t=self.Ke, n=by_n)
             self.N = self._expand_p(t=self.N, n=by_n)
             self.A = self._expand_p(t=self.A, n=by_n)
 
@@ -840,24 +788,6 @@ class Kinetics:
         xx[involved_prots & zero_prots] = 0.0
 
         return xx, involved_prots
-
-    def _get_ln_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
-        # TODO: is this save against proteins without N or proteins with all 0s
-
-        # substrates
-        smask = self.N < 0.0
-        sub_X = torch.einsum("cps,cs->cps", smask, X)  # (c, p, s)
-        sub_N = smask * -self.N  # (c, p, s)
-
-        # products
-        pmask = self.N > 0.0
-        pro_X = torch.einsum("cps,cs->cps", pmask, X)  # (c, p, s)
-        pro_N = pmask * self.N  # (c, p, s)
-
-        # quotients
-        prods = (torch.log(pro_X + _EPS) * pro_N).sum(2)  # (c, p)
-        subs = (torch.log(sub_X + _EPS) * sub_N).sum(2)  # (c, p)
-        return prods - subs  # (c, p)
 
     def _get_proteome_tensors(
         self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]

@@ -1431,7 +1431,7 @@ def test_equilibrium_is_reached():
 
     # test
     kinetics = get_kinetics()
-    kinetics.n_computations = 10
+    kinetics.n_computations = 9
     kinetics.N = N
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
