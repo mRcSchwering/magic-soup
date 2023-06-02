@@ -1386,7 +1386,6 @@ def test_equilibrium_is_reached():
     # molecules should reach equilibrium after a few steps
     # with Vmax > 1.0 higher order reactions cant reach equilibrium
     # because they overshoot
-    n_steps = 40
 
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
     # cell 0: P0: a -> b (Ke=1.0), P1: c -> d (Ke=20.0)
@@ -1423,8 +1422,8 @@ def test_equilibrium_is_reached():
 
     # max velocities (c, p)
     Vmax = torch.tensor([
-        [1.0, 1.0, 0.0],
-        [1.0, 0.0, 0.0],
+        [10.0, 10.0, 0.0],
+        [10.0, 0.0, 0.0],
     ])
 
     # allosterics (c, p, s)
@@ -1432,6 +1431,7 @@ def test_equilibrium_is_reached():
 
     # test
     kinetics = get_kinetics()
+    kinetics.n_computations = 10
     kinetics.N = N
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
@@ -1439,7 +1439,7 @@ def test_equilibrium_is_reached():
     kinetics.Vmax = Vmax
     kinetics.A = A
 
-    for _ in range(n_steps):
+    for _ in range(10):
         X0 = kinetics.integrate_signals(X=X0)
 
     q_c0_0 = X0[0, 1] / X0[0, 0]

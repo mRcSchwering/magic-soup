@@ -626,55 +626,6 @@ class Kinetics:
         self.E[cell_idxs] = 0.0
         self.Ke[cell_idxs] = 0.0
 
-    def _get_k(
-        self, X: torch.Tensor, Km: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
-    ) -> torch.Tensor:
-        # I want to calculate in log-space but I want to avoid
-        # adding EPS because it creates a small value from 0
-        # which can trigger the creation of molecules from nothing
-        x = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
-        x[x == 0.0] = torch.nan  # NaNs for log
-        n = mask * N  # (c, p, s)
-
-        # NaN to 0 is fine for rows which have at least
-        # 1 non-0, but for an all 0 row it creates 1 for a row that should
-        # create 0, that's why they have to be explicitly set back to 0
-        k = torch.exp((torch.log(x) * n).nansum(2)) / Km  # (c, p)
-        k[x.isnan().all(dim=2)] = 0.0  # all 0 rows could create 1
-        return k
-
-    def _get_a(
-        self, X: torch.Tensor, Km: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
-    ):
-        x = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
-        x[x == 0.0] = torch.nan  # NaNs for log
-        n = mask * N  # (c, p, s)
-
-        xx = torch.exp((torch.log(x) * n).nansum(2))
-        a = xx / (xx + Km)
-        a[x.isnan().all(dim=2)] = 0.0  # all 0 rows could create 1
-        return a
-
-    def _get_regulatory_activity(self, X: torch.Tensor) -> torch.Tensor:
-        # TODO für den inhibitor gings für den activator aber nicht...
-        a_inh = self._get_a(X=X, Km=self.Kmr, mask=self.A < 0.0, N=-self.A)
-        self._get_a(X=X, Km=self.Kmr, mask=self.A > 0.0, N=self.A)
-        return a_inh
-
-    def _get_catalytic_activity(self, X: torch.Tensor) -> torch.Tensor:
-        kf = self._get_k(X=X, Km=self.Kmf, mask=self.N < 0.0, N=-self.N)
-        kb = self._get_k(X=X, Km=self.Kmb, mask=self.N > 0.0, N=self.N)
-
-        # the correct formula yields 2 * (ks - kp) / (1 + ks + kp)
-        # but then there can be a maximum activity of 200%
-        # chose 1/2 to keep it consistent with Vmax declarations
-        a = (kf - kb) / (1 + kf + kb)  # (c, p)
-
-        # NaNs from 0 Kms were so far propagated
-        # they mean 0 velocity
-        a = a.nan_to_num(0.0)
-        return a
-
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """
         Simulate protein work by integrating all signals.
@@ -697,34 +648,41 @@ class Kinetics:
         # - Ns for activators and inhibitors
         # TODO: smallest Kms should be sampled, so the one with negative E
         #       so that the reverse Km will be larger (avoid super small Kms)
-        # TODO: https://pytorch.org/docs/stable/generated/torch.copysign.html#torch.copysign copy+sign
-        # TODO: https://pytorch.org/docs/stable/generated/torch.sign.html#torch.sign sign of tensor
 
         Vmax = self.Vmax / self.n_computations
 
         for _ in range(self.n_computations):
-            # catalytical activity
-            a_cat = self._get_catalytic_activity(X=X)
+            # catalytic activity
+
+            # signals are aggregated for forward and backward reaction
+            # proteins that had no involved catalytic region should not be active
+            xxf, f_prots = self._aggregate_signals(X=X, mask=self.N < 0.0, N=-self.N)
+            kf = xxf / self.Kmf
+            kf[~f_prots] = 0.0
+
+            xxb, b_prots = self._aggregate_signals(X=X, mask=self.N > 0.0, N=self.N)
+            kb = xxb / self.Kmb
+            kb[~b_prots] = 0.0
+
+            # the correct formula yields 2 * (ks - kp) / (1 + ks + kp)
+            # but then there can be a maximum activity of 200%
+            # while regulatory regions can only go up to 100%
+            # thus (ks - kp) / (1 + ks + kp)
+            a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
+
+            # NaNs could have been propagated so far by stray NaN Kms
+            # they should represent 0 velocity
+            a_cat = a_cat.nan_to_num(0.0)
 
             # inhibitor activity
-            a_inh = self._get_a(X=X, Km=self.Kmr, mask=self.A < 0.0, N=-self.A)
-
-            # inh_mask = (self.A < 0.0).float()  # (c, p, s)
-            # inh_N = -self.A * inh_mask  # (c, p, s)
-            # inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
-            # agg_inh_X = (torch.log(inh_X + _EPS) * inh_mask).sum(2).exp()  # (c, p)
-            # inh_V = (agg_inh_X / (agg_inh_X + Kmr)).float()  # (c, p)
-            # a_inh = torch.where(torch.any(self.A < 0.0, dim=2), inh_V, 0.0)  # (c, p)
+            xxi, i_prots = self._aggregate_signals(X=X, mask=self.A < 0.0, N=-self.A)
+            a_inh = xxi / (xxi + self.Kmr)
+            a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
 
             # activator activity
-            act_mask = (self.A > 0.0).float()  # (c, p, s)
-            act_N = self.A * act_mask  # (c, p, s)
-            act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
-            agg_act_X = (torch.log(act_X + _EPS) * act_mask).sum(2).exp()  # (c, p)
-            act_V = agg_act_X / (agg_act_X + self.Kmr)  # (c, p)
-            a_act = torch.where(torch.any(self.A > 0.0, dim=2), act_V, 1.0)  # (c, p)
-            # TODO: hier get der Versuch leider nicht
-            # a_act = self._get_a(X=X, Km=self.Kmr, mask=self.A > 0.0, N=self.A)
+            xxa, a_prots = self._aggregate_signals(X=X, mask=self.A > 0.0, N=self.A)
+            a_act = xxa / (xxa + self.Kmr)
+            a_act[~a_prots] = 1.0  # proteins without activator should be active
 
             # velocity and naive Xd
             V = Vmax * a_cat * (1 - a_inh) * a_act  # (c, p)
@@ -744,6 +702,10 @@ class Kinetics:
             Xd = torch.einsum("cs,c->cs", Xd, fact.amin(1))
 
             X = (X + Xd).clamp(min=0.0)
+
+            # TODO: Ich muss berechnen, wie die quotienten nach dem schritt aussehen
+            #       wenn die proteine über ihr equilibrium geschossen sind, dann müssen
+            #       sie auch wieder verlangsamt werden
 
         return X
 
@@ -819,6 +781,52 @@ class Kinetics:
             self.Ke = self._expand_p(t=self.Ke, n=by_n)
             self.N = self._expand_p(t=self.N, n=by_n)
             self.A = self._expand_p(t=self.A, n=by_n)
+
+    def _aggregate_signals(
+        self, X: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # consider:
+        # - a) some proteins are not involved at all (their Ns are all 0)
+        # - b) some are involved but the signal 0 (required X is 0)
+        # - c) there can be multiple signals (Xs must be multiplied)
+        # - d) each signal has a stoichiometric number (X must be raised)
+
+        # signals are prepared as c,p,s
+        # all non-involved signals (or involved but 0)
+        # are set to NaN so that it is possible
+        # to log them later without need of EPS addition
+        x = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
+        x[x == 0.0] = torch.nan
+
+        # stoichiometric numbers are prepared
+        # all non-involved fields are 0
+        n = mask * N  # (c, p, s)
+
+        # proteins which have at least 1 non-zero stoichiometric number
+        involved_prots = n.sum(2) != 0.0
+
+        # proteins which have all zero signals or which
+        # don't have at least 1 non-zero stoichiometric number
+        zero_prots = x.isnan().all(2)
+
+        # (1) raise each signal to its stoichiometric number
+        # then (2) multiply all over protein
+        # while ignoring non-involved signals
+        # (1) is done in log-space, all NaNs stay NaN, then
+        # (2) can be done as nansum (treats NaNs as 0) so
+        # if a protein had only 0 stoichiometric numbers or
+        # all involved signals were 0 it will be 0
+        # after exp it will become 1
+        xx = torch.exp((torch.log(x) * n).nansum(2))
+
+        # proteins that actually had a stoichiometric number
+        # but its signal was 0 became 1, but they should be 0
+        # I have to identify them with the masks calculated earlier
+        # because in xx a signal could theoretically become 1
+        # from a legitimate stoichiometric number and non-zero signal
+        xx[involved_prots & zero_prots] = 0.0
+
+        return xx, involved_prots
 
     def _get_proteome_tensors(
         self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
