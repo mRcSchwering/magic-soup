@@ -606,9 +606,17 @@ class Kinetics:
         # - Ns for substrates and products
         # - Ns for activators and inhibitors
 
-        Vmax = self.Vmax / self.n_computations
-        fwd_mask = torch.full_like(X, 0.0).bool()
-        incr_trim = torch.full_like(X, 1.0)
+        # Vmax = self.Vmax / self.n_computations
+        # fwd_mask = torch.full_like(X, 0.0).bool()
+        # incr_trim = torch.full_like(X, 1.0)
+
+        # TODO: Idee gut aber braucht noch zu viele Schritte
+        #       wäre vllt den exp verfall steiler zu machen
+        #       auch nochmal auf chart angucken, vllt ist Test ein bsisl streng
+        incr_trim = 0.5
+        Vmax_adj = (
+            self.Vmax * 1 / sum(incr_trim**d for d in range(self.n_computations))
+        )
 
         for i in range(self.n_computations):
             # catalytic activity
@@ -643,8 +651,11 @@ class Kinetics:
             a_act = xxa / (xxa + self.Kmf)
             a_act[~a_prots] = 1.0  # proteins without activator should be active
 
-            # velocity and naive Xd
-            V = Vmax * a_cat * (1 - a_inh) * a_act  # (c, p)
+            # velocity from activities
+            # as well as trimming factor of n_computations
+            V = Vmax_adj * a_cat * (1 - a_inh) * a_act * incr_trim**i  # (c, p)
+
+            # naive Xd
             Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
 
             # if direction of Xd switches back and forth it might be that a protein
@@ -652,13 +663,13 @@ class Kinetics:
             # with each repetition the cells Xd gets reduced more and more
             # like above this is done for the whole cell in order to avoid creating
             # downstream conflicts with other proteins/signals
-            if i == 0:
-                fwd_mask[Xd > 0.0] = True
-            else:
-                new_fwd_mask = Xd > 0.0
-                incr_trim[fwd_mask != new_fwd_mask] *= 0.5
-                Xd = torch.einsum("cs,c->cs", Xd, incr_trim.amin(1))
-                fwd_mask = new_fwd_mask
+            # if i == 0:
+            #     fwd_mask[Xd > 0.0] = True
+            # else:
+            #     new_fwd_mask = Xd > 0.0
+            #     incr_trim[fwd_mask != new_fwd_mask] *= 0.5
+            #     Xd = torch.einsum("cs,c->cs", Xd, incr_trim.amin(1))
+            #     fwd_mask = new_fwd_mask
 
             # proteins can deconstruct more of a molecule than available in a cell
             # but I can't just clip X at 0 because then reactions would not adhere
