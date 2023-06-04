@@ -228,6 +228,7 @@ def test_cell_params_with_transporter_domains():
 
     Kmf = torch.zeros(2, 3)
     Kmb = torch.zeros(2, 3)
+    Kmr = torch.zeros(2, 3)
     Vmax = torch.zeros(2, 3)
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
@@ -236,6 +237,7 @@ def test_cell_params_with_transporter_domains():
     kinetics = get_kinetics()
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.N = N
     kinetics.A = A
@@ -255,6 +257,8 @@ def test_cell_params_with_transporter_domains():
     assert Kmb[1, 1] == pytest.approx(avg(0.5, 0.5) * ke_c1_1, abs=TOLERANCE)
     assert Kmf[1, 2] == 0.0
     assert Kmb[1, 2] == 0.0
+
+    assert (Kmr == 0.0).all()
 
     assert Vmax[0, 0] == pytest.approx(1.5, abs=TOLERANCE)
     assert Vmax[0, 1] == pytest.approx(avg(1.5, 1.1), abs=TOLERANCE)
@@ -376,6 +380,7 @@ def test_cell_params_with_regulatory_domains():
 
     Kmf = torch.zeros(2, 3)
     Kmb = torch.zeros(2, 3)
+    Kmr = torch.zeros(2, 3)
     Vmax = torch.zeros(2, 3)
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
@@ -384,6 +389,7 @@ def test_cell_params_with_regulatory_domains():
     kinetics = get_kinetics()
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.N = N
     kinetics.A = A
@@ -393,10 +399,13 @@ def test_cell_params_with_regulatory_domains():
     ke_c0_1 = ke([ma], [mb])
     assert Kmf[0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Kmb[0, 0] == pytest.approx(0.5 * ke_c0_0, abs=TOLERANCE)
+    assert Kmr[0, 0] == pytest.approx(avg(1.0, 2.0), abs=TOLERANCE)
     assert Kmf[0, 1] == pytest.approx(0.5, abs=TOLERANCE)
     assert Kmb[0, 1] == pytest.approx(0.5 * ke_c0_1, abs=TOLERANCE)
+    assert Kmr[0, 1] == pytest.approx(avg(1.0, 1.5), abs=TOLERANCE)
     assert Kmf[0, 2] == 0.0
     assert Kmb[0, 2] == 0.0
+    assert Kmr[0, 2] == 0.0
 
     assert Kmf[1, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Kmb[1, 0] == pytest.approx(0.5 * ke_c0_0, abs=TOLERANCE)
@@ -550,7 +559,7 @@ def test_cell_params_with_regulatory_domains():
     assert p1.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
 
 
-def atest_cell_params_with_catalytic_domains():
+def test_cell_params_with_catalytic_domains():
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
     c0 = [
@@ -579,54 +588,43 @@ def atest_cell_params_with_catalytic_domains():
 
     # fmt: on
 
-    Km = torch.zeros(2, 3, 8)
+    Kmf = torch.zeros(2, 3)
+    Kmb = torch.zeros(2, 3)
+    Kmr = torch.zeros(2, 3)
     Vmax = torch.zeros(2, 3)
-    E = torch.zeros(2, 3)
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
     # test
     kinetics = get_kinetics()
-    kinetics.Km = Km
+    kinetics.Kmf = Kmf
+    kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.N = N
     kinetics.A = A
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
-    assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Km[0, 0, 1] == pytest.approx(avg(1 / 0.5, 1 / 1.5), abs=TOLERANCE)
-    assert Km[0, 0, 2] == pytest.approx(1 / 1.5, abs=TOLERANCE)
-    assert Km[0, 0, 3] == pytest.approx(1.5, abs=TOLERANCE)
-    for i in [4, 5, 6, 7]:
-        assert Km[0, 0, i] == 0.0
-    assert Km[0, 1, 0] == 0.0
-    assert Km[0, 1, 1] == pytest.approx(avg(0.9, 1 / 1.2), abs=TOLERANCE)
-    assert Km[0, 1, 2] == pytest.approx(avg(1 / 0.9, 1 / 1.2), abs=TOLERANCE)
-    assert Km[0, 1, 3] == pytest.approx(1.2, abs=TOLERANCE)
-    for i in [4, 5, 6, 7]:
-        assert Km[0, 1, i] == 0.0
-    assert Km[0, 2, 0] == 0.0
-    assert Km[0, 2, 1] == pytest.approx(1 / 2.9, abs=TOLERANCE)
-    assert Km[0, 2, 2] == 0.0
-    assert Km[0, 2, 3] == pytest.approx(2.9, abs=TOLERANCE)
-    for i in [4, 5, 6, 7]:
-        assert Km[0, 2, i] == 0.0
+    ke_c0_0 = ke([ma, md], [mb, mb, mc])
+    ke_c0_1 = ke([mb, md], [mc, mb, mc])
+    ke_c0_2 = ke([md], [mb, mb])
+    assert Kmf[0, 0] == pytest.approx(avg(0.5, 1.5) / ke_c0_0, abs=TOLERANCE)
+    assert Kmb[0, 0] == pytest.approx(avg(0.5, 1.5), abs=TOLERANCE)
+    assert Kmf[0, 1] == pytest.approx(avg(0.9, 1.2) / ke_c0_1, abs=TOLERANCE)
+    assert Kmb[0, 1] == pytest.approx(avg(0.9, 1.2), abs=TOLERANCE)
+    assert Kmf[0, 2] == pytest.approx(2.9 / ke_c0_2, abs=TOLERANCE)
+    assert Kmb[0, 2] == pytest.approx(2.9, abs=TOLERANCE)
 
-    assert Km[1, 0, 0] == pytest.approx(1 / 0.3, abs=TOLERANCE)
-    assert Km[1, 0, 1] == pytest.approx(avg(0.3, 1 / 1.4), abs=TOLERANCE)
-    assert Km[1, 0, 2] == pytest.approx(1 / 1.4, abs=TOLERANCE)
-    assert Km[1, 0, 3] == pytest.approx(1.4, abs=TOLERANCE)
-    for i in [4, 5, 6, 7]:
-        assert Km[1, 0, i] == 0.0
-    assert Km[1, 1, 0] == 0.0
-    assert Km[1, 1, 1] == pytest.approx(avg(0.3, 1.7), abs=TOLERANCE)
-    assert Km[1, 1, 2] == pytest.approx(avg(1 / 0.3, 1.7), abs=TOLERANCE)
-    assert Km[1, 1, 3] == pytest.approx(1 / 1.7, abs=TOLERANCE)
-    for i in [4, 5, 6, 7]:
-        assert Km[1, 1, i] == 0.0
-    for i in range(8):
-        assert Km[1, 2, i] == 0.0
+    ke_c1_0 = ke([mb, md], [ma, mb, mc])
+    ke_c1_1 = ke([mb, mb, mc], [mc, md])
+    assert Kmf[1, 0] == pytest.approx(avg(0.3, 1.4) / ke_c1_0, TOLERANCE)
+    assert Kmb[1, 0] == pytest.approx(avg(0.3, 1.4), TOLERANCE)
+    assert Kmf[1, 1] == pytest.approx(avg(0.3, 1.7), TOLERANCE)
+    assert Kmb[1, 1] == pytest.approx(avg(0.3, 1.7) * ke_c1_1, TOLERANCE)
+    assert Kmf[1, 2] == 0.0
+    assert Kmb[1, 2] == 0.0
+
+    assert (Kmr == 0.0).all()
 
     assert Vmax[0, 0] == pytest.approx(avg(1.1, 1.2), abs=TOLERANCE)
     assert Vmax[0, 1] == pytest.approx(avg(2.0, 1.3), abs=TOLERANCE)
@@ -635,14 +633,6 @@ def atest_cell_params_with_catalytic_domains():
     assert Vmax[1, 0] == pytest.approx(avg(1.1, 2.1), abs=TOLERANCE)
     assert Vmax[1, 1] == pytest.approx(avg(1.9, 2.3), abs=TOLERANCE)
     assert Vmax[1, 2] == 0.0
-
-    assert E[0, 0] == 10 - 15 + 10 + 10 - 5
-    assert E[0, 1] == 10 - 10 - 5 + 10 + 10
-    assert E[0, 2] == 10 + 10 - 5
-
-    assert E[1, 0] == 15 - 10 - 5 + 10 + 10
-    assert E[1, 1] == 10 - 10 + 5 - 10 - 10
-    assert E[1, 2] == 0
 
     assert N[0, 0, 0] == -1
     assert N[0, 0, 1] == 2
@@ -1378,7 +1368,7 @@ def test_equilibrium_is_reached():
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
 
-    # affinities (c, p, s)
+    # affinities (c, p)
     Kmf = torch.tensor([
         [1.0, 1.0, 0.0],
         [1.0, 0.0, 0.0],
@@ -1387,6 +1377,7 @@ def test_equilibrium_is_reached():
         [1.0, 20.0, 0.0],
         [10.0, 0.0, 0.0],
     ])
+    Kmr = torch.zeros(2, 3)
 
     # max velocities (c, p)
     Vmax = torch.tensor([
@@ -1406,6 +1397,7 @@ def test_equilibrium_is_reached():
     kinetics.N = N
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.A = A
 
@@ -1445,13 +1437,11 @@ def test_zero_substrates_stay_zero():
     # allosterics (c, p, s)
     kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
 
-    # reaction energies (c, p)
-    kinetics.Ke = torch.randn(n_cells, n_prots)
-
     # affinities (c, p)
+    Ke = torch.randn(n_cells, n_prots)
     kinetics.Kmf = torch.randn(n_cells, n_prots).abs()
-    kinetics.Kmb = kinetics.Kmf * kinetics.Ke
-    kinetics.Kmr = kinetics.Kmf
+    kinetics.Kmb = kinetics.Kmf * Ke
+    kinetics.Kmr = torch.randn(n_cells, n_prots).abs()
 
     # test
     for _ in range(n_steps):
@@ -1483,13 +1473,11 @@ def test_substrate_concentrations_are_always_finite_and_positive():
     # allosterics (c, p, s)
     kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
 
-    # reaction energies (c, p)
-    kinetics.Ke = torch.randn(n_cells, n_prots)
-
     # affinities (c, p)
+    Ke = torch.randn(n_cells, n_prots)
     kinetics.Kmf = torch.randn(n_cells, n_prots).abs().clamp(0.001)
-    kinetics.Kmb = (kinetics.Kmf * kinetics.Ke).clamp(0.001)
-    kinetics.Kmr = kinetics.Kmf
+    kinetics.Kmb = (kinetics.Kmf * Ke).clamp(0.001)
+    kinetics.Kmr = torch.randn(n_cells, n_prots).abs().clamp(0.001)
 
     # test
     for _ in range(n_steps):

@@ -348,6 +348,7 @@ class Kinetics:
         n_signals = 2 * len(molecules)
         self.Kmf = self._tensor(0, 0)
         self.Kmb = self._tensor(0, 0)
+        self.Kmr = self._tensor(0, 0)
         self.Vmax = self._tensor(0, 0)
         self.N = self._tensor(0, 0, n_signals)
         self.A = self._tensor(0, 0, n_signals)
@@ -501,10 +502,10 @@ class Kinetics:
 
         # identify domain types
         # 1=catalytic, 2=transporter, 3=regulatory
-        catal_mask = (dom_types == 1).float()  # (c, p, d)
-        trnsp_mask = (dom_types == 2).float()  # (c, p, d)
-        reg_mask = (dom_types == 3).float()  # (c, p, d)
-        catal_trnsp_mask = ((dom_types == 1) | (dom_types == 2)).float()
+        catal_mask = dom_types == 1  # (c, p, d)
+        trnsp_mask = dom_types == 2  # (c, p, d)
+        reg_mask = dom_types == 3  # (c, p, d)
+        catal_trnsp_mask = (dom_types == 1) | (dom_types == 2)
 
         # map indices of domain specifications to concrete values
         # idx0 is a 2-codon index specific for every domain type (n=4096)
@@ -522,19 +523,19 @@ class Kinetics:
         effectors = self.effector_map(idxs3)  # float (c, p, d, s)
 
         # N (c, p, d, s)
-        N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask)
-        N_t = torch.einsum("cpds,cpd->cpds", trnspts, trnsp_mask)
+        N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask.float())
+        N_t = torch.einsum("cpds,cpd->cpds", trnspts, trnsp_mask.float())
         N_d = torch.einsum("cpds,cpd->cpds", (N_r + N_t), signs)
 
         # A (c, p, d, s)
-        A_r = torch.einsum("cpds,cpd->cpds", effectors, reg_mask)
+        A_r = torch.einsum("cpds,cpd->cpds", effectors, reg_mask.float())
         A_d = torch.einsum("cpds,cpd->cpds", A_r, signs)
 
         # Km (c, p, d)
         Km_d = Kms
 
         # Vmax_d (c, p, d)
-        Vmax_d = Vmaxs * catal_trnsp_mask
+        Vmax_d = Vmaxs * catal_trnsp_mask.float()
 
         # aggregations
 
@@ -557,6 +558,17 @@ class Kinetics:
         self.A[cell_idxs] = A
 
         # Km_d (c, p, d)
+
+        # Kms for catalytic and transporter domains are aggregated
+        # Kms for regulatory domains are aggregated
+        Kmn = (
+            torch.where(catal_trnsp_mask, Km_d, torch.nan)
+            .nanmean(dim=2)
+            .nan_to_num(0.0)
+        )
+        Kma = torch.where(reg_mask, Km_d, torch.nan).nanmean(dim=2).nan_to_num(0.0)
+        self.Kmr[cell_idxs] = Kma
+
         # energies define Ke which defines Ke = Kmf/Kmb
         # Km is sampled between a defined range
         # exessively small Km can create numerical instability
@@ -566,9 +578,8 @@ class Kinetics:
         E = torch.einsum("cps,s->cp", N, self.mol_energies)
         Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
         ke_ge_1 = Ke >= 1.0
-        Km = Km_d.nanmean(dim=2).nan_to_num(0.0)
-        self.Kmf[cell_idxs] = torch.where(ke_ge_1, Km, Km / Ke)
-        self.Kmb[cell_idxs] = torch.where(ke_ge_1, Km * Ke, Km)
+        self.Kmf[cell_idxs] = torch.where(ke_ge_1, Kmn, Kmn / Ke)
+        self.Kmb[cell_idxs] = torch.where(ke_ge_1, Kmn * Ke, Kmn)
 
         # Vmax_d (c, p, d)
         Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
@@ -586,6 +597,7 @@ class Kinetics:
         self.A[cell_idxs] = 0.0
         self.Kmf[cell_idxs] = 0.0
         self.Kmb[cell_idxs] = 0.0
+        self.Kmr[cell_idxs] = 0.0
         self.Vmax[cell_idxs] = 0.0
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
@@ -642,12 +654,12 @@ class Kinetics:
 
             # inhibitor activity
             xxi, i_prots = self._aggregate_signals(X=X, mask=self.A < 0.0, N=-self.A)
-            a_inh = xxi / (xxi + self.Kmf)
+            a_inh = xxi / (xxi + self.Kmr)
             a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
 
             # activator activity
             xxa, a_prots = self._aggregate_signals(X=X, mask=self.A > 0.0, N=self.A)
-            a_act = xxa / (xxa + self.Kmf)
+            a_act = xxa / (xxa + self.Kmr)
             a_act[~a_prots] = 1.0  # proteins without activator should be active
 
             # velocity from activities
@@ -690,6 +702,7 @@ class Kinetics:
         """
         self.Kmf[to_idxs] = self.Kmf[from_idxs]
         self.Kmb[to_idxs] = self.Kmb[from_idxs]
+        self.Kmr[to_idxs] = self.Kmr[from_idxs]
         self.Vmax[to_idxs] = self.Vmax[from_idxs]
         self.N[to_idxs] = self.N[from_idxs]
         self.A[to_idxs] = self.A[from_idxs]
@@ -707,6 +720,7 @@ class Kinetics:
         """
         self.Kmf = self.Kmf[keep]
         self.Kmb = self.Kmb[keep]
+        self.Kmr = self.Kmr[keep]
         self.Vmax = self.Vmax[keep]
         self.N = self.N[keep]
         self.A = self.A[keep]
@@ -720,6 +734,7 @@ class Kinetics:
         """
         self.Kmf = self._expand_c(t=self.Kmf, n=by_n)
         self.Kmb = self._expand_c(t=self.Kmb, n=by_n)
+        self.Kmr = self._expand_c(t=self.Kmr, n=by_n)
         self.Vmax = self._expand_c(t=self.Vmax, n=by_n)
         self.N = self._expand_c(t=self.N, n=by_n)
         self.A = self._expand_c(t=self.A, n=by_n)
@@ -736,6 +751,7 @@ class Kinetics:
             by_n = max_n - n_prots
             self.Kmf = self._expand_p(t=self.Kmf, n=by_n)
             self.Kmb = self._expand_p(t=self.Kmb, n=by_n)
+            self.Kmr = self._expand_p(t=self.Kmr, n=by_n)
             self.Vmax = self._expand_p(t=self.Vmax, n=by_n)
             self.N = self._expand_p(t=self.N, n=by_n)
             self.A = self._expand_p(t=self.A, n=by_n)
