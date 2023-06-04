@@ -759,6 +759,8 @@ def test_simple_mm_kinetic():
             [-1.0, 0.0, 0.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
 
     # affinities (c, p)
     Kmf = torch.tensor([
@@ -805,6 +807,8 @@ def test_simple_mm_kinetic():
     # test
     kinetics = get_kinetics()
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -845,6 +849,8 @@ def test_mm_kinetic_with_proportions():
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -900,6 +906,8 @@ def test_mm_kinetic_with_proportions():
     # test
     kinetics = get_kinetics()
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -940,6 +948,8 @@ def test_mm_kinetic_with_multiple_substrates():
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -993,6 +1003,115 @@ def test_mm_kinetic_with_multiple_substrates():
     # test
     kinetics = get_kinetics()
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
+    kinetics.Kmf = Kmf
+    kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
+    kinetics.Vmax = Vmax
+    kinetics.A = A
+    Xd = kinetics.integrate_signals(X=X0) - X0
+
+    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
+
+    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
+
+
+def test_mm_kinetic_with_cofactors():
+    # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
+    # N for a molecule might be 0 but it's still required
+    # cell 0: P0: a -> b | b -> c
+    # cell 0: P1: a + c -> b + c
+
+    # fmt: off
+
+    # concentrations (c, s)
+    X0 = torch.tensor([
+        [10.0, 0.1, 3.0, 0.8],
+        [10.0, 3.0, 0.1, 0.0],
+    ])
+
+    # reactions (c, p, s)
+    N = torch.tensor([
+        [   [-1.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+        [   [-1.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+    ])
+    Nf = torch.tensor([
+        [   [1.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+        [   [1.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+    ])
+    Nb = torch.tensor([
+        [   [0.0, 1.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+        [   [0.0, 1.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+    ])
+
+    # affinities (c, p)
+    Kmf = torch.tensor([
+        [2.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0],
+    ])
+    Kmb = torch.tensor([
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ])
+    Kmr = torch.zeros(2, 3)
+
+    # max velocities (c, p)
+    Vmax = torch.tensor([
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ])
+
+    # allosterics (c, p, s)
+    A = torch.zeros(2, 3, 4)
+
+    # fmt: on
+
+    def mm(s1, s2, p1, p2, kf, kb, v):
+        vf = v * (s1 * s2 / kf - p1 * p2 / kb) / (1 + s1 * s2 / kf + p1 * p2 / kb)
+        vb = v * (p1 * p2 / kb - s1 * s2 / kf) / (1 + s1 * s2 / kf + p1 * p2 / kb)
+        return (vf - vb) / 2
+
+    # expected outcome
+    v_c0_0 = mm(
+        X0[0, 0], X0[0, 1], X0[0, 1], X0[0, 2], Kmf[0, 0], Kmb[0, 0], Vmax[0, 0]
+    )
+    dx_c0_a = -v_c0_0
+    dx_c0_b = 0.0
+    dx_c0_c = v_c0_0
+    dx_c0_d = 0.0
+
+    v_c1_0 = mm(
+        X0[1, 0], X0[1, 2], X0[1, 1], X0[1, 2], Kmf[1, 0], Kmb[1, 0], Vmax[1, 0]
+    )
+    dx_c1_a = -v_c1_0
+    dx_c1_b = v_c1_0
+    dx_c1_c = 0.0
+    dx_c1_d = 0.0
+
+    # test
+    kinetics = get_kinetics()
+    kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1033,6 +1152,8 @@ def test_mm_kinetic_with_allosteric_action():
             [0.0, 0.0, -1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -1113,6 +1234,8 @@ def test_mm_kinetic_with_allosteric_action():
     # test
     kinetics = get_kinetics()
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1153,6 +1276,8 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -1215,6 +1340,8 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     # test
     kinetics = get_kinetics()
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1258,6 +1385,8 @@ def test_reduce_velocity_in_multiple_proteins():
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -1320,6 +1449,8 @@ def test_reduce_velocity_in_multiple_proteins():
     # test
     kinetics = get_kinetics()
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1367,6 +1498,8 @@ def test_equilibrium_is_reached():
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
 
     # affinities (c, p)
     Kmf = torch.tensor([
@@ -1395,6 +1528,8 @@ def test_equilibrium_is_reached():
     kinetics = get_kinetics()
     kinetics.n_computations = 50
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1430,6 +1565,8 @@ def test_zero_substrates_stay_zero():
 
     # reactions (c, p, s)
     kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols)).float()
+    kinetics.Nf = torch.where(kinetics.N < 0.0, -kinetics.N, 0.0)
+    kinetics.Nb = torch.where(kinetics.N > 0.0, kinetics.N, 0.0)
 
     # max velocities (c, p)
     kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 100
@@ -1466,6 +1603,8 @@ def test_substrate_concentrations_are_always_finite_and_positive():
 
     # reactions (c, p, s)
     kinetics.N = torch.randint(low=-3, high=4, size=(n_cells, n_prots, n_mols)).float()
+    kinetics.Nf = torch.where(kinetics.N < 0.0, -kinetics.N, 0.0)
+    kinetics.Nb = torch.where(kinetics.N > 0.0, kinetics.N, 0.0)
 
     # max velocities (c, p)
     kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 100

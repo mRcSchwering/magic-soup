@@ -351,6 +351,8 @@ class Kinetics:
         self.Kmr = self._tensor(0, 0)
         self.Vmax = self._tensor(0, 0)
         self.N = self._tensor(0, 0, n_signals)
+        self.Nf = self._tensor(0, 0, n_signals)
+        self.Nb = self._tensor(0, 0, n_signals)
         self.A = self._tensor(0, 0, n_signals)
 
         # the domain specifications return 4 indexes
@@ -495,7 +497,6 @@ class Kinetics:
         (molecule species, Km, Vmax, reactions, ...).
         """
         # get proteome tensors
-
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
             proteomes=proteomes
         )
@@ -505,22 +506,24 @@ class Kinetics:
         catal_mask = dom_types == 1  # (c, p, d)
         trnsp_mask = dom_types == 2  # (c, p, d)
         reg_mask = dom_types == 3  # (c, p, d)
-        catal_trnsp_mask = (dom_types == 1) | (dom_types == 2)
 
         # map indices of domain specifications to concrete values
         # idx0 is a 2-codon index specific for every domain type (n=4096)
         # idx1-3 are 1-codon used for the floats (n=64)
+        # some values are not defined for certain domain types
+        # setting their index to 0 results in them being mapped to NaN
+        reg_lng = (reg_mask).long()
+        not_reg_lng = (~reg_mask).long()
 
-        # map indices of domain specifications to scalars/vectors
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        Vmaxs = self.vmax_map(idxs0)  # float (c, p, d)
+        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # float (c, p, d)
         Kms = self.km_map(idxs1)  # float (c, p, d)
         signs = self.sign_map(idxs2)  # float (c, p, d)
 
-        reacts = self.reaction_map(idxs3)  # float (c, p, d, s)
-        trnspts = self.transport_map(idxs3)  # float (c, p, d, s)
-        effectors = self.effector_map(idxs3)  # float (c, p, d, s)
+        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
+        reacts = self.reaction_map(idxs3 * not_reg_lng)  # float (c, p, d, s)
+        trnspts = self.transport_map(idxs3 * not_reg_lng)  # float (c, p, d, s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # float (c, p, d, s)
 
         # N (c, p, d, s)
         N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask.float())
@@ -535,7 +538,7 @@ class Kinetics:
         Km_d = Kms
 
         # Vmax_d (c, p, d)
-        Vmax_d = Vmaxs * catal_trnsp_mask.float()
+        Vmax_d = Vmaxs
 
         # aggregations
 
@@ -561,11 +564,7 @@ class Kinetics:
 
         # Kms for catalytic and transporter domains are aggregated
         # Kms for regulatory domains are aggregated
-        Kmn = (
-            torch.where(catal_trnsp_mask, Km_d, torch.nan)
-            .nanmean(dim=2)
-            .nan_to_num(0.0)
-        )
+        Kmn = torch.where(~reg_mask, Km_d, torch.nan).nanmean(dim=2).nan_to_num(0.0)
         Kma = torch.where(reg_mask, Km_d, torch.nan).nanmean(dim=2).nan_to_num(0.0)
         self.Kmr[cell_idxs] = Kma
 
@@ -594,6 +593,8 @@ class Kinetics:
             cell_idxs: Indexes of cells
         """
         self.N[cell_idxs] = 0.0
+        self.Nf[cell_idxs] = 0.0
+        self.Nb[cell_idxs] = 0.0
         self.A[cell_idxs] = 0.0
         self.Kmf[cell_idxs] = 0.0
         self.Kmb[cell_idxs] = 0.0
@@ -634,11 +635,11 @@ class Kinetics:
 
             # signals are aggregated for forward and backward reaction
             # proteins that had no involved catalytic region should not be active
-            xxf, f_prots = self._aggregate_signals(X=X, mask=self.N < 0.0, N=-self.N)
+            xxf, f_prots = self._aggregate_signals(X=X, mask=self.Nf > 0.0, N=self.Nf)
             kf = xxf / self.Kmf
             kf[~f_prots] = 0.0
 
-            xxb, b_prots = self._aggregate_signals(X=X, mask=self.N > 0.0, N=self.N)
+            xxb, b_prots = self._aggregate_signals(X=X, mask=self.Nb > 0.0, N=self.Nb)
             kb = xxb / self.Kmb
             kb[~b_prots] = 0.0
 
@@ -705,6 +706,8 @@ class Kinetics:
         self.Kmr[to_idxs] = self.Kmr[from_idxs]
         self.Vmax[to_idxs] = self.Vmax[from_idxs]
         self.N[to_idxs] = self.N[from_idxs]
+        self.Nf[to_idxs] = self.Nf[from_idxs]
+        self.Nb[to_idxs] = self.Nb[from_idxs]
         self.A[to_idxs] = self.A[from_idxs]
 
     def remove_cell_params(self, keep: torch.Tensor):
@@ -723,6 +726,8 @@ class Kinetics:
         self.Kmr = self.Kmr[keep]
         self.Vmax = self.Vmax[keep]
         self.N = self.N[keep]
+        self.Nf = self.Nf[keep]
+        self.Nb = self.Nb[keep]
         self.A = self.A[keep]
 
     def increase_max_cells(self, by_n: int):
@@ -737,6 +742,8 @@ class Kinetics:
         self.Kmr = self._expand_c(t=self.Kmr, n=by_n)
         self.Vmax = self._expand_c(t=self.Vmax, n=by_n)
         self.N = self._expand_c(t=self.N, n=by_n)
+        self.Nf = self._expand_c(t=self.Nf, n=by_n)
+        self.Nb = self._expand_c(t=self.Nb, n=by_n)
         self.A = self._expand_c(t=self.A, n=by_n)
 
     def increase_max_proteins(self, max_n: int):
@@ -754,6 +761,8 @@ class Kinetics:
             self.Kmr = self._expand_p(t=self.Kmr, n=by_n)
             self.Vmax = self._expand_p(t=self.Vmax, n=by_n)
             self.N = self._expand_p(t=self.N, n=by_n)
+            self.Nf = self._expand_p(t=self.Nf, n=by_n)
+            self.Nb = self._expand_p(t=self.Nb, n=by_n)
             self.A = self._expand_p(t=self.A, n=by_n)
 
     def _aggregate_signals(
