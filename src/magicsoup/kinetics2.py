@@ -431,7 +431,7 @@ class Kinetics:
                         doms.append(
                             CatalyticDomain(
                                 reaction=(lfts, rgts),
-                                km=Km_d[0][pi][di][mi].item(),
+                                km=Km_d[0][pi][di].item(),
                                 vmax=Vmax_d[0][pi][di].item(),
                             )
                         )
@@ -445,7 +445,7 @@ class Kinetics:
                     doms.append(
                         TransporterDomain(
                             molecule=self.mi_2_mol[mi],
-                            km=Km_d[0][pi][di][mi].item(),
+                            km=Km_d[0][pi][di].item(),
                             vmax=Vmax_d[0][pi][di].item(),
                         )
                     )
@@ -463,7 +463,7 @@ class Kinetics:
                     doms.append(
                         RegulatoryDomain(
                             effector=mol,
-                            km=Km_d[0][pi][di][mi].item(),
+                            km=Km_d[0][pi][di].item(),
                             is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
                             is_transmembrane=is_trnsm,
                         )

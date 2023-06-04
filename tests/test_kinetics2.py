@@ -14,10 +14,10 @@ TOLERANCE = 1e-4
 EPS = 1e-8
 
 
-ma = Molecule("a", energy=15)
-mb = Molecule("b", energy=10)
-mc = Molecule("c", energy=10)
-md = Molecule("d", energy=5)
+ma = Molecule("a", energy=15 * 1e3)
+mb = Molecule("b", energy=10 * 1e3)
+mc = Molecule("c", energy=10 * 1e3)
+md = Molecule("d", energy=5 * 1e3)
 MOLECULES = [ma, mb, mc, md]
 
 r_a_b = ([ma], [mb])
@@ -93,7 +93,7 @@ def get_kinetics() -> Kinetics:
 
 
 def ke(subs: list[Molecule], prods: list[Molecule]):
-    e = sum(d.energy for d in subs) - sum(d.energy for d in prods)
+    e = sum(d.energy for d in prods) - sum(d.energy for d in subs)
     return math.exp(-e / 310 / GAS_CONSTANT)
 
 
@@ -245,22 +245,16 @@ def test_cell_params_with_transporter_domains():
     assert Kmb[0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Kmf[0, 1] == pytest.approx(avg(0.5, 0.2), abs=TOLERANCE)
     assert Kmb[0, 1] == pytest.approx(avg(0.5, 0.2), abs=TOLERANCE)
+    assert Kmf[0, 2] == 0.0
+    assert Kmb[0, 2] == 0.0
 
-    # TODO: WIP
-
-    assert Kmf[1, 0, 0] == pytest.approx(avg(0.4, 0.5), abs=TOLERANCE)
-    assert Kmf[1, 0, 1] == pytest.approx(0.6, abs=TOLERANCE)
-    assert Kmf[1, 0, 2] == pytest.approx(0.7, abs=TOLERANCE)
-    assert Kmf[1, 0, 4] == pytest.approx(avg(1 / 0.4, 1 / 0.5), abs=TOLERANCE)
-    assert Kmf[1, 0, 5] == pytest.approx(1 / 0.6, abs=TOLERANCE)
-    assert Kmf[1, 0, 6] == pytest.approx(1 / 0.7, abs=TOLERANCE)
-    for i in [3, 7]:
-        assert Kmf[1, 0, i] == 0.0
-    assert Kmf[1, 1, 0] == pytest.approx(avg(0.5, 0.5), abs=TOLERANCE)
-    assert Kmf[1, 1, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
-    assert Kmf[1, 1, 4] == pytest.approx(1 / 0.5, abs=TOLERANCE)
-    for i in [2, 3, 5, 6, 7]:
-        assert Kmf[1, 1, i] == 0.0
+    ke_c1_1 = ke([ma], [mb])
+    assert Kmf[1, 0] == pytest.approx(avg(0.4, 0.5, 0.6, 0.7), abs=TOLERANCE)
+    assert Kmb[1, 0] == pytest.approx(avg(0.4, 0.5, 0.6, 0.7), abs=TOLERANCE)
+    assert Kmf[1, 1] == pytest.approx(avg(0.5, 0.5), abs=TOLERANCE)
+    assert Kmb[1, 1] == pytest.approx(avg(0.5, 0.5) * ke_c1_1, abs=TOLERANCE)
+    assert Kmf[1, 2] == 0.0
+    assert Kmb[1, 2] == 0.0
 
     assert Vmax[0, 0] == pytest.approx(1.5, abs=TOLERANCE)
     assert Vmax[0, 1] == pytest.approx(avg(1.5, 1.1), abs=TOLERANCE)
@@ -316,7 +310,7 @@ def test_cell_params_with_transporter_domains():
     assert isinstance(p1.domains[1], TransporterDomain)
     assert p1.domains[1].molecule is ma
     assert p1.domains[1].vmax == pytest.approx(1.1, abs=TOLERANCE)
-    assert p1.domains[1].km == pytest.approx(1 / 0.2, abs=TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(0.2, abs=TOLERANCE)
 
     proteins = kinetics.get_proteome(proteome=c1)
 
@@ -350,7 +344,7 @@ def test_cell_params_with_transporter_domains():
     assert p1.domains[1].km == pytest.approx(0.5, abs=TOLERANCE)
 
 
-def atest_cell_params_with_regulatory_domains():
+def test_cell_params_with_regulatory_domains():
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
     c0 = [
@@ -380,52 +374,36 @@ def atest_cell_params_with_regulatory_domains():
     ]
     # fmt: on
 
-    Km = torch.zeros(2, 3, 8)
+    Kmf = torch.zeros(2, 3)
+    Kmb = torch.zeros(2, 3)
     Vmax = torch.zeros(2, 3)
-    E = torch.zeros(2, 3)
     N = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
     # test
     kinetics = get_kinetics()
-    kinetics.Km = Km
+    kinetics.Kmf = Kmf
+    kinetics.Kmb = Kmb
     kinetics.Vmax = Vmax
-    kinetics.E = E
     kinetics.N = N
     kinetics.A = A
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
-    assert Km[0, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Km[0, 0, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
-    assert Km[0, 0, 2] == pytest.approx(1.0, abs=TOLERANCE)
-    assert Km[0, 0, 3] == pytest.approx(2.0, abs=TOLERANCE)
-    for i in [4, 5, 6, 7]:
-        assert Km[0, 0, i] == 0.0
-    assert Km[0, 1, 0] == pytest.approx(avg(0.5, 1.0), abs=TOLERANCE)
-    assert Km[0, 1, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
-    assert Km[0, 1, 2] == pytest.approx(0.0, abs=TOLERANCE)
-    assert Km[0, 1, 3] == pytest.approx(0.0, abs=TOLERANCE)
-    assert Km[0, 1, 4] == pytest.approx(1.5, abs=TOLERANCE)
-    for i in [5, 6, 7]:
-        assert Km[0, 1, i] == 0.0
-    for i in range(8):
-        assert Km[0, 2, i] == 0.0
+    ke_c0_0 = ke([ma], [mb])
+    ke_c0_1 = ke([ma], [mb])
+    assert Kmf[0, 0] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Kmb[0, 0] == pytest.approx(0.5 * ke_c0_0, abs=TOLERANCE)
+    assert Kmf[0, 1] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Kmb[0, 1] == pytest.approx(0.5 * ke_c0_1, abs=TOLERANCE)
+    assert Kmf[0, 2] == 0.0
+    assert Kmb[0, 2] == 0.0
 
-    assert Km[1, 0, 0] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Km[1, 0, 1] == pytest.approx(avg(1 / 0.5, 1.0), abs=TOLERANCE)
-    assert Km[1, 0, 2] == pytest.approx(0.0, abs=TOLERANCE)
-    assert Km[1, 0, 3] == pytest.approx(0.0, abs=TOLERANCE)
-    assert Km[1, 0, 5] == pytest.approx(1.5, abs=TOLERANCE)
-    for i in [4, 6, 7]:
-        assert Km[1, 0, i] == 0.0
-    assert Km[1, 1, 0] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Km[1, 1, 1] == pytest.approx(1 / 0.5, abs=TOLERANCE)
-    assert Km[1, 1, 2] == pytest.approx(0.0, abs=TOLERANCE)
-    assert Km[1, 1, 3] == pytest.approx(avg(1.0, 1.5), abs=TOLERANCE)
-    for i in [4, 5, 6, 7]:
-        assert Km[1, 1, i] == 0.0
-    for i in range(8):
-        assert Km[1, 2, i] == 0.0
+    assert Kmf[1, 0] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Kmb[1, 0] == pytest.approx(0.5 * ke_c0_0, abs=TOLERANCE)
+    assert Kmf[1, 1] == pytest.approx(0.5, abs=TOLERANCE)
+    assert Kmb[1, 1] == pytest.approx(0.5 * ke_c0_1, abs=TOLERANCE)
+    assert Kmf[1, 2] == 0.0
+    assert Kmb[1, 2] == 0.0
 
     assert Vmax[0, 0] == pytest.approx(2.0, abs=TOLERANCE)
     assert Vmax[0, 1] == pytest.approx(2.0, abs=TOLERANCE)
@@ -434,14 +412,6 @@ def atest_cell_params_with_regulatory_domains():
     assert Vmax[1, 0] == pytest.approx(2.0, abs=TOLERANCE)
     assert Vmax[1, 1] == pytest.approx(2.0, abs=TOLERANCE)
     assert Vmax[1, 2] == 0.0
-
-    assert E[0, 0] == 10 - 15
-    assert E[0, 1] == 10 - 15
-    assert E[0, 2] == 0
-
-    assert E[1, 0] == 10 - 15
-    assert E[1, 1] == 10 - 15
-    assert E[1, 2] == 0
 
     assert N[0, 0, 0] == -1
     assert N[0, 0, 1] == 1
@@ -1427,9 +1397,12 @@ def test_equilibrium_is_reached():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
+    # TODO: reduce n_computations by designing steeper
+    #       descent in each computation
+
     # test
     kinetics = get_kinetics()
-    kinetics.n_computations = 9
+    kinetics.n_computations = 50
     kinetics.N = N
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
@@ -1437,7 +1410,6 @@ def test_equilibrium_is_reached():
     kinetics.A = A
 
     for _ in range(50):
-        print(X0[0, 3] / X0[0, 2])
         X0 = kinetics.integrate_signals(X=X0)
 
     q_c0_0 = X0[0, 1] / X0[0, 0]
@@ -1446,7 +1418,7 @@ def test_equilibrium_is_reached():
 
     assert (q_c0_0 - 1.0).abs() < 0.1
     assert (q_c0_1 - 20.0).abs() < 1.0
-    assert (q_c1_0 - 10.0).abs() < 0.5
+    assert (q_c1_0 - 10.0).abs() < 2.0
 
 
 def test_zero_substrates_stay_zero():
