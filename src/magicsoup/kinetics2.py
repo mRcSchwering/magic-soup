@@ -503,17 +503,19 @@ class Kinetics:
 
         # identify domain types
         # 1=catalytic, 2=transporter, 3=regulatory
-        catal_mask = dom_types == 1  # (c, p, d)
-        trnsp_mask = dom_types == 2  # (c, p, d)
-        reg_mask = dom_types == 3  # (c, p, d)
+        is_catal = dom_types == 1  # (c, p, d)
+        is_trnsp = dom_types == 2  # (c, p, d)
+        is_reg = dom_types == 3  # (c, p, d)
 
         # map indices of domain specifications to concrete values
         # idx0 is a 2-codon index specific for every domain type (n=4096)
         # idx1-3 are 1-codon used for the floats (n=64)
         # some values are not defined for certain domain types
-        # setting their index to 0 results in them being mapped to NaN
-        reg_lng = (reg_mask).long()
-        not_reg_lng = (~reg_mask).long()
+        # setting their indices to 0 lets them map to empty values (0-vector, NaN)
+        catal_lng = (is_catal).long()
+        trnsp_lng = (is_trnsp).long()
+        reg_lng = (is_reg).long()
+        not_reg_lng = (~is_reg).long()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
         Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # float (c, p, d)
@@ -521,68 +523,50 @@ class Kinetics:
         signs = self.sign_map(idxs2)  # float (c, p, d)
 
         # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        reacts = self.reaction_map(idxs3 * not_reg_lng)  # float (c, p, d, s)
-        trnspts = self.transport_map(idxs3 * not_reg_lng)  # float (c, p, d, s)
+        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c, p, d, s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c, p, d, s)
         effectors = self.effector_map(idxs3 * reg_lng)  # float (c, p, d, s)
 
-        # N (c, p, d, s)
-        N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask.float())
-        N_t = torch.einsum("cpds,cpd->cpds", trnspts, trnsp_mask.float())
-        N_d = torch.einsum("cpds,cpd->cpds", (N_r + N_t), signs)
+        # Vmax are averaged over domains
+        # undefined Vmax enries are NaN and are ignored by nanmean
+        self.Vmax[cell_idxs] = Vmaxs.nanmean(dim=2).nan_to_num(0.0)
 
-        # A (c, p, d, s)
-        A_r = torch.einsum("cpds,cpd->cpds", effectors, reg_mask.float())
-        A_d = torch.einsum("cpds,cpd->cpds", A_r, signs)
+        # effector vectors are summed up over domains
+        # undefined vectors are all 0s
+        self.A[cell_idxs] = torch.einsum("cpds,cpd->cpds", effectors, signs).sum(dim=2)
 
-        # Km (c, p, d)
-        Km_d = Kms
+        # Kms of regulatory domains are aggregated for effectors
+        # Kms from other domains are ignored using NaNs and nanmean
+        self.Kmr[cell_idxs] = (
+            torch.where(is_reg, Kms, torch.nan).nanmean(dim=2).nan_to_num(0.0)
+        )
 
-        # Vmax_d (c, p, d)
-        Vmax_d = Vmaxs
-
-        # aggregations
-
-        # N_d (c, p, d, s)
+        # reaction stoichiometry N is derived from transporter and catalytic vectors
+        # vectors for regulatory domains or emptpy proteins are all 0s
+        N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
         N = N_d.sum(dim=2)
         self.N[cell_idxs] = N
 
-        # A_d (c, p, d, s)
-        A = A_d.sum(dim=2)
-        # TODO: is there a more logical way of doing this?
-        # reactants must be added as effectors
-        # if their stoichiometric number became 0 during summing up
-        # this is a ill-posed problem, e.g.: dom0 d <-> 2b, dom1 b + c <-> d
-        # should it be d + c <-> b + d (d is a cofactor for c <-> b)?
-        # or b + c <-> 2b (b is a cofactor for c <-> b)?
-        # I decided to always keep the substrates of the first domain in A
-        delta_N = N_d[:, :, 0].clamp(max=0.0) - N.clamp(max=0.0)
-        # A += -1.0 * delta_N.clamp(max=0.0)
-        A = A - delta_N.clamp(max=0.0)
-        self.A[cell_idxs] = A
+        # N for forward and backward reactions is distinguished
+        # to not loose molecules like co-facors whose net N would become 0
+        self.Nf[cell_idxs] = torch.where(N_d < 0.0, -N_d, 0.0).sum(dim=2)
+        self.Nb[cell_idxs] = torch.where(N_d > 0.0, N_d, 0.0).sum(dim=2)
 
-        # Km_d (c, p, d)
-
-        # Kms for catalytic and transporter domains are aggregated
-        # Kms for regulatory domains are aggregated
-        Kmn = torch.where(~reg_mask, Km_d, torch.nan).nanmean(dim=2).nan_to_num(0.0)
-        Kma = torch.where(reg_mask, Km_d, torch.nan).nanmean(dim=2).nan_to_num(0.0)
-        self.Kmr[cell_idxs] = Kma
+        # Kms of catalytic and transporter domains are aggregated
+        # Kms from other domains are ignored using NaNs and nanmean
+        Kmn = torch.where(~is_reg, Kms, torch.nan).nanmean(dim=2).nan_to_num(0.0)
 
         # energies define Ke which defines Ke = Kmf/Kmb
         # Km is sampled between a defined range
         # exessively small Km can create numerical instability
-        # thus, Km should define the smaller Km in Ke = Kmf/Kmb
-        # Ke=2   => Kmf=Km,         Kmb=2Km
-        # Ke=0.5 => Kmf=Km/0.5=2Km, Kmb=Km
+        # thus, sampled Km should define the smaller Km of Ke = Kmf/Kmb
+        # Ke>=1  => Kmf=Km,         Kmb=Ke*Km
+        # Ke<1   => Kmf=Km/Ke,      Kmb=Km
         E = torch.einsum("cps,s->cp", N, self.mol_energies)
         Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
         ke_ge_1 = Ke >= 1.0
         self.Kmf[cell_idxs] = torch.where(ke_ge_1, Kmn, Kmn / Ke)
         self.Kmb[cell_idxs] = torch.where(ke_ge_1, Kmn * Ke, Kmn)
-
-        # Vmax_d (c, p, d)
-        Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
-        self.Vmax[cell_idxs] = Vmax
 
     def unset_cell_params(self, cell_idxs: list[int]):
         """
@@ -617,10 +601,10 @@ class Kinetics:
         The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
         The number of extracellular molecules comes from `world.molecule_map` from the pixel the particular cell currently lives on.
         """
-        # TODO: can be pre-calculated:
-        # - masks for substrates and products
-        # - Ns for substrates and products
-        # - Ns for activators and inhibitors
+        is_fwd = self.Nf > 0.0
+        is_bwd = self.Nb > 0.0
+        is_inh = self.A < 0.0
+        is_act = self.A > 0.0
 
         # TODO: Idee gut aber braucht noch zu viele Schritte
         #       wäre vllt den exp verfall steiler zu machen
@@ -635,13 +619,13 @@ class Kinetics:
 
             # signals are aggregated for forward and backward reaction
             # proteins that had no involved catalytic region should not be active
-            xxf, f_prots = self._aggregate_signals(X=X, mask=self.Nf > 0.0, N=self.Nf)
+            xxf, f_prots = self._aggregate_signals(X=X, mask=is_fwd, N=self.Nf)
             kf = xxf / self.Kmf
-            kf[~f_prots] = 0.0
+            kf[~f_prots] = 0.0  # rm artifacts created by ln
 
-            xxb, b_prots = self._aggregate_signals(X=X, mask=self.Nb > 0.0, N=self.Nb)
+            xxb, b_prots = self._aggregate_signals(X=X, mask=is_bwd, N=self.Nb)
             kb = xxb / self.Kmb
-            kb[~b_prots] = 0.0
+            kb[~b_prots] = 0.0  # rm artifacts created by ln
 
             # the correct formula yields 2 * (ks - kp) / (1 + ks + kp)
             # but then there can be a maximum activity of 200%
@@ -654,12 +638,12 @@ class Kinetics:
             a_cat = a_cat.nan_to_num(0.0)
 
             # inhibitor activity
-            xxi, i_prots = self._aggregate_signals(X=X, mask=self.A < 0.0, N=-self.A)
+            xxi, i_prots = self._aggregate_signals(X=X, mask=is_inh, N=-self.A)
             a_inh = xxi / (xxi + self.Kmr)
             a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
 
             # activator activity
-            xxa, a_prots = self._aggregate_signals(X=X, mask=self.A > 0.0, N=self.A)
+            xxa, a_prots = self._aggregate_signals(X=X, mask=is_act, N=self.A)
             a_act = xxa / (xxa + self.Kmr)
             a_act[~a_prots] = 1.0  # proteins without activator should be active
 

@@ -101,105 +101,6 @@ def avg(*x):
     return sum(x) / len(x)
 
 
-def atest_cell_params_with_catalytic_domains_and_co_factors():
-    # Dealing with stoichiometric numbers that cancel each other out
-    # in general, intermediate molecules should be 0 in N
-    # but the reaction must depend on abundance of the starting molecules
-    # the first domain defines these starting molecules
-    # if these are 0 in N, they must appear in A
-
-    # C0, P0:
-    # bc->d then d->2b so bc->2b, with N b=1 c=-1 d=0
-    # b needs to be added as activating effector A b=1
-    # C0, P1:
-    # d->2b then bc->d, with N b=1 c=-1 d=0
-    # d needs to be added as activating effector A d=1
-    #
-    # the stoichiometry in both proteins in C0 is the same, but
-    # the order in which domains were defined is different
-    # That's why they differ in A
-
-    # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
-    # fmt: off
-    c0 = [
-        [
-            (1, 2, 15, 1, 3), # catal, Vmax 1.2, Km 1.5, fwd, bc->d
-            (1, 1, 5, 1, 4), # catal, Vmax 1.1, Km 0.5, fwd, d->2b
-        ],
-        [
-            (1, 1, 5, 1, 4), # catal, Vmax 1.1, Km 0.5, fwd, d->2b
-            (1, 2, 15, 1, 3), # catal, Vmax 1.2, Km 1.5, fwd, bc->d
-        ]
-    ]
-
-    # fmt: on
-
-    Km = torch.zeros(1, 3, 8)
-    Vmax = torch.zeros(1, 3)
-    E = torch.zeros(1, 3)
-    N = torch.zeros(1, 3, 8)
-    A = torch.zeros(1, 3, 8)
-
-    # test
-    kinetics = get_kinetics()
-    kinetics.Km = Km
-    kinetics.Vmax = Vmax
-    kinetics.E = E
-    kinetics.N = N
-    kinetics.A = A
-    kinetics.set_cell_params(cell_idxs=[0], proteomes=[c0])
-
-    # proteins in C0 only differ in A
-    for p in [0, 1]:
-        assert Km[0, p, 1] == pytest.approx(avg(1.5, 1 / 0.5), abs=TOLERANCE)
-        assert Km[0, p, 2] == pytest.approx(1.5, abs=TOLERANCE)
-        assert Km[0, p, 3] == pytest.approx(avg(0.5, 1 / 1.5), abs=TOLERANCE)
-        for i in [0, 4, 5, 6, 7]:
-            assert Km[0, p, i] == 0.0
-
-        assert Vmax[0, p] == pytest.approx(avg(1.1, 1.2), abs=TOLERANCE)
-
-        assert E[0, p] == 10 - 10
-
-        assert N[0, p, 1] == 1
-        assert N[0, p, 2] == -1
-        assert N[0, p, 3] == 0
-        for i in [0, 4, 5, 6, 7]:
-            assert N[0, p, i] == 0
-
-    assert A[0, 0, 1] == 1
-    assert A[0, 1, 3] == 1
-    assert A.sum() == 2
-
-    # test proteome representation
-
-    proteins = kinetics.get_proteome(proteome=c0)
-
-    p0 = proteins[0]
-    assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].substrates == [mb, mc]
-    assert p0.domains[0].products == [md]
-    assert p0.domains[0].vmax == pytest.approx(1.2, abs=TOLERANCE)
-    assert p0.domains[0].km == pytest.approx(1.5, abs=TOLERANCE)
-    assert isinstance(p0.domains[1], CatalyticDomain)
-    assert p0.domains[1].substrates == [md]
-    assert p0.domains[1].products == [mb, mb]
-    assert p0.domains[1].vmax == pytest.approx(1.1, abs=TOLERANCE)
-    assert p0.domains[1].km == pytest.approx(0.5, abs=TOLERANCE)
-
-    p1 = proteins[1]
-    assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].substrates == [md]
-    assert p1.domains[0].products == [mb, mb]
-    assert p1.domains[0].vmax == pytest.approx(1.1, abs=TOLERANCE)
-    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
-    assert isinstance(p1.domains[1], CatalyticDomain)
-    assert p1.domains[1].substrates == [mb, mc]
-    assert p1.domains[1].products == [md]
-    assert p1.domains[1].vmax == pytest.approx(1.2, abs=TOLERANCE)
-    assert p1.domains[1].km == pytest.approx(1.5, abs=TOLERANCE)
-
-
 def test_cell_params_with_transporter_domains():
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
@@ -231,6 +132,8 @@ def test_cell_params_with_transporter_domains():
     Kmr = torch.zeros(2, 3)
     Vmax = torch.zeros(2, 3)
     N = torch.zeros(2, 3, 8)
+    Nf = torch.zeros(2, 3, 8)
+    Nb = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
     # test
@@ -240,6 +143,8 @@ def test_cell_params_with_transporter_domains():
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.A = A
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
@@ -270,12 +175,11 @@ def test_cell_params_with_transporter_domains():
 
     assert N[0, 0, 0] == -1
     assert N[0, 0, 4] == 1
-    for i in [1, 2, 3, 5, 6, 7]:
-        assert N[0, 0, i] == 0
-    assert N[0, 1, 0] == 0
-    assert N[0, 1, 4] == 0
-    for i in [1, 2, 3, 5, 6, 7]:
-        assert N[0, 1, i] == 0
+    assert (N[0, 0, [1, 2, 3, 5, 6, 7]] == 0).all()
+    assert Nf[0, 0, 0] == 1
+    assert (Nf[0, 0, [1, 2, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nb[0, 1, 4] == 1
+    assert (Nb[0, 0, [0, 1, 2, 3, 5, 6, 7]] == 0).all()
 
     assert N[1, 0, 0] == -2
     assert N[1, 0, 1] == -1
@@ -283,18 +187,26 @@ def test_cell_params_with_transporter_domains():
     assert N[1, 0, 4] == 2
     assert N[1, 0, 5] == 1
     assert N[1, 0, 6] == 1
-    for i in [3, 7]:
-        assert N[1, 0, i] == 0
+    assert (N[1, 0, [3, 7]] == 0).all()
+    assert Nf[1, 0, 0] == 2
+    assert Nf[1, 0, 1] == 1
+    assert Nf[1, 0, 2] == 1
+    assert (Nf[1, 0, [4, 5, 6, 3, 7]] == 0).all()
+    assert Nb[1, 0, 4] == 2
+    assert Nb[1, 0, 5] == 1
+    assert Nb[1, 0, 6] == 1
+    assert (Nb[1, 0, [0, 1, 2, 3, 7]] == 0).all()
     assert N[1, 1, 0] == -2
     assert N[1, 1, 1] == 1
     assert N[1, 1, 4] == 1
-    for i in [2, 3, 5, 6, 7]:
-        assert N[1, 1, i] == 0
+    assert (N[1, 1, [2, 3, 5, 6, 7]] == 0).all()
+    assert Nf[1, 1, 0] == 2
+    assert (Nf[1, 1, [1, 2, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nb[1, 1, 1] == 1
+    assert Nb[1, 1, 4] == 1
+    assert (Nb[1, 1, [0, 2, 3, 5, 6, 7]] == 0).all()
 
-    # a was imported and exported, so its N=0
-    # but it must be added as effector
-    assert A[0, 1, 0] == 1
-    assert A.sum() == 1
+    assert (A == 0).all()
 
     # test proteome representation
 
@@ -383,6 +295,8 @@ def test_cell_params_with_regulatory_domains():
     Kmr = torch.zeros(2, 3)
     Vmax = torch.zeros(2, 3)
     N = torch.zeros(2, 3, 8)
+    Nf = torch.zeros(2, 3, 8)
+    Nb = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
     # test
@@ -392,6 +306,8 @@ def test_cell_params_with_regulatory_domains():
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.A = A
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
@@ -424,65 +340,55 @@ def test_cell_params_with_regulatory_domains():
 
     assert N[0, 0, 0] == -1
     assert N[0, 0, 1] == 1
-    assert N[0, 0, 2] == 0
-    assert N[0, 0, 3] == 0
-    for i in [4, 5, 6, 7]:
-        assert N[0, 0, i] == 0
+    assert (N[0, 0, [2, 3, 4, 5, 6]] == 0).all()
+    assert Nf[0, 0, 0] == 1
+    assert (Nf[0, 0, [1, 2, 3, 4, 5, 6]] == 0).all()
+    assert Nb[0, 0, 1] == 1
+    assert (Nb[0, 0, [0, 2, 3, 4, 5, 6]] == 0).all()
     assert N[0, 1, 0] == -1
     assert N[0, 1, 1] == 1
-    assert N[0, 1, 2] == 0
-    assert N[0, 1, 3] == 0
-    for i in [4, 5, 6, 7]:
-        assert N[0, 1, i] == 0
-    for i in range(8):
-        assert N[0, 2, i] == 0
+    assert (N[0, 1, [2, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nf[0, 1, 0] == 1
+    assert (Nf[0, 1, [1, 2, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nb[0, 1, 1] == 1
+    assert (Nb[0, 1, [0, 2, 3, 4, 5, 6, 7]] == 0).all()
+    assert (N[0, 2] == 0).all()
+    assert (Nf[0, 2] == 0).all()
+    assert (Nb[0, 2] == 0).all()
 
     assert N[1, 0, 0] == -1
     assert N[1, 0, 1] == 1
-    assert N[1, 0, 2] == 0
-    assert N[1, 0, 3] == 0
-    for i in [4, 5, 6, 7]:
-        assert N[1, 0, i] == 0
+    assert (N[1, 0, [2, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nf[1, 0, 0] == 1
+    assert (Nf[1, 0, [1, 2, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nb[1, 0, 1] == 1
+    assert (Nb[1, 0, [0, 2, 3, 4, 5, 6, 7]] == 0).all()
     assert N[1, 1, 0] == -1
     assert N[1, 1, 1] == 1
-    assert N[1, 1, 2] == 0
-    assert N[1, 1, 3] == 0
-    for i in [4, 5, 6, 7]:
-        assert N[1, 1, i] == 0
-    for i in range(8):
-        assert N[1, 2, i] == 0
+    assert (N[1, 1, [2, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nf[1, 1, 0] == 1
+    assert (Nf[1, 1, [1, 2, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nb[1, 1, 1] == 1
+    assert (Nb[1, 1, [0, 2, 3, 4, 5, 6, 7]] == 0).all()
+    assert (N[1, 2] == 0).all()
+    assert (Nf[1, 2] == 0).all()
+    assert (Nb[1, 2] == 0).all()
 
-    assert A[0, 0, 0] == 0
-    assert A[0, 0, 1] == 0
     assert A[0, 0, 2] == 1
     assert A[0, 0, 3] == -1
-    for i in [4, 5, 6, 7]:
-        assert A[0, 0, i] == 0
+    assert (A[0, 0, [0, 1, 4, 5, 6, 7]] == 0).all()
     assert A[0, 1, 0] == 1
-    assert A[0, 1, 1] == 0
-    assert A[0, 1, 2] == 0
-    assert A[0, 1, 3] == 0
     assert A[0, 1, 4] == 1
-    for i in [5, 6, 7]:
-        assert A[0, 1, i] == 0
-    for i in range(8):
-        assert A[0, 2, i] == 0
+    assert (A[0, 1, [1, 2, 3, 5, 6, 7]] == 0).all()
+    assert (A[0, 2] == 0).all()
 
-    assert A[1, 0, 0] == 0
     assert A[1, 0, 1] == -1
-    assert A[1, 0, 2] == 0
-    assert A[1, 0, 3] == 0
     assert A[1, 0, 5] == -1
-    for i in [4, 6, 7]:
-        assert A[0, 0, i] == 0
+    assert (A[1, 0, [0, 2, 3, 4, 6, 7]] == 0).all()
     assert A[1, 1, 0] == 0
-    assert A[1, 1, 1] == 0
-    assert A[1, 1, 2] == 0
     assert A[1, 1, 3] == 2
-    for i in [4, 5, 6, 7]:
-        assert A[1, 1, i] == 0
-    for i in range(8):
-        assert A[1, 2, i] == 0
+    assert (A[1, 1, [1, 2, 4, 5, 6, 7]] == 0).all()
+    assert (A[1, 2] == 0).all()
 
     # test protein representation
 
@@ -593,6 +499,8 @@ def test_cell_params_with_catalytic_domains():
     Kmr = torch.zeros(2, 3)
     Vmax = torch.zeros(2, 3)
     N = torch.zeros(2, 3, 8)
+    Nf = torch.zeros(2, 3, 8)
+    Nb = torch.zeros(2, 3, 8)
     A = torch.zeros(2, 3, 8)
 
     # test
@@ -602,6 +510,8 @@ def test_cell_params_with_catalytic_domains():
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
     kinetics.A = A
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
@@ -638,42 +548,60 @@ def test_cell_params_with_catalytic_domains():
     assert N[0, 0, 1] == 2
     assert N[0, 0, 2] == 1
     assert N[0, 0, 3] == -1
-    for i in [4, 5, 6, 7]:
-        assert N[0, 0, i] == 0
-    assert N[0, 1, 0] == 0
-    assert N[0, 1, 1] == 0  # b is added and removed
+    assert (N[0, 0, [4, 5, 6, 7]] == 0).all()
+    assert Nf[0, 0, 0] == 1
+    assert Nf[0, 0, 3] == 1
+    assert (Nf[0, 0, [1, 2, 4, 5, 6, 7]] == 0).all()
+    assert Nb[0, 0, 1] == 2
+    assert Nb[0, 0, 2] == 1
+    assert (Nb[0, 0, [0, 3, 4, 5, 6, 7]] == 0).all()
     assert N[0, 1, 2] == 2
     assert N[0, 1, 3] == -1
-    for i in [4, 5, 6, 7]:
-        assert N[0, 1, i] == 0
+    assert (N[0, 1, [0, 1, 4, 5, 6, 7]] == 0).all()
+    assert Nf[0, 1, 1] == 1
+    assert Nf[0, 1, 3] == 1
+    assert (Nf[0, 1, [0, 2, 4, 5, 6, 7]] == 0).all()
+    assert Nb[0, 1, 1] == 1
+    assert Nb[0, 1, 2] == 2
+    assert (Nb[0, 1, [0, 3, 4, 5, 6, 7]] == 0).all()
     assert N[0, 2, 0] == 0
     assert N[0, 2, 1] == 2
     assert N[0, 2, 2] == 0
     assert N[0, 2, 3] == -1
-    for i in [4, 5, 6, 7]:
-        assert N[0, 2, i] == 0
+    assert (N[0, 2, [4, 5, 6, 7]] == 0).all()
+    assert Nf[0, 2, 3] == 1
+    assert (Nf[0, 2, [0, 1, 2, 4, 5, 6, 7]] == 0).all()
+    assert Nb[0, 2, 1] == 2
+    assert (Nb[0, 2, [0, 2, 3, 4, 5, 6, 7]] == 0).all()
 
     assert N[1, 0, 0] == 1
     assert N[1, 0, 1] == 0  # b is added and removed
     assert N[1, 0, 2] == 1
     assert N[1, 0, 3] == -1
-    for i in [4, 5, 6, 7]:
-        assert N[1, 0, i] == 0
+    assert (N[1, 0, [4, 5, 6, 7]] == 0).all()
+    assert Nf[1, 0, 1] == 1
+    assert Nf[1, 0, 3] == 1
+    assert (Nf[1, 0, [0, 2, 4, 5, 6, 7]] == 0).all()
+    assert Nb[1, 0, 0] == 1
+    assert Nb[1, 0, 1] == 1
+    assert Nb[1, 0, 2] == 1
+    assert (Nb[1, 0, [3, 4, 5, 6, 7]] == 0).all()
     assert N[1, 1, 0] == 0
     assert N[1, 1, 1] == -2
     assert N[1, 1, 2] == 0  # c is added and removed
     assert N[1, 1, 3] == 1
-    for i in [4, 5, 6, 7]:
-        assert N[1, 1, i] == 0
-    for i in range(8):
-        assert N[1, 2, i] == 0
+    assert (N[1, 1, [4, 5, 6, 7]] == 0).all()
+    assert Nf[1, 1, 1] == 2
+    assert Nf[1, 1, 2] == 1
+    assert (Nf[1, 1, [0, 3, 4, 5, 6, 7]] == 0).all()
+    assert Nb[1, 1, 2] == 1
+    assert Nb[1, 1, 3] == 1
+    assert (Nb[1, 1, [0, 1, 4, 5, 6, 7]] == 0).all()
+    assert (N[1, 2] == 0).all()
+    assert (Nf[1, 2] == 0).all()
+    assert (Nb[1, 2] == 0).all()
 
-    # b was a reactant in the first domain,
-    # but was then created again yielding N b=0
-    # it thus has to be added as activating effector
-    assert A[0, 1, 1] == 1
-    assert A[1, 0, 1] == 1
-    assert A.sum() == 2
+    assert (A == 0).all()
 
     # test protein representation
 
