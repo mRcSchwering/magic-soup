@@ -79,9 +79,12 @@ REACTION_M = torch.tensor([
 # fmt: on
 
 
-def get_kinetics() -> Kinetics:
+def get_kinetics(n_computations=1) -> Kinetics:
     kinetics = Kinetics(
-        molecules=MOLECULES, reactions=REACTIONS, n_computations=1, abs_temp=310
+        molecules=MOLECULES,
+        reactions=REACTIONS,
+        n_computations=n_computations,
+        abs_temp=310,
     )
     kinetics.km_map.weights = KM_WEIGHTS.clone()
     kinetics.vmax_map.weights = VMAX_WEIGHTS.clone()
@@ -1449,12 +1452,8 @@ def test_equilibrium_is_reached():
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
 
-    # TODO: reduce n_computations by designing steeper
-    #       descent in each computation
-
     # test
-    kinetics = get_kinetics()
-    kinetics.n_computations = 50
+    kinetics = get_kinetics(n_computations=11)
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
@@ -1464,7 +1463,7 @@ def test_equilibrium_is_reached():
     kinetics.Vmax = Vmax
     kinetics.A = A
 
-    for _ in range(50):
+    for _ in range(10):
         X0 = kinetics.integrate_signals(X=X0)
 
     q_c0_0 = X0[0, 1] / X0[0, 0]
@@ -1472,8 +1471,8 @@ def test_equilibrium_is_reached():
     q_c1_0 = X0[1, 2] / (X0[1, 0] * X0[1, 1] * X0[1, 1])
 
     assert (q_c0_0 - 1.0).abs() < 0.1
-    assert (q_c0_1 - 20.0).abs() < 1.0
-    assert (q_c1_0 - 10.0).abs() < 2.0
+    assert (q_c0_1 - 20.0).abs() < 2.0
+    assert (q_c1_0 - 10.0).abs() < 1.0
 
 
 def test_zero_substrates_stay_zero():

@@ -126,7 +126,7 @@ def enzymatic_activity2(w: int, n: int, s: int):
             reactions=CHEMISTRY.reactions,
             km_range=(0.01, 100),
             vmax_range=(0.01, 100),
-            n_computations=9,
+            n_computations=11,
         )
 
         genomes = [ms.random_genome(s) for _ in range(n)]

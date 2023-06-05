@@ -264,7 +264,7 @@ class Kinetics:
         molecules: List of molecule species.
             They have to be in the same order as they are on `chemistry.molecules`.
         reactions: List of all possible reactions in this simulation as a list of tuples: `(substrates, products)`.
-            All reactions can happen in both directions (left to right or vice versa).
+            All reactions are reversible and happen in both directions (left to right or vice versa).
         abs_temp: Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
             Higher temperature will give the reaction quotient term higher importance.
         km_range: The range from which to sample Michaelis Menten constants for domains (in mM).
@@ -278,6 +278,11 @@ class Kinetics:
             This should be the output of `max(genetics.one_codon_map.values())`.
         vector_enc_size: Number of tokens that can be used to encode the vectors for reactions and molecules.
             This should be the output of `max(genetics.two_codon_map.values())`.
+        n_computations: In how many computations to integrate signals. With a higher number chemical equilibriums
+            are reached smoother but it takes more time to compute (see details below about computation).
+        alpha: A trimming factor used to trim velocity at each step during signal integration. This number
+            can be adjusted if `n_computations` is changed and reactions don't reach their equilibrium state
+            anymore (see details below about computation).
 
     There are `c` cells, `p` proteins, `s` signals.
     Signals are basically molecule species, but we have to differentiate between intra- and extracellular molecule species.
@@ -289,10 +294,14 @@ class Kinetics:
 
     Attributes on this class describe cell parameters:
 
-    - `Km` Affinities to every signal that is processed by each protein in every cell (c, p, s).
+    - `Kmf`, `Kmb`, `Kmr` Affinities to every signal that is processed by each protein in every cell (c, p, s).
+      There are affinities for (f)orward and (b)ackward reactions, and for (r)egulatory domains.
     - `Vmax` Maximum velocities of every protein in every cell (c, p).
     - `E` Standard reaction Gibbs free energy of every protein in every cell (c, p).
     - `N` Stoichiometric number for every signal that is processed by each protein in every cell (c, p, s).
+      Additionally, there are `Nf` and `Nb` which describe only forward and backward stoichiometric numbers.
+      This is needed in addition to `N` to properly describe reactions like e.g.
+      $\text{A} + \text{C} \rightlefthooks \text{B} + \text{C}$ where `n=0` for C.
     - `A` Regulatory effect for each signal in every protein in every cell (c, p, s).
       This is looks similar to a stoichiometric number. Numbers > 0.0 mean these molecules
       act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
@@ -305,7 +314,7 @@ class Kinetics:
     Another method, which ended up here, is [set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params]
     which reads proteomes and updates cell parameters accordingly.
     This is called whenever the proteomes of some cells changed.
-    Currently, this is also the main bottleneck in performance.
+    Currently, this is also the main performance bottleneck.
 
     When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
     These mappings are then used throughout the simulation.
@@ -313,14 +322,37 @@ class Kinetics:
     Initializing [World][magicsoup.world.World] will also create one `Kinetics` instance. It is on `world.kinetics`.
     If you want to access nucleotide to domain mappings of your simulation, you should use `world.kinetics`.
 
-    As all reactions are calculated step by step, there are some corrections for spcial cases.
-    E.g. some corrections make sure that a very sensitive, high-velocity enzyme doesn't accidentally
-    deconstruct more substrate than available. To make kinetic calculations smoother, one could reduce
-    the maximum velocity by e.g. 10 (`vmax_range=(1e-4, 10.0)`).
-    [enzymatic_activity][magicsoup.world.World.enzymatic_activity] would then represent 0.1s instead of 1s.
-    The same can be done for diffusion and degradations by lowering the [Molecule][magicsoup.containers.Molecule]
-    parameters. I haven't tried around with this a lot, but on a GPU diffusion and enzymatic activity are very
-    efficient. So, calling them 10x instead of only once only slightly increases the computation time per step.
+    The kinetics used here can never create negative molecule concentrations and make the reaction quotient move
+    towards to equilibrium constant at all times.
+    However, this simulation computes these things one step at a time
+    (with the premise that one step should be something similar to 1s).
+    This and the numerical limits of data types used here can create edge cases that need to be dealth with:
+    reaction quotients overshooting the equilibrium state and negative concentrations.
+    Both are caused by high `Vmax` values with low `Km` values.
+
+    If an enzyme is far away from its equilibrium state $K_e$ and substrate concentrations are far above $K_M$ it
+    will progress its reaction at full speed V_{max}. This rate can be so high that, within one step, $Q$ surpasses
+    $K_E$. In the next step it will move at full speed into the opposite direction, overshooting $K_E$ again, and so on.
+    Reactions with high stoichiometric numbers are more prone to this as their rate functions are sharper.
+    To combat this one can divide the whole computation into many steps.
+    This is what `n_computations` is for. $V_{max}$ is decreased appropriately.
+    However, with this alone one would have to perform over 100 computations per step in order to make some
+    extreme reactions reach their equilibrium state.
+    Thus, with each computation in `n_computations` the reaction rate is exponentially decayed.
+    This has the effect that, while in the first few computations a reaction might still overshoot $K_E$,
+    during the last computations rates are so low, that even extremely volatile reactions can come close
+    to their intended equilibrium. The factor of this exponential decay is `alpha`.
+    For $V_{max} \se 100$ and $K_M \ge 0.01$ `n_computations=11` and `alpha=0.6` seem to work very well
+    (few computations, but stable equilibriums). You can always increase `n_computations`, but if you
+    decrease it, you might also want to try out different `alpha` values.
+
+    With the `n_computation` and `alpha` trick above, chances of enzymes trying to deconstruct more
+    substrate than available is very low. However, it can still happen. Sometimes it is also floating point
+    inaccuracies that can tip a near-zero value below zero. Thus, before the updated signals tensor `X`
+    gets returned, it is checked for negative concentrations.
+    Then, protein velocities for all cells with below zero concentrations is reduced and `X` is calculated again.
+    They are reduced by a factor that will create $X = \epsilon \gt 0$ for the signals that
+    were negative in the first calculation.
     """
 
     def __init__(
@@ -333,12 +365,19 @@ class Kinetics:
         device: str = "cpu",
         scalar_enc_size: int = 64 - 3,
         vector_enc_size: int = 4096 - 3 * 64,
-        n_computations: int = 10,
+        n_computations: int = 11,
+        alpha: float = 0.6,
     ):
         self.abs_temp = abs_temp
         self.device = device
         self.abs_temp = abs_temp
+
+        # calculate signal integration in n_computation steps
+        # to reach equilibrium Ke faster, steps get increasingly slower
+        # trim(i) = trim0 * alpha^i and sum(trim0 * alpha^i) = 1 over all i
         self.n_computations = n_computations
+        self.alpha = alpha
+        self.n_comp_trim = 1 / sum(self.alpha**d for d in range(self.n_computations))
 
         self.mol_energies = self._tensor_from([d.energy for d in molecules] * 2)
         self.mol_2_mi = {d: i for i, d in enumerate(molecules)}
@@ -605,14 +644,7 @@ class Kinetics:
         is_bwd = self.Nb > 0.0
         is_inh = self.A < 0.0
         is_act = self.A > 0.0
-
-        # TODO: Idee gut aber braucht noch zu viele Schritte
-        #       wäre vllt den exp verfall steiler zu machen
-        #       auch nochmal auf chart angucken, vllt ist Test ein bsisl streng
-        incr_trim = 0.5
-        Vmax_adj = (
-            self.Vmax * 1 / sum(incr_trim**d for d in range(self.n_computations))
-        )
+        Vmax_adj = self.Vmax * self.n_comp_trim
 
         for i in range(self.n_computations):
             # catalytic activity
@@ -649,7 +681,7 @@ class Kinetics:
 
             # velocity from activities
             # as well as trimming factor of n_computations
-            V = Vmax_adj * a_cat * (1 - a_inh) * a_act * incr_trim**i  # (c, p)
+            V = Vmax_adj * a_cat * (1 - a_inh) * a_act * self.alpha**i  # (c, p)
 
             # naive Xd
             Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
