@@ -300,8 +300,8 @@ class Kinetics:
     - `E` Standard reaction Gibbs free energy of every protein in every cell (c, p).
     - `N` Stoichiometric number for every signal that is processed by each protein in every cell (c, p, s).
       Additionally, there are `Nf` and `Nb` which describe only forward and backward stoichiometric numbers.
-      This is needed in addition to `N` to properly describe reactions like e.g.
-      $\text{A} + \text{C} \rightlefthooks \text{B} + \text{C}$ where `n=0` for C.
+      This is needed in addition to `N` to properly describe reactions that involve molecules
+      which are not changed, _i.e._ where `n=0`.
     - `A` Regulatory effect for each signal in every protein in every cell (c, p, s).
       This is looks similar to a stoichiometric number. Numbers > 0.0 mean these molecules
       act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
@@ -328,10 +328,10 @@ class Kinetics:
     (with the premise that one step should be something similar to 1s).
     This and the numerical limits of data types used here can create edge cases that need to be dealth with:
     reaction quotients overshooting the equilibrium state and negative concentrations.
-    Both are caused by high `Vmax` values with low `Km` values.
+    Both are caused by high $V_{max}$ with low $K_m$ values.
 
     If an enzyme is far away from its equilibrium state $K_e$ and substrate concentrations are far above $K_M$ it
-    will progress its reaction at full speed V_{max}. This rate can be so high that, within one step, $Q$ surpasses
+    will progress its reaction at full speed $V_{max}$. This rate can be so high that, within one step, $Q$ surpasses
     $K_E$. In the next step it will move at full speed into the opposite direction, overshooting $K_E$ again, and so on.
     Reactions with high stoichiometric numbers are more prone to this as their rate functions are sharper.
     To combat this one can divide the whole computation into many steps.
@@ -342,7 +342,7 @@ class Kinetics:
     This has the effect that, while in the first few computations a reaction might still overshoot $K_E$,
     during the last computations rates are so low, that even extremely volatile reactions can come close
     to their intended equilibrium. The factor of this exponential decay is `alpha`.
-    For $V_{max} \se 100$ and $K_M \ge 0.01$ `n_computations=11` and `alpha=0.6` seem to work very well
+    For $V_{max} \le 100$ and $K_M \ge 0.01$ `n_computations=11` and `alpha=0.6` seem to work very well
     (few computations, but stable equilibriums). You can always increase `n_computations`, but if you
     decrease it, you might also want to try out different `alpha` values.
 
