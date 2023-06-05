@@ -12,7 +12,7 @@ from magicsoup.containers import (
     DomainType,
 )
 
-_EPS = 1e-5
+_EPS = 1e-8
 
 
 class _LogNormWeightMapFact:
@@ -264,7 +264,7 @@ class Kinetics:
         molecules: List of molecule species.
             They have to be in the same order as they are on `chemistry.molecules`.
         reactions: List of all possible reactions in this simulation as a list of tuples: `(substrates, products)`.
-            All reactions can happen in both directions (left to right or vice versa).
+            All reactions are reversible and happen in both directions (left to right or vice versa).
         abs_temp: Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
             Higher temperature will give the reaction quotient term higher importance.
         km_range: The range from which to sample Michaelis Menten constants for domains (in mM).
@@ -278,6 +278,11 @@ class Kinetics:
             This should be the output of `max(genetics.one_codon_map.values())`.
         vector_enc_size: Number of tokens that can be used to encode the vectors for reactions and molecules.
             This should be the output of `max(genetics.two_codon_map.values())`.
+        n_computations: In how many computations to integrate signals. With a higher number chemical equilibriums
+            are reached smoother but it takes more time to compute (see details below about computation).
+        alpha: A trimming factor used to trim velocity at each step during signal integration. This number
+            can be adjusted if `n_computations` is changed and reactions don't reach their equilibrium state
+            anymore (see details below about computation).
 
     There are `c` cells, `p` proteins, `s` signals.
     Signals are basically molecule species, but we have to differentiate between intra- and extracellular molecule species.
@@ -289,10 +294,14 @@ class Kinetics:
 
     Attributes on this class describe cell parameters:
 
-    - `Km` Affinities to every signal that is processed by each protein in every cell (c, p, s).
+    - `Kmf`, `Kmb`, `Kmr` Affinities to every signal that is processed by each protein in every cell (c, p, s).
+      There are affinities for (f)orward and (b)ackward reactions, and for (r)egulatory domains.
     - `Vmax` Maximum velocities of every protein in every cell (c, p).
     - `E` Standard reaction Gibbs free energy of every protein in every cell (c, p).
     - `N` Stoichiometric number for every signal that is processed by each protein in every cell (c, p, s).
+      Additionally, there are `Nf` and `Nb` which describe only forward and backward stoichiometric numbers.
+      This is needed in addition to `N` to properly describe reactions like e.g.
+      $\text{A} + \text{C} \rightlefthooks \text{B} + \text{C}$ where `n=0` for C.
     - `A` Regulatory effect for each signal in every protein in every cell (c, p, s).
       This is looks similar to a stoichiometric number. Numbers > 0.0 mean these molecules
       act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
@@ -305,7 +314,7 @@ class Kinetics:
     Another method, which ended up here, is [set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params]
     which reads proteomes and updates cell parameters accordingly.
     This is called whenever the proteomes of some cells changed.
-    Currently, this is also the main bottleneck in performance.
+    Currently, this is also the main performance bottleneck.
 
     When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
     These mappings are then used throughout the simulation.
@@ -313,14 +322,37 @@ class Kinetics:
     Initializing [World][magicsoup.world.World] will also create one `Kinetics` instance. It is on `world.kinetics`.
     If you want to access nucleotide to domain mappings of your simulation, you should use `world.kinetics`.
 
-    As all reactions are calculated step by step, there are some corrections for spcial cases.
-    E.g. some corrections make sure that a very sensitive, high-velocity enzyme doesn't accidentally
-    deconstruct more substrate than available. To make kinetic calculations smoother, one could reduce
-    the maximum velocity by e.g. 10 (`vmax_range=(1e-4, 10.0)`).
-    [enzymatic_activity][magicsoup.world.World.enzymatic_activity] would then represent 0.1s instead of 1s.
-    The same can be done for diffusion and degradations by lowering the [Molecule][magicsoup.containers.Molecule]
-    parameters. I haven't tried around with this a lot, but on a GPU diffusion and enzymatic activity are very
-    efficient. So, calling them 10x instead of only once only slightly increases the computation time per step.
+    The kinetics used here can never create negative molecule concentrations and make the reaction quotient move
+    towards to equilibrium constant at all times.
+    However, this simulation computes these things one step at a time
+    (with the premise that one step should be something similar to 1s).
+    This and the numerical limits of data types used here can create edge cases that need to be dealth with:
+    reaction quotients overshooting the equilibrium state and negative concentrations.
+    Both are caused by high `Vmax` values with low `Km` values.
+
+    If an enzyme is far away from its equilibrium state $K_e$ and substrate concentrations are far above $K_M$ it
+    will progress its reaction at full speed V_{max}. This rate can be so high that, within one step, $Q$ surpasses
+    $K_E$. In the next step it will move at full speed into the opposite direction, overshooting $K_E$ again, and so on.
+    Reactions with high stoichiometric numbers are more prone to this as their rate functions are sharper.
+    To combat this one can divide the whole computation into many steps.
+    This is what `n_computations` is for. $V_{max}$ is decreased appropriately.
+    However, with this alone one would have to perform over 100 computations per step in order to make some
+    extreme reactions reach their equilibrium state.
+    Thus, with each computation in `n_computations` the reaction rate is exponentially decayed.
+    This has the effect that, while in the first few computations a reaction might still overshoot $K_E$,
+    during the last computations rates are so low, that even extremely volatile reactions can come close
+    to their intended equilibrium. The factor of this exponential decay is `alpha`.
+    For $V_{max} \se 100$ and $K_M \ge 0.01$ `n_computations=11` and `alpha=0.6` seem to work very well
+    (few computations, but stable equilibriums). You can always increase `n_computations`, but if you
+    decrease it, you might also want to try out different `alpha` values.
+
+    With the `n_computation` and `alpha` trick above, chances of enzymes trying to deconstruct more
+    substrate than available is very low. However, it can still happen. Sometimes it is also floating point
+    inaccuracies that can tip a near-zero value below zero. Thus, before the updated signals tensor `X`
+    gets returned, it is checked for negative concentrations.
+    Then, protein velocities for all cells with below zero concentrations is reduced and `X` is calculated again.
+    They are reduced by a factor that will create $X = \epsilon \gt 0$ for the signals that
+    were negative in the first calculation.
     """
 
     def __init__(
@@ -333,10 +365,19 @@ class Kinetics:
         device: str = "cpu",
         scalar_enc_size: int = 64 - 3,
         vector_enc_size: int = 4096 - 3 * 64,
+        n_computations: int = 11,
+        alpha: float = 0.6,
     ):
         self.abs_temp = abs_temp
         self.device = device
         self.abs_temp = abs_temp
+
+        # calculate signal integration in n_computation steps
+        # to reach equilibrium Ke faster, steps get increasingly slower
+        # trim(i) = trim0 * alpha^i and sum(trim0 * alpha^i) = 1 over all i
+        self.n_computations = n_computations
+        self.alpha = alpha
+        self.n_comp_trim = 1 / sum(self.alpha**d for d in range(self.n_computations))
 
         self.mol_energies = self._tensor_from([d.energy for d in molecules] * 2)
         self.mol_2_mi = {d: i for i, d in enumerate(molecules)}
@@ -344,10 +385,13 @@ class Kinetics:
 
         # working cell params
         n_signals = 2 * len(molecules)
-        self.Km = self._tensor(0, 0, n_signals)
+        self.Kmf = self._tensor(0, 0)
+        self.Kmb = self._tensor(0, 0)
+        self.Kmr = self._tensor(0, 0)
         self.Vmax = self._tensor(0, 0)
-        self.E = self._tensor(0, 0)
         self.N = self._tensor(0, 0, n_signals)
+        self.Nf = self._tensor(0, 0, n_signals)
+        self.Nb = self._tensor(0, 0, n_signals)
         self.A = self._tensor(0, 0, n_signals)
 
         # the domain specifications return 4 indexes
@@ -429,7 +473,7 @@ class Kinetics:
                         doms.append(
                             CatalyticDomain(
                                 reaction=(lfts, rgts),
-                                km=Km_d[0][pi][di][mi].item(),
+                                km=Km_d[0][pi][di].item(),
                                 vmax=Vmax_d[0][pi][di].item(),
                             )
                         )
@@ -443,7 +487,7 @@ class Kinetics:
                     doms.append(
                         TransporterDomain(
                             molecule=self.mi_2_mol[mi],
-                            km=Km_d[0][pi][di][mi].item(),
+                            km=Km_d[0][pi][di].item(),
                             vmax=Vmax_d[0][pi][di].item(),
                         )
                     )
@@ -461,7 +505,7 @@ class Kinetics:
                     doms.append(
                         RegulatoryDomain(
                             effector=mol,
-                            km=Km_d[0][pi][di][mi].item(),
+                            km=Km_d[0][pi][di].item(),
                             is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
                             is_transmembrane=is_trnsm,
                         )
@@ -491,31 +535,77 @@ class Kinetics:
         These are indices which will be mapped to concrete values
         (molecule species, Km, Vmax, reactions, ...).
         """
-        N_d, A_d, Km_d, Vmax_d, _ = self._get_proteome_tensors(proteomes=proteomes)
+        # get proteome tensors
+        dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
+            proteomes=proteomes
+        )
 
-        # N_d (c, p, d, s)
+        # identify domain types
+        # 1=catalytic, 2=transporter, 3=regulatory
+        is_catal = dom_types == 1  # (c, p, d)
+        is_trnsp = dom_types == 2  # (c, p, d)
+        is_reg = dom_types == 3  # (c, p, d)
+
+        # map indices of domain specifications to concrete values
+        # idx0 is a 2-codon index specific for every domain type (n=4096)
+        # idx1-3 are 1-codon used for the floats (n=64)
+        # some values are not defined for certain domain types
+        # setting their indices to 0 lets them map to empty values (0-vector, NaN)
+        catal_lng = (is_catal).long()
+        trnsp_lng = (is_trnsp).long()
+        reg_lng = (is_reg).long()
+        not_reg_lng = (~is_reg).long()
+
+        # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
+        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # float (c, p, d)
+        Kms = self.km_map(idxs1)  # float (c, p, d)
+        signs = self.sign_map(idxs2)  # float (c, p, d)
+
+        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
+        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c, p, d, s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c, p, d, s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # float (c, p, d, s)
+
+        # Vmax are averaged over domains
+        # undefined Vmax enries are NaN and are ignored by nanmean
+        self.Vmax[cell_idxs] = Vmaxs.nanmean(dim=2).nan_to_num(0.0)
+
+        # effector vectors are summed up over domains
+        # undefined vectors are all 0s
+        self.A[cell_idxs] = torch.einsum("cpds,cpd->cpds", effectors, signs).sum(dim=2)
+
+        # Kms of regulatory domains are aggregated for effectors
+        # Kms from other domains are ignored using NaNs and nanmean
+        self.Kmr[cell_idxs] = (
+            torch.where(is_reg, Kms, torch.nan).nanmean(dim=2).nan_to_num(0.0)
+        )
+
+        # reaction stoichiometry N is derived from transporter and catalytic vectors
+        # vectors for regulatory domains or emptpy proteins are all 0s
+        N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
         N = N_d.sum(dim=2)
         self.N[cell_idxs] = N
 
-        # A_d (c, p, d, s)
-        A = A_d.sum(dim=2)
-        # reactants on the first domain must be added as effectors
-        # if their stoichiometric number became 0 during summing up
-        delta_N = N_d[:, :, 0].clamp(max=0.0) - N.clamp(max=0.0)
-        # A += -1.0 * delta_N.clamp(max=0.0)
-        self.A[cell_idxs] = A - delta_N.clamp(max=0.0)
+        # N for forward and backward reactions is distinguished
+        # to not loose molecules like co-facors whose net N would become 0
+        self.Nf[cell_idxs] = torch.where(N_d < 0.0, -N_d, 0.0).sum(dim=2)
+        self.Nb[cell_idxs] = torch.where(N_d > 0.0, N_d, 0.0).sum(dim=2)
 
-        # Km_d (c, p, d, s)
-        Km = Km_d.nanmean(dim=2).nan_to_num(0.0)
-        self.Km[cell_idxs] = Km
+        # Kms of catalytic and transporter domains are aggregated
+        # Kms from other domains are ignored using NaNs and nanmean
+        Kmn = torch.where(~is_reg, Kms, torch.nan).nanmean(dim=2).nan_to_num(0.0)
 
-        # Vmax_d (c, p, d)
-        Vmax = Vmax_d.nanmean(dim=2).nan_to_num(0.0)
-        self.Vmax[cell_idxs] = Vmax
-
-        # E (c, p)
+        # energies define Ke which defines Ke = Kmf/Kmb
+        # Km is sampled between a defined range
+        # exessively small Km can create numerical instability
+        # thus, sampled Km should define the smaller Km of Ke = Kmf/Kmb
+        # Ke>=1  => Kmf=Km,         Kmb=Ke*Km
+        # Ke<1   => Kmf=Km/Ke,      Kmb=Km
         E = torch.einsum("cps,s->cp", N, self.mol_energies)
-        self.E[cell_idxs] = E
+        Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
+        ke_ge_1 = Ke >= 1.0
+        self.Kmf[cell_idxs] = torch.where(ke_ge_1, Kmn, Kmn / Ke)
+        self.Kmb[cell_idxs] = torch.where(ke_ge_1, Kmn * Ke, Kmn)
 
     def unset_cell_params(self, cell_idxs: list[int]):
         """
@@ -526,10 +616,13 @@ class Kinetics:
             cell_idxs: Indexes of cells
         """
         self.N[cell_idxs] = 0.0
+        self.Nf[cell_idxs] = 0.0
+        self.Nb[cell_idxs] = 0.0
         self.A[cell_idxs] = 0.0
-        self.Km[cell_idxs] = 0.0
+        self.Kmf[cell_idxs] = 0.0
+        self.Kmb[cell_idxs] = 0.0
+        self.Kmr[cell_idxs] = 0.0
         self.Vmax[cell_idxs] = 0.0
-        self.E[cell_idxs] = 0.0
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -547,43 +640,69 @@ class Kinetics:
         The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
         The number of extracellular molecules comes from `world.molecule_map` from the pixel the particular cell currently lives on.
         """
-        # adjust direction
-        lKe = -self.E / self.abs_temp / GAS_CONSTANT  # (c, p)
+        is_fwd = self.Nf > 0.0
+        is_bwd = self.Nb > 0.0
+        is_inh = self.A < 0.0
+        is_act = self.A > 0.0
+        Vmax_adj = self.Vmax * self.n_comp_trim
 
-        lQ = self._get_ln_reaction_quotients(X=X)  # (c, p)
-        adj_N = torch.where(lQ > lKe, -1.0, 1.0)  # (c, p)
-        N_adj = torch.einsum("cps,cp->cps", self.N, adj_N)
+        for i in range(self.n_computations):
+            # catalytic activity
 
-        # trim velocities when approaching equilibrium Q -> Ke
-        # and stop reaction if Q ~= Ke
-        # f(x) = {1.0 if x > 1.0; 0.0 if x <= 0.01; x otherwise}
-        # with x being the abs(ln(Q) - ln(Ke))
-        trim = (lQ - lKe).abs().clamp(max=1.0)  # (c, p)
-        trim[trim.abs() <= 0.1] = 0.0
+            # signals are aggregated for forward and backward reaction
+            # proteins that had no involved catalytic region should not be active
+            xxf, f_prots = self._aggregate_signals(X=X, mask=is_fwd, N=self.Nf)
+            kf = xxf / self.Kmf
+            kf[~f_prots] = 0.0  # rm artifacts created by ln
 
-        # activations
-        a_inh = self._get_inhibitor_activity(X=X)  # (c, p)
-        a_act = self._get_activator_activity(X=X)  # (c, p)
-        a_cat = self._get_catalytic_activity(X=X, N=N_adj)  # (c, p)
+            xxb, b_prots = self._aggregate_signals(X=X, mask=is_bwd, N=self.Nb)
+            kb = xxb / self.Kmb
+            kb[~b_prots] = 0.0  # rm artifacts created by ln
 
-        # velocity and naive Xd
-        V = self.Vmax * a_cat * (1 - a_inh) * a_act * trim  # (c, p)
-        Xd = torch.einsum("cps,cp->cs", N_adj, V)  # (c, s)
+            # the correct formula yields 2 * (ks - kp) / (1 + ks + kp)
+            # but then there can be a maximum activity of 200%
+            # while regulatory regions can only go up to 100%
+            # thus (ks - kp) / (1 + ks + kp)
+            a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
 
-        # proteins can deconstruct more of a molecule than available in a cell
-        # Here, I am reducing the velocity of all proteins in a cell by the same
-        # amount to just not deconstruct more of any molecule species than
-        # available in this cell
-        # One can also reduce only the velocity of the proteins which are part
-        # of deconstructing the molecule species that is becomming the problem
-        # but these reduced protein speeds could also have a downstream effect
-        # on the construction of another molecule species, which could then
-        # create the same problem again.
-        # By reducing all proteins by the same factor, this cannot happen.
-        fact = torch.where(X + Xd < 0.0, X * 0.99 / -Xd, 1.0)  # (c, s)
-        Xd = torch.einsum("cs,c->cs", Xd, fact.amin(1))
+            # NaNs could have been propagated so far by stray NaN Kms
+            # they should represent 0 velocity
+            a_cat = a_cat.nan_to_num(0.0)
 
-        X = (X + Xd).clamp(min=0.0)
+            # inhibitor activity
+            xxi, i_prots = self._aggregate_signals(X=X, mask=is_inh, N=-self.A)
+            a_inh = xxi / (xxi + self.Kmr)
+            a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
+
+            # activator activity
+            xxa, a_prots = self._aggregate_signals(X=X, mask=is_act, N=self.A)
+            a_act = xxa / (xxa + self.Kmr)
+            a_act[~a_prots] = 1.0  # proteins without activator should be active
+
+            # velocity from activities
+            # as well as trimming factor of n_computations
+            V = Vmax_adj * a_cat * (1 - a_inh) * a_act * self.alpha**i  # (c, p)
+
+            # naive Xd
+            Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
+
+            # proteins can deconstruct more of a molecule than available in a cell
+            # but I can't just clip X at 0 because then reactions would not adhere
+            # to their stoichiometry anymore
+            # instead I need to reduce protein velocity
+            # However, a cell's Xd is the sum of all its protein's activities
+            # if I reduce the velocity of 1 protein, it could create a new
+            # below-zero situation for another one
+            # One would have to repeat this action until all conflicts are satisfied
+            # Here, I am instead reducing all the cell's proteins by the same factor
+            # that way these secondary below-zero situations cannot appear
+            trim_to_zero = torch.where(X + Xd < 0.0, (X - _EPS) / -Xd, 1.0)  # (c, s)
+            Xd = torch.einsum("cs,c->cs", Xd, trim_to_zero.amin(1))
+
+            # should not be necessary but floating point precision
+            # can still create very small negative values (<1e-7)
+            # these are so small that they should not matter in the overall simulation
+            X = (X + Xd).clamp(min=0.0)
 
         return X
 
@@ -598,10 +717,13 @@ class Kinetics:
         `from_idxs` and `to_idxs` must have the same length.
         They refer to the same cell indexes as in `world.genomes`.
         """
-        self.Km[to_idxs] = self.Km[from_idxs]
+        self.Kmf[to_idxs] = self.Kmf[from_idxs]
+        self.Kmb[to_idxs] = self.Kmb[from_idxs]
+        self.Kmr[to_idxs] = self.Kmr[from_idxs]
         self.Vmax[to_idxs] = self.Vmax[from_idxs]
-        self.E[to_idxs] = self.E[from_idxs]
         self.N[to_idxs] = self.N[from_idxs]
+        self.Nf[to_idxs] = self.Nf[from_idxs]
+        self.Nb[to_idxs] = self.Nb[from_idxs]
         self.A[to_idxs] = self.A[from_idxs]
 
     def remove_cell_params(self, keep: torch.Tensor):
@@ -615,10 +737,13 @@ class Kinetics:
         `keep` must have the same length as `world.genomes`.
         The indexes on `keep` reflect the indexes in `world.genomes`.
         """
-        self.Km = self.Km[keep]
+        self.Kmf = self.Kmf[keep]
+        self.Kmb = self.Kmb[keep]
+        self.Kmr = self.Kmr[keep]
         self.Vmax = self.Vmax[keep]
-        self.E = self.E[keep]
         self.N = self.N[keep]
+        self.Nf = self.Nf[keep]
+        self.Nb = self.Nb[keep]
         self.A = self.A[keep]
 
     def increase_max_cells(self, by_n: int):
@@ -628,10 +753,13 @@ class Kinetics:
         Arguments:
             by_n: By how many rows to increase the cell dimension
         """
-        self.Km = self._expand_c(t=self.Km, n=by_n)
+        self.Kmf = self._expand_c(t=self.Kmf, n=by_n)
+        self.Kmb = self._expand_c(t=self.Kmb, n=by_n)
+        self.Kmr = self._expand_c(t=self.Kmr, n=by_n)
         self.Vmax = self._expand_c(t=self.Vmax, n=by_n)
-        self.E = self._expand_c(t=self.E, n=by_n)
         self.N = self._expand_c(t=self.N, n=by_n)
+        self.Nf = self._expand_c(t=self.Nf, n=by_n)
+        self.Nb = self._expand_c(t=self.Nb, n=by_n)
         self.A = self._expand_c(t=self.A, n=by_n)
 
     def increase_max_proteins(self, max_n: int):
@@ -641,14 +769,63 @@ class Kinetics:
         Arguments:
             max_n: The maximum number of rows required in the protein dimension
         """
-        n_prots = int(self.Km.shape[1])
+        n_prots = int(self.N.size(1))
         if max_n > n_prots:
             by_n = max_n - n_prots
-            self.Km = self._expand_p(t=self.Km, n=by_n)
+            self.Kmf = self._expand_p(t=self.Kmf, n=by_n)
+            self.Kmb = self._expand_p(t=self.Kmb, n=by_n)
+            self.Kmr = self._expand_p(t=self.Kmr, n=by_n)
             self.Vmax = self._expand_p(t=self.Vmax, n=by_n)
-            self.E = self._expand_p(t=self.E, n=by_n)
             self.N = self._expand_p(t=self.N, n=by_n)
+            self.Nf = self._expand_p(t=self.Nf, n=by_n)
+            self.Nb = self._expand_p(t=self.Nb, n=by_n)
             self.A = self._expand_p(t=self.A, n=by_n)
+
+    def _aggregate_signals(
+        self, X: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # consider:
+        # - a) some proteins are not involved at all (their Ns are all 0)
+        # - b) some are involved but the signal 0 (required X is 0)
+        # - c) there can be multiple signals (Xs must be multiplied)
+        # - d) each signal has a stoichiometric number (X must be raised)
+
+        # signals are prepared as c,p,s
+        # all non-involved signals (or involved but 0)
+        # are set to NaN so that it is possible
+        # to log them later without need of EPS addition
+        x = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
+        x[x == 0.0] = torch.nan
+
+        # stoichiometric numbers are prepared
+        # all non-involved fields are 0
+        n = mask * N  # (c, p, s)
+
+        # proteins which have at least 1 non-zero stoichiometric number
+        involved_prots = n.sum(2) != 0.0
+
+        # proteins which have all zero signals or which
+        # don't have at least 1 non-zero stoichiometric number
+        zero_prots = x.isnan().all(2)
+
+        # (1) raise each signal to its stoichiometric number
+        # then (2) multiply all over protein
+        # while ignoring non-involved signals
+        # (1) is done in log-space, all NaNs stay NaN, then
+        # (2) can be done as nansum (treats NaNs as 0) so
+        # if a protein had only 0 stoichiometric numbers or
+        # all involved signals were 0 it will be 0
+        # after exp it will become 1
+        xx = torch.exp((torch.log(x) * n).nansum(2))
+
+        # proteins that actually had a stoichiometric number
+        # but its signal was 0 became 1, but they should be 0
+        # I have to identify them with the masks calculated earlier
+        # because in xx a signal could theoretically become 1
+        # from a legitimate stoichiometric number and non-zero signal
+        xx[involved_prots & zero_prots] = 0.0
+
+        return xx, involved_prots
 
     def _get_proteome_tensors(
         self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
@@ -689,18 +866,12 @@ class Kinetics:
         A_r = torch.einsum("cpds,cpd->cpds", effectors, reg_mask)
         A_d = torch.einsum("cpds,cpd->cpds", A_r, signs)
 
-        # Km (c, p, d, s)
-        is_lft = (A_d != 0.0) | (N_d < 0.0)
-        is_rgt = N_d > 0.0
-        Km_l = torch.einsum("cpds,cpd->cpds", is_lft.float(), Kms)
-        Km_r = torch.einsum("cpds,cpd->cpds", is_rgt.float(), 1 / Kms)
-        Km_d = Km_l + Km_r
-        Km_d[~(is_lft | is_rgt)] = torch.nan
+        # Km (c, p, d)
 
         # Vmax_d (c, p, d)
         Vmax_d = Vmaxs * catal_trnsp_mask
 
-        return N_d, A_d, Km_d, Vmax_d, dom_types
+        return N_d, A_d, Kms, Vmax_d, dom_types
 
     def _collect_proteome_idxs(
         self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
@@ -752,43 +923,6 @@ class Kinetics:
         idxs2 = self._tensor_from(c_idxs2)  # long (c, p, d)
         idxs3 = self._tensor_from(c_idxs3)  # long (c, p, d)
         return dom_types, idxs0, idxs1, idxs2, idxs3
-
-    def _get_ln_reaction_quotients(self, X: torch.Tensor) -> torch.Tensor:
-        # substrates
-        smask = self.N < 0.0
-        sub_X = torch.einsum("cps,cs->cps", smask, X)  # (c, p, s)
-        sub_N = smask * -self.N  # (c, p, s)
-
-        # products
-        pmask = self.N > 0.0
-        pro_X = torch.einsum("cps,cs->cps", pmask, X)  # (c, p, s)
-        pro_N = pmask * self.N  # (c, p, s)
-
-        # quotients
-        prods = (torch.log(pro_X + _EPS) * pro_N).sum(2)  # (c, p)
-        subs = (torch.log(sub_X + _EPS) * sub_N).sum(2)  # (c, p)
-        return prods - subs  # (c, p)
-
-    def _get_catalytic_activity(self, X: torch.Tensor, N: torch.Tensor) -> torch.Tensor:
-        mask = N < 0.0
-        sub_X = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
-        sub_N = mask * -N  # (c, p, s)
-        lact = torch.log(sub_X + _EPS) - torch.log(self.Km + sub_X + _EPS)  # (c, p, s)
-        return (lact * sub_N).sum(2).exp()
-
-    def _get_inhibitor_activity(self, X: torch.Tensor) -> torch.Tensor:
-        inh_N = (-self.A).clamp(0)  # (c, p, s)
-        inh_X = torch.einsum("cps,cs->cps", inh_N, X)  # (c, p, s)
-        lact = torch.log(inh_X + _EPS) - torch.log(self.Km + inh_X + _EPS)  # (c, p, s)
-        V = (lact * inh_N).sum(2).exp()  # (c, p)
-        return torch.where(torch.any(self.A < 0.0, dim=2), V, 0.0)  # (c, p)
-
-    def _get_activator_activity(self, X: torch.Tensor) -> torch.Tensor:
-        act_N = self.A.clamp(0)  # (c, p, s)
-        act_X = torch.einsum("cps,cs->cps", act_N, X)  # (c, p, s)
-        lact = torch.log(act_X + _EPS) - torch.log(self.Km + act_X + _EPS)  # (c, p, s)
-        V = (lact * act_N).sum(2).exp()  # (c, p)
-        return torch.where(torch.any(self.A > 0.0, dim=2), V, 1.0)  # (c, p)
 
     def _expand_c(self, t: torch.Tensor, n: int) -> torch.Tensor:
         size = t.size()
