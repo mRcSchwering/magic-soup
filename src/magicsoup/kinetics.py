@@ -704,6 +704,13 @@ class Kinetics:
             # these are so small that they should not matter in the overall simulation
             X = (X + Xd).clamp(min=0.0)
 
+        # NaNs can be created when overflow creates Infs (most likely in aggregate_signals)
+        # with kinetics default values I have not been able to achieve this (>100 testruns)
+        # however non-default values (e.g. large Vmax) might achieve that
+        # once a 1 NaN is generated, it will spread over the whole simulation
+        # this is a last effort in avoiding that
+        X[X.isnan()] = 0.0
+
         return X
 
     def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):

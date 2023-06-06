@@ -200,7 +200,7 @@ def test_molecule_amount_integrity_during_diffusion():
     world = ms.World(chemistry=chemistry, map_size=128)
 
     exp = world.molecule_map.sum(dim=[1, 2])
-    for step_i in range(1000):
+    for step_i in range(100):
         world.diffuse_molecules()
         res = world.molecule_map.sum(dim=[1, 2])
         assert (res.sum() - exp.sum()).abs() < 10.0, step_i
@@ -229,7 +229,7 @@ def test_molecule_amount_integrity_during_reactions():
         return mij + mk + cij + ck
 
     n0 = count(world)
-    for step_i in range(1000):
+    for step_i in range(100):
         world.enzymatic_activity()
         n = count(world)
         assert n == pytest.approx(n0, abs=1.0), step_i

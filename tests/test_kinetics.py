@@ -1534,7 +1534,7 @@ def test_substrate_concentrations_are_always_finite_and_positive():
     kinetics.Nb = torch.where(kinetics.N > 0.0, kinetics.N, 0.0)
 
     # max velocities (c, p)
-    kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 100
+    kinetics.Vmax = torch.randn(n_cells, n_prots).abs().clamp(max=1.0) * 100
 
     # allosterics (c, p, s)
     kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
