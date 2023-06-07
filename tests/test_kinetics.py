@@ -155,18 +155,18 @@ def test_cell_params_with_transporter_domains():
     assert Kmb[0, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Kmf[0, 1] == pytest.approx(avg(0.5, 0.2), abs=TOLERANCE)
     assert Kmb[0, 1] == pytest.approx(avg(0.5, 0.2), abs=TOLERANCE)
-    assert Kmf[0, 2] == 0.0
-    assert Kmb[0, 2] == 0.0
+    assert Kmf[0, 2] == pytest.approx(0.0, TOLERANCE)
+    assert Kmb[0, 2] == pytest.approx(0.0, TOLERANCE)
 
     ke_c1_1 = ke([ma], [mb])
     assert Kmf[1, 0] == pytest.approx(avg(0.4, 0.5, 0.6, 0.7), abs=TOLERANCE)
     assert Kmb[1, 0] == pytest.approx(avg(0.4, 0.5, 0.6, 0.7), abs=TOLERANCE)
     assert Kmf[1, 1] == pytest.approx(avg(0.5, 0.5), abs=TOLERANCE)
     assert Kmb[1, 1] == pytest.approx(avg(0.5, 0.5) * ke_c1_1, abs=TOLERANCE)
-    assert Kmf[1, 2] == 0.0
-    assert Kmb[1, 2] == 0.0
+    assert Kmf[1, 2] == pytest.approx(0.0, TOLERANCE)
+    assert Kmb[1, 2] == pytest.approx(0.0, TOLERANCE)
 
-    assert (Kmr == 0.0).all()
+    assert (Kmr < TOLERANCE).all()
 
     assert Vmax[0, 0] == pytest.approx(1.5, abs=TOLERANCE)
     assert Vmax[0, 1] == pytest.approx(avg(1.5, 1.1), abs=TOLERANCE)
@@ -322,16 +322,16 @@ def test_cell_params_with_regulatory_domains():
     assert Kmf[0, 1] == pytest.approx(0.5, abs=TOLERANCE)
     assert Kmb[0, 1] == pytest.approx(0.5 * ke_c0_1, abs=TOLERANCE)
     assert Kmr[0, 1] == pytest.approx(avg(1.0, 1.5), abs=TOLERANCE)
-    assert Kmf[0, 2] == 0.0
-    assert Kmb[0, 2] == 0.0
-    assert Kmr[0, 2] == 0.0
+    assert Kmf[0, 2] == pytest.approx(0.0, TOLERANCE)
+    assert Kmb[0, 2] == pytest.approx(0.0, TOLERANCE)
+    assert Kmr[0, 2] == pytest.approx(0.0, TOLERANCE)
 
     assert Kmf[1, 0] == pytest.approx(0.5, abs=TOLERANCE)
     assert Kmb[1, 0] == pytest.approx(0.5 * ke_c0_0, abs=TOLERANCE)
     assert Kmf[1, 1] == pytest.approx(0.5, abs=TOLERANCE)
     assert Kmb[1, 1] == pytest.approx(0.5 * ke_c0_1, abs=TOLERANCE)
-    assert Kmf[1, 2] == 0.0
-    assert Kmb[1, 2] == 0.0
+    assert Kmf[1, 2] == pytest.approx(0.0, TOLERANCE)
+    assert Kmb[1, 2] == pytest.approx(0.0, TOLERANCE)
 
     assert Vmax[0, 0] == pytest.approx(2.0, abs=TOLERANCE)
     assert Vmax[0, 1] == pytest.approx(2.0, abs=TOLERANCE)
@@ -534,10 +534,10 @@ def test_cell_params_with_catalytic_domains():
     assert Kmb[1, 0] == pytest.approx(avg(0.3, 1.4), TOLERANCE)
     assert Kmf[1, 1] == pytest.approx(avg(0.3, 1.7), TOLERANCE)
     assert Kmb[1, 1] == pytest.approx(avg(0.3, 1.7) * ke_c1_1, TOLERANCE)
-    assert Kmf[1, 2] == 0.0
-    assert Kmb[1, 2] == 0.0
+    assert Kmf[1, 2] == pytest.approx(0.0, TOLERANCE)
+    assert Kmb[1, 2] == pytest.approx(0.0, TOLERANCE)
 
-    assert (Kmr == 0.0).all()
+    assert (Kmr < TOLERANCE).all()
 
     assert Vmax[0, 0] == pytest.approx(avg(1.1, 1.2), abs=TOLERANCE)
     assert Vmax[0, 1] == pytest.approx(avg(2.0, 1.3), abs=TOLERANCE)

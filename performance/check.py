@@ -11,7 +11,6 @@ It seems with v0.3.0 everything got a bit slower :/
 import time
 from argparse import ArgumentParser
 import magicsoup as ms
-from magicsoup.kinetics_old import Kinetics as KineticsOld
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
@@ -117,29 +116,6 @@ def enzymatic_activity(w: int, n: int, s: int):
     return m, s
 
 
-def enzymatic_activity_old(w: int, n: int, s: int):
-    tds = []
-    for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, workers=w)
-        world.kinetics = KineticsOld(
-            molecules=CHEMISTRY.molecules,
-            reactions=CHEMISTRY.reactions,
-            km_range=(0.01, 100),
-            vmax_range=(0.01, 100),
-        )
-
-        genomes = [ms.random_genome(s) for _ in range(n)]
-        world.add_cells(genomes=genomes)
-
-        t0 = time.time()
-        world.enzymatic_activity()
-        tds.append(time.time() - t0)
-
-    m = sum(tds) / R
-    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
-    return m, s
-
-
 def get_neighbors(w: int, n: int, s: int):
     tds = []
     for _ in range(R):
@@ -159,23 +135,20 @@ def get_neighbors(w: int, n: int, s: int):
 def main(n: int, s: int, w: int):
     print(f"{n:,} genomes, {s:,} size, {w} workers")
 
-    # mu, sd = add_cells(w=w, n=n, s=s)
-    # print(f"({mu:.2f}+-{sd:.2f})s - add cells")
+    mu, sd = add_cells(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - add cells")
 
-    # mu, sd = update_cells(w=w, n=n, s=s)
-    # print(f"({mu:.2f}+-{sd:.2f})s - update cells")
+    mu, sd = update_cells(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - update cells")
 
-    # mu, sd = replicate_cells(w=w, n=n, s=s)
-    # print(f"({mu:.2f}+-{sd:.2f})s - replicate cells")
+    mu, sd = replicate_cells(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - replicate cells")
 
     mu, sd = enzymatic_activity(w=w, n=n, s=s)
     print(f"({mu:.2f}+-{sd:.2f})s - enzymatic activity")
 
-    mu, sd = enzymatic_activity_old(w=w, n=n, s=s)
-    print(f"({mu:.2f}+-{sd:.2f})s - enzymatic activity old")
-
-    # mu, sd = get_neighbors(w=w, n=n, s=s)
-    # print(f"({mu:.2f}+-{sd:.2f})s - get neighbors")
+    mu, sd = get_neighbors(w=w, n=n, s=s)
+    print(f"({mu:.2f}+-{sd:.2f})s - get neighbors")
 
 
 if __name__ == "__main__":

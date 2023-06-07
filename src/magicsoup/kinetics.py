@@ -13,6 +13,8 @@ from magicsoup.containers import (
 )
 
 _EPS = 1e-8
+_MIN = 1e-45
+_MAX = 1e38
 
 
 class _LogNormWeightMapFact:
@@ -596,16 +598,20 @@ class Kinetics:
         Kmn = torch.where(~is_reg, Kms, torch.nan).nanmean(dim=2).nan_to_num(0.0)
 
         # energies define Ke which defines Ke = Kmf/Kmb
+        # extreme energies can create Inf or 0.0, avoid them with clamp
+        E = torch.einsum("cps,s->cp", N, self.mol_energies)
+        Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT).clamp(_MIN, _MAX)
+
         # Km is sampled between a defined range
         # exessively small Km can create numerical instability
         # thus, sampled Km should define the smaller Km of Ke = Kmf/Kmb
         # Ke>=1  => Kmf=Km,         Kmb=Ke*Km
         # Ke<1   => Kmf=Km/Ke,      Kmb=Km
-        E = torch.einsum("cps,s->cp", N, self.mol_energies)
-        Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT)
-        ke_ge_1 = Ke >= 1.0
-        self.Kmf[cell_idxs] = torch.where(ke_ge_1, Kmn, Kmn / Ke)
-        self.Kmb[cell_idxs] = torch.where(ke_ge_1, Kmn * Ke, Kmn)
+        # this operation can create again Inf or 0.0, avoided with clamp
+        # this effectively limits Ke around 1e38
+        is_fwd = Ke >= 1.0
+        self.Kmf[cell_idxs] = torch.where(is_fwd, Kmn, Kmn / Ke).clamp(_MIN, _MAX)
+        self.Kmb[cell_idxs] = torch.where(is_fwd, Kmn * Ke, Kmn).clamp(_MIN, _MAX)
 
     def unset_cell_params(self, cell_idxs: list[int]):
         """
@@ -682,6 +688,10 @@ class Kinetics:
             # velocity from activities
             # as well as trimming factor of n_computations
             V = Vmax_adj * a_cat * (1 - a_inh) * a_act * self.alpha**i  # (c, p)
+
+            # Kms can be close to Inf, they can create Infs
+            # thus result velocity should be clamped again
+            V = V.clamp(max=_MAX)
 
             # naive Xd
             Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
