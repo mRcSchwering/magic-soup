@@ -30,7 +30,12 @@ def timeit(label: str, step: int, writer: SummaryWriter):
 def main(args: Namespace):
     writer = SummaryWriter(log_dir=_this_dir / "runs" / _now)
 
-    world = ms.World(chemistry=CHEMISTRY, map_size=256, device=args.device)
+    world = ms.World(
+        chemistry=CHEMISTRY,
+        map_size=256,
+        mol_map_init=args.init_molmap,
+        device=args.device,
+    )
     world.save(rundir=_this_dir / "runs" / _now)
 
     mol_2_idx = {d.name: i for i, d in enumerate(CHEMISTRY.molecules)}
@@ -100,6 +105,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--n_steps", default=100, type=int)
     parser.add_argument("--init_genome_size", default=500, type=int)
+    parser.add_argument("--init_molmap", default="randn", type=str)
     parser.add_argument("--device", default="cpu", type=str)
     parsed_args = parser.parse_args()
 
