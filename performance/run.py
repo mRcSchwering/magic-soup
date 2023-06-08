@@ -5,6 +5,10 @@ Dummy run to test simulation performance in realistic environment
     ...
     tensorboard --host 0.0.0.0 --logdir=./performance/runs
 
+Last runs:
+
+- 2023-06-08 EC2 GPU: 0.7s / 1k cells, 4.5s / 40k cells (0.9s activity, 1.2 mutate genomes, 2 replicate)
+
 """
 from argparse import ArgumentParser, Namespace
 from contextlib import contextmanager
