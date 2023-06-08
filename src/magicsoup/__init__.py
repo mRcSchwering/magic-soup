@@ -1,4 +1,4 @@
-__version__ = "0.3.20"
+__version__ = "0.4.0"
 
 from .containers import *
 from .genetics import *
