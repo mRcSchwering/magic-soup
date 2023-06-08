@@ -384,6 +384,7 @@ class Kinetics:
         self.mol_energies = self._tensor_from([d.energy for d in molecules] * 2)
         self.mol_2_mi = {d: i for i, d in enumerate(molecules)}
         self.mi_2_mol = {v: k for k, v in self.mol_2_mi.items()}
+        self.molecules = molecules
 
         # working cell params
         n_signals = 2 * len(molecules)
@@ -455,23 +456,22 @@ class Kinetics:
             proteomes=[proteome]
         )
 
+        Nf_d = torch.where(N_d < 0.0, -N_d, 0.0)
+        Nb_d = torch.where(N_d > 0.0, N_d, 0.0)
+        mols = self.molecules
+        n_mols = len(mols)
+
         prots: list[Protein] = []
         for pi in range(dom_types.size(1)):
-            is_useful = False
-
             doms: list[DomainType] = []
             for di in range(dom_types.size(2)):
                 # catalytic domain (N has positive and negative integers)
                 if dom_types[0][pi][di].item() == 1:
-                    lfts: list[Molecule] = []
-                    rgts: list[Molecule] = []
-                    for mi, n in enumerate(N_d[0][pi][di].tolist()):
-                        if n >= 1:
-                            rgts.extend(([self.mi_2_mol[mi]] * int(n)))
-                        elif n <= -1:
-                            lfts.extend(([self.mi_2_mol[mi]] * -int(n)))
+                    lft_ns = Nf_d[0][pi][di].int().tolist()
+                    rgt_ns = Nb_d[0][pi][di].int().tolist()
+                    lfts = [m for m, n in zip(mols, lft_ns) for _ in range(n)]
+                    rgts = [m for m, n in zip(mols, rgt_ns) for _ in range(n)]
                     if len(lfts) > 0:
-                        mi = self.mol_2_mi[lfts[0]]
                         doms.append(
                             CatalyticDomain(
                                 reaction=(lfts, rgts),
@@ -479,23 +479,19 @@ class Kinetics:
                                 vmax=Vmax_d[0][pi][di].item(),
                             )
                         )
-                        is_useful = True
 
                 # transporter domain (N has one +1 and one -1)
                 if dom_types[0][pi][di].item() == 2:
-                    lft = int(torch.argwhere(N_d[0][pi][di] == -1)[0].item())
-                    rgt = int(torch.argwhere(N_d[0][pi][di] == 1)[0].item())
-                    mi = lft if lft in self.mi_2_mol else rgt
+                    mis = torch.argwhere(N_d[0][pi][di] != 0).int().flatten().tolist()
                     doms.append(
                         TransporterDomain(
-                            molecule=self.mi_2_mol[mi],
+                            molecule=self.mi_2_mol[min(mis)],
                             km=Km_d[0][pi][di].item(),
                             vmax=Vmax_d[0][pi][di].item(),
                         )
                     )
-                    is_useful = True
 
-                # regulatory domain (A has values != 0)
+                # regulatory domain (A has one +1 or -1)
                 if dom_types[0][pi][di].item() == 3:
                     mi = int(torch.argwhere(A_d[0][pi][di] != 0)[0].item())
                     if mi in self.mi_2_mol:
@@ -503,7 +499,7 @@ class Kinetics:
                         mol = self.mi_2_mol[mi]
                     else:
                         is_trnsm = True
-                        mol = self.mi_2_mol[mi - len(self.mi_2_mol)]
+                        mol = self.mi_2_mol[mi - n_mols]
                     doms.append(
                         RegulatoryDomain(
                             effector=mol,
@@ -513,9 +509,7 @@ class Kinetics:
                         )
                     )
 
-            # ignore proteins without a non-regulatory domain
-            if is_useful:
-                prots.append(Protein(domains=doms))
+            prots.append(Protein(domains=doms))
 
         return prots
 
