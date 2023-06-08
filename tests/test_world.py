@@ -5,9 +5,6 @@ import torch
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES
 
-# TODO: loading cells with empty sequence (fasta)
-# TODO: get_cell with empty genome/proteome
-
 
 def test_diffuse():
     # fmt: off
@@ -426,11 +423,11 @@ def test_saving_and_loading_world_obj():
     assert world.chemistry.molecules[0] is mi
     assert world.chemistry.molecules[1] is mj
     assert world.chemistry.reactions == [([mi], [mj])]
-    
+
     for i, mol in enumerate(chemistry.molecules):
         assert world.chemistry.mol_2_idx[mol] == i
         assert world.chemistry.molname_2_idx[mol.name] == i
-    
+
     del world
 
     world = ms.World(chemistry=chemistry, map_size=9, workers=2, abs_temp=300.0)
@@ -448,11 +445,11 @@ def test_saving_and_loading_world_obj():
     assert world.chemistry.molecules[0] is mi
     assert world.chemistry.molecules[1] is mj
     assert world.chemistry.reactions == [([mi], [mj])]
-    
+
     for i, mol in enumerate(chemistry.molecules):
         assert world.chemistry.mol_2_idx[mol] == i
         assert world.chemistry.molname_2_idx[mol.name] == i
-    
+
     del world
 
 
@@ -704,3 +701,29 @@ def test_get_neighbours():
     exp = set(d for d in exp if d[0] in nghbr_idxs or d[1] in nghbr_idxs)
     assert len(res) == len(exp)
     assert set(res) == exp
+
+
+def test_empty_proteome_and_genome_cells():
+    genomes = [ms.random_genome(10), "", ms.random_genome(10)]
+
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=9)
+
+    world.add_cells(genomes=genomes)
+    assert world.n_cells == 3
+
+    # get cells with empty proteomes
+    assert len(world.get_cell(by_idx=0).proteome) == 0
+    assert len(world.get_cell(by_idx=1).proteome) == 0
+    assert len(world.get_cell(by_idx=2).proteome) == 0
+
+    # load cells with empty fastAs
+    with tempfile.TemporaryDirectory() as tmpdir:
+        statedir = Path(tmpdir)
+        world.save_state(statedir=statedir)
+
+        del world
+        world = ms.World(chemistry=chemistry, map_size=9)
+        world.load_state(statedir=statedir)
+
+    assert world.genomes == genomes
