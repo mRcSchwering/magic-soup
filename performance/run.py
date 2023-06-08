@@ -1,7 +1,7 @@
 """
 Dummy run to test simulation performance in realistic environment
 
-    PYTHONPATH=./src python performance/run.py --n_steps=100
+    PYTHONPATH=./src python performance/run.py --help
     ...
     tensorboard --host 0.0.0.0 --logdir=./performance/runs
 

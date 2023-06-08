@@ -67,7 +67,7 @@ class _SignMapFact:
 
     def inverse(self) -> dict[bool, list[int]]:
         sign_map = {}
-        M = self.signs
+        M = self.signs.to("cpu")
         sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
         sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
         return sign_map
@@ -170,7 +170,7 @@ class _ReactionMapFact(_VectorMapFact):
                 t[molmap[sub]] -= 1
             for prod in prods:
                 t[molmap[prod]] += 1
-            M = self.M
+            M = self.M.to("cpu")
             idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
             react_map[(tuple(subs), tuple(prods))] = idxs
         return react_map
@@ -211,7 +211,7 @@ class _TransporterMapFact(_VectorMapFact):
     def inverse(self, molecules: list[Molecule]) -> dict[Molecule, list[int]]:
         trnsp_map = {}
         for mi, mol in enumerate(molecules):
-            M = self.M
+            M = self.M.to("cpu")
             idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
             trnsp_map[mol] = idxs
         return trnsp_map
@@ -250,7 +250,7 @@ class _RegulatoryMapFact(_VectorMapFact):
     def inverse(self, molecules: list[Molecule]) -> dict[Molecule, list[int]]:
         reg_map = {}
         for mi, mol in enumerate(molecules):
-            M = self.M
+            M = self.M.to("cpu")
             idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
             reg_map[mol] = idxs
         return reg_map
