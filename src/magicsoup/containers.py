@@ -1,5 +1,6 @@
 import torch
 import warnings
+from collections import Counter
 
 
 class Molecule:
@@ -307,7 +308,15 @@ class CatalyticDomain:
     def __repr__(self) -> str:
         ins = ",".join(str(d) for d in self.substrates)
         outs = ",".join(str(d) for d in self.products)
-        return f"CatalyticDomain({ins}->{outs},Km={self.km:.2e},Vmax{self.vmax:.2e})"
+        return f"CatalyticDomain({ins}<->{outs},Km={self.km:.2e},Vmax{self.vmax:.2e})"
+
+    def __str__(self) -> str:
+        subs_cnts = Counter(str(d) for d in self.substrates)
+        prods_cnts = Counter([str(d) for d in self.products])
+        subs_str = " + ".join([f"{d} {k}" for k, d in subs_cnts.items()])
+        prods_str = " + ".join([f"{d} {k}" for k, d in prods_cnts.items()])
+        spec = self.vmax / self.km
+        return f"{subs_str} <-> {prods_str} | spec {spec:.2e}"
 
 
 class CatalyticDomainFact:
@@ -357,6 +366,10 @@ class TransporterDomain:
         return (
             f"TransporterDomain({self.molecule},Km={self.km:.2e},Vmax={self.vmax:.2e})"
         )
+
+    def __str__(self) -> str:
+        spec = self.vmax / self.km
+        return f"{self.molecule} transporter | spec {spec:.2e}"
 
 
 class TransporterDomainFact:
@@ -413,6 +426,11 @@ class RegulatoryDomain:
         eff = "inhibiting" if self.is_inhibiting else "activating"
         return f"ReceptorDomain({self.effector},Km={self.km:.2e},{loc},{eff})"
 
+    def __str__(self) -> str:
+        loc = "[e]" if self.is_transmembrane else "[i]"
+        post = "inhibitor" if self.is_inhibiting else "activator"
+        return f"{self.effector}{loc} {post} | Km {self.km:.2e}"
+
 
 class RegulatoryDomainFact:
     """
@@ -458,6 +476,10 @@ class Protein:
         kwargs = {"domains": self.domains}
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
+
+    def __str__(self) -> str:
+        domstrs = [str(d).split(" | ")[0] for d in self.domains]
+        return " | ".join(domstrs)
 
 
 class ProteinFact:
