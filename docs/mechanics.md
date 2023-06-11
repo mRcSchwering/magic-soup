@@ -6,21 +6,17 @@ These proteins can change molecules in and around the cell.
 Through that each cell can process information.
 Each cell's proteome can form complex networks with hubs, feedback loops, cascades, and oscillators.
 When randomly changing the cell's genome, this network changes randomly, too.
-By selectively replicating certain cells while killing others, cells can be brought to evolve.
+By selectively replicating certain cells while killing others, cells can evolve.
 
-![transcription and translation](./img/transc_transl.png)
-
-_A cells genome is transcribed into multiple coding regions, each of which forms a protein. Each coding region can contain multiple domains of which each has a different purpose and different kinetics. Together these proteins form signal processing networks in the cell._
+- [Genetics](#genetics) explains how genetics work in this simulation
+- [Chemistry](#chemistry) explanation for molecules, reactions and energy coupling
+- [Kinetics](#kintics) explain the reaction kinetics in this simulation
+- [Implementation](#implementation) some implementation details worth mentioning
 
 I believe that most interesting behaviors take many time steps to evolve.
 That's why this simulation is implemented with millions of time steps in mind.
 Genetics, chemistry, physics in this simulation is simplified a lot.
 It is a tradeoff between a reasonable amount of complexity and performance.
-
-- [Genetics](#genetics) explains how genetics work in this simulation
-- [Chemistry](#chemistry) explanation for molecules, reactions and energy coupling
-- [Kinetics](#kintics) explain the protein kinetics in this simulation
-- [Implementation](#implementation) some implementation details worth mentioning
 
 ## Genetics
 
@@ -33,18 +29,24 @@ CDSs without stop codon are not considered [[James NR 2016](https://pubmed.ncbi.
 Each CDS will then be translated into one protein, giving each cell a certain [proteome](https://en.wikipedia.org/wiki/Proteome).
 What each protein can do is defined by its [domains](https://en.wikipedia.org/wiki/Protein_domain).
 
+![transcription and translation](./img/transc_transl.png)
+
+_A cells genome is transcribed into multiple coding regions, each of which forms a protein. Each coding region can contain multiple domains of which each has a different purpose and different kinetics. Together these proteins form signal processing networks in the cell._
+
 Currently, there are three domain types: _catalytic, transporter, regulatory_.
 Each domain consists of a region of genetic code that defines the domain type itself
 and several regions that define its further specifications.
 What these specifications are depends on the domain type.
 
-_Catalytic_ domains can catalyze one of the user-defined reactions.
+_Catalytic_ domains can catalyze one reaction.
+All possible reactions are defined in the simulation's chemistry (see [Chemistry](#chemistry)).
 Specifications are the catalyzed reaction, affinities for substrates and products,
-maximum velocity, its orientation (see [Energy](#energy)).
+maximum velocity, domain orientation (see [Energy](#energy)).
 
 _Transporter_ domains can move a molecule species across the cell membrane,
 _i.e._ from the outside world into the cell and _vice versa_.
-Specifications are the molecule species, maximum velocity, its orientation (see [Energy](#energy)).
+All possible molecule species are defined in the simulation's chemistry (see [Chemistry](#chemistry)).
+Specifications are the molecule species, molecule affinity, maximum velocity, domain orientation (see [Energy](#energy)).
 
 _Regulatory_ domains can regulate a protein through an effector molecule.
 A protein with only a regulatory domain has no function.
@@ -53,61 +55,79 @@ domain can up- or down-regulate this domain.
 Specifications are the effector molecule species, whether it is an activating or inhibiting
 effector, the affinity to that effector.
 
-The exact genetic code for these domains is set when the [Genetics][magicsoup.genetics.Genetics] object is instantiated.
-But a user can also override the exact sequence-to-domain mappings.
-This would be _e.g._ the exact sequence which will encode a catalytic domain for a certain reaction, with certain affinities and velocities.
-In principle this flexibility allows a cell to create complex networks including feedback loops,
-oscillators, and cascades.
-
+Affinity and maximum velocity are kinetic parameters which are described in [Kinetics](#kinetics) in more detail.
+Which specific combination of nucleotides encodes which specific parameter, _e.g._ a particular maximum velocity value,
+is defined by mappings.
+These mapping are created when the [Genetics][magicsoup.genetics.Genetics] object is initialized.
+A user can also override them later on.
 For more details see the [Genetics][magicsoup.genetics.Genetics] class.
-Also see [Kinetics](#kinetics) for details about the domain kinetics and aggregations.
+
+The rules of this genetic setup are quite simple.
+_E.g._ there is no transcriptional and post-transcriptional regulation.
+Abundance, location, and efficiency of CDSs are not taken into consideration.
+Yet still this simple genetic setup can already create complex protein networks
+with hubs, feedback loops, oscillators, and cascades.
+
 
 ## Chemistry
 
-At the basis of this simulation one has to define which molecule species exist
+As the basis of this simulation one has to define which molecule species exist
 and which reactions are possible.
-On a high level, a more complex chemistry increases the search space
-for a cell but also allows it to create more complex networks.
+On an abstract level one could see molecules as signal transmitters,
+and reactions as a way to integrate and convert signals transmitters.
+More molecule species and reactions would allow cells to create more complex networks.
+However, there are also some constraints imposed in the simulation.
 
-Every defined reaction can occur in both directions ($substrates \rightleftharpoons products$).
-In which direction it will move for a particular cell and step is based on a mechanism
-based on [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy).
-Each molecule species has an energy value.
-Every reaction is regarded as the deconstruction of the substrates and the synthesis of the products.
-During deconstruction the energy of all substrates is released, during synthesis the energy of all substrates is consumed.
-This energy difference is defined as
+Every defined reaction occurs in both directions ($substrates \rightleftharpoons products$).
+Rates of forward and reverse reactions depend on substrate and product concentrations.
+The ratio of products and substrates can be described by the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) $Q$.
+Every reaction has a specific equilibrium where forward and reverse rates are equal.
+This equilibrium is reached when $Q = K_e$, where $K_e$ is the
+[equilibrium constant](https://en.wikipedia.org/wiki/Equilibrium_constant) of the reaction.
+When $Q < K_e$ the forward reaction happens at a faster rate than the reverse reaction, and $Q$ increases.
+When $Q > K_e$ the reverse reaction happens at a faster rate than the forward reaction, and $Q$ decreases.
+So a reaction will always tend to convert molecules so that $Q = K_e$ (more about the kinetics of this in [Kinetics](#kinetics)).
+A protein can catalzye this reaction and make $Q$ approach $K_e$ more slowly or quickly.
+However, it doesn't change $K_e$.
 
-$$\Delta G = \Delta G_0 + RT \ln Q$$
+$K_e$ itself for any reaction is derived by its substrate and product energies.
+This simulation takes [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy) as an analogy.
+Each reaction is seen as the deconstruction of substrate molecules, and the synthesis of product molecules.
+When molecules are defined, an energy value is given to each molecule species.
+The simulation assumes that this energy is released when this molecule is deconstructed,
+and this energy is consumed when it is synthesized.
+The difference of released and consumed energy is the fictional standard Gibbs free energy $\Delta G_0$ of a reaction.
+The $K_e$ of a specific reaction is then derived from
 
-where $\Delta G_0$ is the standard Gibbs free energy of the reaction, $R$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant), $T$ is the absolute temperature,
-$Q$ is the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient).
-The reaction that minimizes $\Delta G$ will occur.
-So, generally the reaction that deconstructs high energy molecules and synthesizes low energy molecules will likely happen ( $\Delta G_0$ ).
-However, it will turn around if the ratio of products to substrates is too high ( $RT \ln Q$ ).
-There is an equilibrium $\Delta G_0 = RT \ln Q$ where the reaction stops.
-When this equilibrium is approached the reaction or transporter will slow down and finally halt.
+$$- \Delta G_0 = RT \ln K_e$$
 
-Each protein can have multiple domains and all domains of the same protein are energetically coupled.
-So, an energetically unfavourable reaction can happen if at the same time another energetically
-favourable reaction happens.
-Transporter domains are also involved this way.
-A transporter is seen as a reaction that converts an intracellular molecule species to its extracellular version (and _vice versa_).
-Thus, for a transporter $\Delta G_0$ is always zero only the reaction quotient term $RT \ln Q$ is important.
-A transporter can drive a reaction while molecules are allowed to diffuse along
-their concentration gradient, or a reaction might drive a transporter to pump molecules
-against their concentration gratient.
+where $R$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant), $T$ is the absolute temperature,
+and $\Delta G_0$ is the difference of energy released by the substrates and energy consumed by the products.
+So, generally a reaction that deconstructs high energy molecules and synthesizes low energy molecules is
+very favourable. It's $K_e$ would be very high and it would tend to progress in the forward direction until $Q = K_E$.
+The opposite is true for a reaction that deconstructs low energy molecules and synthesizes high energy molecules.
+This reaction would be energeically unfavourable.
 
-The sum of all $\Delta G$ of the protein domains dictates in which
-direction the protein will work. In which orientation these domains are energetically coupled
+However, a protein can still make an energetically unfavourable reaction progress in the forward direction.
+That is when it couples this energetically unfavourable reaction with an energetically favourable one.
+In the simulation all domains of a single protein are considered to be energetically coupled.
+All domains are considered when calculating $\Delta G_0$ and $K_e$.
+Thus, one energetically favourable reaction can be used to drive an energetically unfavourable one.
+
+In which orientation these domains are energetically coupled
 is defined in the domain itself as a region that encodes a boolean $\\{0;1\\}$.
 All domains with orientation $0$ work from left to right, and _vice versa_ for $1$.
 _E.g._ if there are 2 catalytic domains $A \rightleftharpoons B$ and $C \rightleftharpoons D$,
 they would become $A + C \rightleftharpoons B + D$ if they have the same orientation,
 and $A + D \rightleftharpoons B + C$ if not.
 
-For more details see the [Kinetics][magicsoup.kinetics.Kinetics] class where all the logic
-for translating domains into kinetic parameters lives.
-Also see [Implementation](#implementation) for some implications that arise from implementation details.
+Transporter domains are also involved this way.
+A transporter is seen as a reaction that converts an intracellular molecule to its extracellular version (and _vice versa_).
+For a transporter $\Delta G_0$ is always zero only $Q$ drives the reaction.
+Thus, a transporter can drive a reaction while molecules are allowed to diffuse along
+their concentration gradient, or a reaction might drive a transporter to pump molecules
+against their concentration gratient.
+
 
 ## Kinetics
 
