@@ -659,10 +659,7 @@ class Kinetics:
             kb = xxb / self.Kmb
             kb[~b_prots] = 0.0  # rm artifacts created by ln
 
-            # the correct formula yields 2 * (ks - kp) / (1 + ks + kp)
-            # but then there can be a maximum activity of 200%
-            # while regulatory regions can only go up to 100%
-            # thus (ks - kp) / (1 + ks + kp)
+            # custom reversible MM equation
             a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
 
             # NaNs could have been propagated so far by stray NaN Kms
