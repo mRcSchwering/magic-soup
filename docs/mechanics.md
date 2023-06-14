@@ -73,6 +73,33 @@ with hubs, feedback loops, oscillators, and cascades.
 
 As the basis of this simulation one has to define which molecule species exist
 and which reactions are possible.
+Molecule species are defined with attributes about how fast they can diffuse
+and permeate, and with an internal energy value.
+This energy is the hypothetical energy that this molecule would release if it was deconstructed to nothing.
+Reactions define how molecule species can converted.
+They are all reversible (see [Kinetics](#kinetics) for details).
+Here, the simulation takes [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy) as an analogy:
+
+$$
+\Delta G_0 = \sum^{products}{P_j^{n_j}} - \sum^{substrates}{S_i^{n_i}}
+$$
+
+where $\Delta G_0$ is the standard Gibb's free energy of the reaction,
+$S_i$ is substrate $i$ with stoichiometric coefficient $n_i$,
+and $P_j$ is product $j$ with stoichiometric coefficient $n_j$.
+It is used to calculate an [equilibrium constant](https://en.wikipedia.org/wiki/Equilibrium_constant)
+$K_e$ for this reaction.
+
+$$
+\frac{-\Delta G_0}{RT} = \ln K_e
+$$
+
+where $R$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant) and $T$ is the absolute temperature.
+As further described in [Kinetics](#kinetics) the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) $Q$
+always moves towards the $K_e$.
+
+...
+
 On an abstract level one could see molecules as signal transmitters,
 and reactions as a way to integrate and convert signals transmitters.
 More molecule species and reactions would allow cells to create more complex networks.
@@ -142,7 +169,7 @@ against their concentration gratient.
 All reactions in this simulation are based on [Michaelis-Menten-Kinetics](https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics).
 However, the possibility of a reverse reaction is allowed on the second step.
 In the simplest case enzyme (E) forms a complex (ES) with substrate (S) and modifies it to product (P).
-P and bind E again and react back to S.
+P can bind E again and react back to S.
 
 $$
 \text{E} + \text{S} \overset{k_1}{\underset{k_{-1}}{\rightleftharpoons}} \text{ES}
@@ -177,6 +204,8 @@ $$
 v = \frac{dP}{dt} = v_{max} \frac{\frac{S}{K_{m,1}} - \frac{P}{K_{m,2}}}{1 + \frac{S}{K_{m,1}} + \frac{P}{K_{m,2}}}
 $$
 
+$v_{max}$ defines the maximum velocity of the protein.
+$K_{m,1}$ and $K_{m,2}$ describe affinities to S and P.
 In general a protein can consist of catalytic, transporter, and regulatory domains (see [Genetics](#genetics)).
 Transporters are treated as catalytic domains which convert a molecule species from its intracellular version to its extracellular one and _vice versa_.
 Regulatory domains regulate the protein [non-competitively](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
@@ -195,8 +224,8 @@ $$
 where $a_{reg} \in [0;1]$ is regulatory activity (details below),
 $S_i$ is substrate $i$ with stoichiometric coefficient $n_i$,
 and $P_j$ is product $j$ with stoichiometric coefficient $n_j$.
-The amount change over time of any molecule $\frac{dM}{dt}$ can be calculated by multiplying its _stoichiometric number_ (using IUPAC nomenclatur)
-with $V_{final}$.
+The amount change over time of any molecule species can be calculated by multiplying its _stoichiometric number_
+(using IUPAC nomenclatur) with $v_{final}$.
 Over time the reaction will approach an equilibrium state
 where $v_{final} = 0$, and its reaction quotient $Q = K_e$ (the equilibirum constant):
 
@@ -205,49 +234,50 @@ $$
 $$
 
 Thus, $K_e = \frac{K_{m,1}}{K_{m,2}}$ defines in which direction the reaction will proceed.
-As described in [Chemistry](#chemistry) $K_e$ is calculated from the reaction's Gibbs free energy.
+As described in [Chemistry](#chemistry) $K_e$ is calculated from an analogy of the reaction's Gibbs free energy.
+Actual values for $v_{max}$, $K_{m,1}$, $K_{m,2}$ are derived from the domain specifications (see [Genetics](#genetics)).
+One part of of the domain specification encodes maximum velocity $v_{max}$.
+Another part encodes affinity $K_m$ from which $K_{m,1}$ and $K_{m,2}$ are derived.
 
+\[
+K_{m,1} =
+\begin{cases}
+K_m,             & \text{if $K_e \ge 1$} \\
+\frac{K_m}{K_e}, & \text{if $K_e < 1$}
+\end{cases} \text{  and  }
+K_{m,2} =
+\begin{cases}
+K_e K_m,  & \text{if $K_e \ge 1$} \\
+K_m,      & \text{if $K_e < 1$}
+\end{cases}
+\]
 
+Regulatory activity $a_{reg}$ with inhibiting effector molecules (inhibitors) I
+and activating effector molecules (activators) A is modeled as
 
-Values for $v_{max}$, $K_{m,1}$, and $K_{m,2}$ are derived from the domain specifications.
-All...
+$$
+a_{reg} = a_{act} (1 - a_{inh}) = \frac{X_A}{K_{m,a} + X_A} (1 - \frac{X_I}{K_{m,i} + X_I})
+$$
 
+with
 
+$$
+X_A = \prod^{\text{activators}} A_l^{n_l} \text{  and  }  X_I = \prod^{\text{inhibitors}} I_k^{n_k}
+$$
 
-If a cell has one protein with one _catalytic domain_ that defines $S \rightleftharpoons P$ it will create molecule species $P$ from $S$ with a rate of
+where $K_{m,a}$ is the Michaelis-Menten constant for activators,
+$K_{m,i}$ is the Michaelis-Menten constant for inhibitors,
+$A_l$ is activator $l$ with stoichiometric coefficient $n_l$,
+and $I_k$ is inhibitor $k$ with stoichiometric coefficient $n_k$.
+If there are no activators $a_{act} = 1$ and if there are no inhibitors $a_{inh} = 0$.
+Values for $K_{m,a}$ and $K_{m,i}$ are defined in the domain specifications.
 
-$$v = V_{max} \frac{[S]}{[S] + K_m} = \Delta [P] = -\Delta [S]$$
+When the mappings of nucleotide sequences to values for maximum velocities and affinities
+are created, they are sampled from a log-uniform distribution with user defined boundaries.
+If there are multiple catalytic and transporter domains,
+activating regulatory domains, or inhibiting regulatory domains
+values for $v_{max}$, $K_m$, $K_{m,a}$, $K_{m,i}$ are averaged each.
 
-where $V_{max}$ is the maximum velocity of that reaction, $[S]$ is the amount of substrate available,
-$K_m$ is the Michaelis constant.
-When a reaction involves multiple substrate species and/or multiple catalytic domains are
-aggregated this becomes
-
-$$v = V_{max} \prod_{i} \frac{[S_i]^{n_i}}{([S_i] + K_{mi})^{n_i}}$$
-
-where $[S_i]$ is the amount of substrate $i$ available, $n_i$ is the [stoichiometric coefficient](https://en.wikipedia.org/wiki/Chemical_equation#Structure) of substrate $i$, $K_{mi}$ is the Michaelis constant for substrate $i$.
-What exactly these values are is encoded in the domain itself (see [Genetics](#genetics)).
-
-_Transporter domains_ essentially work in the same way. They are defined as $[A_{int}] \rightleftharpoons [A_{ext}]$ where $A_{int}$ is a molecule species $A$ inside the cell and $A_{ext}$ is the same molecule species outside the cell.
-
-_Regulator domains_ are also described by the same kinetic. However, they don't have $V_{max}$.
-Their activity is defined by
-
-$$a = \frac{[E]}{[E] + K_{mE}}$$
-
-where $[E]$ is the amount of effector molecule available, $K_{mE}$ is the Michaelis constant for that effector molecule.
-As with multiple substrates, multiple regulatory domains are combined over a product.
-Depending on whether they are activating or inhibiting, they will be multiplied with $v$ in a different way thus creating a [non-competitive regulation](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
-A protein with regulatory domains will have a regulated velocity of
-
-$$v = a_a (1 - a_i)V_{max} \prod_{i} \frac{[S_i]^{n_i}}{([S_i] + K_{mi})^{n_i}}$$
-
-where $a_a$ is the combined activity of all activating effectors and $a_i$ is the combined activity of all inhibiting effectors.
-As effector activities are $a \in [0;1)$ a regulatory effector cannot increase the maximum
-velocity of a protein.
-Also note that while an unregulated protein can always be active, a protein with an activating
-regulatory domain can only be active if the activating effector is present.
-So, an activating regulatory domain can also switch off a protein.
 
 ## Implementation
 
@@ -259,84 +289,41 @@ However, there are still parts which are calculated in plain python.
 As of now, these are the operations concerned with creating/mutating genomes, transcription and translation.
 These parts are usually the performance bottlenecks.
 
+### N Computations
+
+...
+
+
 ### Low molecule abundances
 
 Changes in molecule abundances are calculated for every step based on protein velocities.
 These protein velocities depend in one part on substrate abundances
-(Michaelis-Menten Kinetics as desribed in [Kinetics](#kinetics)).
+(as desribed in [Kinetics](#kinetics)).
 Thus, generally as substrate abundances decrease, protein velocities decrease.
 And so, deconstruction rates of this molecule species decrease.
-Furthermore, as the ratio of products to substrates gets too high, the reaction stops or turns around
-(free Gibbs energy of the reaction as described in [Energy](#energy)).
+Furthermore, the reaction quotient moves further in a direction that benefits the reverse reaction.
 So, generally proteins shouldn't attempt to deconstruct more substrate than possible.
-However, if a protein has a very high $V_{max}$ and a very low $K_M$ it can happen that
+However, if a protein has a very high $v_{max}$ and a very low $K_m$ it can happen that
 during one step it would deconstruct more substrate than actually available.
 This can also happen if multiple proteins in the same cell would deconstruct the same molecule species.
+The trick above with multiple computations should avoid that, but it is not 100% garanteed.
 
 To avoid deconstructing more substrate than available and creating negative molecule abundances there is a safety mechanism.
-First, the naive protein velocities $v$ are calculated and compared with substrate abundances.
-If some $v$ attempts to deconstruct more substrate than available, it is reduced to
-by a factor to leave almost zero substrates (a small constant $\varepsilon$ is kept).
+First, the naive protein velocities $v_{final}$ are calculated and compared with substrate abundances.
+If some $v_{final}$ attempts to deconstruct more substrate than available, it is reduced to
+by a factor to leave almost zero substrates (a small constant $\varepsilon > 0$ is kept).
 All protein velocities in the same cell are reduced by the same factor.
 This is because of possible dependencies between proteins.
 
-Say, protein P0 tried to do $A \rightleftharpoons B$ with $v_{P0} = 2$, but only 1 of A was available.
-At the same time another protein P1 in the same cell does $B \rightleftharpoons C$ with $v_{P1} = 2$, with 0.5 of B available.
+Say, protein P0 tried to do $A \rightleftharpoons B$ with $v_{final,P0} = 2$, but only 1 of A was available.
+At the same time another protein P1 in the same cell does $B \rightleftharpoons C$ with $v_{final,P1} = 2$, with 0.5 of B available.
 In the naive calculation P1 would be valid because P0 would create 2 B and so P1 can legitimately deconstruct 2 B.
 However, after the naive calculation P0 is slowed down with a factor of almost 0.5, which means
 it now deconstructs almost 1 A and synthesizes almost 1 B.
 Now, P1 became a downstream problem of reducing P0, as it doesn't have enough B.
 To avoid calculating a dependency tree during each step for each cell, all proteins are slowed down by the same factor.
 
-Doing a lazy limit (_e.g._ `X.clamp(0.0)`) is also not an option.
+Note, lazyly limiting all molecule abundances to a minimum of 0 (_e.g._ `X.clamp(0.0)`) is also not an option.
 This would mean a cell could deconstruct only 1 A while gaining 2 B.
 It would create molecules and energy from nothing.
-This sounds like an unlikely event, but the cells will exploit this (personal experience).
 See [integrate_signals][magicsoup.kinetics.Kinetics.integrate_signals] for more information.
-
-### Integrating multiple domains
-
-I had to make a decision with $V_{Max}$ and $K_M$ when having proteins with multiple domains.
-When there are multiple _e.g._ catalytic domains, it might make sense to each give them a seperate
-$V_{Max}$. But then I would need to consider that different domains within the same protein
-work at different rates. Thus, the whole energy coupling would become more tricky. _E.g._ should the protein be allowed to do 10x reaction 1 with $\Delta G = -1.1$ to power 1x reaction 2 with $\Delta G = 10$? To avoid such problems I decided to give any protein only a single $V_{Max}$. All $V_{Max}$ that might come from multiple domains are averaged to a single value. That means proteins with many domains tend to have less extreme values for $V_{Max}$.
-
-A similar problem arises with $K_M$: multiple domains can attempt to each give a different $K_M$ value to the same molecule species. _E.g._ there could be a catalytic domain that has molecule A as a substrate and a regulatory domain with molecule A as effector. In these cases I decided to also only have 1 value for $K_M$ for each molecule species. All $K_M$ values for the same molecule species in the same protein are averaged.
-
-### Energetic Equilibrium
-
-Theoretically, a reaction should occur in one direction according to its free Gibbs energy $\Delta G$. At some point $\Delta G = 0$ is approached
-and the reaction should be in an equilibrium state where no appreciable difference in substrates and products is measurable anymore.
-As transporters in this simulation also function like catalytic domains, the below is also true for transporters.
-
-All reaction quotients are compared with their equilibrium constants and turned around if energetically unfavourable.
-Then, quotients and equilibrium constants are used again to calculate a factor for selectively slowing down proteins close to or at their equilibrium.
-This factor is multiplied with the final protein velocity.
-It is calculated with an arbitrary function:
-
-$$
-f(x) =
-\begin{cases}
-  1 & if \quad |x| >= 1 \\
-  |x| & if \quad  0.1 < |x| < 1 \\
-  0 & otherwise
-\end{cases}
-\quad , \quad
-x = \ln Q - \ln K_E = \ln Q + \frac{E}{RT}
-$$
-
-However, proteins with large $V_{max}$ and low $K_M$ can overshoot this equilibrium step.
-In that case $\ln Q \gg \ln K_E$ in one step, and $\ln Q \ll \ln K_E$ in the next.
-To avoid endless jumping back and forth around the equilibrium state $K_M$ of some domains are directional.
-During translation the value of $K_M$ for a specific domain is read from the nucleotide sequence.
-For catalytic domains and transporter domains this value of $K_M$ is set for its substrate
-and its reciprocal $K_M^{-1}$ is set for its product.
-This means if a protein was very sensitive to a substrate and overshot the equilibrium state,
-it will be very unsensitive to the product (which will then be the substrate).
-Thus, the protein might quickly approach and overshoot the equilibrium state from one side,
-but then slowly approach it from the other (and hopefully reach the $|x| < 1$ interval).
-
-One implication or observation from this is, that it is not good to have huge values for $V_{max}$.
-The range of values to draw $V_{max}$ from should not have values much higher than 10 per time step.
-If one wants to simulate much higher protein velocities (such as a catalase)
-it would be better to just call [enzymatic_activity][magicsoup.world.World.enzymatic_activity] multiples times.
