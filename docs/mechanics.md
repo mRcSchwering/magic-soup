@@ -75,18 +75,18 @@ As the basis of this simulation one has to define which molecule species exist
 and which reactions are possible.
 Molecule species are defined with attributes about how fast they can diffuse
 and permeate, and with an internal energy value.
-This energy is the hypothetical energy that this molecule would release if it was deconstructed to nothing.
+This energy is the hypothetical energy that this molecule would release if it was fully deconstructed.
 Reactions define how molecule species can converted.
 They are all reversible (see [Kinetics](#kinetics) for details).
 Here, the simulation takes [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy) as an analogy:
 
 $$
-\Delta G_0 = \sum^{products}{P_j^{n_j}} - \sum^{substrates}{S_i^{n_i}}
+\Delta G_0 = \sum^{products}{E_{P,j}^{n_j}} - \sum^{substrates}{E_{S,i}^{n_i}}
 $$
 
-where $\Delta G_0$ is the standard Gibb's free energy of the reaction,
-$S_i$ is substrate $i$ with stoichiometric coefficient $n_i$,
-and $P_j$ is product $j$ with stoichiometric coefficient $n_j$.
+where $\Delta G_0$ is the standard Gibbs free energy of the reaction,
+$E_{S,i}$ is the energy of substrate $i$ with stoichiometric coefficient $n_i$,
+and $E_{P,j}$ is the energy of product $j$ with stoichiometric coefficient $n_j$.
 It is used to calculate an [equilibrium constant](https://en.wikipedia.org/wiki/Equilibrium_constant)
 $K_e$ for this reaction.
 
@@ -96,59 +96,13 @@ $$
 
 where $R$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant) and $T$ is the absolute temperature.
 As further described in [Kinetics](#kinetics) the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) $Q$
-always moves towards the $K_e$.
+always moves towards $K_e$.
+So, reactions tend to be favourable into the direction which deconstructs high energy molecules
+and constructs low energy molecules.
 
-...
-
-On an abstract level one could see molecules as signal transmitters,
-and reactions as a way to integrate and convert signals transmitters.
-More molecule species and reactions would allow cells to create more complex networks.
-However, there are also some constraints imposed in the simulation.
-
-Every defined reaction occurs in both directions ($substrates \rightleftharpoons products$).
-Rates of forward and reverse reactions depend on substrate and product concentrations.
-The ratio of products and substrates can be described by the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) $Q$.
-Every reaction has a specific equilibrium where forward and reverse rates are equal.
-This equilibrium is reached when $Q = K_e$, where $K_e$ is the
-[equilibrium constant](https://en.wikipedia.org/wiki/Equilibrium_constant) of the reaction.
-When $Q < K_e$ the forward reaction happens at a faster rate than the reverse reaction, and $Q$ increases.
-When $Q > K_e$ the reverse reaction happens at a faster rate than the forward reaction, and $Q$ decreases.
-So a reaction will always tend to convert molecules so that $Q = K_e$ (more about the kinetics of this in [Kinetics](#kinetics)).
-A protein can catalzye this reaction and make $Q$ approach $K_e$ more slowly or quickly.
-However, it doesn't change $K_e$.
-
-$K_e$ itself for any reaction is derived by its substrate and product energies.
-This simulation takes [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy) as an analogy.
-Each reaction is seen as the deconstruction of substrate molecules, and the synthesis of product molecules.
-When molecules are defined, an energy value is given to each molecule species.
-The simulation assumes that this energy is released when this molecule is deconstructed,
-and this energy is consumed when it is synthesized.
-The difference of released and consumed energy is the fictional standard Gibbs free energy $\Delta G_0$ of a reaction.
-The $K_e$ of a specific reaction is then derived from
-
-$$
-\Delta G = RT \ln Q
-$$
-
-When $Q = K_e$
-
-$$
-\Delta G = 0 \; \text{and} \; \frac{-\Delta G_0}{RT} = \ln K_e
-$$
-
-where $R$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant), $T$ is the absolute temperature,
-and $\Delta G_0$ is the difference of energy released by the substrates and energy consumed by the products.
-So, generally a reaction that deconstructs high energy molecules and synthesizes low energy molecules is
-very favourable. It's $K_e$ would be very high and it would tend to progress in the forward direction until $Q = K_E$.
-The opposite is true for a reaction that deconstructs low energy molecules and synthesizes high energy molecules.
-This reaction would be energeically unfavourable.
-
-However, a protein can still make an energetically unfavourable reaction progress in the forward direction.
-That is when it couples this energetically unfavourable reaction with an energetically favourable one.
-In the simulation all domains of a single protein are considered to be energetically coupled.
-All domains are considered when calculating $\Delta G_0$ and $K_e$.
-Thus, one energetically favourable reaction can be used to drive an energetically unfavourable one.
-
+However, all reactions catalyzed by the same protein are considered to be energetically coupled.
+All domains are considered when calculating $\Delta G_0$.
+Thus, an energetically unfavourable reaction can progress if it is powered by an energetically favourable one.
 In which orientation these domains are energetically coupled
 is defined in the domain itself as a region that encodes a boolean $\{0;1\}$.
 All domains with orientation $0$ work from left to right, and _vice versa_ for $1$.
@@ -180,32 +134,34 @@ Where $k_1$, $k_{-1}$, $k_2$, $k_{-2}$ are the forward and reverse rates for the
 This can be described with the reversible Michaelis-Menten equation
 
 $$
-v = \frac{dP}{dt} = \frac{v_{max,f} \frac{S}{K_{m,1}} - v_{max,b} - \frac{P}{K_{m,2}}}{1 + \frac{S}{K_{m,1}} + \frac{P}{K_{m,2}}}
+v = \frac{d[P]}{dt} =
+\frac{v_{max,f} \frac{[S]}{K_{m,1}} - v_{max,b} \frac{[P]}{K_{m,2}}}{1 + \frac{[S]}{K_{m,1}} + \frac{[P]}{K_{m,2}}}
 $$
 
 with
 
 \begin{aligned}
-v_{max,f} &= k_2 E_{total}      && K_{m,1} = \frac{k_{-1} + k_2}{k_1}    \\
-v_{max,b} &= k_{-1} E_{total}   && K_{m,2} = \frac{k_{-1} + k_2}{k_{-2}}
+v_{max,f} &= k_2 [E_{total}]      && K_{m,1} = \frac{k_{-1} + k_2}{k_1}    \\
+v_{max,b} &= k_{-1} [E_{total}]   && K_{m,2} = \frac{k_{-1} + k_2}{k_{-2}}
 \end{aligned}
 
-where velocity $v$ is the change in P over time,
-$E_{total}$ is the total amount of enzyme,
-$S$ is the amount of substrate,
-$P$ is the amount of product.
+where velocity $v$ is the change in $[P]$ over time,
+$[E_{total}]$ is the concentration of total enzyme ($E$ and $ES$),
+$[S]$ is the substrate concentration,
+$[P]$ is the product concentration.
 
 In the simulation S and P can be molecules, and the enzyme is a protein with some functional domains.
-For simplification $E_{total}$ is assumed to be constant for all cells and proteins,
+For simplification $[E_{total}]$ is assumed to be constant for all cells and proteins,
 and $v_{max,f} = v_{max,b} = v_{max}$.
 The reversible Michaelis-Menten equation can then be re-written as
 
 $$
-v = \frac{dP}{dt} = v_{max} \frac{\frac{S}{K_{m,1}} - \frac{P}{K_{m,2}}}{1 + \frac{S}{K_{m,1}} + \frac{P}{K_{m,2}}}
+v = \frac{d[P]}{dt} =
+v_{max} \frac{\frac{[S]}{K_{m,1}} - \frac{[P]}{K_{m,2}}}{1 + \frac{[S]}{K_{m,1}} + \frac{[P]}{K_{m,2}}}
 $$
 
 $v_{max}$ defines the maximum velocity of the protein.
-$K_{m,1}$ and $K_{m,2}$ describe affinities to S and P.
+$K_{m,1}$ and $K_{m,2}$ describe reciprocal affinities to S and P.
 In general a protein can consist of catalytic, transporter, and regulatory domains (see [Genetics](#genetics)).
 Transporters are treated as catalytic domains which convert a molecule species from its intracellular version to its extracellular one and _vice versa_.
 Regulatory domains regulate the protein [non-competitively](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
@@ -218,16 +174,21 @@ $$
 with
 
 $$
-X_S = \frac{1}{K_{m,1}} \prod^{\text{substrates}} S_i^{n_i} \text{  and  }  X_P = \frac{1}{K_{m,2}} \prod^{\text{products}} P_j^{n_j}
+X_S = 
+\frac{1}{K_{m,1}} \prod^{\text{substrates}} [S]_i^{n_i}
+\text{  ,  }
+X_P = \frac{1}{K_{m,2}} \prod^{\text{products}} [P]_j^{n_j}
 $$
 
 where $a_{reg} \in [0;1]$ is regulatory activity (details below),
-$S_i$ is substrate $i$ with stoichiometric coefficient $n_i$,
-and $P_j$ is product $j$ with stoichiometric coefficient $n_j$.
-The amount change over time of any molecule species can be calculated by multiplying its _stoichiometric number_
+$[S]_i$ is the concentration of substrate $i$ with stoichiometric coefficient $n_i$,
+and $[P]_j$ is the concentration of product $j$ with stoichiometric coefficient $n_j$.
+Concentration change over time of any molecule species can be calculated by multiplying its 
+[stoichiometric number](https://en.wikipedia.org/wiki/Stoichiometry#Stoichiometric_coefficient_and_stoichiometric_number)
 (using IUPAC nomenclatur) with $v_{final}$.
 Over time the reaction will approach an equilibrium state
-where $v_{final} = 0$, and its reaction quotient $Q = K_e$ (the equilibirum constant):
+where $v_{final} = 0$, and its [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) 
+$Q = K_e$ (the [equilibirum constant](https://en.wikipedia.org/wiki/Equilibrium_constant)):
 
 $$
 \lim_{t \to \infty} Q = \frac{X_P}{X_S} = \frac{K_{m,1}}{K_{m,2}} = K_e
@@ -244,7 +205,8 @@ K_{m,1} =
 \begin{cases}
 K_m,             & \text{if $K_e \ge 1$} \\
 \frac{K_m}{K_e}, & \text{if $K_e < 1$}
-\end{cases} \text{  and  }
+\end{cases}
+\text{  ,  }
 K_{m,2} =
 \begin{cases}
 K_e K_m,  & \text{if $K_e \ge 1$} \\
@@ -262,17 +224,17 @@ $$
 with
 
 $$
-X_A = \prod^{\text{activators}} A_l^{n_l} \text{  and  }  X_I = \prod^{\text{inhibitors}} I_k^{n_k}
+X_A = \prod^{\text{activators}} [A]_l^{n_l} \text{  ,  }  X_I = \prod^{\text{inhibitors}} [I]_k^{n_k}
 $$
 
-where $K_{m,a}$ is the Michaelis-Menten constant for activators,
-$K_{m,i}$ is the Michaelis-Menten constant for inhibitors,
-$A_l$ is activator $l$ with stoichiometric coefficient $n_l$,
-and $I_k$ is inhibitor $k$ with stoichiometric coefficient $n_k$.
+where $K_{m,a}$ defines the reciprocal affinity of activators,
+$K_{m,i}$ defines the reciprocal affinity of inhibitors,
+$[A]_l$ is the concentration of activator $l$ with stoichiometric coefficient $n_l$,
+and $[I]_k$ is the concentration of inhibitor $k$ with stoichiometric coefficient $n_k$.
 If there are no activators $a_{act} = 1$ and if there are no inhibitors $a_{inh} = 0$.
-Values for $K_{m,a}$ and $K_{m,i}$ are defined in the domain specifications.
+Values for $K_{m,a}$ and $K_{m,i}$ are directly defined in the domain specifications.
 
-When the mappings of nucleotide sequences to values for maximum velocities and affinities
+When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
 are created, they are sampled from a log-uniform distribution with user defined boundaries.
 If there are multiple catalytic and transporter domains,
 activating regulatory domains, or inhibiting regulatory domains
