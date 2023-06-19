@@ -73,14 +73,14 @@ class World:
             If a cell divides, its descendants will have the same label.
         cell_map: Boolean 2D tensor referencing which pixels are occupied by a cell.
             Dimension 0 represents the x, dimension 1 y.
-        molecule_map: Float 3D tensor describing how many molecules (in mol) of each molecule species exist on every pixel in this world.
+        molecule_map: Float 3D tensor describing how many molecules (in mmol) of each molecule species exist on every pixel in this world.
             Dimension 0 describes the molecule species. They are in the same order as `chemistry.molecules`.
             Dimension 1 represents x, dimension 2 y.
             So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species on pixel 1, 2.
-        cell_molecules: Float 2D tensor describing the number of molecules (in mol) for each molecule species in each cell.
+        cell_molecules: Float 2D tensor describing the number of molecules (in mmol) for each molecule species in each cell.
             Dimension 0 is the cell index. It is the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
             Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
-            So, `world.cell_molecules[0, 1]` represents how many mol of the 1st molecule species the 0th cell contains.
+            So, `world.cell_molecules[0, 1]` represents how many mmol of the 1st molecule species the 0th cell contains.
         cell_lifetimes: Integer 1D tensor describing how many time steps each cell survived since the last division.
             This tensor is for monitoring and doesn't have any other effect.
             Cells are in the same as in `world.genomes` and the same as on a cell object (`cell.idx`).

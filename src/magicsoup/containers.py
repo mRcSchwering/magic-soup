@@ -36,7 +36,7 @@ class Molecule:
     ```
 
     This is used later on in the simulation to make efficient comparisons.
-    It also allows you to define overlapping chemistries without creating multiple molecule instances of the same molecule species.
+    Additionally, it allows you to define overlapping chemistries without creating multiple molecule instances of the same molecule species.
 
     However, this also means that if 2 molecules have the same name, other attributes like e.g. energy must also match:
 

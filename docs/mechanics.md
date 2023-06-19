@@ -110,6 +110,10 @@ _E.g._ if there are 2 catalytic domains $A \rightleftharpoons B$ and $C \rightle
 they would become $A + C \rightleftharpoons B + D$ if they have the same orientation,
 and $A + D \rightleftharpoons B + C$ if not.
 
+![reaction equilibrium](./img/reaction_equilibrium.png)
+
+_Molecule concentrations in 2 cells with one enzyme each. On the left, A $\rightleftharpoons$ B is catalyzed, which requires 10kJ. Thus, the reaction progresses to the left and more B is converted to A. On the right, the reaction is energetically coupled with C $\rightleftharpoons$ D which releases 20kJ. So, more A is converted to B._
+
 Transporter domains are also involved this way.
 A transporter is seen as a reaction that converts an intracellular molecule to its extracellular version (and _vice versa_).
 For a transporter $\Delta G_0$ is always zero only $Q$ drives the reaction.
@@ -251,31 +255,84 @@ However, there are still parts which are calculated in plain python.
 As of now, these are the operations concerned with creating/mutating genomes, transcription and translation.
 These parts are usually the performance bottlenecks.
 
-### N Computations
+### Stabilize enzymatic activity
 
-...
+[Kinetics](#kinetics) above describes how in a world with continuous time reactions would proceed.
+As reaction quotient $Q$ approaches equilibrium constant $K_e$,
+total reaction velocity $v_{final}$ decreases to zero $\lim_{t \to \infty} v_{final} = 0$.
+In the simulation however time is represented discretely by calculating updates step-by-step
+(by calling [enzymatic_activity()][magicsoup.world.World.enzymatic_activity]).
+Step-size is effectively defined by $v_{max}$.
+
+This means, a protein with high $v_{max}$ and low $K_m$ can move $Q$ past $K_e$ within a single step.
+The reaction would effectively overshoot its equilibrium.
+Of course, in the following step this reaction would move into the opposite direction.
+However, as before the high $v_{max}$ and low $K_m$ will likely make it overshoot again.
+As such the reaction would repetitively move forward and backward, $Q$ always jumping above and below $K_e$.
+
+> At this point it is necessary to note that there are certain defaults designed into this simulation:
+> (1) molecule amounts (such as in `world.molecule_map`) are given in mmol, (2) 1 pixel has a length of 1&mu;m,
+> (3) 1 time step represents 1s. With the is mind, during [Kinetics][magicsoup.kinetics.Kinetics] initialization
+> the `km_range` parameter represents mM, and the `vmax_range` parameters represents mM per s.
+> Per default $K_m \in \mathopen{[}0.01, 100\mathclose{]} \text{mM}$
+> and $v_{max} \in \mathopen{[}0.001, 100\mathclose{]} \text{mM}/\text{s}$.
+
+To make reactions behave more smoothly, one can decrease the step size and calculate the same time interval in multiple steps
+(_e.g._ divide $v_{max}$ by 10 and call [enzymatic_activity()][magicsoup.world.World.enzymatic_activity] 10 times).
+However, considering the worst possible scenario ($v_{max} = 100$ and $K_m = 0.01$)
+one would have to reduce the step size more than 200-fold.
+The simulation would become incredibly slow.
+
+A better way is to divide the step unevenly with step-sizes becoming increasingly smaller.
+In this case $v_{final}$ is adjusted with a factor when calculating each (sub) step.
+
+$$
+v_{final,i} = v_{final} \cdot f_{adj} \cdot \alpha^i
+\text{  ,  }
+f_{adj} = \frac{1}{\sum_{i=0}^{n - 1}{\alpha^i}}
+$$
+
+where $n$ is the number of (sub) steps, $0 \le \alpha \le 1$ is a trimming factor,
+and $v_{final,i}$ is the adjusted final velocity of (sub) step $i$.
+By trial-and-error against multiple tests $\alpha = 0.6$ and $n = 11$ were found.
+So, for each step only 11 computations have to be done.
+These are the parameters `n_computations` and `alpha` in [Kinetics][magicsoup.kinetics.Kinetics].
+Note, that these values were found using the above mentioned defaults:
+specifically $K_m \geq 0.01$ and $v_{max} \leq 100$.
+These values are controlled by `km_range` and `vmax_range`
+(see in [Kinetics](#kinetics) how $K_{m,1}$ and $K_{m,2}$ can never be smaller than $K_m$).
+If `km_range` and `vmax_range` are changed, good values for `n_computations` and `alpha` have to be found again.
 
 
-### Low molecule abundances
+### Low molecule concentrations
 
-Changes in molecule abundances are calculated for every step based on protein velocities.
-These protein velocities depend in one part on substrate abundances
-(as desribed in [Kinetics](#kinetics)).
-Thus, generally as substrate abundances decrease, protein velocities decrease.
-And so, deconstruction rates of this molecule species decrease.
+Changes in molecule concentrations are calculated step-by-step based on protein velocities.
+Protein velocities depend on substrate concentrations (as desribed in [Kinetics](#kinetics)).
+Thus, generally as substrate concentrations decrease, protein velocities decrease.
 Furthermore, the reaction quotient moves further in a direction that benefits the reverse reaction.
-So, generally proteins shouldn't attempt to deconstruct more substrate than possible.
+So, generally proteins slow down as substrate concentrations decrease towards zero.
 However, if a protein has a very high $v_{max}$ and a very low $K_m$ it can happen that
 during one step it would deconstruct more substrate than actually available.
-This can also happen if multiple proteins in the same cell would deconstruct the same molecule species.
-The trick above with multiple computations should avoid that, but it is not 100% garanteed.
+This can also happen if multiple fast proteins in the same cell try to deconstruct 
+a molecule species at near zero concentration.
 
-To avoid deconstructing more substrate than available and creating negative molecule abundances there is a safety mechanism.
-First, the naive protein velocities $v_{final}$ are calculated and compared with substrate abundances.
+By calculating each step in multiple computations (see [above](#stabilize-enzymatic-activity)) this should be avoided.
+But there is no garantee that this could never happen.
+Once a negative concentration appears, it will quickly create NaNs during enzyme activity calcualtions.
+These NaNs will quickly spread over the whole map and ruin the whole simulation.
+Thus, it is imperative to make sure no calculation can ever generate negative molecule concentrations.
+
+Unfortunately, lazyly limiting all molecule abundances to a minimum of zero (_e.g._ `X.clamp(0.0)`) is not an option.
+This would mean a cell could _e.g._ deconstruct only 1 A while gaining 2 B.
+It would create molecules and energy from nothing.
+Cells will quickly adapt and exploit this hack.
+
+There is a balanced safety mechanism.
+First, the naive protein velocities $v_{final}$ are calculated and compared with substrate concentrations.
 If some $v_{final}$ attempts to deconstruct more substrate than available, it is reduced to
 by a factor to leave almost zero substrates (a small constant $\varepsilon > 0$ is kept).
 All protein velocities in the same cell are reduced by the same factor.
-This is because of possible dependencies between proteins.
+It is not enough to slow down the protein in question, because there might be dependencies with other proteins.
 
 Say, protein P0 tried to do $A \rightleftharpoons B$ with $v_{final,P0} = 2$, but only 1 of A was available.
 At the same time another protein P1 in the same cell does $B \rightleftharpoons C$ with $v_{final,P1} = 2$, with 0.5 of B available.
@@ -285,7 +342,3 @@ it now deconstructs almost 1 A and synthesizes almost 1 B.
 Now, P1 became a downstream problem of reducing P0, as it doesn't have enough B.
 To avoid calculating a dependency tree during each step for each cell, all proteins are slowed down by the same factor.
 
-Note, lazyly limiting all molecule abundances to a minimum of 0 (_e.g._ `X.clamp(0.0)`) is also not an option.
-This would mean a cell could deconstruct only 1 A while gaining 2 B.
-It would create molecules and energy from nothing.
-See [integrate_signals][magicsoup.kinetics.Kinetics.integrate_signals] for more information.
