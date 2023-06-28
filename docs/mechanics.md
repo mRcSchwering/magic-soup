@@ -4,8 +4,8 @@ The simulation is an agent-based 2D spatio-temporal simulation.
 Cells are agents. Each cell has a string, the genome, which unambigously encodes a set or proteins, the proteome.
 These proteins can change molecules in and around the cell.
 Through that each cell can process information.
-Each cell's proteome can form complex networks with hubs, feedback loops, cascades, and oscillators.
-When randomly changing the cell's genome, this network changes randomly, too.
+Cell proteomes can form complex networks with hubs, feedback loops, cascades, and oscillators.
+When randomly changing a cell genomes, their networks change randomly, too.
 By selectively replicating certain cells while killing others, cells can evolve.
 
 - [Genetics](#genetics) explains how genetics work in this simulation
@@ -25,8 +25,8 @@ and [translation](<https://en.wikipedia.org/wiki/Translation_(biology)>).
 A cell's [genome](https://en.wikipedia.org/wiki/Genome) is a chain of [nucleotides](https://en.wikipedia.org/wiki/Nucleotide) represented by a string of letters
 T, C, G, A. There are [start and stop codons](https://en.wikipedia.org/wiki/Genetic_code) which define [coding regions (CDSs)](https://en.wikipedia.org/wiki/Coding_region).
 Transcription can start at any start codon and will end when the first [in-frame](https://en.wikipedia.org/wiki/Reading_frame) stop codon encountered.
-CDSs without stop codon are not considered [[James NR 2016](https://pubmed.ncbi.nlm.nih.gov/27934701/)].
-Each CDS will then be translated into one protein, giving each cell a certain [proteome](https://en.wikipedia.org/wiki/Proteome).
+CDSs without a stop codon are not considered [[James NR 2016](https://pubmed.ncbi.nlm.nih.gov/27934701/)].
+Each CDS is translated into one protein, giving each cell a certain [proteome](https://en.wikipedia.org/wiki/Proteome).
 What each protein can do is defined by its [domains](https://en.wikipedia.org/wiki/Protein_domain).
 
 ![transcription and translation](./img/transc_transl.png)
@@ -76,7 +76,7 @@ and which reactions are possible.
 Molecule species are defined with attributes about how fast they can diffuse
 and permeate, and with an internal energy value.
 This energy is the hypothetical energy that this molecule would release if it was fully deconstructed.
-Reactions define how molecule species can converted.
+Reactions define how molecule species can be converted.
 They are all reversible (see [Kinetics](#kinetics) for details).
 Here, the simulation takes [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy) as an analogy:
 
@@ -247,7 +247,7 @@ values for $v_{max}$, $K_m$, $K_{m,a}$, $K_{m,i}$ are averaged each.
 
 ## Implementation
 
-Making the simulation more performant is an oingoing effort.
+Making the simulation more performant is an ongoing effort.
 I want to get the frequency up to a thousand time steps per second for a simulation with around 100k cells.
 Currently, the simulation leans on [PyTorch](https://pytorch.org/) to do that.
 Most operations are expressed as pytorch operations and can be moved to a GPU.
@@ -270,12 +270,13 @@ Of course, in the following step this reaction would move into the opposite dire
 However, as before the high $v_{max}$ and low $K_m$ will likely make it overshoot again.
 As such the reaction would repetitively move forward and backward, $Q$ always jumping above and below $K_e$.
 
-> At this point it is necessary to note that there are certain defaults designed into this simulation:
+> At this point it is necessary to note that there are certain dimensions intended for this simulation:
 > (1) molecule amounts (such as in `world.molecule_map`) are given in mmol, (2) 1 pixel has a length of 1&mu;m,
 > (3) 1 time step represents 1s. With the is mind, during [Kinetics][magicsoup.kinetics.Kinetics] initialization
 > the `km_range` parameter represents mM, and the `vmax_range` parameters represents mM per s.
 > Per default $K_m \in \mathopen{[}0.01, 100\mathclose{]} \text{mM}$
 > and $v_{max} \in \mathopen{[}0.001, 100\mathclose{]} \text{mM}/\text{s}$.
+> Of course you can break these asumptions, but then you have to figure out new useful limits.
 
 To make reactions behave more smoothly, one can decrease the step size and calculate the same time interval in multiple steps
 (_e.g._ divide $v_{max}$ by 10 and call [enzymatic_activity()][magicsoup.world.World.enzymatic_activity] 10 times).
@@ -283,8 +284,9 @@ However, considering the worst possible scenario ($v_{max} = 100$ and $K_m = 0.0
 one would have to reduce the step size more than 200-fold.
 The simulation would become incredibly slow.
 
-A better way is to divide the step unevenly with step-sizes becoming increasingly smaller.
-In this case $v_{final}$ is adjusted with a factor when calculating each (sub) step.
+A better way is to divide the timeinterval into multiple uneven steps
+with increasingly smaller $v_{max}$ each.
+In this case $v_{final}$ is adjusted with a factor when calculating each step.
 
 $$
 v_{final,i} = v_{final} \cdot f_{adj} \cdot \alpha^i
@@ -292,16 +294,17 @@ v_{final,i} = v_{final} \cdot f_{adj} \cdot \alpha^i
 f_{adj} = \frac{1}{\sum_{i=0}^{n - 1}{\alpha^i}}
 $$
 
-where $n$ is the number of (sub) steps, $0 \le \alpha \le 1$ is a trimming factor,
-and $v_{final,i}$ is the adjusted final velocity of (sub) step $i$.
+where $n$ is the number of steps, $0 \le \alpha \le 1$ is a trimming factor,
+and $v_{final,i}$ is the adjusted final velocity of step $i$.
 By trial-and-error against multiple tests $\alpha = 0.6$ and $n = 11$ were found.
 So, for each step only 11 computations have to be done.
 These are the parameters `n_computations` and `alpha` in [Kinetics][magicsoup.kinetics.Kinetics].
-Note, that these values were found using the above mentioned defaults:
-specifically $K_m \geq 0.01$ and $v_{max} \leq 100$.
-These values are controlled by `km_range` and `vmax_range`
-(see in [Kinetics](#kinetics) how $K_{m,1}$ and $K_{m,2}$ can never be smaller than $K_m$).
-If `km_range` and `vmax_range` are changed, good values for `n_computations` and `alpha` have to be found again.
+
+> Note, that these values were found using the above mentioned assumptions:
+> specifically $K_m \geq 0.01$ and $v_{max} \leq 100$.
+> These values are controlled by `km_range` and `vmax_range`
+> (see in [Kinetics](#kinetics) how $K_{m,1}$ and $K_{m,2}$ can never be smaller than $K_m$).
+> If `km_range` and `vmax_range` are changed, good values for `n_computations` and `alpha` have to be found again.
 
 
 ### Low molecule concentrations
@@ -312,33 +315,34 @@ Thus, generally as substrate concentrations decrease, protein velocities decreas
 Furthermore, the reaction quotient moves further in a direction that benefits the reverse reaction.
 So, generally proteins slow down as substrate concentrations decrease towards zero.
 However, if a protein has a very high $v_{max}$ and a very low $K_m$ it can happen that
-during one step it would deconstruct more substrate than actually available.
+within one step it would deconstruct more substrate than actually available.
 This can also happen if multiple fast proteins in the same cell try to deconstruct 
-a molecule species at near zero concentration.
+a molecule species at near-zero concentration.
 
-By calculating each step in multiple computations (see [above](#stabilize-enzymatic-activity)) this should be avoided.
-But there is no garantee that this could never happen.
-Once a negative concentration appears, it will quickly create NaNs during enzyme activity calcualtions.
-These NaNs will quickly spread over the whole map and ruin the whole simulation.
+By calculating each time-interval in multiple steps (see [above](#stabilize-enzymatic-activity)) this should be avoided.
+But there is no garantee that this will never happen.
+Once a negative concentration appears, it will create NaNs during enzyme activity calcualtions.
+These NaNs will quickly spread over the entire map and ruin the whole simulation.
 Thus, it is imperative to make sure no calculation can ever generate negative molecule concentrations.
 
-Unfortunately, lazyly limiting all molecule abundances to a minimum of zero (_e.g._ `X.clamp(0.0)`) is not an option.
-This would mean a cell could _e.g._ deconstruct only 1 A while gaining 2 B.
+Unfortunately, merely limiting all molecule abundances to a minimum of zero (_e.g._ `X.clamp(0.0)`) is not an option.
+This would mean a cell could _e.g._ import 1 A while only 0.5 A are removed outside the cell.
 It would create molecules and energy from nothing.
-Cells will quickly adapt and exploit this hack.
+Cells quickly adapt and exploit this hack.
 
-There is a balanced safety mechanism.
-First, the naive protein velocities $v_{final}$ are calculated and compared with substrate concentrations.
-If some $v_{final}$ attempts to deconstruct more substrate than available, it is reduced to
-by a factor to leave almost zero substrates (a small constant $\varepsilon > 0$ is kept).
+A balanced safety mechanism is implemented.
+First, naive protein velocities $v_{final}$ are calculated and compared with substrate concentrations.
+If a $v_{final}$ attempts to deconstruct more substrate than available, it is reduced
+by a factor to leave near-zero substrates (a small amount $\varepsilon > 0$ is kept).
 All protein velocities in the same cell are reduced by the same factor.
-It is not enough to slow down the protein in question, because there might be dependencies with other proteins.
 
+It is not enough to slow down the protein in question, because there might be dependencies with other proteins.
 Say, protein P0 tried to do $A \rightleftharpoons B$ with $v_{final,P0} = 2$, but only 1 of A was available.
 At the same time another protein P1 in the same cell does $B \rightleftharpoons C$ with $v_{final,P1} = 2$, with 0.5 of B available.
 In the naive calculation P1 would be valid because P0 would create 2 B and so P1 can legitimately deconstruct 2 B.
 However, after the naive calculation P0 is slowed down with a factor of almost 0.5, which means
 it now deconstructs almost 1 A and synthesizes almost 1 B.
 Now, P1 became a downstream problem of reducing P0, as it doesn't have enough B.
-To avoid calculating a dependency tree during each step for each cell, all proteins are slowed down by the same factor.
+To avoid calculating a dependency tree during each step for each cell,
+all proteins within one cell are slowed down by the same factor.
 
