@@ -1,5 +1,6 @@
 site_name: MagicSoup
 theme: readthedocs
+repo_url: https://github.com/mRcSchwering/magic-soup/
 
 extra_javascript:
   - https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS-MML_HTMLorMML
