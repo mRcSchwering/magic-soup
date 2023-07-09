@@ -706,6 +706,17 @@ class Kinetics:
             # update signals, this time no negative X
             X = X + Xd
 
+            # The above should make it impossible to create negative X
+            # However in some simulations I see negative values, they usually
+            # create extremely high values within 1 or 2 steps (cell molecule concentrations)
+            # I was not able to reproduce this in any of the tests
+            # TODO: luca/e1_co2_fixing has this problem but it can be avoided
+            #       by clamping after every computation
+            # it seems that clamping here does not create molecules from nothing
+            # my hypothesis is that the negative value was a floating point error
+            # and so clamping does not necessarily create molecules from nothing
+            X = X.clamp(0.0)
+
         # NaNs can be created when overflow creates Infs (most likely in aggregate_signals)
         # with kinetics default values I have not been able to achieve this (>100 testruns)
         # however non-default values (e.g. large Vmax) might achieve that

@@ -1,31 +1,21 @@
 import pytest
 import torch
-from magicsoup.containers import Molecule
-from magicsoup.kinetics import Kinetics
+import magicsoup as ms
+from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 
 # mark all tests in this module as slow
 pytestmark = pytest.mark.slow
 
 
-_ma = Molecule("a", energy=15 * 1e3)
-_mb = Molecule("b", energy=10 * 1e3)
-_mc = Molecule("c", energy=10 * 1e3)
-_md = Molecule("d", energy=5 * 1e3)
-_MOLECULES = [_ma, _mb, _mc, _md]
-
-_r_a_b = ([_ma], [_mb])
-_r_b_c = ([_mb], [_mc])
-_r_bc_d = ([_mb, _mc], [_md])
-_r_d_bb = ([_md], [_mb, _mb])
-_REACTIONS = [_r_a_b, _r_b_c, _r_bc_d, _r_d_bb]
-
-
-def _get_kinetics(n_computations=1) -> Kinetics:
-    kinetics = Kinetics(
-        molecules=_MOLECULES,
-        reactions=_REACTIONS,
+def _get_kinetics(n_computations=1) -> ms.Kinetics:
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=REACTIONS)
+    kinetics = ms.Kinetics(
+        molecules=chemistry.molecules,
+        reactions=chemistry.reactions,
         n_computations=n_computations,
         abs_temp=310,
+        scalar_enc_size=61,
+        vector_enc_size=3904,
     )
     return kinetics
 
@@ -111,13 +101,13 @@ def test_random_kinetics_stay_zero():
     n_steps = 1000
 
     kinetics = _get_kinetics()
-    n_mols = len(_MOLECULES) * 2
+    n_mols = len(MOLECULES) * 2
 
     # concentrations (c, s)
     X = torch.zeros(n_cells, n_mols).abs()
 
     # reactions (c, p, s)
-    kinetics.N = torch.randint(low=-5, high=6, size=(n_cells, n_prots, n_mols)).float()
+    kinetics.N = torch.randint(low=-8, high=9, size=(n_cells, n_prots, n_mols)).float()
     kinetics.Nf = torch.where(kinetics.N < 0.0, -kinetics.N, 0.0)
     kinetics.Nb = torch.where(kinetics.N > 0.0, kinetics.N, 0.0)
 
@@ -149,13 +139,13 @@ def test_random_kinetics_dont_explode():
     n_steps = 1000
 
     kinetics = _get_kinetics()
-    n_mols = len(_MOLECULES) * 2
+    n_mols = len(MOLECULES) * 2
 
     # concentrations (c, s)
     X = torch.randn(n_cells, n_mols).abs().clamp(max=1.0) * 100
 
     # reactions (c, p, s)
-    kinetics.N = torch.randint(low=-5, high=6, size=(n_cells, n_prots, n_mols)).float()
+    kinetics.N = torch.randint(low=-8, high=9, size=(n_cells, n_prots, n_mols)).float()
     kinetics.Nf = torch.where(kinetics.N < 0.0, -kinetics.N, 0.0)
     kinetics.Nb = torch.where(kinetics.N > 0.0, kinetics.N, 0.0)
 

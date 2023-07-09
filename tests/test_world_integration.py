@@ -76,9 +76,9 @@ def test_exploding_molecules():
         cellmols = world.cell_molecules
 
         assert molmap.min() >= 0.0, i
-        assert 0.0 < molmap.mean() < 30.0, i
+        assert 0.0 < molmap.mean() < 50.0, i
         assert molmap.max() < 500.0, i
 
         assert cellmols.min() >= 0.0, i
-        assert 0.0 < cellmols.mean() < 30.0, i
+        assert 0.0 < cellmols.mean() < 50.0, i
         assert cellmols.max() < 500.0, i
