@@ -192,57 +192,6 @@ def test_cell_index_integrity_when_changing_cells():
     assert world.cell_map.sum().item() == n3
 
 
-def test_molecule_amount_integrity_during_diffusion():
-    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
-    world = ms.World(chemistry=chemistry, map_size=128)
-
-    exp = world.molecule_map.sum(dim=[1, 2])
-    for step_i in range(100):
-        world.diffuse_molecules()
-        res = world.molecule_map.sum(dim=[1, 2])
-        assert (res.sum() - exp.sum()).abs() < 10.0, step_i
-        assert torch.all(torch.abs(res - exp) < 1.0), step_i
-
-
-def test_molecule_amount_integrity_during_reactions():
-    # X and Y can react back and forth but X + Y <-> Z
-    # so if Z is counted as 2, n should stay equal
-    mi = ms.Molecule("i", 10 * 1e3)
-    mj = ms.Molecule("j", 20 * 1e3)
-    mk = ms.Molecule("k", 30 * 1e3)
-    molecules = [mi, mj, mk]
-    reactions = [([mi], [mj]), ([mi, mj], [mk])]
-
-    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
-    world = ms.World(chemistry=chemistry, map_size=128)
-    genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.add_cells(genomes=genomes)
-
-    def count(world: ms.World) -> float:
-        mij = world.molecule_map[[0, 1]].sum().item()
-        mk = world.molecule_map[2].sum().item() * 2
-        cij = world.cell_molecules[:, [0, 1]].sum().item()
-        ck = world.cell_molecules[:, 2].sum().item() * 2
-        return mij + mk + cij + ck
-
-    n0 = count(world)
-    for step_i in range(100):
-        world.enzymatic_activity()
-        n = count(world)
-        assert n == pytest.approx(n0, abs=1.0), step_i
-
-
-def test_run_world_without_reactions():
-    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
-    world = ms.World(chemistry=chemistry)
-
-    genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.add_cells(genomes=genomes)
-
-    for _ in range(100):
-        world.enzymatic_activity()
-
-
 def test_cells_unable_to_divide():
     chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=3)

@@ -36,7 +36,7 @@ def main(args: Namespace):
 
     world = ms.World(
         chemistry=CHEMISTRY,
-        map_size=256,
+        map_size=args.map_size,
         mol_map_init=args.init_molmap,
         device=args.device,
     )
@@ -102,14 +102,26 @@ def main(args: Namespace):
 
         writer.add_scalar("Cells/total", world.n_cells, step_i)
 
+        molmap = world.molecule_map
+        cellmols = world.cell_molecules
+        for mol in CHEMISTRY.molecules:
+            mol_i = mol_2_idx[mol.name]
+            d = molmap[mol_i].sum().item()
+            n = world.map_size**2
+            if world.n_cells > 0:
+                d += cellmols[:, mol_i].sum().item()
+                n += world.n_cells
+            writer.add_scalar(f"Molecules/{mol.name}", d / n, step_i)
+
     writer.close()
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--n_steps", default=100, type=int)
-    parser.add_argument("--init_genome_size", default=500, type=int)
-    parser.add_argument("--init_molmap", default="randn", type=str)
+    parser.add_argument("--map-size", default=254, type=int)
+    parser.add_argument("--n-steps", default=1000, type=int)
+    parser.add_argument("--init-genome-size", default=500, type=int)
+    parser.add_argument("--init-molmap", default="randn", type=str)
     parser.add_argument("--device", default="cpu", type=str)
     parsed_args = parser.parse_args()
 

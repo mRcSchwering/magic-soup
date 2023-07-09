@@ -50,12 +50,12 @@ MOLECULES = [
 ]
 
 REACTIONS = [
-    ([co2, NADPH], [formiat, NADP]),
-    ([formiat, FH4, ATP], [formylFH4, ADP]),
-    ([formylFH4, NADPH], [methylenFH4, NADP]),
-    ([methylenFH4, NADPH], [methylFH4, NADP]),
-    ([methylFH4, NiACS], [FH4, methylNiACS]),
-    ([methylNiACS, co2, HSCoA], [NiACS, acetylCoA]),
+    ([co2, NADPH], [formiat, NADP]),  # -90k
+    ([formiat, FH4, ATP], [formylFH4, ADP]),  # -10k
+    ([formylFH4, NADPH], [methylenFH4, NADP]),  # -40k
+    ([methylenFH4, NADPH], [methylFH4, NADP]),  # -40k
+    ([methylFH4, NiACS], [FH4, methylNiACS]),  # -60k
+    ([methylNiACS, co2, HSCoA], [NiACS, acetylCoA]),  # -50k
 ]
 
 CHEMISTRY = Chemistry(molecules=MOLECULES, reactions=REACTIONS)

@@ -12,7 +12,7 @@ from magicsoup.containers import (
     DomainType,
 )
 
-_EPS = 1e-8
+_EPS = 1e-7
 _MIN = 1e-45
 _MAX = 1e38
 
@@ -684,7 +684,7 @@ class Kinetics:
             # thus result velocity should be clamped again
             V = V.clamp(max=_MAX)
 
-            # naive Xd
+            # naive Xd, might produce negative X
             Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
 
             # proteins can deconstruct more of a molecule than available in a cell
@@ -697,13 +697,14 @@ class Kinetics:
             # One would have to repeat this action until all conflicts are satisfied
             # Here, I am instead reducing all the cell's proteins by the same factor
             # that way these secondary below-zero situations cannot appear
-            trim_to_zero = torch.where(X + Xd < 0.0, (X - _EPS) / -Xd, 1.0)  # (c, s)
-            Xd = torch.einsum("cs,c->cs", Xd, trim_to_zero.amin(1))
+            # due to floating point precision I need to lift the cutoff from 0 to EPS
+            ma = Xd < 0.0
+            mb = X + Xd < 0.0
+            trim_to_zero = torch.where(ma & mb, X / -Xd - _EPS, 1.0).amin(1)  # (c,)
+            Xd = torch.einsum("cs,c->cs", Xd, trim_to_zero)
 
-            # should not be necessary but floating point precision
-            # can still create very small negative values (<1e-7)
-            # these are so small that they should not matter in the overall simulation
-            X = (X + Xd).clamp(min=0.0)
+            # update signals, this time no negative X
+            X = X + Xd
 
         # NaNs can be created when overflow creates Infs (most likely in aggregate_signals)
         # with kinetics default values I have not been able to achieve this (>100 testruns)
