@@ -3,6 +3,9 @@ import torch
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 
+# mark all tests in this module as slow
+pytestmark = pytest.mark.slow
+
 
 def test_molecule_amount_integrity_during_diffusion():
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])

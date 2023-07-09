@@ -10,37 +10,37 @@ from magicsoup.containers import (
 from magicsoup.constants import GAS_CONSTANT
 from magicsoup.kinetics import Kinetics
 
-TOLERANCE = 1e-4
-EPS = 1e-8
+_TOLERANCE = 1e-4
+_EPS = 1e-8
 
 
-ma = Molecule("a", energy=15 * 1e3)
-mb = Molecule("b", energy=10 * 1e3)
-mc = Molecule("c", energy=10 * 1e3)
-md = Molecule("d", energy=5 * 1e3)
-MOLECULES = [ma, mb, mc, md]
+_ma = Molecule("a", energy=15 * 1e3)
+_mb = Molecule("b", energy=10 * 1e3)
+_mc = Molecule("c", energy=10 * 1e3)
+_md = Molecule("d", energy=5 * 1e3)
+_MOLECULES = [_ma, _mb, _mc, _md]
 
-r_a_b = ([ma], [mb])
-r_b_c = ([mb], [mc])
-r_bc_d = ([mb, mc], [md])
-r_d_bb = ([md], [mb, mb])
-REACTIONS = [r_a_b, r_b_c, r_bc_d, r_d_bb]
+_r_a_b = ([_ma], [_mb])
+_r_b_c = ([_mb], [_mc])
+_r_bc_d = ([_mb, _mc], [_md])
+_r_d_bb = ([_md], [_mb, _mb])
+_REACTIONS = [_r_a_b, _r_b_c, _r_bc_d, _r_d_bb]
 
 # fmt: off
-KM_WEIGHTS = torch.tensor([
+_KM_WEIGHTS = torch.tensor([
     torch.nan, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,  # idxs 0-9
     1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,  # idxs 10-19
     2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9  # idxs 20-29
 ])
 
-VMAX_WEIGHTS = torch.tensor([
+_VMAX_WEIGHTS = torch.tensor([
     torch.nan, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,  # idxs 0-9
     2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9,  # idxs 10-19
 ])
 
-SIGNS = torch.tensor([0.0, 1.0, -1.0])  # idxs 0-2
+_SIGNS = torch.tensor([0.0, 1.0, -1.0])  # idxs 0-2
 
-TRANSPORT_M = torch.tensor([
+_TRANSPORT_M = torch.tensor([
     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 0: none
     [-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 1: a in->out
     [0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 2: b in->out
@@ -52,7 +52,7 @@ TRANSPORT_M = torch.tensor([
     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
 ])
 
-EFFECTOR_M = torch.tensor([
+_EFFECTOR_M = torch.tensor([
     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 0: none
     [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 1: a in
     [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 2: b in
@@ -64,7 +64,7 @@ EFFECTOR_M = torch.tensor([
     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], # idx 8: d out
 ])
 
-REACTION_M = torch.tensor([
+_REACTION_M = torch.tensor([
     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],   # idx 0: none
     [-1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 1: a -> b
     [0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 2: b -> c
@@ -79,33 +79,29 @@ REACTION_M = torch.tensor([
 # fmt: on
 
 
-def get_kinetics(n_computations=1) -> Kinetics:
+def _get_kinetics(n_computations=1) -> Kinetics:
     kinetics = Kinetics(
-        molecules=MOLECULES,
-        reactions=REACTIONS,
+        molecules=_MOLECULES,
+        reactions=_REACTIONS,
         n_computations=n_computations,
         abs_temp=310,
     )
-    kinetics.km_map.weights = KM_WEIGHTS.clone()
-    kinetics.vmax_map.weights = VMAX_WEIGHTS.clone()
-    kinetics.sign_map.signs = SIGNS.clone()
-    kinetics.transport_map.M = TRANSPORT_M.clone()
-    kinetics.effector_map.M = EFFECTOR_M.clone()
-    kinetics.reaction_map.M = REACTION_M.clone()
+    kinetics.km_map.weights = _KM_WEIGHTS.clone()
+    kinetics.vmax_map.weights = _VMAX_WEIGHTS.clone()
+    kinetics.sign_map.signs = _SIGNS.clone()
+    kinetics.transport_map.M = _TRANSPORT_M.clone()
+    kinetics.effector_map.M = _EFFECTOR_M.clone()
+    kinetics.reaction_map.M = _REACTION_M.clone()
     return kinetics
 
 
-def ke(subs: list[Molecule], prods: list[Molecule]):
+def _ke(subs: list[Molecule], prods: list[Molecule]):
     e = sum(d.energy for d in prods) - sum(d.energy for d in subs)
     return math.exp(-e / 310 / GAS_CONSTANT)
 
 
-def avg(*x):
+def _avg(*x):
     return sum(x) / len(x)
-
-
-# TODO: refactor tests
-#       I think I always set zeros for kinetics
 
 
 def test_cell_params_with_transporter_domains():
@@ -144,7 +140,7 @@ def test_cell_params_with_transporter_domains():
     A = torch.zeros(2, 3, 8)
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -155,29 +151,29 @@ def test_cell_params_with_transporter_domains():
     kinetics.A = A
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
-    assert Kmf[0, 0] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Kmb[0, 0] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Kmf[0, 1] == pytest.approx(avg(0.5, 0.2), abs=TOLERANCE)
-    assert Kmb[0, 1] == pytest.approx(avg(0.5, 0.2), abs=TOLERANCE)
-    assert Kmf[0, 2] == pytest.approx(0.0, TOLERANCE)
-    assert Kmb[0, 2] == pytest.approx(0.0, TOLERANCE)
+    assert Kmf[0, 0] == pytest.approx(0.5, abs=_TOLERANCE)
+    assert Kmb[0, 0] == pytest.approx(0.5, abs=_TOLERANCE)
+    assert Kmf[0, 1] == pytest.approx(_avg(0.5, 0.2), abs=_TOLERANCE)
+    assert Kmb[0, 1] == pytest.approx(_avg(0.5, 0.2), abs=_TOLERANCE)
+    assert Kmf[0, 2] == pytest.approx(0.0, _TOLERANCE)
+    assert Kmb[0, 2] == pytest.approx(0.0, _TOLERANCE)
 
-    ke_c1_1 = ke([ma], [mb])
-    assert Kmf[1, 0] == pytest.approx(avg(0.4, 0.5, 0.6, 0.7), abs=TOLERANCE)
-    assert Kmb[1, 0] == pytest.approx(avg(0.4, 0.5, 0.6, 0.7), abs=TOLERANCE)
-    assert Kmf[1, 1] == pytest.approx(avg(0.5, 0.5), abs=TOLERANCE)
-    assert Kmb[1, 1] == pytest.approx(avg(0.5, 0.5) * ke_c1_1, abs=TOLERANCE)
-    assert Kmf[1, 2] == pytest.approx(0.0, TOLERANCE)
-    assert Kmb[1, 2] == pytest.approx(0.0, TOLERANCE)
+    ke_c1_1 = _ke([_ma], [_mb])
+    assert Kmf[1, 0] == pytest.approx(_avg(0.4, 0.5, 0.6, 0.7), abs=_TOLERANCE)
+    assert Kmb[1, 0] == pytest.approx(_avg(0.4, 0.5, 0.6, 0.7), abs=_TOLERANCE)
+    assert Kmf[1, 1] == pytest.approx(_avg(0.5, 0.5), abs=_TOLERANCE)
+    assert Kmb[1, 1] == pytest.approx(_avg(0.5, 0.5) * ke_c1_1, abs=_TOLERANCE)
+    assert Kmf[1, 2] == pytest.approx(0.0, _TOLERANCE)
+    assert Kmb[1, 2] == pytest.approx(0.0, _TOLERANCE)
 
-    assert (Kmr < TOLERANCE).all()
+    assert (Kmr < _TOLERANCE).all()
 
-    assert Vmax[0, 0] == pytest.approx(1.5, abs=TOLERANCE)
-    assert Vmax[0, 1] == pytest.approx(avg(1.5, 1.1), abs=TOLERANCE)
+    assert Vmax[0, 0] == pytest.approx(1.5, abs=_TOLERANCE)
+    assert Vmax[0, 1] == pytest.approx(_avg(1.5, 1.1), abs=_TOLERANCE)
     assert Vmax[0, 2] == 0.0
 
-    assert Vmax[1, 0] == pytest.approx(avg(1.5, 1.4, 1.3, 1.2), abs=TOLERANCE)
-    assert Vmax[1, 1] == pytest.approx(avg(2.0, 1.5), abs=TOLERANCE)
+    assert Vmax[1, 0] == pytest.approx(_avg(1.5, 1.4, 1.3, 1.2), abs=_TOLERANCE)
+    assert Vmax[1, 1] == pytest.approx(_avg(2.0, 1.5), abs=_TOLERANCE)
     assert Vmax[1, 2] == 0.0
 
     assert N[0, 0, 0] == -1
@@ -221,50 +217,50 @@ def test_cell_params_with_transporter_domains():
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], TransporterDomain)
-    assert p0.domains[0].molecule is ma
-    assert p0.domains[0].vmax == pytest.approx(1.5, abs=TOLERANCE)
-    assert p0.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p0.domains[0].molecule is _ma
+    assert p0.domains[0].vmax == pytest.approx(1.5, abs=_TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], TransporterDomain)
-    assert p1.domains[0].molecule is ma
-    assert p1.domains[0].vmax == pytest.approx(1.5, abs=TOLERANCE)
-    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p1.domains[0].molecule is _ma
+    assert p1.domains[0].vmax == pytest.approx(1.5, abs=_TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
     assert isinstance(p1.domains[1], TransporterDomain)
-    assert p1.domains[1].molecule is ma
-    assert p1.domains[1].vmax == pytest.approx(1.1, abs=TOLERANCE)
-    assert p1.domains[1].km == pytest.approx(0.2, abs=TOLERANCE)
+    assert p1.domains[1].molecule is _ma
+    assert p1.domains[1].vmax == pytest.approx(1.1, abs=_TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(0.2, abs=_TOLERANCE)
 
     proteins = kinetics.get_proteome(proteome=c1)
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], TransporterDomain)
-    assert p0.domains[0].molecule is ma
-    assert p0.domains[0].vmax == pytest.approx(1.5, abs=TOLERANCE)
-    assert p0.domains[0].km == pytest.approx(0.4, abs=TOLERANCE)
+    assert p0.domains[0].molecule is _ma
+    assert p0.domains[0].vmax == pytest.approx(1.5, abs=_TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.4, abs=_TOLERANCE)
     assert isinstance(p0.domains[1], TransporterDomain)
-    assert p0.domains[1].molecule is ma
-    assert p0.domains[1].vmax == pytest.approx(1.4, abs=TOLERANCE)
-    assert p0.domains[1].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p0.domains[1].molecule is _ma
+    assert p0.domains[1].vmax == pytest.approx(1.4, abs=_TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(0.5, abs=_TOLERANCE)
     assert isinstance(p0.domains[2], TransporterDomain)
-    assert p0.domains[2].molecule is mb
-    assert p0.domains[2].vmax == pytest.approx(1.3, abs=TOLERANCE)
-    assert p0.domains[2].km == pytest.approx(0.6, abs=TOLERANCE)
+    assert p0.domains[2].molecule is _mb
+    assert p0.domains[2].vmax == pytest.approx(1.3, abs=_TOLERANCE)
+    assert p0.domains[2].km == pytest.approx(0.6, abs=_TOLERANCE)
     assert isinstance(p0.domains[3], TransporterDomain)
-    assert p0.domains[3].molecule is mc
-    assert p0.domains[3].vmax == pytest.approx(1.2, abs=TOLERANCE)
-    assert p0.domains[3].km == pytest.approx(0.7, abs=TOLERANCE)
+    assert p0.domains[3].molecule is _mc
+    assert p0.domains[3].vmax == pytest.approx(1.2, abs=_TOLERANCE)
+    assert p0.domains[3].km == pytest.approx(0.7, abs=_TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].substrates == [ma]
-    assert p1.domains[0].products == [mb]
-    assert p1.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
-    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p1.domains[0].substrates == [_ma]
+    assert p1.domains[0].products == [_mb]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
     assert isinstance(p1.domains[1], TransporterDomain)
-    assert p1.domains[1].molecule is ma
-    assert p1.domains[1].vmax == pytest.approx(1.5, abs=TOLERANCE)
-    assert p1.domains[1].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p1.domains[1].molecule is _ma
+    assert p1.domains[1].vmax == pytest.approx(1.5, abs=_TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(0.5, abs=_TOLERANCE)
 
 
 def test_cell_params_with_regulatory_domains():
@@ -307,7 +303,7 @@ def test_cell_params_with_regulatory_domains():
     A = torch.zeros(2, 3, 8)
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -318,31 +314,31 @@ def test_cell_params_with_regulatory_domains():
     kinetics.A = A
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
-    ke_c0_0 = ke([ma], [mb])
-    ke_c0_1 = ke([ma], [mb])
-    assert Kmf[0, 0] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Kmb[0, 0] == pytest.approx(0.5 * ke_c0_0, abs=TOLERANCE)
-    assert Kmr[0, 0] == pytest.approx(avg(1.0, 2.0), abs=TOLERANCE)
-    assert Kmf[0, 1] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Kmb[0, 1] == pytest.approx(0.5 * ke_c0_1, abs=TOLERANCE)
-    assert Kmr[0, 1] == pytest.approx(avg(1.0, 1.5), abs=TOLERANCE)
-    assert Kmf[0, 2] == pytest.approx(0.0, TOLERANCE)
-    assert Kmb[0, 2] == pytest.approx(0.0, TOLERANCE)
-    assert Kmr[0, 2] == pytest.approx(0.0, TOLERANCE)
+    ke_c0_0 = _ke([_ma], [_mb])
+    ke_c0_1 = _ke([_ma], [_mb])
+    assert Kmf[0, 0] == pytest.approx(0.5, abs=_TOLERANCE)
+    assert Kmb[0, 0] == pytest.approx(0.5 * ke_c0_0, abs=_TOLERANCE)
+    assert Kmr[0, 0] == pytest.approx(_avg(1.0, 2.0), abs=_TOLERANCE)
+    assert Kmf[0, 1] == pytest.approx(0.5, abs=_TOLERANCE)
+    assert Kmb[0, 1] == pytest.approx(0.5 * ke_c0_1, abs=_TOLERANCE)
+    assert Kmr[0, 1] == pytest.approx(_avg(1.0, 1.5), abs=_TOLERANCE)
+    assert Kmf[0, 2] == pytest.approx(0.0, _TOLERANCE)
+    assert Kmb[0, 2] == pytest.approx(0.0, _TOLERANCE)
+    assert Kmr[0, 2] == pytest.approx(0.0, _TOLERANCE)
 
-    assert Kmf[1, 0] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Kmb[1, 0] == pytest.approx(0.5 * ke_c0_0, abs=TOLERANCE)
-    assert Kmf[1, 1] == pytest.approx(0.5, abs=TOLERANCE)
-    assert Kmb[1, 1] == pytest.approx(0.5 * ke_c0_1, abs=TOLERANCE)
-    assert Kmf[1, 2] == pytest.approx(0.0, TOLERANCE)
-    assert Kmb[1, 2] == pytest.approx(0.0, TOLERANCE)
+    assert Kmf[1, 0] == pytest.approx(0.5, abs=_TOLERANCE)
+    assert Kmb[1, 0] == pytest.approx(0.5 * ke_c0_0, abs=_TOLERANCE)
+    assert Kmf[1, 1] == pytest.approx(0.5, abs=_TOLERANCE)
+    assert Kmb[1, 1] == pytest.approx(0.5 * ke_c0_1, abs=_TOLERANCE)
+    assert Kmf[1, 2] == pytest.approx(0.0, _TOLERANCE)
+    assert Kmb[1, 2] == pytest.approx(0.0, _TOLERANCE)
 
-    assert Vmax[0, 0] == pytest.approx(2.0, abs=TOLERANCE)
-    assert Vmax[0, 1] == pytest.approx(2.0, abs=TOLERANCE)
+    assert Vmax[0, 0] == pytest.approx(2.0, abs=_TOLERANCE)
+    assert Vmax[0, 1] == pytest.approx(2.0, abs=_TOLERANCE)
     assert Vmax[0, 2] == 0.0
 
-    assert Vmax[1, 0] == pytest.approx(2.0, abs=TOLERANCE)
-    assert Vmax[1, 1] == pytest.approx(2.0, abs=TOLERANCE)
+    assert Vmax[1, 0] == pytest.approx(2.0, abs=_TOLERANCE)
+    assert Vmax[1, 1] == pytest.approx(2.0, abs=_TOLERANCE)
     assert Vmax[1, 2] == 0.0
 
     assert N[0, 0, 0] == -1
@@ -403,73 +399,73 @@ def test_cell_params_with_regulatory_domains():
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].substrates == [ma]
-    assert p0.domains[0].products == [mb]
-    assert p0.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
-    assert p0.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p0.domains[0].substrates == [_ma]
+    assert p0.domains[0].products == [_mb]
+    assert p0.domains[0].vmax == pytest.approx(2.0, abs=_TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
     assert isinstance(p0.domains[1], RegulatoryDomain)
-    assert p0.domains[1].effector is mc
+    assert p0.domains[1].effector is _mc
     assert not p0.domains[1].is_inhibiting
     assert not p0.domains[1].is_transmembrane
-    assert p0.domains[1].km == pytest.approx(1.0, abs=TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(1.0, abs=_TOLERANCE)
     assert isinstance(p0.domains[2], RegulatoryDomain)
-    assert p0.domains[2].effector is md
+    assert p0.domains[2].effector is _md
     assert p0.domains[2].is_inhibiting
     assert not p0.domains[2].is_transmembrane
-    assert p0.domains[2].km == pytest.approx(2.0, abs=TOLERANCE)
+    assert p0.domains[2].km == pytest.approx(2.0, abs=_TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].substrates == [ma]
-    assert p1.domains[0].products == [mb]
-    assert p1.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
-    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p1.domains[0].substrates == [_ma]
+    assert p1.domains[0].products == [_mb]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
     assert isinstance(p1.domains[1], RegulatoryDomain)
-    assert p1.domains[1].effector is ma
+    assert p1.domains[1].effector is _ma
     assert not p1.domains[1].is_inhibiting
     assert not p1.domains[1].is_transmembrane
-    assert p1.domains[1].km == pytest.approx(1.0, abs=TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(1.0, abs=_TOLERANCE)
     assert isinstance(p1.domains[2], RegulatoryDomain)
-    assert p1.domains[2].effector is ma
+    assert p1.domains[2].effector is _ma
     assert not p1.domains[2].is_inhibiting
     assert p1.domains[2].is_transmembrane
-    assert p1.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
+    assert p1.domains[2].km == pytest.approx(1.5, abs=_TOLERANCE)
 
     proteins = kinetics.get_proteome(proteome=c1)
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].substrates == [ma]
-    assert p0.domains[0].products == [mb]
-    assert p0.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
-    assert p0.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p0.domains[0].substrates == [_ma]
+    assert p0.domains[0].products == [_mb]
+    assert p0.domains[0].vmax == pytest.approx(2.0, abs=_TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
     assert isinstance(p0.domains[1], RegulatoryDomain)
-    assert p0.domains[1].effector is mb
+    assert p0.domains[1].effector is _mb
     assert p0.domains[1].is_inhibiting
     assert not p0.domains[1].is_transmembrane
-    assert p0.domains[1].km == pytest.approx(1.0, abs=TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(1.0, abs=_TOLERANCE)
     assert isinstance(p0.domains[2], RegulatoryDomain)
-    assert p0.domains[2].effector is mb
+    assert p0.domains[2].effector is _mb
     assert p0.domains[2].is_inhibiting
     assert p0.domains[2].is_transmembrane
-    assert p0.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
+    assert p0.domains[2].km == pytest.approx(1.5, abs=_TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].substrates == [ma]
-    assert p1.domains[0].products == [mb]
-    assert p1.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
-    assert p1.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p1.domains[0].substrates == [_ma]
+    assert p1.domains[0].products == [_mb]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
     assert isinstance(p1.domains[1], RegulatoryDomain)
-    assert p1.domains[1].effector is md
+    assert p1.domains[1].effector is _md
     assert not p1.domains[1].is_inhibiting
     assert not p1.domains[1].is_transmembrane
-    assert p1.domains[1].km == pytest.approx(1.0, abs=TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(1.0, abs=_TOLERANCE)
     assert isinstance(p1.domains[2], RegulatoryDomain)
-    assert p1.domains[2].effector is md
+    assert p1.domains[2].effector is _md
     assert not p1.domains[2].is_inhibiting
     assert not p1.domains[2].is_transmembrane
-    assert p1.domains[2].km == pytest.approx(1.5, abs=TOLERANCE)
+    assert p1.domains[2].km == pytest.approx(1.5, abs=_TOLERANCE)
 
 
 def test_cell_params_with_catalytic_domains():
@@ -511,7 +507,7 @@ def test_cell_params_with_catalytic_domains():
     A = torch.zeros(2, 3, 8)
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -522,33 +518,33 @@ def test_cell_params_with_catalytic_domains():
     kinetics.A = A
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
 
-    ke_c0_0 = ke([ma, md], [mb, mb, mc])
-    ke_c0_1 = ke([mb, md], [mc, mb, mc])
-    ke_c0_2 = ke([md], [mb, mb])
-    assert Kmf[0, 0] == pytest.approx(avg(0.5, 1.5) / ke_c0_0, abs=TOLERANCE)
-    assert Kmb[0, 0] == pytest.approx(avg(0.5, 1.5), abs=TOLERANCE)
-    assert Kmf[0, 1] == pytest.approx(avg(0.9, 1.2) / ke_c0_1, abs=TOLERANCE)
-    assert Kmb[0, 1] == pytest.approx(avg(0.9, 1.2), abs=TOLERANCE)
-    assert Kmf[0, 2] == pytest.approx(2.9 / ke_c0_2, abs=TOLERANCE)
-    assert Kmb[0, 2] == pytest.approx(2.9, abs=TOLERANCE)
+    ke_c0_0 = _ke([_ma, _md], [_mb, _mb, _mc])
+    ke_c0_1 = _ke([_mb, _md], [_mc, _mb, _mc])
+    ke_c0_2 = _ke([_md], [_mb, _mb])
+    assert Kmf[0, 0] == pytest.approx(_avg(0.5, 1.5) / ke_c0_0, abs=_TOLERANCE)
+    assert Kmb[0, 0] == pytest.approx(_avg(0.5, 1.5), abs=_TOLERANCE)
+    assert Kmf[0, 1] == pytest.approx(_avg(0.9, 1.2) / ke_c0_1, abs=_TOLERANCE)
+    assert Kmb[0, 1] == pytest.approx(_avg(0.9, 1.2), abs=_TOLERANCE)
+    assert Kmf[0, 2] == pytest.approx(2.9 / ke_c0_2, abs=_TOLERANCE)
+    assert Kmb[0, 2] == pytest.approx(2.9, abs=_TOLERANCE)
 
-    ke_c1_0 = ke([mb, md], [ma, mb, mc])
-    ke_c1_1 = ke([mb, mb, mc], [mc, md])
-    assert Kmf[1, 0] == pytest.approx(avg(0.3, 1.4) / ke_c1_0, TOLERANCE)
-    assert Kmb[1, 0] == pytest.approx(avg(0.3, 1.4), TOLERANCE)
-    assert Kmf[1, 1] == pytest.approx(avg(0.3, 1.7), TOLERANCE)
-    assert Kmb[1, 1] == pytest.approx(avg(0.3, 1.7) * ke_c1_1, TOLERANCE)
-    assert Kmf[1, 2] == pytest.approx(0.0, TOLERANCE)
-    assert Kmb[1, 2] == pytest.approx(0.0, TOLERANCE)
+    ke_c1_0 = _ke([_mb, _md], [_ma, _mb, _mc])
+    ke_c1_1 = _ke([_mb, _mb, _mc], [_mc, _md])
+    assert Kmf[1, 0] == pytest.approx(_avg(0.3, 1.4) / ke_c1_0, _TOLERANCE)
+    assert Kmb[1, 0] == pytest.approx(_avg(0.3, 1.4), _TOLERANCE)
+    assert Kmf[1, 1] == pytest.approx(_avg(0.3, 1.7), _TOLERANCE)
+    assert Kmb[1, 1] == pytest.approx(_avg(0.3, 1.7) * ke_c1_1, _TOLERANCE)
+    assert Kmf[1, 2] == pytest.approx(0.0, _TOLERANCE)
+    assert Kmb[1, 2] == pytest.approx(0.0, _TOLERANCE)
 
-    assert (Kmr < TOLERANCE).all()
+    assert (Kmr < _TOLERANCE).all()
 
-    assert Vmax[0, 0] == pytest.approx(avg(1.1, 1.2), abs=TOLERANCE)
-    assert Vmax[0, 1] == pytest.approx(avg(2.0, 1.3), abs=TOLERANCE)
-    assert Vmax[0, 2] == pytest.approx(2.9, abs=TOLERANCE)
+    assert Vmax[0, 0] == pytest.approx(_avg(1.1, 1.2), abs=_TOLERANCE)
+    assert Vmax[0, 1] == pytest.approx(_avg(2.0, 1.3), abs=_TOLERANCE)
+    assert Vmax[0, 2] == pytest.approx(2.9, abs=_TOLERANCE)
 
-    assert Vmax[1, 0] == pytest.approx(avg(1.1, 2.1), abs=TOLERANCE)
-    assert Vmax[1, 1] == pytest.approx(avg(1.9, 2.3), abs=TOLERANCE)
+    assert Vmax[1, 0] == pytest.approx(_avg(1.1, 2.1), abs=_TOLERANCE)
+    assert Vmax[1, 1] == pytest.approx(_avg(1.9, 2.3), abs=_TOLERANCE)
     assert Vmax[1, 2] == 0.0
 
     assert N[0, 0, 0] == -1
@@ -616,60 +612,60 @@ def test_cell_params_with_catalytic_domains():
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].substrates == [ma]
-    assert p0.domains[0].products == [mb]
-    assert p0.domains[0].vmax == pytest.approx(1.1, abs=TOLERANCE)
-    assert p0.domains[0].km == pytest.approx(0.5, abs=TOLERANCE)
+    assert p0.domains[0].substrates == [_ma]
+    assert p0.domains[0].products == [_mb]
+    assert p0.domains[0].vmax == pytest.approx(1.1, abs=_TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
     assert isinstance(p0.domains[1], CatalyticDomain)
-    assert p0.domains[1].substrates == [md]
-    assert p0.domains[1].products == [mb, mc]
-    assert p0.domains[1].vmax == pytest.approx(1.2, abs=TOLERANCE)
-    assert p0.domains[1].km == pytest.approx(1.5, abs=TOLERANCE)
+    assert p0.domains[1].substrates == [_md]
+    assert p0.domains[1].products == [_mb, _mc]
+    assert p0.domains[1].vmax == pytest.approx(1.2, abs=_TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(1.5, abs=_TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].substrates == [mb]
-    assert p1.domains[0].products == [mc]
-    assert p1.domains[0].vmax == pytest.approx(2.0, abs=TOLERANCE)
-    assert p1.domains[0].km == pytest.approx(0.9, abs=TOLERANCE)
+    assert p1.domains[0].substrates == [_mb]
+    assert p1.domains[0].products == [_mc]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.9, abs=_TOLERANCE)
     assert isinstance(p1.domains[1], CatalyticDomain)
-    assert p1.domains[1].substrates == [md]
-    assert p1.domains[1].products == [mb, mc]
-    assert p1.domains[1].vmax == pytest.approx(1.3, abs=TOLERANCE)
-    assert p1.domains[1].km == pytest.approx(1.2, abs=TOLERANCE)
+    assert p1.domains[1].substrates == [_md]
+    assert p1.domains[1].products == [_mb, _mc]
+    assert p1.domains[1].vmax == pytest.approx(1.3, abs=_TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(1.2, abs=_TOLERANCE)
 
     p2 = proteins[2]
     assert isinstance(p2.domains[0], CatalyticDomain)
-    assert p2.domains[0].substrates == [md]
-    assert p2.domains[0].products == [mb, mb]
-    assert p2.domains[0].vmax == pytest.approx(2.9, abs=TOLERANCE)
-    assert p2.domains[0].km == pytest.approx(2.9, abs=TOLERANCE)
+    assert p2.domains[0].substrates == [_md]
+    assert p2.domains[0].products == [_mb, _mb]
+    assert p2.domains[0].vmax == pytest.approx(2.9, abs=_TOLERANCE)
+    assert p2.domains[0].km == pytest.approx(2.9, abs=_TOLERANCE)
 
     proteins = kinetics.get_proteome(proteome=c1)
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].substrates == [mb]
-    assert p0.domains[0].products == [ma]
-    assert p0.domains[0].vmax == pytest.approx(1.1, abs=TOLERANCE)
-    assert p0.domains[0].km == pytest.approx(0.3, abs=TOLERANCE)
+    assert p0.domains[0].substrates == [_mb]
+    assert p0.domains[0].products == [_ma]
+    assert p0.domains[0].vmax == pytest.approx(1.1, abs=_TOLERANCE)
+    assert p0.domains[0].km == pytest.approx(0.3, abs=_TOLERANCE)
     assert isinstance(p0.domains[1], CatalyticDomain)
-    assert p0.domains[1].substrates == [md]
-    assert p0.domains[1].products == [mb, mc]
-    assert p0.domains[1].vmax == pytest.approx(2.1, abs=TOLERANCE)
-    assert p0.domains[1].km == pytest.approx(1.4, abs=TOLERANCE)
+    assert p0.domains[1].substrates == [_md]
+    assert p0.domains[1].products == [_mb, _mc]
+    assert p0.domains[1].vmax == pytest.approx(2.1, abs=_TOLERANCE)
+    assert p0.domains[1].km == pytest.approx(1.4, abs=_TOLERANCE)
 
     p1 = proteins[1]
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].substrates == [mb]
-    assert p1.domains[0].products == [mc]
-    assert p1.domains[0].vmax == pytest.approx(1.9, abs=TOLERANCE)
-    assert p1.domains[0].km == pytest.approx(0.3, abs=TOLERANCE)
+    assert p1.domains[0].substrates == [_mb]
+    assert p1.domains[0].products == [_mc]
+    assert p1.domains[0].vmax == pytest.approx(1.9, abs=_TOLERANCE)
+    assert p1.domains[0].km == pytest.approx(0.3, abs=_TOLERANCE)
     assert isinstance(p1.domains[1], CatalyticDomain)
-    assert p1.domains[1].substrates == [mb, mc]
-    assert p1.domains[1].products == [md]
-    assert p1.domains[1].vmax == pytest.approx(2.3, abs=TOLERANCE)
-    assert p1.domains[1].km == pytest.approx(1.7, abs=TOLERANCE)
+    assert p1.domains[1].substrates == [_mb, _mc]
+    assert p1.domains[1].products == [_md]
+    assert p1.domains[1].vmax == pytest.approx(2.3, abs=_TOLERANCE)
+    assert p1.domains[1].km == pytest.approx(1.7, abs=_TOLERANCE)
 
 
 def test_simple_mm_kinetic():
@@ -740,7 +736,7 @@ def test_simple_mm_kinetic():
     dx_c1_d = v_c1_0 + v_c1_1
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
@@ -751,15 +747,15 @@ def test_simple_mm_kinetic():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
-    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
-    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
-    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
+    assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < _TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < _TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < _TOLERANCE
 
-    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
-    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
-    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
-    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
+    assert (Xd[1, 0] - dx_c1_a).abs() < _TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < _TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < _TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < _TOLERANCE
 
 
 def test_mm_kinetic_with_proportions():
@@ -839,7 +835,7 @@ def test_mm_kinetic_with_proportions():
     dx_c1_d = 0.0
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
@@ -850,15 +846,15 @@ def test_mm_kinetic_with_proportions():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
-    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
-    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
-    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
+    assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < _TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < _TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < _TOLERANCE
 
-    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
-    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
-    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
-    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
+    assert (Xd[1, 0] - dx_c1_a).abs() < _TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < _TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < _TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < _TOLERANCE
 
 
 def test_mm_kinetic_with_multiple_substrates():
@@ -936,7 +932,7 @@ def test_mm_kinetic_with_multiple_substrates():
     dx_c1_d = -v_c1_0
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
@@ -947,15 +943,15 @@ def test_mm_kinetic_with_multiple_substrates():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
-    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
-    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
-    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
+    assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < _TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < _TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < _TOLERANCE
 
-    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
-    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
-    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
-    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
+    assert (Xd[1, 0] - dx_c1_a).abs() < _TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < _TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < _TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < _TOLERANCE
 
 
 def test_mm_kinetic_with_cofactors():
@@ -1043,7 +1039,7 @@ def test_mm_kinetic_with_cofactors():
     dx_c1_d = 0.0
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
@@ -1054,15 +1050,15 @@ def test_mm_kinetic_with_cofactors():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
-    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
-    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
-    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
+    assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < _TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < _TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < _TOLERANCE
 
-    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
-    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
-    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
-    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
+    assert (Xd[1, 0] - dx_c1_a).abs() < _TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < _TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < _TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < _TOLERANCE
 
 
 def test_mm_kinetic_with_allosteric_action():
@@ -1167,7 +1163,7 @@ def test_mm_kinetic_with_allosteric_action():
     dx_c1_d = v_c1_1
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
@@ -1178,15 +1174,15 @@ def test_mm_kinetic_with_allosteric_action():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
-    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
-    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
-    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
+    assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < _TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < _TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < _TOLERANCE
 
-    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
-    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
-    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
-    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
+    assert (Xd[1, 0] - dx_c1_a).abs() < _TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < _TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < _TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < _TOLERANCE
 
 
 def test_reduce_velocity_to_avoid_negative_concentrations():
@@ -1254,7 +1250,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     # so velocity should be reduced by a factor depending on current a
     # all other proteins in this cell are reduce by the same factor
     # to avoid follow up problems with other molecules being destroyed by other proteins
-    f = (X0[0, 0] - EPS) / v_c0_0
+    f = (X0[0, 0] - _EPS) / v_c0_0
     v_c0_0 = f * v_c0_0
     v_c0_1 = f * v_c0_1
     dx_c0_a = -v_c0_0
@@ -1266,14 +1262,14 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     # but this would lead to Xd + X0 = -0.0722 (for c)
     assert X0[1, 2] - 2 * v_c1_0 < 0.0
     # as above, velocities are reduced. here its only this protein
-    v_c1_0 = (X0[1, 2] - EPS) / 2
+    v_c1_0 = (X0[1, 2] - _EPS) / 2
     dx_c1_a = 0.0
     dx_c1_b = 0.0
     dx_c1_c = -2 * v_c1_0
     dx_c1_d = v_c1_0
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
@@ -1284,15 +1280,15 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
-    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
-    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
-    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
+    assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < _TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < _TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < _TOLERANCE
 
-    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
-    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
-    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
-    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
+    assert (Xd[1, 0] - dx_c1_a).abs() < _TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < _TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < _TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < _TOLERANCE
 
     X1 = X0 + Xd
     assert not torch.any(X1 < 0.0)
@@ -1366,7 +1362,7 @@ def test_reduce_velocity_in_multiple_proteins():
     assert X0[0, 0] + naive_dx_c0_a < 0.0
     # so velocity should be reduced to by a factor to not deconstruct too much a
     # all other proteins have to be reduced by the same factor to not cause downstream problems
-    f = (X0[0, 0] - EPS) / -naive_dx_c0_a
+    f = (X0[0, 0] - _EPS) / -naive_dx_c0_a
     v_c0_0 = v_c0_0 * f
     v_c0_1 = v_c0_1 * f
     dx_c0_a = -v_c0_0 - v_c0_1 * 2
@@ -1382,7 +1378,7 @@ def test_reduce_velocity_in_multiple_proteins():
     dx_c1_d = 0.0
 
     # test
-    kinetics = get_kinetics()
+    kinetics = _get_kinetics()
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
@@ -1393,15 +1389,15 @@ def test_reduce_velocity_in_multiple_proteins():
     kinetics.A = A
     Xd = kinetics.integrate_signals(X=X0) - X0
 
-    assert (Xd[0, 0] - dx_c0_a).abs() < TOLERANCE
-    assert (Xd[0, 1] - dx_c0_b).abs() < TOLERANCE
-    assert (Xd[0, 2] - dx_c0_c).abs() < TOLERANCE
-    assert (Xd[0, 3] - dx_c0_d).abs() < TOLERANCE
+    assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
+    assert (Xd[0, 1] - dx_c0_b).abs() < _TOLERANCE
+    assert (Xd[0, 2] - dx_c0_c).abs() < _TOLERANCE
+    assert (Xd[0, 3] - dx_c0_d).abs() < _TOLERANCE
 
-    assert (Xd[1, 0] - dx_c1_a).abs() < TOLERANCE
-    assert (Xd[1, 1] - dx_c1_b).abs() < TOLERANCE
-    assert (Xd[1, 2] - dx_c1_c).abs() < TOLERANCE
-    assert (Xd[1, 3] - dx_c1_d).abs() < TOLERANCE
+    assert (Xd[1, 0] - dx_c1_a).abs() < _TOLERANCE
+    assert (Xd[1, 1] - dx_c1_b).abs() < _TOLERANCE
+    assert (Xd[1, 2] - dx_c1_c).abs() < _TOLERANCE
+    assert (Xd[1, 3] - dx_c1_d).abs() < _TOLERANCE
 
     X1 = X0 + Xd
     assert not torch.any(X1 < 0.0)

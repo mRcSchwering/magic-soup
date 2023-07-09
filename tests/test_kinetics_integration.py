@@ -1,92 +1,32 @@
+import pytest
 import torch
 from magicsoup.containers import Molecule
 from magicsoup.kinetics import Kinetics
 
-TOLERANCE = 1e-4
-EPS = 1e-8
+# mark all tests in this module as slow
+pytestmark = pytest.mark.slow
 
 
-ma = Molecule("a", energy=15 * 1e3)
-mb = Molecule("b", energy=10 * 1e3)
-mc = Molecule("c", energy=10 * 1e3)
-md = Molecule("d", energy=5 * 1e3)
-MOLECULES = [ma, mb, mc, md]
+_ma = Molecule("a", energy=15 * 1e3)
+_mb = Molecule("b", energy=10 * 1e3)
+_mc = Molecule("c", energy=10 * 1e3)
+_md = Molecule("d", energy=5 * 1e3)
+_MOLECULES = [_ma, _mb, _mc, _md]
 
-r_a_b = ([ma], [mb])
-r_b_c = ([mb], [mc])
-r_bc_d = ([mb, mc], [md])
-r_d_bb = ([md], [mb, mb])
-REACTIONS = [r_a_b, r_b_c, r_bc_d, r_d_bb]
-
-# fmt: off
-KM_WEIGHTS = torch.tensor([
-    torch.nan, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,  # idxs 0-9
-    1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,  # idxs 10-19
-    2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9  # idxs 20-29
-])
-
-VMAX_WEIGHTS = torch.tensor([
-    torch.nan, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,  # idxs 0-9
-    2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9,  # idxs 10-19
-])
-
-SIGNS = torch.tensor([0.0, 1.0, -1.0])  # idxs 0-2
-
-TRANSPORT_M = torch.tensor([
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 0: none
-    [-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 1: a in->out
-    [0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 2: b in->out
-    [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0], # idx 3: c in->out
-    [0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0], # idx 4: d in->out
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-])
-
-EFFECTOR_M = torch.tensor([
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 0: none
-    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 1: a in
-    [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 2: b in
-    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 3: c in
-    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], # idx 4: d in
-    [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 5: a out
-    [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 6: b out
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0], # idx 7: c out
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], # idx 8: d out
-])
-
-REACTION_M = torch.tensor([
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],   # idx 0: none
-    [-1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 1: a -> b
-    [0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 2: b -> c
-    [0.0, -1.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0], # idx 3: b,c -> d
-    [0.0, 2.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0],  # idx 4: d -> 2b
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-])
-
-# fmt: on
-
-# TODO: refactor
-#       I think _get_kinetics should include random kinetics
+_r_a_b = ([_ma], [_mb])
+_r_b_c = ([_mb], [_mc])
+_r_bc_d = ([_mb, _mc], [_md])
+_r_d_bb = ([_md], [_mb, _mb])
+_REACTIONS = [_r_a_b, _r_b_c, _r_bc_d, _r_d_bb]
 
 
 def _get_kinetics(n_computations=1) -> Kinetics:
     kinetics = Kinetics(
-        molecules=MOLECULES,
-        reactions=REACTIONS,
+        molecules=_MOLECULES,
+        reactions=_REACTIONS,
         n_computations=n_computations,
         abs_temp=310,
     )
-    # kinetics.km_map.weights = KM_WEIGHTS.clone()
-    # kinetics.vmax_map.weights = VMAX_WEIGHTS.clone()
-    # kinetics.sign_map.signs = SIGNS.clone()
-    # kinetics.transport_map.M = TRANSPORT_M.clone()
-    # kinetics.effector_map.M = EFFECTOR_M.clone()
-    # kinetics.reaction_map.M = REACTION_M.clone()
     return kinetics
 
 
@@ -166,13 +106,12 @@ def test_random_kinetics_stay_zero():
     # Typical reasons for cells creating signals from 0:
     # 1. when using exp(ln(x)) 1s can accidentally be created
     # 2. when doing a^b 1s can be created (0^1=0 but 0^0=1)
-
     n_cells = 100
     n_prots = 100
     n_steps = 1000
 
     kinetics = _get_kinetics()
-    n_mols = len(MOLECULES) * 2
+    n_mols = len(_MOLECULES) * 2
 
     # concentrations (c, s)
     X = torch.zeros(n_cells, n_mols).abs()
@@ -210,7 +149,7 @@ def test_random_kinetics_dont_explode():
     n_steps = 1000
 
     kinetics = _get_kinetics()
-    n_mols = len(MOLECULES) * 2
+    n_mols = len(_MOLECULES) * 2
 
     # concentrations (c, s)
     X = torch.randn(n_cells, n_mols).abs().clamp(max=1.0) * 100

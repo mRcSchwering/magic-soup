@@ -2,16 +2,16 @@ import warnings
 import pytest
 import magicsoup.containers as cntnrs
 
-X = cntnrs.Molecule(name="X", energy=10)
-Y = cntnrs.Molecule(name="Y", energy=100)
+_X = cntnrs.Molecule(name="X", energy=10)
+_Y = cntnrs.Molecule(name="Y", energy=100)
 
 
 def test_same_molecules_get_same_instance():
     X2 = cntnrs.Molecule(name="X", energy=10)
     Y2 = cntnrs.Molecule(name="Y", energy=100)
-    assert X is X2
-    assert Y is Y2
-    assert Y is not X
+    assert _X is X2
+    assert _Y is Y2
+    assert _Y is not _X
 
 
 def test_raise_if_same_molecule_with_different_energy():
@@ -27,8 +27,8 @@ def test_similar_molecule_warning():
 
 
 def test_molecule_mappings():
-    chem = cntnrs.Chemistry(molecules=[X, Y], reactions=[])
-    assert chem.mol_2_idx[X] == 0
-    assert chem.mol_2_idx[Y] == 1
+    chem = cntnrs.Chemistry(molecules=[_X, _Y], reactions=[])
+    assert chem.mol_2_idx[_X] == 0
+    assert chem.mol_2_idx[_Y] == 1
     assert chem.molname_2_idx["X"] == 0
     assert chem.molname_2_idx["Y"] == 1

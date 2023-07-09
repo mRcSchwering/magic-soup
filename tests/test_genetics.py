@@ -8,7 +8,7 @@ from magicsoup.constants import CODON_SIZE
 # starts: "TTG", "GTG", "ATG"
 # stops: "TGA", "TAG", "TAA"
 # forward only
-DATA = [
+_DATA = [
     (
         """
         TACCGGATA GCAGCTTTT CTTGGAATA GCCAAGGGT
@@ -46,7 +46,7 @@ DATA = [
 ]
 
 
-@pytest.mark.parametrize("seq, exp", DATA)
+@pytest.mark.parametrize("seq, exp", _DATA)
 def test_get_coding_regions(seq: str, exp: list[str]):
     # 1 codon is too small to express p=0.01 domain types
     with pytest.warns(UserWarning):
@@ -106,7 +106,6 @@ def test_extract_domains():
     assert res[3][1] == (2, 1, 2, 3, 4)
 
 
-
 def test_genetics():
     # 1=catalytic, 2=transporter, 3=regulatory
     # regulatory-only proteins get sorted out, so there is a bias towards
@@ -117,7 +116,7 @@ def test_genetics():
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes = genetics.translate_genomes(genomes=genomes)
-    
+
     n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
     n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)
     n_reg = sum(ddd[0] == 3 for d in proteomes for dd in d for ddd in dd)
@@ -130,7 +129,7 @@ def test_genetics():
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes = genetics.translate_genomes(genomes=genomes)
-    
+
     n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
     n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)
     n_reg = sum(ddd[0] == 3 for d in proteomes for dd in d for ddd in dd)
@@ -143,12 +142,10 @@ def test_genetics():
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes = genetics.translate_genomes(genomes=genomes)
-    
+
     n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
     n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)
     n_reg = sum(ddd[0] == 3 for d in proteomes for dd in d for ddd in dd)
     n = n_catal + n_trnsp + n_reg
     assert n_reg - n_catal > 0.6 * n / 3
     assert n_reg - n_trnsp > 0.6 * n / 3
-
-                
