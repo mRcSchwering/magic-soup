@@ -688,33 +688,28 @@ class Kinetics:
             Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
 
             # proteins can deconstruct more of a molecule than available in a cell
-            # but I can't just clip X at 0 because then reactions would not adhere
-            # to their stoichiometry anymore
-            # instead I need to reduce protein velocity
-            # However, a cell's Xd is the sum of all its protein's activities
-            # if I reduce the velocity of 1 protein, it could create a new
-            # below-zero situation for another one
-            # One would have to repeat this action until all conflicts are satisfied
+            # this happens mainly with multiple proteins with low Km trying to deconstruct
+            # the same molecule species in one cell
+            # reaction stoichiometry must be obeyed, so mere X.clamp(0.0) is not allowed
+            # One could factor out which proteins must be slowed down by how much,
+            # and selectively only slow down these proteins by a certain trimming factor.
+            # However, this could create a follow-up X<0.0 situation with one of the other proteins
+            # which were not slowed down. To solve this, one would have to construct a
+            # dependency graph of the protein network, or just iterate this process often enough.
             # Here, I am instead reducing all the cell's proteins by the same factor
-            # that way these secondary below-zero situations cannot appear
+            # that way these follow-up X<0.0 situations cannot appear
             # due to floating point precision I need to lift the cutoff from 0 to EPS
-            ma = Xd < 0.0
-            mb = X + Xd < 0.0
-            trim_to_zero = torch.where(ma & mb, X / -Xd - _EPS, 1.0).amin(1)  # (c,)
-            Xd = torch.einsum("cs,c->cs", Xd, trim_to_zero)
+            trim_factors = (X / -Xd - _EPS).clamp(0.0)
+            cell_trims = torch.where(X + Xd < 0.0, trim_factors, 1.0).amin(1)  # (c,)
+            Xd = torch.einsum("cs,c->cs", Xd, cell_trims)
 
             # update signals, this time no negative X
             X = X + Xd
 
-            # The above should make it impossible to create negative X
-            # However in some simulations I see negative values, they usually
-            # create extremely high values within 1 or 2 steps (cell molecule concentrations)
-            # I was not able to reproduce this in any of the tests
-            # TODO: luca/e1_co2_fixing has this problem but it can be avoided
-            #       by clamping after every computation
-            # it seems that clamping here does not create molecules from nothing
-            # my hypothesis is that the negative value was a floating point error
-            # and so clamping does not necessarily create molecules from nothing
+            # above was tested without clamp(0.0) and it never failed
+            # However, if due to some floating point inaccuracies, a negative X slips through
+            # it could create either NaNs or extremely large values (it would ruin a simulation)
+            # Thus, as a final measure clamp is used (it should never actually do anything)
             X = X.clamp(0.0)
 
         # NaNs can be created when overflow creates Infs (most likely in aggregate_signals)
