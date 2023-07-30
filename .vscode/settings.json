@@ -1,10 +1,10 @@
 {
   "python.envFile": "${workspaceFolder}/vscode.env",
-  "terminal.integrated.shellArgs.linux": [
-    "-c",
-    "export `cat vscode.env`; bash"
-  ],
+  "terminal.integrated.env.linux": { "PYTHONPATH": "${workspaceFolder}/src" },
   "jupyter.notebookFileRoot": "${workspaceFolder}/src",
+  "python.linting.pylintArgs": [
+    "--init-hook=\"import sys; sys.path.append('./src')\""
+  ],
   "[markdown]": {
     "editor.formatOnSave": false
   },
