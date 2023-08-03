@@ -79,6 +79,7 @@ def _activity(world: ms.World, atp: int, adp: int):
 
 
 def main(args: Namespace):
+    min_cells = int(args.init_n_cells * 0.01)
     writer = SummaryWriter(log_dir=_this_dir / "runs" / _now)
 
     world = ms.World(
@@ -110,6 +111,10 @@ def main(args: Namespace):
             world.save_state(statedir=_this_dir / "runs" / _now / f"step={step_i}")
             _log_imgs(writer=writer, world=world, step_i=step_i)
             _log_scalars(writer=writer, world=world, step_i=step_i, mol_2_idx=mol_2_idx)
+
+        if world.n_cells < min_cells:
+            print(f"Only {world.n_cells:,} cells left, stopping")
+            break
 
     writer.close()
 
