@@ -16,6 +16,7 @@ Add a few cells and create evolutionary pressure by selectively replicating and 
 Then run and see what random mutations can do.
 
 ![random cells](https://github.com/mRcSchwering/magic-soup/blob/main/docs/img/animation.gif)
+
 _Cell growth of 1000 cells with different genomes were simulated. Top row: Cell map showing all cells (left), cellline 1 (middle), and cellline 2 (right). Celline 1 was the fastest growing cell line when energy levels were high, celline 2 when they wer low. Middle and bottom rows: Development of total cell count and molecule species concentrations over time._
 
 ### Installation
