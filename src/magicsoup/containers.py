@@ -10,17 +10,17 @@ class Molecule:
 
     Arguments:
         name: Used to uniquely identify this molecule species.
-        energy: Energy for 1 mol of this molecule species.
+        energy: Energy for 1 mol of this molecule species (in J by default).
             This amount of energy is released if the molecule would be deconstructed.
             Energetically coupled in a protein it could power other activities.
-        half_life: Half life of this molecule species in time steps.
+        half_life: Half life of this molecule species in time steps (in s by default).
             Molecules degrade by one step if you call `world.degrade_molecules()`.
             Must be > 0.0.
-        diffusivity: A measure for how quick this molecule species diffuses over the molecule map during each time step.
+        diffusivity: A measure for how quick this molecule species diffuses over the molecule map during each time step (in s by default).
             Molecules diffuse when calling `world.diffuse_molecules()`.
             0.0 would mean it doesn't diffuse at all.
             1.0 would mean it is spread out equally around its Moore's neighborhood within one time step.
-        permeability: A measure for how quick this molecule species permeates cell membranes during each time step.
+        permeability: A measure for how quick this molecule species permeates cell membranes during each time step (in s by default).
             Molecules permeate cell membranes when calling `world.diffuse_molecules()`.
             0.0 would mean it can't permeate cell membranes.
             1.0 would mean it spreads equally between cell and molecule map pixel within one time step.
@@ -45,10 +45,15 @@ class Molecule:
         Molecule("ATP", 20)  # raises error
     ```
 
+    By default in this simulation molecule numbers can be thought of as being in mmol, time steps in s, energies in J.
+    The side length of 1 pixel on the map can be thought of as 1um.
+    Eventually, they are just numbers and can be interpreted as anything.
+    However, together with the default parameters in [Kinetics][magicsoup.world.kinetics.Kinetics]
+    it makes sense to interpret them in mmol, s, and J.
+
     Molecule half life should represent the half life if the molecule is not actively deconstructed by a protein.
     Molecules degrade by one step whenever you call [degrade_molecules()][magicsoup.world.World.degrade_molecules].
     You can setup the simulation to always call [degrade_molecules()][magicsoup.world.World.degrade_molecules] whenever a time step is finished.
-    You could define one time step to equal one second and then use the real half life value for your molecule species.
 
     Molecular diffusion in the 2D molecule map happens whenever you call [diffuse_molecules()][magicsoup.world.World.diffuse_molecules].
     The molecule map is `world.molecule_map`.

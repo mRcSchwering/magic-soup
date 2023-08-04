@@ -1,5 +1,15 @@
 # Magicsoup
 
+---
+
+**Documentation**: [https://magic-soup.readthedocs.io/](https://magic-soup.readthedocs.io/)
+
+**Source Code**: [https://github.com/mRcSchwering/magic-soup](https://github.com/mRcSchwering/magic-soup)
+
+**PyPI**: [https://pypi.org/project/magicsoup/](https://pypi.org/project/magicsoup/)
+
+---
+
 This game simulates cell metabolic and transduction pathway evolution.
 Define a 2D world with certain molecules and reactions.
 Add a few cells and create evolutionary pressure by selectively replicating and killing them.
@@ -7,7 +17,7 @@ Then run and see what random mutations can do.
 
 ![random cells](./img/animation.gif)
 
-_Cell growth of 1000 cells with different genomes were simulated. Top row: Cell map showing all cells (left), cellline 1 (middle), and cellline 2 (right). Celline 1 was the fastest growing cell line when energy levels were high, celline 2 when they wer low. Middle and bottom rows: Development of total cell count and molecule species concentrations over time._
+_Cell growth of 1000 cells with different genomes was simulated. Top row: Cell maps showing all cells (left), cellline 1 (middle), and cellline 2 (right). Celline 1 was the fastest growing cell line at high energy levels, celline 2 at low energy levels. Middle and bottom rows: Development of total cell count and molecule concentrations over time._
 
 Proteins in this simulation are made up of catalytic, transporter, and regulatory domains.
 They are energetically coupled within the same protein and mostly follow Michaelis-Menten-Kinetics.
@@ -60,7 +70,7 @@ In the function below all cells experience 1E-3 random point mutations per nucle
 10% of them will be indels.
 
 ```python
-def mutate_cells():
+def mutate_cells(world: ms.World):
     mutated = ms.point_mutations(seqs=world.genomes)
     world.update_cells(genome_idx_pairs=mutated)
 ```
@@ -74,12 +84,12 @@ def sample(p: torch.Tensor) -> list[int]:
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
-def kill_cells():
+def kill_cells(world: ms.World):
     x = world.cell_molecules[:, 2]
     idxs = sample(.01 / (.01 + x))
     world.kill_cells(cell_idxs=idxs)
 
-def replicate_cells():
+def replicate_cells(world: ms.World):
     x = world.cell_molecules[:, 2]
     idxs = sample(x ** 3 / (x ** 3 + 20.0 ** 3))
     world.divide_cells(cellc_idxs=idxs)
@@ -94,9 +104,9 @@ in cells advance by one time step.
 ```python
 for _ in range(1000):
     world.enzymatic_activity()
-    kill_cells()
-    replicate_cells()
-    mutate_cells()
+    kill_cells(world=world)
+    replicate_cells(world=world)
+    mutate_cells(world=world)
     world.diffuse_molecules()
     world.increment_cell_lifetimes()
 ```
@@ -108,9 +118,10 @@ For molecules you can define things like energy, permeability, diffusivity.
 See the [Molecule][magicsoup.containers.Molecule] class for more info.
 Reactions are just tuples of substrate and product molecule species.
 
-Then, you create a [World][magicsoup.world.World] object which defines things like a map and genetics.
-It carries all data that describes the world at this time step with cells, molecule distributions and so on.
-On this object there are also methods that are used to advance the world by one time step.
+Then, you create a [World][magicsoup.world.World] object which defines things like a cell and molecule maps.
+It carries all data describing the world at this time step with cells, molecule distributions and so on.
+On this object there are also methods used to advance the world by one time step.
+By default all molecule numbers are in mmol, all energies are in J, and a time step represents 1s.
 
 Usually, you would only adjust `Molecule`s and `World`.
 However, in some cases you might want to change the way how genetics work;
@@ -124,7 +135,7 @@ You can also alter parts of the world, like creating concentration gradients
 or regularly supplying the world with certain molecules/energy.
 The documentation of [World][magicsoup.world.World] describes all attributes that could be of interest.
 
-All major work is done by [PyTorch](https://pytorch.org/) and can be moved to a GPU.
+All major work is done using [PyTorch](https://pytorch.org/) and can be moved to a GPU.
 `World` has an argument `device` to control that.
 Please see [CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html) on how to use it.
 And since this simulation already requires [PyTorch](https://pytorch.org/), it makes sense
@@ -134,7 +145,7 @@ to use [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html) to intera
 
 For CPU alone you can just do:
 
-```
+```bash
 pip install magicsoup
 ```
 

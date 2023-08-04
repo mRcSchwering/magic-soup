@@ -73,11 +73,11 @@ class World:
             If a cell divides, its descendants will have the same label.
         cell_map: Boolean 2D tensor referencing which pixels are occupied by a cell.
             Dimension 0 represents the x, dimension 1 y.
-        molecule_map: Float 3D tensor describing how many molecules (in mmol) of each molecule species exist on every pixel in this world.
+        molecule_map: Float 3D tensor describing how many molecules (in mmol by default) of each molecule species exist on every pixel in this world.
             Dimension 0 describes the molecule species. They are in the same order as `chemistry.molecules`.
             Dimension 1 represents x, dimension 2 y.
             So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species on pixel 1, 2.
-        cell_molecules: Float 2D tensor describing the number of molecules (in mmol) for each molecule species in each cell.
+        cell_molecules: Float 2D tensor describing the number of molecules (in mmol by default) for each molecule species in each cell.
             Dimension 0 is the cell index. It is the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
             Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
             So, `world.cell_molecules[0, 1]` represents how many mmol of the 1st molecule species the 0th cell contains.
@@ -110,10 +110,17 @@ class World:
     This is a quick, lightweight save, but it only saves things that change during the simulation.
     Use [load_state()][magicsoup.world.World.load_state] to re-load a certain state.
 
-    Finally, the `world` object carries `world.genetics`, `world.kinetics`, and `world.chemistry`
+    The `world` object carries `world.genetics`, `world.kinetics`, and `world.chemistry`
     (which is just a reference to the chemistry object that was used when initializing `world`).
     Usually, you don't need to touch them.
     But, if you want to override them or look into some details, see the docstrings of their classes for more information.
+
+    By default in this simulation molecule numbers can be thought of as being in mmol, time steps in s, energies in J.
+    The side length of 1 pixel on the map can be thought of as 1um.
+    Eventually, they are just numbers and can be interpreted as anything.
+    However, with the default parameters in [Kinetics][magicsoup.world.kinetics.Kinetics]
+    and the way [Molecule][magicsoup.world.containers.Molecule] objects are defined
+    it makes sense to interpret them in mmol, s, and J.
     """
 
     def __init__(
@@ -671,7 +678,7 @@ class World:
 
     def enzymatic_activity(self):
         """
-        Catalyze reactions for one time step.
+        Catalyze reactions for one time step (1s by default).
         This includes molecule transport into or out of the cell.
         `world.molecule_map` and `world.cell_molecules` are updated.
         """
@@ -690,7 +697,7 @@ class World:
     def diffuse_molecules(self):
         """
         Let molecules in molecule map diffuse and permeate through cell membranes
-        by one time step.
+        by one time step (1s by default).
         `world.molecule_map` and `world.cell_molecules` are updated.
 
         By how much each molcule species diffuses around the world map and permeates

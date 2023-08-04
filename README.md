@@ -17,13 +17,13 @@ Then run and see what random mutations can do.
 
 ![random cells](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/docs/img/animation.gif)
 
-_Cell growth of 1000 cells with different genomes were simulated. Top row: Cell map showing all cells (left), cellline 1 (middle), and cellline 2 (right). Celline 1 was the fastest growing cell line when energy levels were high, celline 2 when they wer low. Middle and bottom rows: Development of total cell count and molecule species concentrations over time._
+_Cell growth of 1000 cells with different genomes was simulated. Top row: Cell maps showing all cells (left), cellline 1 (middle), and cellline 2 (right). Celline 1 was the fastest growing cell line at high energy levels, celline 2 at low energy levels. Middle and bottom rows: Development of total cell count and molecule concentrations over time._
 
 ### Installation
 
 For CPU alone you can just do:
 
-```
+```bash
 pip install magicsoup
 ```
 
@@ -74,7 +74,7 @@ In the function below all cells experience 1E-3 random point mutations per nucle
 10% of them will be indels.
 
 ```python
-def mutate_cells():
+def mutate_cells(world: ms.World):
     mutated = ms.point_mutations(seqs=world.genomes)
     world.update_cells(genome_idx_pairs=mutated)
 ```
@@ -88,12 +88,12 @@ def sample(p: torch.Tensor) -> list[int]:
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
-def kill_cells():
+def kill_cells(world: ms.World):
     x = world.cell_molecules[:, 2]
     idxs = sample(.01 / (.01 + x))
     world.kill_cells(cell_idxs=idxs)
 
-def replicate_cells():
+def replicate_cells(world: ms.World):
     x = world.cell_molecules[:, 2]
     idxs = sample(x ** 3 / (x ** 3 + 20.0 ** 3))
     world.divide_cells(cell_idxs=idxs)
@@ -108,9 +108,9 @@ in cells advance by one time step.
 ```python
 for _ in range(1000):
     world.enzymatic_activity()
-    kill_cells()
-    replicate_cells()
-    mutate_cells()
+    kill_cells(world=world)
+    replicate_cells(world=world)
+    mutate_cells(world=world)
     world.diffuse_molecules()
     world.increment_cell_lifetimes()
 ```

@@ -324,6 +324,12 @@ class Kinetics:
     Initializing [World][magicsoup.world.World] will also create one `Kinetics` instance. It is on `world.kinetics`.
     If you want to access nucleotide to domain mappings of your simulation, you should use `world.kinetics`.
 
+    Note: All default values are based on the assumption that energies are in J, a time step represents 1s,
+    molecule numbers are in mmol, and the side length of 1 pixel on the map is 1um.
+    If you change the defaults, you might reconsider how these numbers should be interpreted.
+    If you lower the minimum `Km` or raise the maximum `Vmax`, please also note the comments about
+    `n_computation` and `alpha` below.
+
     The kinetics used here can never create negative molecule concentrations and make the reaction quotient move
     towards to equilibrium constant at all times.
     However, this simulation computes these things one step at a time
