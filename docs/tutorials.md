@@ -367,7 +367,7 @@ if __name__ == "__main__":
 ### Monitoring
 
 One nice tool for monitoring an ongoing simulation run is [TensorBoard](https://www.tensorflow.org/tensorboard).
-It's an app that watches a directory of your run and displays logged data as line charts, histograms, images and more.
+It's an app that watches a directory and displays logged data as line charts, histograms, images and more.
 It can be installed from [pipy](https://pypi.org/project/tensorboard/).
 _pytorch_ already includes a `SummaryWriter` that can be used for writing these logging files.
 
@@ -455,7 +455,7 @@ and dimension 1 the y axis.
 You can start the app by pointing it at the runs directory `tensorboard --logdir=./runs`.
 
 ![](./img/tensorboard_example.png)
-_Watching 2 scalars and 1 image while the simulation is running_
+_Watching 2 scalars and 1 image while a simulation is running_
 
 ### Parameters
 
@@ -478,7 +478,7 @@ from .chemistry import REACTIONS, MOLECULES
 THIS_DIR = Path(__file__).parent
 ...
 
-def main(args: Namespace):
+def main(kwargs: dict):
     outdir = THIS_DIR / "runs" / dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
     outdir.mkdir(exist_ok=True, parents=True)
     with open(outdir / "hparams.json", "w") as fh:
@@ -488,21 +488,15 @@ def main(args: Namespace):
     world = ms.World(chemistry=chemistry)
     ...
 
-    for _ in range(args.n_steps):
+    for _ in range(kwargs["n_steps"]):
         ...
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--n_steps", default=10_000, type=int)
+    parser.add_argument("--n-steps", default=10_000, type=int)
     parsed_args = parser.parse_args()
-    main(args=parsed_args)
+    main(args=vars(parsed_args))
 ```
-
-Now every run can be started with a diffent `n_steps`, so it makes sense to note
-parameters somewhere when starting a new run.
-Here, I am doing this by just writing `var(args)` to JSON.
-This can also be done with [SummaryWriter.add_hparams](https://pytorch.org/docs/stable/tensorboard.html#torch.utils.tensorboard.writer.SummaryWriter.add_hparams).
-As in the TensorBoard example above I am creating a _runs_ directory with the current date and time.
 
 ### Checkpoints
 
@@ -550,31 +544,24 @@ I am also not saving every step to reduce the time spend saving and the size of 
 
 ## Selection
 
-Replication and survival will guide randomly muated proteomes.
-In the [experiment above](#simple-experiment) I just used some functions to
-derive a probability for killing or replicating cells based on intracellular ATP, NADPH, and acetyl-CoA concentrations.
+As long as surperior cells can create larger populations than inferior ones, they can evolve.
+Surperior here means being able to replicate faster or die slower.
+In the [experiment above](#simple-experiment) we used some functions to
+derive a probability for killing or replicating cells based on intracellular ATP and acetyl-CoA concentrations.
 
 ```python
 def sample(p: torch.Tensor) -> list[int]:
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
-
-def kill_cells(world: ms.World, atp: int, nadph: int):
-    # low ATP
+def kill_cells(world: ms.World, atp: int):
     x0 = world.cell_molecules[:, atp]
-    idxs0 = sample(0.5**4 / (0.5**4 + x0**4))
-
-    # low NADPH
-    x1 = world.cell_molecules[:, nadph]
-    idxs1 = sample(0.5**4 / (0.5**4 + x1**4))
-
-    world.kill_cells(cell_idxs=list(set(idxs0 + idxs1)))
-
+    idxs = sample(1.0**7 / (1.0**7 + x0**7))
+    world.kill_cells(cell_idxs=idxs)
 
 def replicate_cells(world: ms.World, aca: int, hca: int):
     x = world.cell_molecules[:, aca]
-    chosen = sample(x**5 / (x**5 + 15.0**5))
+    chosen = _sample(x**5 / (x**5 + 15.0**5))
 
     allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
     idxs = list(set(chosen) & set(allowed))
@@ -586,139 +573,92 @@ def replicate_cells(world: ms.World, aca: int, hca: int):
         world.cell_molecules[parents + children, hca] += 1.0
 ```
 
-How exactly these probabilities are derived is actually a part of fine-tuning the simulation.
-They can make a big difference in how quickly cells learn something.
-When setting up a new simulation it is likely that at first cells seem to not learn anything at all.
-This can often be attributed to cell survival (here, the average number of time steps cells survive)
-and replication rate (here, the average number of times a cell divided).
-There are some common patterns:
+How to come up with useful numbers?
+If you just randomly pick some numbers, one of 2 things is likely to happen:
 
-- **no cell growth at all** All cells that ever exist are the random cells which are automatically
-  added. Cell survival is too low. Maybe some cells manage to replicate, but there is no sustained
-  growth because cells die before they can replicate a second time.
-- **overcrouded map** Cells overgrow the map, and then just persist without appreciable
-  metabolism. Cell survival is too high. Every now and then a cell manages to divide, and since cells
-  rarely die, they fill up the map. These cells stall any evolutionary process as they take up space
-  and molecules without doing anything. Maybe a superior cell exists somewhere, but since it is surrounded
-  by other cells, it cannot divide. Thus, it cannot replicate its surperior genome.
-- **wavefront, then total extinction** At some point a colony forms and cells quickly replicate. As the
-  colony grows outwards, cells in the center of the colony die. It becomes a wavefront of quickly
-  dividing cells that runs over the map. After it has ecompassed the entire map once, it disappears.
+- **All cells die** On average cells die before they have a chance to replicate.
+  If they die very slowly, it might mean it is too hard to replicate.
+  If they die very quickly, the kill-rate is too high.
+- **Cells overgrow the map, then cease doing anything** The kill-rate is too low.
+  Selection only happened at the edge of the colony while it was still growing.
+  Once the map is fully overgrown by cells selection ceases.
+  There might be a surperior cell somewhere but it cannot replicate anymore.
 
-In general, the wavefront is a good sign because it means some cell figured out how to increase its chance of dividing.
-Using the [experiment from above](#simple-experiment) it is likely that at some time point
-a cell with an acetyl-CoA transporter appears. As long as there is acetyl-CoA on the map, this cell (and all its descendants)
-will be able to quickly replicate.
-Their NADPH and ATP concentrations will get low and they will only live a few time steps.
-But before they die, they will probably manage to replicate at least once.
-During this exponential growth phase, the proteome that allows the highest replication rate will dominate (_e.g._ the fasted acetyl-CoA transporter).
-However, at some point all the world's acetyl-CoA is exhausted, replication stops, and the remaining cells die.
+Eventually you have to fine-tune these 2 rates.
+If the kill-rate is too low, it will not affect selection.
+Ideally, cells struggle a bit to survive but not so much as to go extinct.
+If the replication rate is too high, the map is quickly overgrown by even not-so-well-adapted cells.
+The map will be full before better-adapted cells can evolve.
+If both rates are high, a wavefront of replicating and dying cells can appear.
+This wavefront marches over the whole map and converts some molecule species before it disappears with all its cells dying.
 
-The only chance to continue is for some cell to learn how to restore acetyl-CoA.
-A cell could for example learn the next step and create transporters for CO2, HS-CoA, and methyl-Ni-ACS.
-However, such a proteome will only become surperior once all the world's acetyl-CoA has been exhausted.
-Between the start of the growth phase and the extinction event such a proteome has to appear and survive until the extinction event.
-The chances of this happening can be increased reducing the speed of this wavefront,
-_i.e._ having more time steps between growth start and the extinction event.
+### Estimating useful rates
 
-### Survival and replication rate
-
-As mentioned above it is desireable to create a stable colony that slowly grows.
-So, you have to be careful with replication probabilities.
-On the one hand, a better proteome should be rewarded with higher replication rates.
-On the other hand, it should take a colony a long time to overgrow the entire map.
-Additionally, useless cells/proteomes should die to free up molecules and space.
-It makes sense to think about the likely intracellular molecule concentrations and then fit a long (slowly increasing or decreasing)
-sigmoid function to it.
-Personally, I am currently sticking to functions of the form $f_{inc}(x) = x^n / (x^n + c^n)$ and $f_{dec}(x) = c^n / (x^n + c^n)$.
-
-In addition, one has to remember that these probabilities accumulate for each cell each time step.
-_I.e._ being killed is an event that has to happen only once to any cell.
-Say a cell is killed with probability $p_k(X) =(X^7 + 1)^{-1}$ and replicates with probability $p_r(X) = X^5 / (X^5 + 15^5)$, where
-X is some hypothetical molecule species.
-The likeliehood that a cell dies or replicates at least once over the course of multiple time steps is shown below for cells with
-different intracellular X concentrations.
+It helps to guess some useful parameters to start with.
+Say we use functions of the form $f(x) = x^n/(x^n + c^n)$ to map molecule concentrations to likelihoods.
+We could try to set $c$ and $n$ in a way that that we have a good dynamic range for 0 to 5mM of $x$. 
+Below I modelled the chance of a cell being killed or replicated for particular sets of $n$ and $c$.
 
 ![](img/kill_repl_prob.png)
 _Probability over time steps of a cell dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
-These two events together influence cells growth.
-If a cell replicates, it increases to overall number of cells.
-If a cell dies, it reduces the overall number of cells, and prohibits this cell from replicating.
+These events are not independent.
+If a cell replicates, there are more cells that can replicate.
+If it dies, it cannot replicate anymore.
 We can simulate how cells with different X concentrations would grow given these kill and replication probabilities:
 
 ![](img/sim_cell_growth.png)
 _Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
-It helps to take a look at such a plot in order to see if the chosen probability functions lead to a balanced growth.
-Here, the probability functions would be good if we expect $X \in [1,5]$ and $X \ge 3$ to be a healthy cell.
+### Passaging cells
 
-### Splitting cells
-
-To keep cells in exponential growth phase indefinitely you can split them.
-In this simulation splitting cells would equate to randomly selecting a few cells, creating a new world map,
+To keep cells in exponential growth phase indefinitely you can passage them.
+In this simulation passaging cells would equate to randomly selecting a few cells, creating a new world map,
 then placing these selected cells on the new world map.
 This way the cells have new molecules and open space to grow.
 
-However, the split itself will select for fast replicating cells.
-Let's take the example from above with $p_k(X) =(X^7 + 1)^{-1}$ and $p_r(X) = X^5 / (X^5 + 15^5)$.
-The plot below shows simulated cell growth, where cells were split with different split ratios whenever the total number of cells exeeded 7k.
-Gray areas represent the total number of cells, stacked bar charts show the cell type composition before the split.
+The passage itself will select for cells which are most abundant during the time of the passage.
+Let's take the example from above with kill and replication functions $p_k(X) =(X^7 + 1)^{-1}$ and $p_r(X) = X^5 / (X^5 + 15^5)$.
+The plot below shows simulated cell growth, where cells were passaged with different ratios whenever the total number of cells exeeded 7k.
+Gray areas represent the total number of cells, stacked bar charts show the cell type composition before the passage.
 We have cell types with X concentrations of 3, 4, 5, and 6.
+As you can see all cell types except the fastest growing cell type (with $X=6$) quickly disappear.
 
 ![](img/splitting_cells.png)
 _Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split._
-
-As you can see all cell types except the fastest growing cell type (with $X=5$) quickly disappear.
-Higher split ratios reduce stochastic effects a little bit, but the trend is the same.
-However, this cell type might not be the one that we want.
-_E.g._ $X=5$ might be a cell that just created a very fast acetyl-CoA importer.
-Maybe $X=3$ was a cell type that was able to restore its own acetyl-CoA, but it was filtered out after a few splits.
-
-As long as there is enough acetyl-CoA on the map cells are not pressured into creating their own.
-So, the extinction event from above is not all bad.
-On the one hand, it can give acetyl-CoA-creating cell types a chance.
-On the other hand, it might just erase all of cells.
-
 
 ## Genomes
 
 ### Genome size
 
-In the [experiment above](#simple-experiment) cells were randomly added each round.
+In the [experiment above](#simple-experiment) 1000 cells were initially added.
 They each had a random genome of 500 base pairs length.
 
 ```python
 def add_cells(world: ms.World):
-    dn = 1000 - world.n_cells
-    if dn > 0:
-        genomes = [ms.random_genome(s=500) for _ in range(dn)]
-        world.add_cells(genomes=genomes)
+    genomes = [ms.random_genome(s=500) for _ in range(1000)]
+    world.add_cells(genomes=genomes)
 ```
 
-During the simulation these genomes can become shorter or longer through random mutations.
-But in the beginning it usually takes a few hundred or thousand time steps until a first colony appears.
-This process can be sped up by giving cells larger starting genomes.
+During the simulation these genomes can become shorter or longer because of random mutations.
+If the selection process works (see [Selection](#selection)) cells tend to accumulate new genes.
+The cell profits from new genes more than it does from losing genes.
+It makes sense to introduce another selection function that will penalize cells with too large genomes (e.g. incresing their kill-rate).
+Otherwise cell genomes will become exeecingly large over the course of thousands of steps.
+
 Larger genomes generally produce more proteins.
 But there are also other effects to consider.
-The plot below shows the average number of proteins per genome, domains per protein, and coding nucleotides per nucleotide.
+The plot below shows the average number of proteins per genome, domains per protein, and coding nucleotides per nucleotide
+using default genetics.
 
 ![](img/genome_sizes.png)
 _Distributions for proteins per genome, domains per protein, and coding nucleotides per nucleotide for different genome sizes with domain probability 0.01_
 
-With default settings genomes of size 500 create about 1 to 16 proteins.
-Most of them consist of 1 domain, some have 2 domains.
-Roughly every second nucleotide codes for some domain.
-We know that for some reactions in the Wood-Ljungdahl pathway multiple domains must be energetically coupled in order to work.
-So, it would help if the cell has a chance of recieving a few multi-domain proteins already at the start.
-Additionally, we can see that single nucleotide substitutions in the genome have roughly a 50% chance of changing the proteome.
-If this number is higher, proteomes will vary more but also be more unstable.
-
 ### Other parameters
 
 When [World][magicsoup.world.World] is initialized, it creates a [Genetics][magicsoup.genetics.Genetics] instance.
-This instances carries factories for catalytic, transporer, and regulatory domains.
-These domains map nucleotide sequences to domains and their specifications (see [Mechanics](./mechanics.md) and [Genetics][magicsoup.genetics.Genetics] for details).
+This instances carries the logic of mapping nucleotide sequences to proteomes
+(see [Mechanics](./mechanics.md) and [Genetics][magicsoup.genetics.Genetics] for details).
 By changing the frequency with which nucleotide sequences can encode domains, we can change the composition of genomes.
 By default all 3 domain types are encoded by 6 nucleotides and 1% of all 6-nucleotide sequences encode for 1 of those domain types.
 Below is a plot like above that shows distributions for genomes of size 500 with domain type frequencies of 0.1%, 1% and 10%.
@@ -726,10 +666,10 @@ Below is a plot like above that shows distributions for genomes of size 500 with
 ![](img/domain_probs.png)
 _Distributions for proteins per genome, domains per protein, and coding nucleotides per nucleotide for different domain probabilities with genome size 500_
 
-With 10% frequency proteoms of size 500 create 6 to 31 proteins.
+With 10% frequency proteomes of size 500 create 6 to 31 proteins.
 Most of these proteins have 2 or 3 domains, and each nucleotide encodes 2 or 3 domains at the same time.
-This would probably create very complex cells from the start but make it very difficult for them to evolve.
-Every mutation would have an effect on multiple proteins at the same time, and single domain proteins would be difficult to achieve.
+This would probably create very complex cells from the start but make it their genomes very unstable.
+Every mutation would have an effect on multiple proteins at the same time, and single domain proteins would be rare.
 
 In any case, if you want to change [Genetics][magicsoup.genetics.Genetics] for your simulation, you have to create your
 own instance and add it to [World][magicsoup.world.World] after it has been instantiated:
@@ -738,8 +678,6 @@ own instance and add it to [World][magicsoup.world.World] after it has been inst
 world = ms.World(...)
 world.genetics = ms.Genetics(...)
 ```
-
-See the [Genetics reference][magicsoup.genetics.Genetics] for more details.
 
 ## Molecule energies
 
@@ -751,13 +689,13 @@ co2 = Molecule("CO2", 10.0 * 1e3, diffusivity=1.0, permeability=1.0)
 ```
 
 In this simulation a chemical reaction is regarded as the decomposition of substrates and the creation of products.
-Whether this reaction will proceed, stall, or turn around is defined by the [Nernst equation](https://en.wikipedia.org/wiki/Nernst_equation).
-_I.e._ the reaction energy together with the world's temperature will define the equilibrium constant of any reaction
-(this is explained in detail in [Mechanics](./mechanics.md)).
+In which direction the reaction will progress is defined by its energy (and the world's temperature).
+There exists an equilibrium at which the reaction effectively stops (this is explained in detail in [Mechanics](./mechanics.md)).
 In the example above $CO2 \rightleftharpoons formiat$ has a reaction energy of 10 kJ/mol and would create a equilibrium constant of roughly 0.02.
 If the reaction energy would have been defined as only 10 J/mol, the equilibrium constant would be almost 1.0.
-So, the range of these energies have a big impact on the equilibrium constants of reactions in the simulations.
-For the plot below, chemistries with energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were created and
+
+More examples are shown in the plot below.
+Chemistries with energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were created and
 random proteins were generated. The equilibrium constant distributions of reactions catalyzed by these proteins are shown.
 
 ![](img/equilibrium_constants.png)
@@ -772,9 +710,9 @@ _i.e._ cells can make more use of concentration gradients.
 When instantiating [World][magicsoup.world.World] by default all molecule species will added to `world.molecule_map`, normally distributed,
 with an average concentration of 10.
 In the [experiment above](#simple-experiment) this made sense for most molecule species.
-But for energy carriers ATP/ADP and NADPH/NADP, and for the carbon source CO2 we created functions to regularly change these molecule distributions.
+We adjusted concentrations for energy carriers ATP/ADP and NADPH/NADP, and for the carbon source CO2.
 For adding CO2, one could also think of creating gradient like shown below.
-This could for example introduce a spatial dependence for cell growth.
+This could for example introduce a spatial dependence for cell growth or implement a ChemoStat.
 
 ![](img/gradients.png)
 _Molecule species X is added to molecule map and allowed to diffuse  to create a 1D gradient (top) or 2D gradients (bottom)._
@@ -782,8 +720,7 @@ _Molecule species X is added to molecule map and allowed to diffuse  to create a
 In the plot above, these gradients were created by adding CO2 to specific pixels on the map, and removing them from other other.
 The gradients emerge through diffusion.
 However, the gradient takes a few hundred steps to reach its equilibrium.
-You can also figure out the equilibrium state and initialize the molecule map with it immediately.
-In this case, care must be taken to use the correct device.
+Care must be taken to use the correct device.
 
 ```python
 n = int(world.map_size / 2)
