@@ -325,7 +325,7 @@ class Kinetics:
     If you want to access nucleotide to domain mappings of your simulation, you should use `world.kinetics`.
 
     Note: All default values are based on the assumption that energies are in J, a time step represents 1s,
-    molecule numbers are in mmol, and the side length of 1 pixel on the map is 1um.
+    and molecule numbers are in mM
     If you change the defaults, you might reconsider how these numbers should be interpreted.
     If you lower the minimum `Km` or raise the maximum `Vmax`, please also note the comments about
     `n_computation` and `alpha` below.

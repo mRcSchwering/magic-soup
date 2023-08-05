@@ -270,9 +270,9 @@ Of course, in the following step this reaction would move into the opposite dire
 However, as before the high $v_{max}$ and low $K_m$ will likely make it overshoot again.
 As such the reaction would repetitively move forward and backward, $Q$ always jumping above and below $K_e$.
 
-> At this point it is necessary to note that there are certain dimensions intended for this simulation:
-> (1) molecule amounts (such as in `world.molecule_map`) are given in mmol, (2) 1 pixel has a length of 1&mu;m,
-> (3) 1 time step represents 1s. With the is mind, during [Kinetics][magicsoup.kinetics.Kinetics] initialization
+> At this point it is necessary to set some assumptions about the dimensions used:
+> (1) molecule numbers (such as in `world.molecule_map`) represent mM and (2) 1 time step represents 1s.
+> With the is mind, during [Kinetics][magicsoup.kinetics.Kinetics] initialization
 > the `km_range` parameter represents mM, and the `vmax_range` parameters represents mM per s.
 > Per default $K_m \in \mathopen{[}0.01, 100\mathclose{]} \text{mM}$
 > and $v_{max} \in \mathopen{[}0.001, 100\mathclose{]} \text{mM}/\text{s}$.

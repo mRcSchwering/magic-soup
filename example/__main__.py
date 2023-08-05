@@ -11,7 +11,7 @@ import datetime as dt
 import torch
 from torch.utils.tensorboard import SummaryWriter
 import magicsoup as ms  # pylint: disable=E0401
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY  # pylint: disable=E0401
+from magicsoup.examples.wood_ljungdahl import CHEMISTRY  # pylint: disable=E0401,E0611
 
 _this_dir = Path(__file__).parent
 _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")

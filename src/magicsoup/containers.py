@@ -10,9 +10,8 @@ class Molecule:
 
     Arguments:
         name: Used to uniquely identify this molecule species.
-        energy: Energy for 1 mol of this molecule species (in J by default).
-            This amount of energy is released if the molecule would be deconstructed.
-            Energetically coupled in a protein it could power other activities.
+        energy: Energy for 1 mol of this molecule species (in J).
+            This amount of energy is released if the molecule would be deconstructed to nothing.
         half_life: Half life of this molecule species in time steps (in s by default).
             Molecules degrade by one step if you call `world.degrade_molecules()`.
             Must be > 0.0.
@@ -45,11 +44,10 @@ class Molecule:
         Molecule("ATP", 20)  # raises error
     ```
 
-    By default in this simulation molecule numbers can be thought of as being in mmol, time steps in s, energies in J.
-    The side length of 1 pixel on the map can be thought of as 1um.
+    By default in this simulation molecule numbers can be thought of as being in mM, time steps in s, energies in J/mol.
     Eventually, they are just numbers and can be interpreted as anything.
-    However, together with the default parameters in [Kinetics][magicsoup.world.kinetics.Kinetics]
-    it makes sense to interpret them in mmol, s, and J.
+    However, together with the default parameters in [Kinetics][magicsoup.kinetics.Kinetics]
+    it makes sense to interpret them in mM, s, and J.
 
     Molecule half life should represent the half life if the molecule is not actively deconstructed by a protein.
     Molecules degrade by one step whenever you call [degrade_molecules()][magicsoup.world.World.degrade_molecules].

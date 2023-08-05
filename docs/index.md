@@ -121,7 +121,7 @@ Reactions are just tuples of substrate and product molecule species.
 Then, you create a [World][magicsoup.world.World] object which defines things like a cell and molecule maps.
 It carries all data describing the world at this time step with cells, molecule distributions and so on.
 On this object there are also methods used to advance the world by one time step.
-By default all molecule numbers are in mmol, all energies are in J, and a time step represents 1s.
+By default molecule numbers are in mM, energies are in J/mol, and a time step represents 1s.
 
 Usually, you would only adjust `Molecule`s and `World`.
 However, in some cases you might want to change the way how genetics work;
