@@ -79,7 +79,10 @@ def main(args: Namespace):
                 world.cell_molecules[repl, ATP_IDX] -= 4.0
                 replicated = world.divide_cells(cell_idxs=repl)
 
-                genomes = [(world.genomes[p], world.genomes[c]) for p, c in replicated]
+                genomes = [
+                    (world.cell_genomes[p], world.cell_genomes[c])
+                    for p, c in replicated
+                ]
                 mutated = ms.recombinations(seq_pairs=genomes)
 
                 genome_idx_pairs = []
@@ -90,7 +93,7 @@ def main(args: Namespace):
                 world.update_cells(genome_idx_pairs=genome_idx_pairs)
 
             with timeit("mutateGenomes", step_i, writer):
-                mutated = ms.point_mutations(seqs=world.genomes)
+                mutated = ms.point_mutations(seqs=world.cell_genomes)
 
             with timeit("getMutatedProteomes", step_i, writer):
                 world.update_cells(genome_idx_pairs=mutated)

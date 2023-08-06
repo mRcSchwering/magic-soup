@@ -75,7 +75,7 @@ In the function below all cells experience 1E-3 random point mutations per nucle
 
 ```python
 def mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=world.genomes)
+    mutated = ms.point_mutations(seqs=world.cell_genomes)
     world.update_cells(genome_idx_pairs=mutated)
 ```
 

@@ -160,18 +160,18 @@ def test_cell_index_integrity_when_changing_cells():
     n0 = world.n_cells
     assert n0 > 900
     assert len(cell_idxs) == n0
-    assert len(world.genomes) == n0
-    assert len(world.labels) == n0
-    assert len(set(world.labels)) == n0
+    assert len(world.cell_genomes) == n0
+    assert len(world.cell_labels) == n0
+    assert len(set(world.cell_labels)) == n0
     assert world.cell_map.sum().item() == n0
 
     replicated = world.divide_cells(cell_idxs=cell_idxs)
     n1 = world.n_cells
     assert len(replicated) > 1
     assert n1 == len(replicated) + len(cell_idxs)
-    assert len(world.genomes) == n1
-    assert len(world.labels) == n1
-    assert len(set(world.labels)) == n0
+    assert len(world.cell_genomes) == n1
+    assert len(world.cell_labels) == n1
+    assert len(set(world.cell_labels)) == n0
     assert world.cell_map.sum().item() == n1
 
     parents = [d[0] for d in replicated]
@@ -182,8 +182,8 @@ def test_cell_index_integrity_when_changing_cells():
     world.kill_cells(cell_idxs=cell_idxs)
     n2 = world.n_cells
     assert n2 == len(replicated)
-    assert len(world.genomes) == n2
-    assert len(world.labels) == n2
+    assert len(world.cell_genomes) == n2
+    assert len(world.cell_labels) == n2
     assert world.cell_map.sum().item() == n2
 
     world.kill_cells(cell_idxs=list(range(n2)))
@@ -533,37 +533,37 @@ def test_change_genomes():
 
     g0 = ms.random_genome(s=500)
     world.add_cells(genomes=[g0] * 2)
-    assert world.genomes == [g0] * 2
+    assert world.cell_genomes == [g0] * 2
     assert (world.kinetics.N[0] == world.kinetics.N[1]).all()
 
     g1 = ms.random_genome(s=1000)
     world.add_cells(genomes=[g1])
-    assert world.genomes == [g0] * 2 + [g1]
+    assert world.cell_genomes == [g0] * 2 + [g1]
     assert (world.kinetics.N[0] == world.kinetics.N[1]).all()
 
     g2 = ms.random_genome(s=600)
     world.update_cells(genome_idx_pairs=[(g2, 1)])
-    assert world.genomes == [g0, g2, g1]
+    assert world.cell_genomes == [g0, g2, g1]
 
     world.kill_cells(cell_idxs=[0])
-    assert world.genomes == [g2, g1]
+    assert world.cell_genomes == [g2, g1]
 
     g3 = ms.random_genome(s=700)
     world.update_cells(genome_idx_pairs=[(g3, 1)])
-    assert world.genomes == [g2, g3]
+    assert world.cell_genomes == [g2, g3]
 
     g4 = ms.random_genome(s=500)
     world.add_cells(genomes=[g4])
-    assert world.genomes == [g2, g3, g4]
+    assert world.cell_genomes == [g2, g3, g4]
 
     g5 = ""
     world.update_cells(genome_idx_pairs=[(g4, 0), (g5, 1), (g4, 2)])
-    assert world.genomes == [g4, g5, g4]
+    assert world.cell_genomes == [g4, g5, g4]
     assert (world.kinetics.N[0] == world.kinetics.N[2]).all()
     assert (world.kinetics.N[1] == 0.0).all()
 
     world.update_cells(genome_idx_pairs=[(g5, 0), (g5, 1), (g5, 2)])
-    assert world.genomes == [g5, g5, g5]
+    assert world.cell_genomes == [g5, g5, g5]
     assert (world.kinetics.N[0] == 0.0).all()
     assert (world.kinetics.N[1] == 0.0).all()
     assert (world.kinetics.N[2] == 0.0).all()
@@ -675,4 +675,4 @@ def test_empty_proteome_and_genome_cells():
         world = ms.World(chemistry=chemistry, map_size=9)
         world.load_state(statedir=statedir)
 
-    assert world.genomes == genomes
+    assert world.cell_genomes == genomes

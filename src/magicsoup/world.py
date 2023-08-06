@@ -59,16 +59,16 @@ class World:
 
     Most attributes on this class describe the current state of molecules and cells.
     Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
-    Likewise, cells are always ordered the same way as in `world.genomes` (see below).
-    The index of a certain cell is the index of that cell in `world.genomes`.
+    Likewise, cells are always ordered the same way as in `world.cell_genomes` (see below).
+    The index of a certain cell is the index of that cell in `world.cell_genomes`.
     It is the same index as `cell.idx` of a cell object you retrieved with `world.get_cell()`.
     But whenever an operation modifies the number of cells (like `world.kill_cells()` or `world.divide_cells()`),
     cells get new indexes. Here are the most important attributes:
 
     Attributes:
-        genomes: A list of cell genomes. Each cell's index in this list is what is referred to as the cell index.
+        cell_genomes: A list of cell genomes. Each cell's index in this list is what is referred to as the cell index.
             The cell index is used for the same cell in other orderings of cells (_e.g._ `labels`, `cell_divisions`, `cell_molecules`).
-        labels: List of cell labels. Cells are ordered as in `world.genomes`. Labels are strings that can be used to
+        labels: List of cell labels. Cells are ordered as in `world.cell_genomes`. Labels are strings that can be used to
             track cell origins. When adding new cells (`world.add_cells()`) a random label is assigned to each cell.
             If a cell divides, its descendants will have the same label.
         cell_map: Boolean 2D tensor referencing which pixels are occupied by a cell.
@@ -78,15 +78,15 @@ class World:
             Dimension 1 represents x, dimension 2 y.
             So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species on pixel 1, 2.
         cell_molecules: Float 2D tensor describing concentrations (in mM by default) for each molecule species in each cell.
-            Dimension 0 is the cell index. It is the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
+            Dimension 0 is the cell index. It is the same as in `world.cell_genomes` and the same as on a cell object (`cell.idx`).
             Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
             So, `world.cell_molecules[0, 1]` represents concentration in mM of the 1st molecule species the 0th cell.
         cell_lifetimes: Integer 1D tensor describing how many time steps each cell survived since the last division.
             This tensor is for monitoring and doesn't have any other effect.
-            Cells are in the same as in `world.genomes` and the same as on a cell object (`cell.idx`).
+            Cells are in the same as in `world.cell_genomes` and the same as on a cell object (`cell.idx`).
         cell_divisions: Integer 1D tensor describing how many times each cell's ancestors divided.
             This tensor is for monitoring and doesn't have any other effect.
-            Cells are in the same order as in `world.genomes` and the same as on a cell object (`cell.idx`).
+            Cells are in the same order as in `world.cell_genomes` and the same as on a cell object (`cell.idx`).
 
     Methods for advancing the simulation and to use during a simulation:
 
@@ -176,8 +176,8 @@ class World:
         }
 
         self.n_cells = 0
-        self.genomes: list[str] = []
-        self.labels: list[str] = []
+        self.cell_genomes: list[str] = []
+        self.cell_labels: list[str] = []
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
         self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).long()
         self.cell_lifetimes: torch.Tensor = torch.zeros(0).to(device).int()
@@ -219,7 +219,7 @@ class World:
                 raise ValueError(f"Cell at {by_position} not found")
             idx = idxs[0]
 
-        genome = self.genomes[idx]
+        genome = self.cell_genomes[idx]
         pos = self.cell_positions[idx]
         (cdss,) = self.genetics.translate_genomes(genomes=[genome])
         proteome = self.kinetics.get_proteome(proteome=cdss) if len(cdss) > 0 else []
@@ -231,7 +231,7 @@ class World:
             position=tuple(pos.tolist()),  # type: ignore
             int_molecules=self.cell_molecules[idx, :],
             ext_molecules=self.molecule_map[:, pos[0], pos[1]],
-            label=self.labels[idx],
+            label=self.cell_labels[idx],
             n_steps_alive=int(self.cell_lifetimes[idx].item()),
             n_divisions=int(self.cell_divisions[idx].item()),
         )
@@ -421,8 +421,8 @@ class World:
         new_pos = free_pos[:n_new_cells]
         new_idxs = list(range(self.n_cells, self.n_cells + n_new_cells))
         self.n_cells += n_new_cells
-        self.genomes.extend(genomes)
-        self.labels.extend(randstr(n=12) for _ in range(n_new_cells))
+        self.cell_genomes.extend(genomes)
+        self.cell_labels.extend(randstr(n=12) for _ in range(n_new_cells))
 
         self.cell_lifetimes = self._expand_c(t=self.cell_lifetimes, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
@@ -555,7 +555,7 @@ class World:
         unset_idxs: list[int] = []
         set_proteomes: list[list[list[tuple[int, int, int, int, int]]]] = []
         for (genome, idx), proteome in zip(genome_idx_pairs, proteomes):
-            self.genomes[idx] = genome
+            self.cell_genomes[idx] = genome
             if len(proteome) > 0:
                 set_idxs.append(idx)
                 set_proteomes.append(proteome)
@@ -612,8 +612,8 @@ class World:
         self.kinetics.remove_cell_params(keep=keep)
 
         for idx in sorted(cell_idxs, reverse=True):
-            self.genomes.pop(idx)
-            self.labels.pop(idx)
+            self.cell_genomes.pop(idx)
+            self.cell_labels.pop(idx)
 
         self.n_cells -= len(cell_idxs)
 
@@ -826,7 +826,7 @@ class World:
         torch.save(self.cell_divisions, statedir / "cell_divisions.pt")
 
         lines: list[str] = []
-        for idx, (genome, label) in enumerate(zip(self.genomes, self.labels)):
+        for idx, (genome, label) in enumerate(zip(self.cell_genomes, self.cell_labels)):
             lines.append(f">{idx} {label}\n{genome}")
 
         with open(statedir / "cells.fasta", "w", encoding="utf-8") as fh:
@@ -871,8 +871,8 @@ class World:
             text: str = fh.read()
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
-        self.labels = []
-        self.genomes = []
+        self.cell_labels = []
+        self.cell_genomes = []
         genome_idx_pairs: list[tuple[str, int]] = []
         for idx, entry in enumerate(entries):
             parts = entry.split("\n")
@@ -880,8 +880,8 @@ class World:
             seq = "" if len(parts) < 2 else parts[1]
             names = descr.split()
             label = names[1].strip() if len(names) > 1 else ""
-            self.genomes.append(seq)
-            self.labels.append(label)
+            self.cell_genomes.append(seq)
+            self.cell_labels.append(label)
             genome_idx_pairs.append((seq, idx))
 
         self.n_cells = len(genome_idx_pairs)
@@ -913,8 +913,8 @@ class World:
             # True for the next iteration
             self.cell_map[new_pos[0], new_pos[1]] = True
 
-            self.genomes.append(self.genomes[parent_idx])
-            self.labels.append(self.labels[parent_idx])
+            self.cell_genomes.append(self.cell_genomes[parent_idx])
+            self.cell_labels.append(self.cell_labels[parent_idx])
 
             successful_parent_idxs.append(parent_idx)
             child_idxs.append(run_idx)

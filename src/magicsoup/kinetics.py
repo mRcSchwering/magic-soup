@@ -291,7 +291,7 @@ class Kinetics:
     So, there are twice as many signals as molecule species.
     The order of molecule species is always the same as in `chemistry.molecules`.
     First, all intracellular molecule species are listed, then all extracellular.
-    The order of cells is always the same as in `world.genomes` and the order of proteins
+    The order of cells is always the same as in `world.cell_genomes` and the order of proteins
     for every cell is always the same as the order of proteins in a cell object `cell.proteome`.
 
     Attributes on this class describe cell parameters:
@@ -640,7 +640,7 @@ class Kinetics:
         Returns:
             New tensor of the same shape which represents the updated signals for every cell.
 
-        The order of cells in `X` is the same as in `world.genomes`
+        The order of cells in `X` is the same as in `world.cell_genomes`
         The order of signals is first all intracellular molecule species in the same order as `chemistry.molecules`,
         then again all molecule species in the same order but this time describing extracellular molecule species.
         The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
@@ -736,7 +736,7 @@ class Kinetics:
             to_idxs: List of cell indexes to copy to
 
         `from_idxs` and `to_idxs` must have the same length.
-        They refer to the same cell indexes as in `world.genomes`.
+        They refer to the same cell indexes as in `world.cell_genomes`.
         """
         self.Kmf[to_idxs] = self.Kmf[from_idxs]
         self.Kmb[to_idxs] = self.Kmb[from_idxs]
@@ -755,8 +755,8 @@ class Kinetics:
             keep: Bool tensor (c,) which is true for every cell that should not be removed
                 and false for every cell that should be removed.
 
-        `keep` must have the same length as `world.genomes`.
-        The indexes on `keep` reflect the indexes in `world.genomes`.
+        `keep` must have the same length as `world.cell_genomes`.
+        The indexes on `keep` reflect the indexes in `world.cell_genomes`.
         """
         self.Kmf = self.Kmf[keep]
         self.Kmb = self.Kmb[keep]

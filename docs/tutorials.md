@@ -238,7 +238,7 @@ point mutations with a rate of 1e-6 per nucleotide. 40% of them are InDels.
 
 ```python
 def mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=world.genomes)
+    mutated = ms.point_mutations(seqs=world.cell_genomes)
     world.update_cells(genome_idx_pairs=mutated)
 ```
 
@@ -303,7 +303,7 @@ def replicate_cells(world: ms.World, aca: int, hca: int):
         world.cell_molecules[parents + children, hca] += 1.0
 
 def mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=world.genomes)
+    mutated = ms.point_mutations(seqs=world.cell_genomes)
     world.update_cells(genome_idx_pairs=mutated)
 
 def main():
@@ -650,7 +650,7 @@ This could be done in `kill_cells`:
 ```python
 def kill_cells(world: ms.World, atp: int):
     x0 = world.cell_molecules[:, atp]
-    sizes = torch.tensor([len(d) for d in exp.world.genomes])
+    sizes = torch.tensor([len(d) for d in exp.world.cell_genomes])
     idxs0 = sample(1.0**7 / (1.0**7 + x0**7))
     idxs1 = sample(sizes**7 / (sizes**7 + 3_000.0**7))
     world.kill_cells(cell_idxs=list(set(idxs0 + idxs1)))

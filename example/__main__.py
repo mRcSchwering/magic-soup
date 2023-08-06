@@ -64,7 +64,7 @@ def _replicate_cells(world: ms.World, aca: int, hca: int):
 
 
 def _mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=world.genomes)
+    mutated = ms.point_mutations(seqs=world.cell_genomes)
     world.update_cells(genome_idx_pairs=mutated)
 
 
