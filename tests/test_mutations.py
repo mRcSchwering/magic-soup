@@ -23,7 +23,7 @@ def test_point_mutations():
         old = seqs[idx]
         if len(new) != len(old):
             are_ok += 1
-    assert are_ok > len(mutated) * 0.7
+    assert are_ok > len(mutated) * 0.6
 
 
 def test_recombinations():

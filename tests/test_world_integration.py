@@ -31,7 +31,7 @@ def test_molecule_amount_integrity_during_reactions():
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry, map_size=128)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
     def count(world: ms.World) -> float:
         mij = world.molecule_map[[0, 1]].sum().item()
@@ -52,7 +52,7 @@ def test_run_world_without_reactions():
     world = ms.World(chemistry=chemistry)
 
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
     for _ in range(100):
         world.enzymatic_activity()
@@ -65,7 +65,7 @@ def test_exploding_molecules():
     # if one side of the equation is slowed down, the other must be too
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=REACTIONS)
     world = ms.World(chemistry=chemistry, map_size=128)
-    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(1000)])
+    world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(1000)])
 
     for i in range(100):
         world.degrade_molecules()

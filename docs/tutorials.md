@@ -149,7 +149,7 @@ def prepare_medium(world: ms.World, co2: int, atp: int, adp: int, nadph: int, na
 ### Adding cells
 
 So far, there are no cells yet.
-Cells can be spawned with [add_cells()][magicsoup.world.World.add_cells]
+Cells can be spawned with [spawn_cells()][magicsoup.world.World.spawn_cells]
 by providing genomes.
 They will be placed in random positions on the map and take up half the molecules
 that were on that position.
@@ -158,7 +158,7 @@ There is a helper function `random_genome()` that can be used to generate genome
 ```python
 def add_cells(world: ms.World):
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.add_cells(genomes=genomes)  
+    world.spawn_cells(genomes=genomes)  
 ```
 
 ### Cell Activity
@@ -269,7 +269,7 @@ def prepare_medium(world: ms.World, co2: int, atp: int, adp: int, nadph: int, na
 
 def add_cells(world: ms.World):
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
 def activity(world: ms.World, atp: int, adp: int):
     world.cell_molecules[:, atp] -= 0.01
@@ -638,7 +638,7 @@ They each had a random genome of 500 base pairs length.
 ```python
 def add_cells(world: ms.World):
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 ```
 
 During the simulation these genomes can become shorter or longer due to random mutations.

@@ -59,7 +59,7 @@ def add_cells(w: int, n: int, s: int):
         genomes = [ms.random_genome(s) for _ in range(n)]
 
         t0 = time.time()
-        world.add_cells(genomes=genomes)
+        world.spawn_cells(genomes=genomes)
         tds.append(time.time() - t0)
 
     m = sum(tds) / R
@@ -72,7 +72,7 @@ def update_cells(w: int, n: int, s: int):
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
         genomes = [ms.random_genome(s) for _ in range(n)]
-        world.add_cells(genomes=genomes)
+        world.spawn_cells(genomes=genomes)
 
         t0 = time.time()
         pairs = [(d, i) for i, d in enumerate(world.cell_genomes)]
@@ -89,7 +89,7 @@ def replicate_cells(w: int, n: int, s: int):
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
         genomes = [ms.random_genome(s) for _ in range(n)]
-        idxs = world.add_cells(genomes=genomes)
+        idxs = world.spawn_cells(genomes=genomes)
 
         t0 = time.time()
         world.divide_cells(cell_idxs=idxs)
@@ -105,7 +105,7 @@ def enzymatic_activity(w: int, n: int, s: int):
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
         genomes = [ms.random_genome(s) for _ in range(n)]
-        world.add_cells(genomes=genomes)
+        world.spawn_cells(genomes=genomes)
 
         t0 = time.time()
         world.enzymatic_activity()
@@ -121,7 +121,7 @@ def get_neighbors(w: int, n: int, s: int):
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
         genomes = [ms.random_genome(s) for _ in range(n)]
-        world.add_cells(genomes=genomes)
+        world.spawn_cells(genomes=genomes)
 
         t0 = time.time()
         _ = world.get_neighbors(cell_idxs=list(range(world.n_cells)))

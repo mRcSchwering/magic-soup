@@ -57,7 +57,7 @@ def main(args: Namespace):
                         ms.random_genome(args.init_genome_size)
                         for _ in range(1000 - n_cells)
                     ]
-                    world.add_cells(genomes=genomes)
+                    world.spawn_cells(genomes=genomes)
 
             with timeit("activity", step_i, writer):
                 world.enzymatic_activity()

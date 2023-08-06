@@ -292,7 +292,7 @@ class Kinetics:
     The order of molecule species is always the same as in `chemistry.molecules`.
     First, all intracellular molecule species are listed, then all extracellular.
     The order of cells is always the same as in `world.cell_genomes` and the order of proteins
-    for every cell is always the same as the order of proteins in a cell object `cell.proteome`.
+    for every cell is always the same as the order of proteins in a cell object `cell.get_proteome(world=world)`.
 
     Attributes on this class describe cell parameters:
 

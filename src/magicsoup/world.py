@@ -8,8 +8,8 @@ import torch
 from magicsoup.constants import CODON_SIZE
 from magicsoup.util import moore_nghbrhd, round_down, random_genome, randstr
 from magicsoup.containers import (
-    Cell,
     Chemistry,
+    Protein,
     ProteinFact,
     CatalyticDomainFact,
     TransporterDomainFact,
@@ -69,7 +69,7 @@ class World:
         cell_genomes: A list of cell genomes. Each cell's index in this list is what is referred to as the cell index.
             The cell index is used for the same cell in other orderings of cells (_e.g._ `labels`, `cell_divisions`, `cell_molecules`).
         labels: List of cell labels. Cells are ordered as in `world.cell_genomes`. Labels are strings that can be used to
-            track cell origins. When adding new cells (`world.add_cells()`) a random label is assigned to each cell.
+            track cell origins. When spawning new cells (`world.spawn_cells()`) a random label is assigned to each cell.
             If a cell divides, its descendants will have the same label.
         cell_map: Boolean 2D tensor referencing which pixels are occupied by a cell.
             Dimension 0 represents the x, dimension 1 y.
@@ -90,7 +90,7 @@ class World:
 
     Methods for advancing the simulation and to use during a simulation:
 
-    - [add_cells()][magicsoup.world.World.add_cells] add new cells and place them randomly on the map
+    - [spawn_cells()][magicsoup.world.World.spawn_cells] spawn new cells and place them randomly on the map
     - [divide_cells()][magicsoup.world.World.divide_cells] replicate existing cells
     - [update_cells()][magicsoup.world.World.update_cells] update existing cells if their genome has changed
     - [kill_cells()][magicsoup.world.World.kill_cells] kill existing cells
@@ -191,7 +191,7 @@ class World:
         self,
         by_idx: int | None = None,
         by_position: tuple[int, int] | None = None,
-    ) -> Cell:
+    ) -> "Cell":
         """
         Get a cell with information about its current environment.
         Raises `ValueError` if cell was not found.
@@ -205,8 +205,7 @@ class World:
 
         For performance reasons most cell attributes are maintained in tensors during the simulation.
         When you call `world.get_cell()` all information about a cell is gathered in one object.
-        This is a convenience function for interactive use.
-        It's not very performant.
+        This is not very performant.
         """
         idx = -1
         if by_idx is not None:
@@ -219,15 +218,10 @@ class World:
                 raise ValueError(f"Cell at {by_position} not found")
             idx = idxs[0]
 
-        genome = self.cell_genomes[idx]
         pos = self.cell_positions[idx]
-        (cdss,) = self.genetics.translate_genomes(genomes=[genome])
-        proteome = self.kinetics.get_proteome(proteome=cdss) if len(cdss) > 0 else []
-
         return Cell(
             idx=idx,
-            genome=genome,
-            proteome=proteome,
+            genome=self.cell_genomes[idx],
             position=tuple(pos.tolist()),  # type: ignore
             int_molecules=self.cell_molecules[idx, :],
             ext_molecules=self.molecule_map[:, pos[0], pos[1]],
@@ -386,7 +380,7 @@ class World:
 
         return "".join(parts)
 
-    def add_cells(self, genomes: list[str], batch_size: int = 1000) -> list[int]:
+    def spawn_cells(self, genomes: list[str], batch_size: int = 1000) -> list[int]:
         """
         Create new cells and place them randomly on the map.
         All lists and tensors that reference cells will be updated.
@@ -1063,6 +1057,88 @@ class World:
             "abs_temp": self.abs_temp,
             "device": self.device,
             "workers": self.workers,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"
+
+
+class Cell:
+    """
+    Object representing a cell with its environment.
+
+    Arguments:
+        genome: Full genome sequence of this cell.
+        int_molecules: Intracellular molecules. A tensor with one dimension that represents
+            each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+        ext_molecules: Extracellular molecules. A tensor with one dimension that represents
+            each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+            These are the molecules of the pixel the cell is currently living on.
+        position: Position on the cell map.
+        idx: The current index of this cell.
+        label: Label which can be used to track cells. Has no effect.
+        n_steps_alive: Number of time steps this cell has lived since last division.
+        n_divisions: Number of times this cell's ancestors already divided.
+
+    Usually, you wouldn't instantiate this object.
+    You get it when calling [get_cell()][magicsoup.world.World.get_cell] after you have spawned some
+    cells to a world (via [spawn_cells()][magicsoup.world.World.spawn_cells]).
+    On the `world` object all cells are actually represented as a combination of lists and tensors.
+    [get_cell()][magicsoup.world.World.get_cell] gathers all information for one cell and
+    represents it in this `Cell` object.
+
+    When a cell replicates its genome and proteome are copied.
+    Both descendants will recieve half of all molecules each.
+    Both their `n_divisions` attributes are incremented.
+    The cell's `label` will be copied as well.
+    This way you can track cells' origins.
+    """
+
+    def __init__(
+        self,
+        genome: str,
+        int_molecules: torch.Tensor,
+        ext_molecules: torch.Tensor,
+        position: tuple[int, int] = (-1, -1),
+        idx: int = -1,
+        label: str = "C",
+        n_steps_alive: int = -1,
+        n_divisions: int = -1,
+    ):
+        self.genome = genome
+        self.label = label
+        self.int_molecules = int_molecules
+        self.ext_molecules = ext_molecules
+        self.position = position
+        self.idx = idx
+        self.n_steps_alive = n_steps_alive
+        self.n_divisions = n_divisions
+
+    def get_proteome(self, world: World) -> list[Protein]:
+        """
+        Get a representation of the cell's proteome as a list of Protein objects
+        """
+        (cdss,) = world.genetics.translate_genomes(genomes=[self.genome])
+        return world.kinetics.get_proteome(proteome=cdss) if len(cdss) > 0 else []
+
+    def copy(self, **kwargs) -> "Cell":
+        old_kwargs = {
+            "genome": self.genome,
+            "position": self.position,
+            "idx": self.idx,
+            "label": self.label,
+            "n_steps_alive": self.n_steps_alive,
+            "n_divisions": self.n_divisions,
+        }
+        return Cell(**{**old_kwargs, **kwargs})  # type: ignore
+
+    def __repr__(self) -> str:
+        kwargs = {
+            "genome": self.genome,
+            "position": self.position,
+            "idx": self.idx,
+            "label": self.label,
+            "n_steps_alive": self.n_steps_alive,
+            "n_divisions": self.n_divisions,
         }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"

@@ -99,7 +99,7 @@ def main(args: Namespace):
     genomes = [
         ms.random_genome(args.init_genome_size) for _ in range(args.init_n_cells)
     ]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
     for step_i in range(args.n_steps):
         _activity(world=world, atp=ATP_IDX, adp=ADP_IDX)

@@ -85,7 +85,7 @@ def test_add_cells():
     old_molmap = world.molecule_map.clone()
 
     genomes = [ms.random_genome(s=500) for _ in range(3)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
     assert world.n_cells == 3
     xs = world.cell_positions[:, 0]
@@ -94,7 +94,7 @@ def test_add_cells():
     assert torch.all(old_molmap[:, xs, ys] / 2 == world.cell_molecules.T)
 
     genomes = ["" for _ in range(2)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
     assert world.n_cells == 5
     xs = world.cell_positions[:, 0]
@@ -103,7 +103,7 @@ def test_add_cells():
     assert torch.all(old_molmap[:, xs, ys] / 2 == world.cell_molecules.T)
 
     genomes = [ms.random_genome(100), "", ms.random_genome(100)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
     assert world.n_cells == 8
     xs = world.cell_positions[:, 0]
@@ -117,7 +117,7 @@ def test_divide_cells():
     world = ms.World(chemistry=chemistry, map_size=5)
 
     genomes = [ms.random_genome(s=500) for _ in range(3)]
-    cell_idxs = world.add_cells(genomes=genomes)
+    cell_idxs = world.spawn_cells(genomes=genomes)
     parent_child_idxs = world.divide_cells(cell_idxs=cell_idxs)
 
     parents, children = list(map(list, zip(*parent_child_idxs)))
@@ -132,7 +132,7 @@ def test_molecule_amount_integrity_when_changing_cells():
     exp = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
 
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    cell_idxs = world.add_cells(genomes=genomes)
+    cell_idxs = world.spawn_cells(genomes=genomes)
     res0 = world.molecule_map.sum(dim=[1, 2]) + world.cell_molecules.sum(dim=0)
     assert torch.all(torch.abs(res0 - exp) < tolerance)
 
@@ -156,7 +156,7 @@ def test_cell_index_integrity_when_changing_cells():
     # there can be unviable genomes
     # with with s=1000 almost all genomes should be viable
     genomes = [ms.random_genome(s=1000) for _ in range(1000)]
-    cell_idxs = world.add_cells(genomes=genomes)
+    cell_idxs = world.spawn_cells(genomes=genomes)
     n0 = world.n_cells
     assert n0 > 900
     assert len(cell_idxs) == n0
@@ -197,7 +197,7 @@ def test_cells_unable_to_divide():
     world = ms.World(chemistry=chemistry, map_size=3)
 
     genomes = [ms.random_genome(s=500) for _ in range(9)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
     descendants = world.divide_cells(cell_idxs=list(range(9)))
     assert len(descendants) == 0
@@ -208,7 +208,7 @@ def test_get_cell_by_position():
     world = ms.World(chemistry=chemistry, map_size=5)
 
     genomes = [ms.random_genome(s=500) for _ in range(3)]
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
 
     pos = tuple(world.cell_positions[1].tolist())
     cell = world.get_cell(by_position=pos)  # type: ignore
@@ -277,11 +277,12 @@ def test_generate_genome():
         g = world.generate_genome(proteome=[p0, p1], size=100)
         assert len(g) == 100
 
-        world.add_cells(genomes=[g])
+        world.spawn_cells(genomes=[g])
         cell = world.get_cell(by_idx=0)
         has_p0 = False
         has_p1 = False
-        for prot in cell.proteome:
+        proteome = cell.get_proteome(world=world)
+        for prot in proteome:
             has_cij = False
             has_ckij = False
             has_ti = False
@@ -408,7 +409,7 @@ def test_saving_and_loading_state():
     chemistry = ms.Chemistry(molecules=[mi, mj], reactions=[([mi], [mj])])
 
     world = ms.World(chemistry=chemistry, map_size=7)
-    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
+    world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
 
     cell_map = world.cell_map.clone()
     molecule_map = world.molecule_map.clone()
@@ -431,7 +432,7 @@ def test_divisions_and_survival_after_replication():
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
 
     world = ms.World(chemistry=chemistry)
-    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(2)])
+    world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(2)])
     assert world.n_cells == 2
     world.cell_divisions[0] = 1
     world.cell_divisions[1] = 11
@@ -468,7 +469,7 @@ def test_reference_to_tensors_not_lost():
 
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry, map_size=3, mol_map_init="zeros")
-    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(2)])
+    world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(2)])
     a = A(world=world)
 
     assert id(world.molecule_map) == id(a.world.molecule_map)
@@ -502,7 +503,7 @@ def test_reference_to_tensors_not_lost():
 def test_reposition_cells():
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry)
-    world.add_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
+    world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
 
     c0_0 = world.get_cell(by_idx=0)
     c1_0 = world.get_cell(by_idx=1)
@@ -532,12 +533,12 @@ def test_change_genomes():
     world = ms.World(chemistry=chemistry)
 
     g0 = ms.random_genome(s=500)
-    world.add_cells(genomes=[g0] * 2)
+    world.spawn_cells(genomes=[g0] * 2)
     assert world.cell_genomes == [g0] * 2
     assert (world.kinetics.N[0] == world.kinetics.N[1]).all()
 
     g1 = ms.random_genome(s=1000)
-    world.add_cells(genomes=[g1])
+    world.spawn_cells(genomes=[g1])
     assert world.cell_genomes == [g0] * 2 + [g1]
     assert (world.kinetics.N[0] == world.kinetics.N[1]).all()
 
@@ -553,7 +554,7 @@ def test_change_genomes():
     assert world.cell_genomes == [g2, g3]
 
     g4 = ms.random_genome(s=500)
-    world.add_cells(genomes=[g4])
+    world.spawn_cells(genomes=[g4])
     assert world.cell_genomes == [g2, g3, g4]
 
     g5 = ""
@@ -658,13 +659,13 @@ def test_empty_proteome_and_genome_cells():
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry, map_size=9)
 
-    world.add_cells(genomes=genomes)
+    world.spawn_cells(genomes=genomes)
     assert world.n_cells == 3
 
     # get cells with empty proteomes
-    assert len(world.get_cell(by_idx=0).proteome) == 0
-    assert len(world.get_cell(by_idx=1).proteome) == 0
-    assert len(world.get_cell(by_idx=2).proteome) == 0
+    assert len(world.get_cell(by_idx=0).get_proteome(world=world)) == 0
+    assert len(world.get_cell(by_idx=1).get_proteome(world=world)) == 0
+    assert len(world.get_cell(by_idx=2).get_proteome(world=world)) == 0
 
     # load cells with empty fastAs
     with tempfile.TemporaryDirectory() as tmpdir:
