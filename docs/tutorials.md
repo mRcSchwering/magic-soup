@@ -544,8 +544,8 @@ I am also not saving every step to reduce the time spend saving and the size of 
 
 ## Selection
 
-As long as surperior cells can create larger populations than inferior ones, they can evolve.
-Surperior here means being able to replicate faster or die slower.
+As long as cells can replicate, they can evolve by natural selection.
+Better adapted cells will be able to replicate faster or die slower.
 In the [experiment above](#simple-experiment) we used some functions to
 derive a probability for killing or replicating cells based on intracellular ATP and acetyl-CoA concentrations.
 
@@ -580,15 +580,15 @@ If you just randomly pick some numbers, one of 2 things is likely to happen:
   If they die very slowly, it might mean it is too hard to replicate.
   If they die very quickly, the kill-rate is too high.
 - **Cells overgrow the map, then cease doing anything** The kill-rate is too low.
-  Selection only happened at the edge of the colony while it was still growing.
-  Once the map is fully overgrown by cells selection ceases.
-  There might be a surperior cell somewhere but it cannot replicate anymore.
+  Only cells at the edge of the growing colony had a chance to adapt.
+  Once the map is fully overgrown adaption ceases.
+  There might be a better adapted cell somewhere but it cannot replicate anymore.
 
 Eventually you have to fine-tune these 2 rates.
 If the kill-rate is too low, it will not affect selection.
 Ideally, cells struggle a bit to survive but not so much as to go extinct.
-If the replication rate is too high, the map is quickly overgrown by even not-so-well-adapted cells.
-The map will be full before better-adapted cells can evolve.
+If the replication rate is too high, the map is quickly overgrown by even not-so-well adapted cells.
+The map will be full before better adapted cells can evolve.
 If both rates are high, a wavefront of replicating and dying cells can appear.
 This wavefront marches over the whole map and converts some molecule species before it disappears with all its cells dying.
 
@@ -597,10 +597,11 @@ This wavefront marches over the whole map and converts some molecule species bef
 It helps to guess some useful parameters to start with.
 Say we use functions of the form $f(x) = x^n/(x^n + c^n)$ to map molecule concentrations to likelihoods.
 We could try to set $c$ and $n$ in a way that that we have a good dynamic range for 0 to 5mM of $x$. 
-Below I modelled the chance of a cell being killed or replicated for particular sets of $n$ and $c$.
+Below I modelled the chance of a cell being killed or replicated for particular sets of $n$ and $c$
+in cells with constant X concentrations.
 
 ![](img/kill_repl_prob.png)
-_Probability over time steps of a cell dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
+_Probability of cells with constant X concentrations dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
 These events are not independent.
 If a cell replicates, there are more cells that can replicate.
@@ -608,7 +609,7 @@ If it dies, it cannot replicate anymore.
 We can simulate how cells with different X concentrations would grow given these kill and replication probabilities:
 
 ![](img/sim_cell_growth.png)
-_Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
+_Simulated growth of cells with constant X concentrations when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
 ### Passaging cells
 
@@ -640,16 +641,24 @@ def add_cells(world: ms.World):
     world.add_cells(genomes=genomes)
 ```
 
-During the simulation these genomes can become shorter or longer because of random mutations.
+During the simulation these genomes can become shorter or longer due to random mutations.
 If the selection process works (see [Selection](#selection)) cells tend to accumulate new genes.
-The cell profits from new genes more than it does from losing genes.
-It makes sense to introduce another selection function that will penalize cells with too large genomes (e.g. incresing their kill-rate).
-Otherwise cell genomes will become exeecingly large over the course of thousands of steps.
+On average the cell profits from gaining a new gene more than it does from losing a gene.
+It makes sense to introduce another selection function that will penalize cells with too large genomes.
+This could be done in `kill_cells`:
 
-Larger genomes generally produce more proteins.
-But there are also other effects to consider.
-The plot below shows the average number of proteins per genome, domains per protein, and coding nucleotides per nucleotide
-using default genetics.
+```python
+def kill_cells(world: ms.World, atp: int):
+    x0 = world.cell_molecules[:, atp]
+    sizes = torch.tensor([len(d) for d in exp.world.genomes])
+    idxs0 = sample(1.0**7 / (1.0**7 + x0**7))
+    idxs1 = sample(sizes**7 / (sizes**7 + 3_000.0**7))
+    world.kill_cells(cell_idxs=list(set(idxs0 + idxs1)))
+```
+
+Without it cell genomes will become exeecingly large over the course of thousands of steps.
+This will eventually slow down the simulation.
+The plot below shows how the genome size affects the cells proteome.
 
 ![](img/genome_sizes.png)
 _Distributions for proteins per genome, domains per protein, and coding nucleotides per nucleotide for different genome sizes with domain probability 0.01_
@@ -659,8 +668,8 @@ _Distributions for proteins per genome, domains per protein, and coding nucleoti
 When [World][magicsoup.world.World] is initialized, it creates a [Genetics][magicsoup.genetics.Genetics] instance.
 This instances carries the logic of mapping nucleotide sequences to proteomes
 (see [Mechanics](./mechanics.md) and [Genetics][magicsoup.genetics.Genetics] for details).
-By changing the frequency with which nucleotide sequences can encode domains, we can change the composition of genomes.
-By default all 3 domain types are encoded by 6 nucleotides and 1% of all 6-nucleotide sequences encode for 1 of those domain types.
+Changing the frequency by which nucleotide sequences can encode domains, changes the composition of genomes.
+By default all 3 domain types are encoded by 2 codons (6 nucleotides) and 1% of all 2-codon combinations encode for 1 of these domain types.
 Below is a plot like above that shows distributions for genomes of size 500 with domain type frequencies of 0.1%, 1% and 10%.
 
 ![](img/domain_probs.png)
@@ -668,11 +677,12 @@ _Distributions for proteins per genome, domains per protein, and coding nucleoti
 
 With 10% frequency proteomes of size 500 create 6 to 31 proteins.
 Most of these proteins have 2 or 3 domains, and each nucleotide encodes 2 or 3 domains at the same time.
-This would probably create very complex cells from the start but make it their genomes very unstable.
-Every mutation would have an effect on multiple proteins at the same time, and single domain proteins would be rare.
+This would probably create very complex cells from the start but make it their genomes highly unstable.
+Every mutation would have an effect on multiple proteins at the same time.
+Single domain proteins would be rare.
 
-In any case, if you want to change [Genetics][magicsoup.genetics.Genetics] for your simulation, you have to create your
-own instance and add it to [World][magicsoup.world.World] after it has been instantiated:
+If you want to change [Genetics][magicsoup.genetics.Genetics] for your simulation, you have to create your
+own instance and assign it to [World][magicsoup.world.World]:
 
 ```python
 world = ms.World(...)
@@ -689,19 +699,15 @@ co2 = Molecule("CO2", 10.0 * 1e3, diffusivity=1.0, permeability=1.0)
 ```
 
 In this simulation a chemical reaction is regarded as the decomposition of substrates and the creation of products.
-In which direction the reaction will progress is defined by its energy (and the world's temperature).
+In which direction the reaction will progress is defined by its energy (and the world's temperature) and the reaction quotient.
 There exists an equilibrium at which the reaction effectively stops (this is explained in detail in [Mechanics](./mechanics.md)).
 In the example above $CO2 \rightleftharpoons formiat$ has a reaction energy of 10 kJ/mol and would create a equilibrium constant of roughly 0.02.
 If the reaction energy would have been defined as only 10 J/mol, the equilibrium constant would be almost 1.0.
 
-More examples are shown in the plot below.
-Chemistries with energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were created and
-random proteins were generated. The equilibrium constant distributions of reactions catalyzed by these proteins are shown.
-
 ![](img/equilibrium_constants.png)
-_Log10 of equilibrium constant distributions of random proteins at different temperatures for different reactions energies_
+_Chemistries with energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were created and random proteins were generated. Log10 equilibrium constant distributions of reactions catalyzed by these proteins are shown_
 
-With lower reaction energies reactions can be more dirven by reaction quotients.
+With lower reaction energies reactions are more dirven by reaction quotients.
 For energetically coupled transporter and catalytic domains this means transporters can power more reactions,
 _i.e._ cells can make more use of concentration gradients.
 
