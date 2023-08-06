@@ -91,6 +91,7 @@ class World:
     Methods for advancing the simulation and to use during a simulation:
 
     - [spawn_cells()][magicsoup.world.World.spawn_cells] spawn new cells and place them randomly on the map
+    - [add_cells()][magicsoup.world.World.add_cells] add previous cells and place them randomly on the map
     - [divide_cells()][magicsoup.world.World.divide_cells] replicate existing cells
     - [update_cells()][magicsoup.world.World.update_cells] update existing cells if their genome has changed
     - [kill_cells()][magicsoup.world.World.kill_cells] kill existing cells
@@ -101,6 +102,7 @@ class World:
     - [enzymatic_activity()][magicsoup.world.World.enzymatic_activity] let cell proteins work for one time step
 
     If you want to get a cell with all information about its contents and its current environment use [get_cell()][magicsoup.world.World.get_cell].
+    The cell objects returned by this function can be added to a new map using [add_cells()][magicsoup.world.World.add_cells].
     During the simulation you should however work directly with the tensors mentioned above for performance reasons.
 
     Furthermore, there are methods for saving and loading a simulation.
@@ -434,6 +436,97 @@ class World:
         pickup = self.molecule_map[:, xs, ys] * 0.5
         self.cell_molecules[new_idxs, :] += pickup.T
         self.molecule_map[:, xs, ys] -= pickup
+
+        proteomes = self.genetics.translate_genomes(genomes=genomes)
+
+        set_proteomes = []
+        set_idxs = []
+        for proteome, idx in zip(proteomes, new_idxs):
+            if len(proteome) > 0:
+                set_proteomes.append(proteome)
+                set_idxs.append(idx)
+
+        n_new_proteomes = len(set_proteomes)
+        if n_new_proteomes == 0:
+            return []
+
+        n_max_prots = max(len(d) for d in set_proteomes)
+        self.kinetics.increase_max_proteins(max_n=n_max_prots)
+
+        for a in range(0, n_new_proteomes, batch_size):
+            b = a + batch_size
+            self.kinetics.set_cell_params(
+                cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
+            )
+
+        return new_idxs
+
+    def add_cells(self, cells: list["Cell"], batch_size: int = 1000) -> list[int]:
+        """
+        Place cells randomly on the map.
+        All lists and tensors that reference cells will be updated.
+
+        Parameters:
+            cells: List of cells to be added
+            batch_size: Batch size used for updating cell kinetics. Reduce this number
+                to reduce memory required during update.
+
+        Returns:
+            The indexes of successfully added cells.
+
+        Each cell will be placed randomly on the map.
+        If there are less pixels left on the cell map than cells you want to add,
+        only the remaining pixels will be filled with cells.
+        They keep their genomes, proteomes, intracellular molecule compositions, lifetimes, and divisions.
+        Cell indexes and positions will be new.
+        """
+        n_new_cells = len(cells)
+        if n_new_cells == 0:
+            return []
+
+        free_pos = self._find_free_random_positions(n_cells=n_new_cells)
+        n_avail_pos = free_pos.size(0)
+        if n_avail_pos == 0:
+            return []
+
+        if n_avail_pos < n_new_cells:
+            n_new_cells = n_avail_pos
+            random.shuffle(cells)
+            cells = cells[:n_new_cells]
+
+        new_pos = free_pos[:n_new_cells]
+        new_idxs = list(range(self.n_cells, self.n_cells + n_new_cells))
+        self.n_cells += n_new_cells
+        for cell in cells:
+            self.cell_genomes.append(cell.genome)
+            self.cell_labels.append(cell.label)
+
+        self.cell_lifetimes = self._expand_c(t=self.cell_lifetimes, n=n_new_cells)
+        self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
+        self.cell_divisions = self._expand_c(t=self.cell_divisions, n=n_new_cells)
+        self.cell_molecules = self._expand_c(t=self.cell_molecules, n=n_new_cells)
+        self.kinetics.increase_max_cells(by_n=n_new_cells)
+
+        # occupy positions
+        xs = new_pos[:, 0]
+        ys = new_pos[:, 1]
+        self.cell_map[xs, ys] = True
+        self.cell_positions[new_idxs] = new_pos
+
+        # previous molecules, lifetimes, divisions are transfered
+        int_mols = []
+        lifetimes = []
+        divisions = []
+        genomes = []
+        for cell in cells:
+            int_mols.append(cell.int_molecules)
+            lifetimes.append(cell.n_steps_alive)
+            divisions.append(cell.n_divisions)
+            genomes.append(cell.genome)
+
+        self.cell_molecules[new_idxs, :] = torch.stack(int_mols).to(self.device).float()
+        self.cell_lifetimes[new_idxs] = torch.tensor(lifetimes).to(self.device).int()
+        self.cell_divisions[new_idxs] = torch.tensor(divisions).to(self.device).int()
 
         proteomes = self.genetics.translate_genomes(genomes=genomes)
 
@@ -1101,8 +1194,8 @@ class Cell:
         position: tuple[int, int] = (-1, -1),
         idx: int = -1,
         label: str = "C",
-        n_steps_alive: int = -1,
-        n_divisions: int = -1,
+        n_steps_alive: int = 0,
+        n_divisions: int = 0,
     ):
         self.genome = genome
         self.label = label

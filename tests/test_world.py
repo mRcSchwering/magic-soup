@@ -79,7 +79,7 @@ def test_degrade():
     assert (world.molecule_map[1] == torch.tensor(layer0)).all()
 
 
-def test_add_cells():
+def test_spawn_cells():
     chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=5)
     old_molmap = world.molecule_map.clone()
@@ -110,6 +110,63 @@ def test_add_cells():
     ys = world.cell_positions[:, 1]
     assert torch.all(old_molmap[:, xs, ys] / 2 == world.molecule_map[:, xs, ys])
     assert torch.all(old_molmap[:, xs, ys] / 2 == world.cell_molecules.T)
+
+
+def test_add_cells():
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=5)
+    old_molmap = world.molecule_map.clone()
+
+    genomes = [ms.random_genome(s=d) for d in [500, 300, 100]]
+    cells = [
+        ms.Cell(
+            label="C0",
+            genome=genomes[0],
+            int_molecules=torch.tensor([0.5, 0.1]),
+            ext_molecules=torch.tensor([1.0, 1.0]),
+        ),
+        ms.Cell(
+            label="C1",
+            genome=genomes[1],
+            int_molecules=torch.tensor([0.3, 0.4]),
+            ext_molecules=torch.tensor([1.0, 1.0]),
+        ),
+        ms.Cell(
+            label="C2",
+            genome=genomes[2],
+            int_molecules=torch.tensor([0.9, 0.7]),
+            ext_molecules=torch.tensor([1.0, 1.0]),
+            n_steps_alive=3,
+            n_divisions=1,
+        ),
+    ]
+
+    world.add_cells(cells=cells[:2])
+
+    assert world.n_cells == 2
+    xs = world.cell_positions[:, 0]
+    ys = world.cell_positions[:, 1]
+    assert torch.all(old_molmap[:, xs, ys] == world.molecule_map[:, xs, ys])
+    assert (world.cell_molecules[0] == torch.tensor([0.5, 0.1])).all()
+    assert (world.cell_molecules[1] == torch.tensor([0.3, 0.4])).all()
+    assert (world.cell_divisions == torch.tensor([0, 0])).all()
+    assert (world.cell_lifetimes == torch.tensor([0, 0])).all()
+    assert world.cell_genomes == genomes[:2]
+    assert world.cell_labels == ["C0", "C1"]
+
+    world.add_cells(cells=cells[2:])
+
+    assert world.n_cells == 3
+    xs = world.cell_positions[:, 0]
+    ys = world.cell_positions[:, 1]
+    assert torch.all(old_molmap[:, xs, ys] == world.molecule_map[:, xs, ys])
+    assert (world.cell_molecules[0] == torch.tensor([0.5, 0.1])).all()
+    assert (world.cell_molecules[1] == torch.tensor([0.3, 0.4])).all()
+    assert (world.cell_molecules[2] == torch.tensor([0.9, 0.7])).all()
+    assert (world.cell_divisions == torch.tensor([0, 0, 1])).all()
+    assert (world.cell_lifetimes == torch.tensor([0, 0, 3])).all()
+    assert world.cell_genomes == genomes
+    assert world.cell_labels == ["C0", "C1", "C2"]
 
 
 def test_divide_cells():
