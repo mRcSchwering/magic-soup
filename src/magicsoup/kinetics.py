@@ -445,7 +445,8 @@ class Kinetics:
         )
 
     def get_proteome(
-        self, proteome: list[list[tuple[int, int, int, int, int]]]
+        self,
+        proteome: list[tuple[list[tuple[int, int, int, int, int]], int, int, bool]],
     ) -> list[Protein]:
         """
         Calculate cell parameters for a single proteome and return it as
@@ -459,7 +460,7 @@ class Kinetics:
             specifications.
         """
         N_d, A_d, Km_d, Vmax_d, dom_types = self._get_proteome_tensors(
-            proteomes=[proteome]
+            proteomes=[[d[0] for d in proteome]]
         )
 
         Nf_d = torch.where(N_d < 0.0, -N_d, 0.0)
@@ -515,7 +516,15 @@ class Kinetics:
                         )
                     )
 
-            prots.append(Protein(domains=doms))
+            if len(doms) > 0:
+                prots.append(
+                    Protein(
+                        domains=doms,
+                        cds_start=proteome[pi][1],
+                        cds_end=proteome[pi][2],
+                        is_fwd=proteome[pi][3],
+                    )
+                )
 
         return prots
 

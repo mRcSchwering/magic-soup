@@ -1214,11 +1214,7 @@ class Cell:
         """
         (cdss,) = world.genetics.translate_genomes(genomes=[self.genome])
         # TODO: use proteome indices instead
-        return (
-            world.kinetics.get_proteome(proteome=[d[0] for d in cdss])
-            if len(cdss) > 0
-            else []
-        )
+        return world.kinetics.get_proteome(proteome=cdss) if len(cdss) > 0 else []
 
     def copy(self, **kwargs) -> "Cell":
         old_kwargs = {

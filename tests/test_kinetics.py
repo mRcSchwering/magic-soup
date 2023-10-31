@@ -104,6 +104,11 @@ def _avg(*x):
     return sum(x) / len(x)
 
 
+# TODO: in proteome representation tests below
+#       define also CDS start/stop/is_fwd and test it as well
+#       currently I am just adding dummy values and dont test
+
+
 def test_cell_params_with_transporter_domains():
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
@@ -213,7 +218,7 @@ def test_cell_params_with_transporter_domains():
 
     # test proteome representation
 
-    proteins = kinetics.get_proteome(proteome=c0)
+    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c0])
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], TransporterDomain)
@@ -231,7 +236,7 @@ def test_cell_params_with_transporter_domains():
     assert p1.domains[1].vmax == pytest.approx(1.1, abs=_TOLERANCE)
     assert p1.domains[1].km == pytest.approx(0.2, abs=_TOLERANCE)
 
-    proteins = kinetics.get_proteome(proteome=c1)
+    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c1])
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], TransporterDomain)
@@ -395,7 +400,7 @@ def test_cell_params_with_regulatory_domains():
 
     # test protein representation
 
-    proteins = kinetics.get_proteome(proteome=c0)
+    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c0])
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
@@ -431,7 +436,7 @@ def test_cell_params_with_regulatory_domains():
     assert p1.domains[2].is_transmembrane
     assert p1.domains[2].km == pytest.approx(1.5, abs=_TOLERANCE)
 
-    proteins = kinetics.get_proteome(proteome=c1)
+    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c1])
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
@@ -608,7 +613,7 @@ def test_cell_params_with_catalytic_domains():
 
     # test protein representation
 
-    proteins = kinetics.get_proteome(proteome=c0)
+    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c0])
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
@@ -641,7 +646,7 @@ def test_cell_params_with_catalytic_domains():
     assert p2.domains[0].vmax == pytest.approx(2.9, abs=_TOLERANCE)
     assert p2.domains[0].km == pytest.approx(2.9, abs=_TOLERANCE)
 
-    proteins = kinetics.get_proteome(proteome=c1)
+    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c1])
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
