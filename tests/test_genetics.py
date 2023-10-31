@@ -68,6 +68,7 @@ def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]):
         "start_codons": genetics.start_codons,
         "stop_codons": genetics.stop_codons,
         "min_cds_size": 18,
+        "is_fwd": False,
     }
 
     seq = "".join(seq.replace("\n", "").split())
@@ -77,10 +78,11 @@ def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]):
     assert len(res) == len(exp)
     assert set(d[0] for d in res) == set(exp_cdss)
 
-    for cds, start, stop in res:
+    for cds, start, stop, is_fwd in res:
         idx = exp_cdss.index(cds)  # type: ignore
         assert start == exp_starts[idx]
         assert stop == exp_starts[idx] + len(exp_cdss[idx])  # type: ignore
+        assert not is_fwd
 
 
 def test_extract_domains():
@@ -91,11 +93,11 @@ def test_extract_domains():
 
     # fmt: off
     cdss: list[tuple[str, int, int]] = [
-        ("AGACAAAAACTGTGTACTCCGCGATAGACTAGACG", 1, 36),  # (1, 2, 5, 1, 3)
-        ("AGACTATAGCTAGAAGCCCCTGTACTCCGTGTCGATAGACG", 10, 51),  # (3, 5, 1, 3, 5)
-        ("AGACTAGGGCCGGGACTGCCGCGACTAGAAGCTAGACTAACG", 4, 47),  # (2, 3, 4, 2, 3)
-        ("AAACCGGGATGTCTGTAT", 17, 35),  # (1, 3, 4, 5, 2)
-        ("CCCCCGGGACTGCCGCGAGGGACTCTGCCGGGAATC", 12, 48),  # (3, 3, 4, 2, 3) (2, 1, 2, 3, 4)
+        ("AGACAAAAACTGTGTACTCCGCGATAGACTAGACG", 1, 36, True),  # (1, 2, 5, 1, 3)
+        ("AGACTATAGCTAGAAGCCCCTGTACTCCGTGTCGATAGACG", 10, 51, False),  # (3, 5, 1, 3, 5)
+        ("AGACTAGGGCCGGGACTGCCGCGACTAGAAGCTAGACTAACG", 4, 47, True),  # (2, 3, 4, 2, 3)
+        ("AAACCGGGATGTCTGTAT", 17, 35, False),  # (1, 3, 4, 5, 2)
+        ("CCCCCGGGACTGCCGCGAGGGACTCTGCCGGGAATC", 12, 48, True),  # (3, 3, 4, 2, 3) (2, 1, 2, 3, 4)
     ]
     # - cds 0: normal domain                                                    => 1 res[0]
     # - cds 1: single type 3 domain, so it is removed
@@ -117,6 +119,18 @@ def test_extract_domains():
     assert len(res[1][0]) == 1
     assert len(res[2][0]) == 1
     assert len(res[3][0]) == 2
+    assert res[0][1] == 1
+    assert res[0][2] == 36
+    assert res[0][3] is True
+    assert res[1][1] == 4
+    assert res[1][2] == 47
+    assert res[1][3] is True
+    assert res[2][1] == 17
+    assert res[2][2] == 35
+    assert res[2][3] is False
+    assert res[3][1] == 12
+    assert res[3][2] == 48
+    assert res[3][3] is True
     assert res[0][0][0] == (1, 2, 5, 1, 3)
     assert res[1][0][0] == (2, 3, 4, 2, 3)
     assert res[2][0][0] == (1, 3, 4, 5, 2)
