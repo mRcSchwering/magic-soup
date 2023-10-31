@@ -20,7 +20,7 @@ def _get_coding_regions(
     min_cds_size: int,
     start_codons: list[str],
     stop_codons: list[str],
-) -> list[str]:
+) -> list[tuple[str, int, int]]:
     s = CODON_SIZE
     n = len(seq)
     max_start_idx = n - min_cds_size
@@ -66,35 +66,35 @@ def _get_coding_regions(
         else:
             by_frame[2][1].append(stop_idx)
 
-    cdss = []
+    out = []
     for start_idxs, stop_idxs in by_frame:
         for start_idx in start_idxs:
             stop_idxs = [d for d in stop_idxs if d > start_idx + s]
             if len(stop_idxs) > 0:
                 cds_end_idx = min(stop_idxs) + s
                 if cds_end_idx - start_idx > min_cds_size:
-                    cdss.append(seq[start_idx:cds_end_idx])
+                    out.append((seq[start_idx:cds_end_idx], start_idx, cds_end_idx))
             else:
                 break
 
-    return cdss
+    return out
 
 
 def _extract_domains(
-    cdss: list[str],
+    cdss: list[tuple[str, int, int]],
     dom_size: int,
     dom_type_size: int,
     dom_type_map: dict[str, int],
     one_codon_map: dict[str, int],
     two_codon_map: dict[str, int],
-) -> list[list[tuple[int, int, int, int, int]]]:
+) -> list[tuple[list[tuple[int, int, int, int, int]], int, int]]:
     idx0_slice = slice(0, CODON_SIZE)
     idx1_slice = slice(CODON_SIZE, 2 * CODON_SIZE)
     idx2_slice = slice(2 * CODON_SIZE, 3 * CODON_SIZE)
     idx3_slice = slice(3 * CODON_SIZE, 5 * CODON_SIZE)
 
     prot_doms = []
-    for cds in cdss:
+    for cds, cds_start, cds_stop in cdss:
         doms = []
         is_useful_prot = False
 
@@ -122,7 +122,7 @@ def _extract_domains(
 
         # protein should have at least 1 non-regulatory domain
         if is_useful_prot:
-            prot_doms.append(doms)
+            prot_doms.append((doms, cds_start, cds_stop))
 
     return prot_doms
 
@@ -135,7 +135,7 @@ def _translate_genome(
     dom_type_map: dict[str, int],
     one_codon_map: dict[str, int],
     two_codon_map: dict[str, int],
-) -> list[list[tuple[int, int, int, int, int]]]:
+) -> list[tuple[list[tuple[int, int, int, int, int]], int, int]]:
     dom_type_size = len(next(iter(dom_type_map)))
 
     cdsf = _get_coding_regions(
@@ -277,7 +277,7 @@ class Genetics:
 
     def translate_genomes(
         self, genomes: list[str]
-    ) -> list[list[list[tuple[int, int, int, int, int]]]]:
+    ) -> list[list[tuple[list[tuple[int, int, int, int, int]], int, int]]]:
         """
         Translate all genomes into proteomes
 

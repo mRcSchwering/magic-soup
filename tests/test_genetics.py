@@ -4,11 +4,11 @@ from magicsoup.genetics import _get_coding_regions, _extract_domains
 from magicsoup.constants import CODON_SIZE
 
 
-# (genome, cds)
+# (genome, (cds, start))
 # starts: "TTG", "GTG", "ATG"
 # stops: "TGA", "TAG", "TAA"
 # forward only
-_DATA = [
+_DATA: list[tuple[str, list[tuple[str, int]]]] = [
     (
         """
         TACCGGATA GCAGCTTTT CTTGGAATA GCCAAGGGT
@@ -18,7 +18,7 @@ _DATA = [
         GGGGCGATT GGCGATGGT
         """,
         # "TTGGAATAG" is too short
-        ["TTGGTAACAAAGGTTAAAACGCCAAACGAGTATCGGCCAATCCTGTCACTGTGA"],
+        [("TTGGTAACAAAGGTTAAAACGCCAAACGAGTATCGGCCAATCCTGTCACTGTGA", 68)],
     ),
     (
         """
@@ -34,20 +34,32 @@ _DATA = [
         [
             # "GTGTTACGTTATTGA" is too short
             # "GTGAAGTAA" is too short
-            "ATGAATTACGAAAGCGGGCGTACTACTTCTGGGGATACGATTAGTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGA",
-            "GTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGAAAGAGCAAATTGCGAGCTCCCCGTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
-            "TTGAAAGAGCAAATTGCGAGCTCCCCGTGA",
-            "TTGCGAGCTCCCCGTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAA",
-            "GTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
-            "TTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAG",
-            "GTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
+            (
+                "ATGAATTACGAAAGCGGGCGTACTACTTCTGGGGATACGATTAGTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGA",
+                27,
+            ),
+            (
+                "GTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGAAAGAGCAAATTGCGAGCTCCCCGTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
+                70,
+            ),
+            ("TTGAAAGAGCAAATTGCGAGCTCCCCGTGA", 110),
+            ("TTGCGAGCTCCCCGTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAA", 123),
+            (
+                "GTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
+                136,
+            ),
+            ("TTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAG", 143),
+            (
+                "GTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
+                145,
+            ),
         ],
     ),
 ]
 
 
 @pytest.mark.parametrize("seq, exp", _DATA)
-def test_get_coding_regions(seq: str, exp: list[str]):
+def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]):
     # 1 codon is too small to express p=0.01 domain types
     with pytest.warns(UserWarning):
         genetics = ms.Genetics(n_dom_type_codons=1)
@@ -60,9 +72,15 @@ def test_get_coding_regions(seq: str, exp: list[str]):
 
     seq = "".join(seq.replace("\n", "").split())
     res = _get_coding_regions(seq, **kwargs)  # type: ignore
+    exp_cdss, exp_starts = map(list, zip(*exp))
 
     assert len(res) == len(exp)
-    assert set(res) == set(exp)
+    assert set(d[0] for d in res) == set(exp_cdss)
+
+    for cds, start, stop in res:
+        idx = exp_cdss.index(cds)  # type: ignore
+        assert start == exp_starts[idx]
+        assert stop == exp_starts[idx] + len(exp_cdss[idx])  # type: ignore
 
 
 def test_extract_domains():
@@ -72,12 +90,12 @@ def test_extract_domains():
     dom_type_size = len(next(iter(dom_type_map)))
 
     # fmt: off
-    cdss = [
-        "AGACAAAAACTGTGTACTCCGCGATAGACTAGACG",  # (1, 2, 5, 1, 3)
-        "AGACTATAGCTAGAAGCCCCTGTACTCCGTGTCGATAGACG",  # (3, 5, 1, 3, 5)
-        "AGACTAGGGCCGGGACTGCCGCGACTAGAAGCTAGACTAACG",  # (2, 3, 4, 2, 3)
-        "AAACCGGGATGTCTGTAT",  # (1, 3, 4, 5, 2)
-        "CCCCCGGGACTGCCGCGAGGGACTCTGCCGGGAATC",  # (3, 3, 4, 2, 3) (2, 1, 2, 3, 4)
+    cdss: list[tuple[str, int, int]] = [
+        ("AGACAAAAACTGTGTACTCCGCGATAGACTAGACG", 1, 36),  # (1, 2, 5, 1, 3)
+        ("AGACTATAGCTAGAAGCCCCTGTACTCCGTGTCGATAGACG", 10, 51),  # (3, 5, 1, 3, 5)
+        ("AGACTAGGGCCGGGACTGCCGCGACTAGAAGCTAGACTAACG", 4, 47),  # (2, 3, 4, 2, 3)
+        ("AAACCGGGATGTCTGTAT", 17, 35),  # (1, 3, 4, 5, 2)
+        ("CCCCCGGGACTGCCGCGAGGGACTCTGCCGGGAATC", 12, 48),  # (3, 3, 4, 2, 3) (2, 1, 2, 3, 4)
     ]
     # - cds 0: normal domain                                                    => 1 res[0]
     # - cds 1: single type 3 domain, so it is removed
@@ -95,15 +113,15 @@ def test_extract_domains():
         two_codon_map=two_codon_map,
     )
 
-    assert len(res[0]) == 1
-    assert len(res[1]) == 1
-    assert len(res[2]) == 1
-    assert len(res[3]) == 2
-    assert res[0][0] == (1, 2, 5, 1, 3)
-    assert res[1][0] == (2, 3, 4, 2, 3)
-    assert res[2][0] == (1, 3, 4, 5, 2)
-    assert res[3][0] == (3, 3, 4, 2, 3)
-    assert res[3][1] == (2, 1, 2, 3, 4)
+    assert len(res[0][0]) == 1
+    assert len(res[1][0]) == 1
+    assert len(res[2][0]) == 1
+    assert len(res[3][0]) == 2
+    assert res[0][0][0] == (1, 2, 5, 1, 3)
+    assert res[1][0][0] == (2, 3, 4, 2, 3)
+    assert res[2][0][0] == (1, 3, 4, 5, 2)
+    assert res[3][0][0] == (3, 3, 4, 2, 3)
+    assert res[3][0][1] == (2, 1, 2, 3, 4)
 
 
 def test_genetics():
@@ -115,7 +133,8 @@ def test_genetics():
     kwargs = {"p_catal_dom": 0.1, "p_transp_dom": 0.1, "p_reg_dom": 0.1}
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    proteomes = genetics.translate_genomes(genomes=genomes)
+    proteomes_data = genetics.translate_genomes(genomes=genomes)
+    proteomes = [[dd[0] for dd in d] for d in proteomes_data]
 
     n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
     n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)
@@ -128,7 +147,8 @@ def test_genetics():
     kwargs["p_catal_dom"] = 0.01
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    proteomes = genetics.translate_genomes(genomes=genomes)
+    proteomes_data = genetics.translate_genomes(genomes=genomes)
+    proteomes = [[dd[0] for dd in d] for d in proteomes_data]
 
     n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
     n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)
@@ -141,7 +161,8 @@ def test_genetics():
     kwargs["p_transp_dom"] = 0.01
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    proteomes = genetics.translate_genomes(genomes=genomes)
+    proteomes_data = genetics.translate_genomes(genomes=genomes)
+    proteomes = [[dd[0] for dd in d] for d in proteomes_data]
 
     n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
     n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)

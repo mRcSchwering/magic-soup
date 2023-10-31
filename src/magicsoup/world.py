@@ -443,7 +443,7 @@ class World:
         set_idxs = []
         for proteome, idx in zip(proteomes, new_idxs):
             if len(proteome) > 0:
-                set_proteomes.append(proteome)
+                set_proteomes.append([d[0] for d in proteome])
                 set_idxs.append(idx)
 
         n_new_proteomes = len(set_proteomes)
@@ -534,7 +534,7 @@ class World:
         set_idxs = []
         for proteome, idx in zip(proteomes, new_idxs):
             if len(proteome) > 0:
-                set_proteomes.append(proteome)
+                set_proteomes.append([d[0] for d in proteome])
                 set_idxs.append(idx)
 
         n_new_proteomes = len(set_proteomes)
@@ -645,7 +645,7 @@ class World:
             self.cell_genomes[idx] = genome
             if len(proteome) > 0:
                 set_idxs.append(idx)
-                set_proteomes.append(proteome)
+                set_proteomes.append([d[0] for d in proteome])
             else:
                 unset_idxs.append(idx)
 
@@ -1213,7 +1213,12 @@ class Cell:
         Get a representation of the cell's proteome as a list of Protein objects
         """
         (cdss,) = world.genetics.translate_genomes(genomes=[self.genome])
-        return world.kinetics.get_proteome(proteome=cdss) if len(cdss) > 0 else []
+        # TODO: use proteome indices instead
+        return (
+            world.kinetics.get_proteome(proteome=[d[0] for d in cdss])
+            if len(cdss) > 0
+            else []
+        )
 
     def copy(self, **kwargs) -> "Cell":
         old_kwargs = {
