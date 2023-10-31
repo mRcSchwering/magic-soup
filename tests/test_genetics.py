@@ -59,7 +59,7 @@ def test_get_coding_regions(seq: str, exp: list[str]):
     }
 
     seq = "".join(seq.replace("\n", "").split())
-    res = _get_coding_regions(seq, **kwargs)
+    res = _get_coding_regions(seq, **kwargs)  # type: ignore
 
     assert len(res) == len(exp)
     assert set(res) == set(exp)

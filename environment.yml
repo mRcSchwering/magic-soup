@@ -2,11 +2,10 @@ name: magicsoup_dev
 
 dependencies:
   - python=3.10
-  - black
-  - mypy
   - twine
   - pip
   - pip:
       - build
+      - mypy
       - -r src/requirements.txt
       - -r tests/requirements.txt

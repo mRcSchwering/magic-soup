@@ -935,6 +935,8 @@ class World:
                 to reduce memory required during update. This is irrelevant with
                 `ignore_cell_params=True`.
         """
+        self.kill_cells(cell_idxs=list(range(self.n_cells)))
+
         self.cell_molecules = torch.load(
             statedir / "cell_molecules.pt", map_location=self.device
         )

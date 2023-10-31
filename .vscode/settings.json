@@ -2,18 +2,19 @@
   "python.envFile": "${workspaceFolder}/vscode.env",
   "terminal.integrated.env.linux": { "PYTHONPATH": "${workspaceFolder}/src" },
   "jupyter.notebookFileRoot": "${workspaceFolder}/src",
-  "python.linting.pylintArgs": [
-    "--init-hook=\"import sys; sys.path.append('./src')\""
+  "pylint.args": [
+    "--init-hook",
+    "import sys; sys.path.append('./src')",
+    "--generated-members",
+    "torch.*"
   ],
   "[markdown]": {
     "editor.formatOnSave": false
   },
-  "python.linting.pylintEnabled": false,
   "[python]": {
     "editor.codeActionsOnSave": {
       "source.fixAll": true
     }
   },
-  "ruff.args": ["--ignore=E501"],
-  "python.linting.mypyEnabled": true
+  "ruff.lint.args": ["--ignore=E501"]
 }
