@@ -104,34 +104,42 @@ def _avg(*x):
     return sum(x) / len(x)
 
 
-# TODO: in proteome representation tests below
-#       define also CDS start/stop/is_fwd and test it as well
-#       currently I am just adding dummy values and dont test
-
-
 def test_cell_params_with_transporter_domains():
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
     c0 = [
-        [
-            (2, 5, 5, 1, 1)  # transporter, Vmax 1.5, Km 0.5, fwd, mol a
-        ],
-        [
-            (2, 5, 5, 1, 1), # transporter, Vmax 1.5, Km 0.5, fwd, mol a
-            (2, 1, 2, 2, 1)  # transporter, Vmax 1.1, Km 0.2, bwd, mol a
-        ],
+        (
+            [
+                (2, 5, 5, 1, 1)  # transporter, Vmax 1.5, Km 0.5, fwd, mol a
+            ],
+            13, 27, True
+        )
+        ,
+        (
+            [
+                (2, 5, 5, 1, 1), # transporter, Vmax 1.5, Km 0.5, fwd, mol a
+                (2, 1, 2, 2, 1)  # transporter, Vmax 1.1, Km 0.2, bwd, mol a
+            ],
+            36, 74, False
+        ),
     ]
     c1 = [
-        [
-            (2, 5, 4, 1, 1), # transporter, Vmax 1.5, Km 0.4, fwd, mol a
-            (2, 4, 5, 1, 1), # transporter, Vmax 1.4, Km 0.5, fwd, mol a
-            (2, 3, 6, 1, 2), # transporter, Vmax 1.3, Km 0.6, fwd, mol b
-            (2, 2, 7, 1, 3)  # transporter, Vmax 1.2, Km 0.7, fwd, mol c
-        ],
-        [
-            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
-            (2, 5, 5, 1, 1)   # transporter, Vmax 1.5, Km 0.5, fwd, mol a
-        ],
+        (
+            [
+                (2, 5, 4, 1, 1), # transporter, Vmax 1.5, Km 0.4, fwd, mol a
+                (2, 4, 5, 1, 1), # transporter, Vmax 1.4, Km 0.5, fwd, mol a
+                (2, 3, 6, 1, 2), # transporter, Vmax 1.3, Km 0.6, fwd, mol b
+                (2, 2, 7, 1, 3)  # transporter, Vmax 1.2, Km 0.7, fwd, mol c
+            ],
+            91, 112, False
+        ),
+        (
+            [
+                (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+                (2, 5, 5, 1, 1)   # transporter, Vmax 1.5, Km 0.5, fwd, mol a
+            ],
+            1, 10, False
+        ),
     ]
     # fmt: on
 
@@ -154,7 +162,8 @@ def test_cell_params_with_transporter_domains():
     kinetics.Nf = Nf
     kinetics.Nb = Nb
     kinetics.A = A
-    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
+    proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
+    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
     assert Kmf[0, 0] == pytest.approx(0.5, abs=_TOLERANCE)
     assert Kmb[0, 0] == pytest.approx(0.5, abs=_TOLERANCE)
@@ -218,15 +227,21 @@ def test_cell_params_with_transporter_domains():
 
     # test proteome representation
 
-    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c0])
+    proteins = kinetics.get_proteome(proteome=c0)
 
     p0 = proteins[0]
+    assert p0.cds_start == 13
+    assert p0.cds_end == 27
+    assert p0.is_fwd is True
     assert isinstance(p0.domains[0], TransporterDomain)
     assert p0.domains[0].molecule is _ma
     assert p0.domains[0].vmax == pytest.approx(1.5, abs=_TOLERANCE)
     assert p0.domains[0].km == pytest.approx(0.5, abs=_TOLERANCE)
 
     p1 = proteins[1]
+    assert p1.cds_start == 36
+    assert p1.cds_end == 74
+    assert p1.is_fwd is False
     assert isinstance(p1.domains[0], TransporterDomain)
     assert p1.domains[0].molecule is _ma
     assert p1.domains[0].vmax == pytest.approx(1.5, abs=_TOLERANCE)
@@ -236,9 +251,12 @@ def test_cell_params_with_transporter_domains():
     assert p1.domains[1].vmax == pytest.approx(1.1, abs=_TOLERANCE)
     assert p1.domains[1].km == pytest.approx(0.2, abs=_TOLERANCE)
 
-    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c1])
+    proteins = kinetics.get_proteome(proteome=c1)
 
     p0 = proteins[0]
+    assert p0.cds_start == 91
+    assert p0.cds_end == 112
+    assert p0.is_fwd is False
     assert isinstance(p0.domains[0], TransporterDomain)
     assert p0.domains[0].molecule is _ma
     assert p0.domains[0].vmax == pytest.approx(1.5, abs=_TOLERANCE)
@@ -257,6 +275,9 @@ def test_cell_params_with_transporter_domains():
     assert p0.domains[3].km == pytest.approx(0.7, abs=_TOLERANCE)
 
     p1 = proteins[1]
+    assert p1.cds_start == 1
+    assert p1.cds_end == 10
+    assert p1.is_fwd is False
     assert isinstance(p1.domains[0], CatalyticDomain)
     assert p1.domains[0].substrates == [_ma]
     assert p1.domains[0].products == [_mb]
@@ -272,29 +293,41 @@ def test_cell_params_with_regulatory_domains():
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
     c0 = [
-        [
-            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
-            (3, 0, 10, 1, 3), # reg, Km 1.0, cyto, act, c
-            (3, 0, 20, 2, 4), # reg, Km 2.0, cyto, inh, d
-        ],
-        [
-            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
-            (3, 0, 10, 1, 1), # reg, Km 1.0, cyto, act, a
-            (3, 0, 15, 1, 5), # reg, Km 1.5, transm, act, a
-        ]
+        (
+            [
+                (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+                (3, 0, 10, 1, 3), # reg, Km 1.0, cyto, act, c
+                (3, 0, 20, 2, 4), # reg, Km 2.0, cyto, inh, d
+            ],
+            1, 100, False
+        ),
+        (
+            [
+                (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+                (3, 0, 10, 1, 1), # reg, Km 1.0, cyto, act, a
+                (3, 0, 15, 1, 5), # reg, Km 1.5, transm, act, a
+            ],
+            2, 200, True
+        )
     ]
 
     c1 = [
-        [
-            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
-            (3, 0, 10, 2, 2), # reg, Km 1.0, cyto, inh, b
-            (3, 0, 15, 2, 6), # reg, Km 1.5, transm, inh, b
-        ],
-        [
-            (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
-            (3, 0, 10, 1, 4), # reg, Km 1.0, cyto, act, d
-            (3, 0, 15, 1, 4), # reg, Km 1.5, cyto, act, d
-        ]
+        (
+            [
+                (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+                (3, 0, 10, 2, 2), # reg, Km 1.0, cyto, inh, b
+                (3, 0, 15, 2, 6), # reg, Km 1.5, transm, inh, b
+            ],
+            3, 300, False
+        ),
+        (
+            [
+                (1, 10, 5, 1, 1), # catal, Vmax 2.0, Km 0.5, fwd, a->b
+                (3, 0, 10, 1, 4), # reg, Km 1.0, cyto, act, d
+                (3, 0, 15, 1, 4), # reg, Km 1.5, cyto, act, d
+            ],
+            4, 400, True
+        )
     ]
     # fmt: on
 
@@ -317,7 +350,8 @@ def test_cell_params_with_regulatory_domains():
     kinetics.Nf = Nf
     kinetics.Nb = Nb
     kinetics.A = A
-    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
+    proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
+    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
     ke_c0_0 = _ke([_ma], [_mb])
     ke_c0_1 = _ke([_ma], [_mb])
@@ -400,9 +434,12 @@ def test_cell_params_with_regulatory_domains():
 
     # test protein representation
 
-    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c0])
+    proteins = kinetics.get_proteome(proteome=c0)
 
     p0 = proteins[0]
+    assert p0.cds_start == 1
+    assert p0.cds_end == 100
+    assert p0.is_fwd is False
     assert isinstance(p0.domains[0], CatalyticDomain)
     assert p0.domains[0].substrates == [_ma]
     assert p0.domains[0].products == [_mb]
@@ -420,6 +457,9 @@ def test_cell_params_with_regulatory_domains():
     assert p0.domains[2].km == pytest.approx(2.0, abs=_TOLERANCE)
 
     p1 = proteins[1]
+    assert p1.cds_start == 2
+    assert p1.cds_end == 200
+    assert p1.is_fwd is True
     assert isinstance(p1.domains[0], CatalyticDomain)
     assert p1.domains[0].substrates == [_ma]
     assert p1.domains[0].products == [_mb]
@@ -436,9 +476,12 @@ def test_cell_params_with_regulatory_domains():
     assert p1.domains[2].is_transmembrane
     assert p1.domains[2].km == pytest.approx(1.5, abs=_TOLERANCE)
 
-    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c1])
+    proteins = kinetics.get_proteome(proteome=c1)
 
     p0 = proteins[0]
+    assert p0.cds_start == 3
+    assert p0.cds_end == 300
+    assert p0.is_fwd is False
     assert isinstance(p0.domains[0], CatalyticDomain)
     assert p0.domains[0].substrates == [_ma]
     assert p0.domains[0].products == [_mb]
@@ -456,6 +499,9 @@ def test_cell_params_with_regulatory_domains():
     assert p0.domains[2].km == pytest.approx(1.5, abs=_TOLERANCE)
 
     p1 = proteins[1]
+    assert p1.cds_start == 4
+    assert p1.cds_end == 400
+    assert p1.is_fwd is True
     assert isinstance(p1.domains[0], CatalyticDomain)
     assert p1.domains[0].substrates == [_ma]
     assert p1.domains[0].products == [_mb]
@@ -477,27 +523,42 @@ def test_cell_params_with_catalytic_domains():
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
     c0 = [
-        [
-            (1, 1, 5, 1, 1), # catal, Vmax 1.1, Km 0.5, fwd, a->b
-            (1, 2, 15, 2, 3), # catal, Vmax 1.2, Km 1.5, bwd, bc->d
-        ],
-        [
-            (1, 10, 9, 1, 2), # catal, Vmax 2.0, Km 0.9, fwd, b->c
-            (1, 3, 12, 2, 3), # catal, Vmax 1.3, Km 1.2, bwd, bc->d
-        ],
-        [
-            (1, 19, 29, 1, 4), # catal, Vmax 2.9, Km 2.9, fwd, d->bb
-        ]
+        (
+            [
+                (1, 1, 5, 1, 1), # catal, Vmax 1.1, Km 0.5, fwd, a->b
+                (1, 2, 15, 2, 3), # catal, Vmax 1.2, Km 1.5, bwd, bc->d
+            ],
+            1, 100, False
+        ),
+        (
+            [
+                (1, 10, 9, 1, 2), # catal, Vmax 2.0, Km 0.9, fwd, b->c
+                (1, 3, 12, 2, 3), # catal, Vmax 1.3, Km 1.2, bwd, bc->d
+            ],
+            2, 200, True
+        ),
+        (
+            [
+                (1, 19, 29, 1, 4), # catal, Vmax 2.9, Km 2.9, fwd, d->bb
+            ],
+            3, 300, False
+        )
     ]
     c1 = [
-        [
-            (1, 1, 3, 2, 1), # catal, Vmax 1.1, Km 0.3, bwd, a->b
-            (1, 11, 14, 2, 3), # catal, Vmax 2.1, Km 1.4, bwd, bc->d
-        ],
-        [
-            (1, 9, 3, 1, 2), # catal, Vmax 1.9, Km 0.3, fwd, b->c
-            (1, 13, 17, 1, 3), # catal, Vmax 2.3, Km 1.7, fwd, bc->d
-        ]
+        (
+            [
+                (1, 1, 3, 2, 1), # catal, Vmax 1.1, Km 0.3, bwd, a->b
+                (1, 11, 14, 2, 3), # catal, Vmax 2.1, Km 1.4, bwd, bc->d
+            ],
+            4, 400, True
+        ),
+        (
+            [
+                (1, 9, 3, 1, 2), # catal, Vmax 1.9, Km 0.3, fwd, b->c
+                (1, 13, 17, 1, 3), # catal, Vmax 2.3, Km 1.7, fwd, bc->d
+            ],
+            5, 500, False
+        )
     ]
 
     # fmt: on
@@ -521,7 +582,8 @@ def test_cell_params_with_catalytic_domains():
     kinetics.Nf = Nf
     kinetics.Nb = Nb
     kinetics.A = A
-    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=[c0, c1])
+    proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
+    kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
     ke_c0_0 = _ke([_ma, _md], [_mb, _mb, _mc])
     ke_c0_1 = _ke([_mb, _md], [_mc, _mb, _mc])
@@ -613,7 +675,7 @@ def test_cell_params_with_catalytic_domains():
 
     # test protein representation
 
-    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c0])
+    proteins = kinetics.get_proteome(proteome=c0)
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
@@ -646,7 +708,7 @@ def test_cell_params_with_catalytic_domains():
     assert p2.domains[0].vmax == pytest.approx(2.9, abs=_TOLERANCE)
     assert p2.domains[0].km == pytest.approx(2.9, abs=_TOLERANCE)
 
-    proteins = kinetics.get_proteome(proteome=[(d, 1, 2, True) for d in c1])
+    proteins = kinetics.get_proteome(proteome=c1)
 
     p0 = proteins[0]
     assert isinstance(p0.domains[0], CatalyticDomain)
