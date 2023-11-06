@@ -2,7 +2,7 @@ from typing import Any
 import math
 import random
 import torch
-from magicsoup.constants import GAS_CONSTANT
+from magicsoup.constants import GAS_CONSTANT, DomainSpecType, ProteinSpecType
 from magicsoup.containers import (
     Molecule,
     Protein,
@@ -446,7 +446,7 @@ class Kinetics:
 
     def get_proteome(
         self,
-        proteome: list[tuple[list[tuple[int, int, int, int, int]], int, int, bool]],
+        proteome: list[ProteinSpecType],
     ) -> list[Protein]:
         """
         Calculate cell parameters for a single proteome and return it as
@@ -468,10 +468,17 @@ class Kinetics:
         mols = self.molecules
         n_mols = len(mols)
 
+        # looping through list of lists while accessing tensors
+        # should be ok because in _get_proteome_tensors none are filtered
         prots: list[Protein] = []
-        for pi in range(dom_types.size(1)):
+        for pi, protein_spec in enumerate(proteome):
             doms: list[DomainType] = []
-            for di in range(dom_types.size(2)):
+            for di, dom_spec in enumerate(protein_spec[0]):
+                kwargs = {
+                    "start": dom_spec[1],
+                    "end": dom_spec[2],
+                }
+
                 # catalytic domain (N has positive and negative integers)
                 if dom_types[0][pi][di].item() == 1:
                     lft_ns = Nf_d[0][pi][di].int().tolist()
@@ -484,6 +491,7 @@ class Kinetics:
                                 reaction=(lfts, rgts),
                                 km=Km_d[0][pi][di].item(),
                                 vmax=Vmax_d[0][pi][di].item(),
+                                **kwargs,
                             )
                         )
 
@@ -495,6 +503,7 @@ class Kinetics:
                             molecule=self.mi_2_mol[min(mis)],
                             km=Km_d[0][pi][di].item(),
                             vmax=Vmax_d[0][pi][di].item(),
+                            **kwargs,
                         )
                     )
 
@@ -513,6 +522,7 @@ class Kinetics:
                             km=Km_d[0][pi][di].item(),
                             is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
                             is_transmembrane=is_trnsm,
+                            **kwargs,
                         )
                     )
 
@@ -531,7 +541,7 @@ class Kinetics:
     def set_cell_params(
         self,
         cell_idxs: list[int],
-        proteomes: list[list[list[tuple[int, int, int, int, int]]]],
+        proteomes: list[list[list[DomainSpecType]]],
     ):
         """
         Calculate and set cell parameters for new proteomes
@@ -858,7 +868,8 @@ class Kinetics:
         return xx, involved_prots
 
     def _get_proteome_tensors(
-        self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
+        self,
+        proteomes: list[list[list[DomainSpecType]]],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # separate domain specifications into different tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
@@ -904,7 +915,8 @@ class Kinetics:
         return N_d, A_d, Kms, Vmax_d, dom_types
 
     def _collect_proteome_idxs(
-        self, proteomes: list[list[list[tuple[int, int, int, int, int]]]]
+        self,
+        proteomes: list[list[list[DomainSpecType]]],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         n_prots = self.N.size(1)
         n_doms = max(len(dd) for d in proteomes for dd in d)
@@ -927,7 +939,7 @@ class Kinetics:
                 d_idxs1 = []
                 d_idxs2 = []
                 d_idxs3 = []
-                for dt, i0, i1, i2, i3 in doms:
+                for (dt, i0, i1, i2, i3), *_ in doms:
                     d_dts.append(dt)
                     d_idxs0.append(i0)
                     d_idxs1.append(i1)

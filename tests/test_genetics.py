@@ -90,9 +90,10 @@ def test_extract_domains():
     two_codon_map = {"ACTGAT": 1, "CTGTAT": 2, "CCGCGA": 3, "GGAATC": 4, "TGTCGA": 5}
     one_codon_map = {"ACT": 1, "CTG": 2, "CCG": 3, "GGA": 4, "TGT": 5}
     dom_type_size = len(next(iter(dom_type_map)))
+    dom_size = dom_type_size + 5 * CODON_SIZE
 
     # fmt: off
-    cdss: list[tuple[str, int, int]] = [
+    cdss: list[tuple[str, int, int, bool]] = [
         ("AGACAAAAACTGTGTACTCCGCGATAGACTAGACG", 1, 36, True),  # (1, 2, 5, 1, 3)
         ("AGACTATAGCTAGAAGCCCCTGTACTCCGTGTCGATAGACG", 10, 51, False),  # (3, 5, 1, 3, 5)
         ("AGACTAGGGCCGGGACTGCCGCGACTAGAAGCTAGACTAACG", 4, 47, True),  # (2, 3, 4, 2, 3)
@@ -109,12 +110,14 @@ def test_extract_domains():
     res = _extract_domains(
         cdss=cdss,
         dom_type_size=dom_type_size,
-        dom_size=dom_type_size + 5 * CODON_SIZE,
+        dom_size=dom_size,
         dom_type_map=dom_type_map,
         one_codon_map=one_codon_map,
         two_codon_map=two_codon_map,
     )
 
+    # res[i]: (domain list, cds start, cds end, is fwd)
+    # res[i][0][j]: (domain spec, dom start, dom end)
     assert len(res[0][0]) == 1
     assert len(res[1][0]) == 1
     assert len(res[2][0]) == 1
@@ -131,11 +134,21 @@ def test_extract_domains():
     assert res[3][1] == 12
     assert res[3][2] == 48
     assert res[3][3] is True
-    assert res[0][0][0] == (1, 2, 5, 1, 3)
-    assert res[1][0][0] == (2, 3, 4, 2, 3)
-    assert res[2][0][0] == (1, 3, 4, 5, 2)
-    assert res[3][0][0] == (3, 3, 4, 2, 3)
-    assert res[3][0][1] == (2, 1, 2, 3, 4)
+    assert res[0][0][0][0] == (1, 2, 5, 1, 3)
+    assert res[0][0][0][1] == 6
+    assert res[0][0][0][2] == 6 + dom_size
+    assert res[1][0][0][0] == (2, 3, 4, 2, 3)
+    assert res[1][0][0][1] == 6
+    assert res[1][0][0][2] == 6 + dom_size
+    assert res[2][0][0][0] == (1, 3, 4, 5, 2)
+    assert res[2][0][0][1] == 0
+    assert res[2][0][0][2] == 0 + dom_size
+    assert res[3][0][0][0] == (3, 3, 4, 2, 3)
+    assert res[3][0][0][1] == 0
+    assert res[3][0][0][2] == 0 + dom_size
+    assert res[3][0][1][0] == (2, 1, 2, 3, 4)
+    assert res[3][0][1][1] == 18
+    assert res[3][0][1][2] == 18 + dom_size
 
 
 def test_genetics():
@@ -148,11 +161,10 @@ def test_genetics():
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes_data = genetics.translate_genomes(genomes=genomes)
-    proteomes = [[dd[0] for dd in d] for d in proteomes_data]
 
-    n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
-    n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)
-    n_reg = sum(ddd[0] == 3 for d in proteomes for dd in d for ddd in dd)
+    n_catal = _sum_dom_type(proteomes_data, 1)
+    n_trnsp = _sum_dom_type(proteomes_data, 2)
+    n_reg = _sum_dom_type(proteomes_data, 3)
     n = n_catal + n_trnsp + n_reg
     assert abs(n_catal - n_trnsp) < 0.1 * n
     assert abs(n_trnsp - n_reg) < 0.2 * n
@@ -162,11 +174,10 @@ def test_genetics():
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes_data = genetics.translate_genomes(genomes=genomes)
-    proteomes = [[dd[0] for dd in d] for d in proteomes_data]
 
-    n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
-    n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)
-    n_reg = sum(ddd[0] == 3 for d in proteomes for dd in d for ddd in dd)
+    n_catal = _sum_dom_type(proteomes_data, 1)
+    n_trnsp = _sum_dom_type(proteomes_data, 2)
+    n_reg = _sum_dom_type(proteomes_data, 3)
     n = n_catal + n_trnsp + n_reg
     assert n_trnsp - n_catal > 0.9 * n / 3
     assert n_reg - n_catal > 0.6 * n / 3
@@ -176,11 +187,20 @@ def test_genetics():
     genetics = ms.Genetics(**kwargs)
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes_data = genetics.translate_genomes(genomes=genomes)
-    proteomes = [[dd[0] for dd in d] for d in proteomes_data]
 
-    n_catal = sum(ddd[0] == 1 for d in proteomes for dd in d for ddd in dd)
-    n_trnsp = sum(ddd[0] == 2 for d in proteomes for dd in d for ddd in dd)
-    n_reg = sum(ddd[0] == 3 for d in proteomes for dd in d for ddd in dd)
+    n_catal = _sum_dom_type(proteomes_data, 1)
+    n_trnsp = _sum_dom_type(proteomes_data, 2)
+    n_reg = _sum_dom_type(proteomes_data, 3)
     n = n_catal + n_trnsp + n_reg
     assert n_reg - n_catal > 0.6 * n / 3
     assert n_reg - n_trnsp > 0.6 * n / 3
+
+
+def _sum_dom_type(data: list[list[ms.ProteinSpecType]], type_: int) -> int:
+    out = 0
+    for cell in data:
+        for protein, *_ in cell:
+            for dom, *_ in protein:
+                if dom[0] == type_:
+                    out += 1
+    return out

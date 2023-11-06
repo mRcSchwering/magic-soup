@@ -5,7 +5,7 @@ from io import BytesIO
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.constants import CODON_SIZE
+from magicsoup.constants import CODON_SIZE, DomainSpecType
 from magicsoup.util import moore_nghbrhd, round_down, random_genome, randstr
 from magicsoup.containers import (
     Chemistry,
@@ -36,6 +36,11 @@ class _CPU_Unpickler(pickle.Unpickler):
             return _torch_load(map_loc=self._map_location)
         else:
             return super().find_class(module, name)
+
+
+# TODO: use domain start/end in Domain representation
+# TODO: edit tests to run
+# TODO: edit tests to test domain specs
 
 
 class World:
@@ -640,7 +645,7 @@ class World:
 
         set_idxs: list[int] = []
         unset_idxs: list[int] = []
-        set_proteomes: list[list[list[tuple[int, int, int, int, int]]]] = []
+        set_proteomes: list[list[list[DomainSpecType]]] = []
         for (genome, idx), proteome in zip(genome_idx_pairs, proteomes):
             self.cell_genomes[idx] = genome
             if len(proteome) > 0:

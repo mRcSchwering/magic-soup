@@ -27,3 +27,7 @@ CODON_TABLE = {
     "GTG": 61,  "GCG": 62,  "GAG": 63,  "GGG": 64
 }
 # fmt: on
+
+
+DomainSpecType = tuple[tuple[int, int, int, int, int], int, int]
+ProteinSpecType = tuple[list[DomainSpecType], int, int, bool]

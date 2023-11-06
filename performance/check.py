@@ -3,10 +3,9 @@ Little helper script for checking the performance of some functions
 
     PYTHONPATH=./src python performance/check.py --n=1000 --s=1000
 
-It seems with v0.3.0 everything got a bit slower :/
 - v0.2.2 (python3.9,torch1.13) add/update cells is around 0.3s
-- v0.3.0 (python10.10,torch2.0) add/update cell is around 0.4s
-
+- v0.3.0 (python3.10,torch2.0) add/update cells is around 0.4s
+- v0.5.0 (python3.10,torch2.0) add/update cells is around 0.7s
 """
 import time
 from argparse import ArgumentParser

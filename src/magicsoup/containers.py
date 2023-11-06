@@ -276,7 +276,16 @@ class Chemistry:
         return f"{type(self).__name__}({','.join(args)})"
 
 
-class CatalyticDomain:
+# TODO: docstrings
+# TODO: refactor DomainType
+# TODO: kwargs types in other places
+class Domain:
+    def __init__(self, start: int, end: int):
+        self.start = start
+        self.end = end
+
+
+class CatalyticDomain(Domain):
     """
     Container holding the specification for a catalytic domain.
 
@@ -300,7 +309,9 @@ class CatalyticDomain:
         reaction: tuple[list[Molecule], list[Molecule]],
         km: float,
         vmax: float,
+        **kwargs: int,
     ):
+        super().__init__(**kwargs)
         subs, prods = reaction
         self.substrates = subs
         self.products = prods
@@ -340,7 +351,7 @@ class CatalyticDomainFact:
         self.products = sorted(products)
 
 
-class TransporterDomain:
+class TransporterDomain(Domain):
     """
     Container holding the specification for a transporter domain.
 
@@ -359,7 +370,8 @@ class TransporterDomain:
     These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
-    def __init__(self, molecule: Molecule, km: float, vmax: float):
+    def __init__(self, molecule: Molecule, km: float, vmax: float, **kwargs: int):
+        super().__init__(**kwargs)
         self.molecule = molecule
         self.km = km
         self.vmax = vmax
@@ -390,7 +402,7 @@ class TransporterDomainFact:
         self.molecule = molecule
 
 
-class RegulatoryDomain:
+class RegulatoryDomain(Domain):
     """
     Container holding the specification for a regulatory domain.
 
@@ -417,7 +429,9 @@ class RegulatoryDomain:
         km: float,
         is_inhibiting: bool,
         is_transmembrane: bool,
+        **kwargs: int,
     ):
+        super().__init__(**kwargs)
         self.effector = effector
         self.km = km
         self.is_transmembrane = is_transmembrane

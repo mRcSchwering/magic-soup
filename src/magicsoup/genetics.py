@@ -2,7 +2,7 @@ import warnings
 import random
 import torch.multiprocessing as mp
 from magicsoup.util import reverse_complement, nt_seqs
-from magicsoup.constants import CODON_SIZE
+from magicsoup.constants import CODON_SIZE, ProteinSpecType
 
 
 def _get_n(p: float, s: int, name: str) -> int:
@@ -88,7 +88,7 @@ def _extract_domains(
     dom_type_map: dict[str, int],
     one_codon_map: dict[str, int],
     two_codon_map: dict[str, int],
-) -> list[tuple[list[tuple[int, int, int, int, int]], int, int, bool]]:
+) -> list[ProteinSpecType]:
     idx0_slice = slice(0, CODON_SIZE)
     idx1_slice = slice(CODON_SIZE, 2 * CODON_SIZE)
     idx2_slice = slice(2 * CODON_SIZE, 3 * CODON_SIZE)
@@ -114,7 +114,7 @@ def _extract_domains(
                 idx1 = one_codon_map[dom_spec_seq[idx1_slice]]
                 idx2 = one_codon_map[dom_spec_seq[idx2_slice]]
                 idx3 = two_codon_map[dom_spec_seq[idx3_slice]]
-                doms.append((dom_type, idx0, idx1, idx2, idx3))
+                doms.append(((dom_type, idx0, idx1, idx2, idx3), i, i + dom_size))
                 i += dom_size
                 j += dom_size
             else:
@@ -136,7 +136,7 @@ def _translate_genome(
     dom_type_map: dict[str, int],
     one_codon_map: dict[str, int],
     two_codon_map: dict[str, int],
-) -> list[tuple[list[tuple[int, int, int, int, int]], int, int, bool]]:
+) -> list[ProteinSpecType]:
     dom_type_size = len(next(iter(dom_type_map)))
 
     cdsf = _get_coding_regions(
@@ -278,9 +278,7 @@ class Genetics:
         self.idx_2_one_codon = {v: k for k, v in self.one_codon_map.items()}
         self.idx_2_two_codon = {v: k for k, v in self.two_codon_map.items()}
 
-    def translate_genomes(
-        self, genomes: list[str]
-    ) -> list[list[tuple[list[tuple[int, int, int, int, int]], int, int, bool]]]:
+    def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
         """
         Translate all genomes into proteomes
 
