@@ -9,7 +9,7 @@ from magicsoup.containers import (
     CatalyticDomain,
     TransporterDomain,
     RegulatoryDomain,
-    DomainType,
+    Domain,
 )
 
 _EPS = 1e-7
@@ -472,7 +472,7 @@ class Kinetics:
         # should be ok because in _get_proteome_tensors none are filtered
         prots: list[Protein] = []
         for pi, protein_spec in enumerate(proteome):
-            doms: list[DomainType] = []
+            doms: list[Domain] = []
             for di, dom_spec in enumerate(protein_spec[0]):
                 kwargs = {
                     "start": dom_spec[1],

@@ -276,13 +276,42 @@ class Chemistry:
         return f"{type(self).__name__}({','.join(args)})"
 
 
-# TODO: docstrings
-# TODO: refactor DomainType
 # TODO: kwargs types in other places
 class Domain:
+    """
+    Base Domain. All Domains should inherit from this class.
+
+    Arguments:
+        start: domain start on the CDS
+        end: domain end on the CDS
+
+    In the simulation domains for all proteins and cells exist as a set of tensors.
+    This object is just a representation of a domain extracted from these tensors.
+    You shouldn't need to instantiate it.
+    These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
+
+    Domain start and end are python indexes of the domain sequence.
+    They subset the domain sequence from the CDS string.
+    The index starts with 0, start is included, end is excluded.
+    So, _e.g._ a domain with `start=3` and `end=18` is a domain
+    that starts with the 4th nucleotide and ends with the 18th nucleotide
+    on the CDS.
+    """
+
     def __init__(self, start: int, end: int):
         self.start = start
         self.end = end
+
+
+class DomainFact:
+    """
+    Domain factory base.
+    All domain factories should inherit from this class.
+
+    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
+    Use this factory to describe a domain that should eventually be encoded.
+    Domain factories can be stringed together into a protein in [ProteinFact][magicsoup.containers.ProteinFact]
+    """
 
 
 class CatalyticDomain(Domain):
@@ -297,11 +326,6 @@ class CatalyticDomain(Domain):
 
     The catalytic domain is described for the direction from substrates to products.
     For the reverse reaction, the reciprocal of Km applies. Vmax stays the same.
-
-    In the simulation domains for all proteins and cells exist as a set of tensors.
-    This object is just a representation of a domain extracted from these tensors.
-    You shouldn't need to instantiate it.
-    These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
     def __init__(
@@ -332,17 +356,13 @@ class CatalyticDomain(Domain):
         return f"{subs_str} <-> {prods_str} | spec {spec:.2e}"
 
 
-class CatalyticDomainFact:
+class CatalyticDomainFact(DomainFact):
     """
     Container for describing a catalytic domain.
 
     Arguments:
         reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
             For stoichiometric coefficients > 1, list the molecule species multiple times.
-
-    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
-    Use this factory to describe a domain that should eventually be encoded.
-    Domain factories can be stringed together into a protein in [ProteinFact][magicsoup.containers.ProteinFact]
     """
 
     def __init__(self, reaction: tuple[list[Molecule], list[Molecule]]):
@@ -363,11 +383,6 @@ class TransporterDomain(Domain):
     The transporter domain is described for intracellular molecules of this molecule species.
     The reciprocal of Km is used for extracellular molecules of this molecule species.
     Vmax stays the same.
-
-    In the simulation domains for all proteins and cells exist as a set of tensors.
-    This object is just a representation of a domain extracted from these tensors.
-    You shouldn't need to instantiate it.
-    These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
     def __init__(self, molecule: Molecule, km: float, vmax: float, **kwargs: int):
@@ -386,16 +401,12 @@ class TransporterDomain(Domain):
         return f"{self.molecule} transporter | spec {spec:.2e}"
 
 
-class TransporterDomainFact:
+class TransporterDomainFact(DomainFact):
     """
     Container for describing a transporter domain.
 
     Arguments:
         molecule: The molecule species which can be transported into or out of the cell by this domain.
-
-    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
-    Use this factory to describe a domain that should eventually be encoded.
-    Domain factories can be stringed together into a protein in [ProteinFact][magicsoup.containers.ProteinFact]
     """
 
     def __init__(self, molecule: Molecule):
@@ -416,11 +427,6 @@ class RegulatoryDomain(Domain):
     I think the term Michaelis Menten constant in a regulatory domain is a bit weird
     since there is no product being created.
     However, the kinetics of the amount of activation or inhibition are the same.
-
-    In the simulation domains for all proteins and cells exist as a set of tensors.
-    This object is just a representation of a domain extracted from these tensors.
-    You shouldn't need to instantiate it.
-    These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
     """
 
     def __init__(
@@ -448,7 +454,7 @@ class RegulatoryDomain(Domain):
         return f"{self.effector}{loc} {post} | Km {self.km:.2e}"
 
 
-class RegulatoryDomainFact:
+class RegulatoryDomainFact(DomainFact):
     """
     Container for describing a regulatory domain.
 
@@ -456,19 +462,11 @@ class RegulatoryDomainFact:
         effector: The molecule species which will be the effector molecule.
         is_transmembrane: Whether this is also a transmembrane domain.
             If true, the domain will react to extracellular molecules instead of intracellular ones.
-
-    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
-    Use this factory to describe a domain that should eventually be encoded.
-    Domain factories can be stringed together into a protein in [ProteinFact][magicsoup.containers.ProteinFact]
     """
 
     def __init__(self, effector: Molecule, is_transmembrane: bool):
         self.effector = effector
         self.is_transmembrane = is_transmembrane
-
-
-DomainType = CatalyticDomain | TransporterDomain | RegulatoryDomain
-DomainFactType = CatalyticDomainFact | TransporterDomainFact | RegulatoryDomainFact
 
 
 class Protein:
@@ -500,7 +498,7 @@ class Protein:
     """
 
     def __init__(
-        self, domains: list[DomainType], cds_start: int, cds_end: int, is_fwd: bool
+        self, domains: list[Domain], cds_start: int, cds_end: int, is_fwd: bool
     ):
         self.domains = domains
         self.n_domains = len(domains)
@@ -532,7 +530,7 @@ class ProteinFact:
     [RegulatoryDomainFact][magicsoup.containers.RegulatoryDomainFact].
     """
 
-    def __init__(self, domain_facts: list[DomainFactType] | DomainFactType):
+    def __init__(self, domain_facts: list[DomainFact] | DomainFact):
         if not isinstance(domain_facts, list):
             domain_facts = [domain_facts]
         self.domain_facts = domain_facts
