@@ -276,7 +276,6 @@ class Chemistry:
         return f"{type(self).__name__}({','.join(args)})"
 
 
-# TODO: kwargs types in other places
 class Domain:
     """
     Base Domain. All Domains should inherit from this class.

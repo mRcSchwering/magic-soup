@@ -38,11 +38,6 @@ class _CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
-# TODO: use domain start/end in Domain representation
-# TODO: edit tests to run
-# TODO: edit tests to test domain specs
-
-
 class World:
     """
     This is the main object for running the simulation.
@@ -1218,7 +1213,6 @@ class Cell:
         Get a representation of the cell's proteome as a list of Protein objects
         """
         (cdss,) = world.genetics.translate_genomes(genomes=[self.genome])
-        # TODO: use proteome indices instead
         return world.kinetics.get_proteome(proteome=cdss) if len(cdss) > 0 else []
 
     def copy(self, **kwargs) -> "Cell":
