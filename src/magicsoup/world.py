@@ -6,9 +6,16 @@ import pickle
 from pathlib import Path
 import torch
 from magicsoup.constants import CODON_SIZE, DomainSpecType
-from magicsoup.util import moore_nghbrhd, round_down, random_genome, randstr
+from magicsoup.util import (
+    moore_nghbrhd,
+    round_down,
+    random_genome,
+    randstr,
+    closest_value,
+)
 from magicsoup.containers import (
     Chemistry,
+    Molecule,
     Protein,
     ProteinFact,
     CatalyticDomainFact,
@@ -348,9 +355,23 @@ class World:
                 f" But the given genome size is size={size}."
             )
 
-        cdss = self._get_genome_sequences(proteome=proteome)
+        cdss = _get_genome_sequences(
+            proteome=proteome,
+            domain_types=self.genetics.domain_types,
+            stop_codons=self.genetics.stop_codons,
+            idx_2_one_codon=self.genetics.idx_2_one_codon,
+            idx_2_two_codon=self.genetics.idx_2_two_codon,
+            vmax_2_idxs=self.kinetics.vmax_2_idxs,
+            km_2_idxs=self.kinetics.km_2_idxs,
+            sign_2_idxs=self.kinetics.sign_2_idxs,
+            catal_2_idxs=self.kinetics.catal_2_idxs,
+            regul_2_idxs=self.kinetics.regul_2_idxs,
+            trnsp_2_idxs=self.kinetics.trnsp_2_idxs,
+        )
         n_p_pads = len(cdss) + 1
         n_d_pads = sum(len(d) + 1 for d in cdss)
+
+        # TODO: check that padding cant introduce any artifacts
 
         n_pad_nts = size - req_nts
         pad_size = n_pad_nts / (n_p_pads * 0.7 + n_d_pads * 0.3)
@@ -1023,62 +1044,6 @@ class World:
         chosen = pxls[idxs]
         return chosen
 
-    def _get_genome_sequences(self, proteome: list[ProteinFact]) -> list[list[str]]:
-        proteome = proteome.copy()
-        random.shuffle(proteome)
-
-        stop_codons = self.genetics.start_codons
-        dom_type_map = self.genetics.domain_types
-        one_codon_map = self.genetics.idx_2_one_codon
-        two_codon_map = self.genetics.idx_2_two_codon
-        react_map = self.kinetics.catal_2_idxs
-        trnsp_map = self.kinetics.trnsp_2_idxs
-        reg_map = self.kinetics.regul_2_idxs
-        sign_map = self.kinetics.sign_2_idxs
-
-        cdss: list[list[str]] = []
-        for prot in proteome:
-            cds = []
-            for dom in prot.domain_facts:
-                # Domain structure:
-                # 0: domain type definition (1=catalytic, 2=transporter, 3=regulatory)
-                # 1-3: 3 x 1-codon specifications (Vmax, Km, sign)
-                # 4: 1 x 2-codon specification (reaction, molecule, effector)
-
-                if isinstance(dom, CatalyticDomainFact):
-                    react = (tuple(dom.substrates), tuple(dom.products))
-                    is_fwd = True
-                    if react not in react_map:
-                        react = (tuple(dom.products), tuple(dom.substrates))
-                        is_fwd = False
-                    i3 = random.choice(sign_map[is_fwd])
-                    i4 = random.choice(react_map[react])
-                    dom_seq = random.choice(dom_type_map[1])
-                    sign_seq = one_codon_map[i3]
-                    react_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stop_codons)
-                    cds.append(dom_seq + mm_seq + sign_seq + react_seq)
-
-                if isinstance(dom, TransporterDomainFact):
-                    i4 = random.choice(trnsp_map[dom.molecule])
-                    dom_seq = random.choice(dom_type_map[2])
-                    mol_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stop_codons)
-                    sign_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
-                    cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
-
-                if isinstance(dom, RegulatoryDomainFact):
-                    i4 = random.choice(reg_map[dom.effector])
-                    dom_seq = random.choice(dom_type_map[3])
-                    mol_seq = two_codon_map[i4]
-                    mm_seq = random_genome(s=2 * CODON_SIZE, excl=stop_codons)
-                    sign_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
-                    cds.append(dom_seq + mm_seq + sign_seq + mol_seq)
-
-            cdss.append(cds)
-
-        return cdss
-
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
         if init == "zeros":
@@ -1237,3 +1202,207 @@ class Cell:
         }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
+
+
+def _get_genome_sequences(
+    proteome: list[ProteinFact],
+    domain_types: dict[int, list[str]],
+    stop_codons: list[str],
+    idx_2_one_codon: dict[int, str],
+    idx_2_two_codon: dict[int, str],
+    km_2_idxs: dict[float, list[int]],
+    vmax_2_idxs: dict[float, list[int]],
+    sign_2_idxs: dict[bool, list[int]],
+    catal_2_idxs: dict[tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]],
+    trnsp_2_idxs: dict[Molecule, list[int]],
+    regul_2_idxs: dict[tuple[Molecule, bool], list[int]],
+) -> list[list[str]]:
+    # spec: dom_type, idx0, idx1, idx2, idx3
+    # dom_type = 1 codon, idx0-2 = 1 codon, idx3 = 2 codons
+    # domain_types: type int 1-3 -> list of 1 codon strs (no stop)
+    # idx_2_one_codon: index int -> 1 codon str (no stop)
+    # idx_2_two_codon: index int -> 2 codons str (2nd can be stop)
+    # *_2_idxs: mapping of meaningful values to idxs
+    proteome = proteome.copy()
+    random.shuffle(proteome)
+
+    cdss: list[list[str]] = []
+    for prot in proteome:
+        cds = []
+        for dom in prot.domain_facts:
+            # Domain structure:
+            # 0: domain type definition (1=catalytic, 2=transporter, 3=regulatory)
+            # 1-3: 3 x 1-codon specifications (Vmax, Km, sign)
+            # 4: 1 x 2-codon specification (reaction, molecule, effector)
+
+            if isinstance(dom, CatalyticDomainFact):
+                seq = _get_catalytic_domain_sequence(
+                    dom=dom,
+                    domain_types=domain_types,
+                    stop_codons=stop_codons,
+                    sign_2_idxs=sign_2_idxs,
+                    km_2_idxs=km_2_idxs,
+                    vmax_2_idxs=vmax_2_idxs,
+                    catal_2_idxs=catal_2_idxs,
+                    idx_2_one_codon=idx_2_one_codon,
+                    idx_2_two_codon=idx_2_two_codon,
+                )
+                cds.append(seq)
+
+            if isinstance(dom, TransporterDomainFact):
+                seq = _get_transporter_domain_sequence(
+                    dom=dom,
+                    domain_types=domain_types,
+                    stop_codons=stop_codons,
+                    sign_2_idxs=sign_2_idxs,
+                    km_2_idxs=km_2_idxs,
+                    vmax_2_idxs=vmax_2_idxs,
+                    trnsp_2_idxs=trnsp_2_idxs,
+                    idx_2_one_codon=idx_2_one_codon,
+                    idx_2_two_codon=idx_2_two_codon,
+                )
+                cds.append(seq)
+
+            if isinstance(dom, RegulatoryDomainFact):
+                seq = _get_regulatory_domain_sequence(
+                    dom=dom,
+                    domain_types=domain_types,
+                    stop_codons=stop_codons,
+                    sign_2_idxs=sign_2_idxs,
+                    km_2_idxs=km_2_idxs,
+                    regul_2_idxs=regul_2_idxs,
+                    idx_2_one_codon=idx_2_one_codon,
+                    idx_2_two_codon=idx_2_two_codon,
+                )
+                cds.append(seq)
+
+        cdss.append(cds)
+
+    return cdss
+
+
+def _get_regulatory_domain_sequence(
+    dom: RegulatoryDomainFact,
+    domain_types: dict[int, list[str]],
+    stop_codons: list[str],
+    sign_2_idxs: dict[bool, list[int]],
+    km_2_idxs: dict[float, list[int]],
+    regul_2_idxs: dict[tuple[Molecule, bool], list[int]],
+    idx_2_one_codon: dict[int, str],
+    idx_2_two_codon: dict[int, str],
+) -> str:
+    # regulatory domain type: 3
+    # idx0: - (1 codon, no stop)
+    # idx1: Km (1 codon, no stop)
+    # idx2: sign (1 codon, no stop)
+    # idx3: effector (2 codon, 2nd can be stop)
+    # is_transmembrane defined by effector (int/ext molecules)
+    dom_seq = random.choice(domain_types[3])
+    i0_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    if dom.km is not None:
+        val = closest_value(values=km_2_idxs, key=dom.km)
+        i1 = random.choice(km_2_idxs[val])
+        i1_seq = idx_2_one_codon[i1]
+    else:
+        i1_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    if dom.is_inhibiting is not None:
+        i2 = random.choice(sign_2_idxs[not dom.is_inhibiting])
+        i2_seq = idx_2_one_codon[i2]
+    else:
+        i2_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    i3 = random.choice(regul_2_idxs[(dom.effector, dom.is_transmembrane)])
+    i3_seq = idx_2_two_codon[i3]
+
+    return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
+
+
+def _get_transporter_domain_sequence(
+    dom: TransporterDomainFact,
+    domain_types: dict[int, list[str]],
+    stop_codons: list[str],
+    sign_2_idxs: dict[bool, list[int]],
+    km_2_idxs: dict[float, list[int]],
+    vmax_2_idxs: dict[float, list[int]],
+    trnsp_2_idxs: dict[Molecule, list[int]],
+    idx_2_one_codon: dict[int, str],
+    idx_2_two_codon: dict[int, str],
+) -> str:
+    # transporter domain type: 2
+    # idx0: Vmax (1 codon, no stop)
+    # idx1: Km (1 codon, no stop)
+    # idx2: is_exporter (1 codon, no stop)
+    # idx3: molecule (2 codon, 2nd can be stop)
+    dom_seq = random.choice(domain_types[2])
+
+    if dom.vmax is not None:
+        val = closest_value(values=vmax_2_idxs, key=dom.vmax)
+        i0 = random.choice(vmax_2_idxs[val])
+        i0_seq = idx_2_one_codon[i0]
+    else:
+        i0_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    if dom.km is not None:
+        val = closest_value(values=km_2_idxs, key=dom.km)
+        i1 = random.choice(km_2_idxs[val])
+        i1_seq = idx_2_one_codon[i1]
+    else:
+        i1_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    if dom.is_exporter is not None:
+        i2 = random.choice(sign_2_idxs[dom.is_exporter])
+        i2_seq = idx_2_one_codon[i2]
+    else:
+        i2_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    i3 = random.choice(trnsp_2_idxs[dom.molecule])
+    i3_seq = idx_2_two_codon[i3]
+
+    return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
+
+
+def _get_catalytic_domain_sequence(
+    dom: CatalyticDomainFact,
+    domain_types: dict[int, list[str]],
+    stop_codons: list[str],
+    sign_2_idxs: dict[bool, list[int]],
+    km_2_idxs: dict[float, list[int]],
+    vmax_2_idxs: dict[float, list[int]],
+    catal_2_idxs: dict[tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]],
+    idx_2_one_codon: dict[int, str],
+    idx_2_two_codon: dict[int, str],
+) -> str:
+    # catalytic domain type: 1
+    # idx0: Vmax (1 codon, no stop)
+    # idx1: Km (1 codon, no stop)
+    # idx2: direction (1 codon, no stop)
+    # idx3: reaction (2 codon, 2nd can be stop)
+    dom_seq = random.choice(domain_types[1])
+
+    if dom.vmax is not None:
+        val = closest_value(values=vmax_2_idxs, key=dom.vmax)
+        i0 = random.choice(vmax_2_idxs[val])
+        i0_seq = idx_2_one_codon[i0]
+    else:
+        i0_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    if dom.km is not None:
+        val = closest_value(values=km_2_idxs, key=dom.km)
+        i1 = random.choice(km_2_idxs[val])
+        i1_seq = idx_2_one_codon[i1]
+    else:
+        i1_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    react = (tuple(dom.substrates), tuple(dom.products))
+    is_fwd = True
+    if react not in catal_2_idxs:
+        react = (tuple(dom.products), tuple(dom.substrates))
+        is_fwd = False
+    i2 = random.choice(sign_2_idxs[is_fwd])
+    i2_seq = idx_2_one_codon[i2]
+    i3 = random.choice(catal_2_idxs[react])
+    i3_seq = idx_2_two_codon[i3]
+
+    return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq

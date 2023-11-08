@@ -315,7 +315,7 @@ class DomainFact:
 
 class CatalyticDomain(Domain):
     """
-    Container holding the specification for a catalytic domain.
+    Container for describing a catalytic domain.
 
     Arguments:
         reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
@@ -344,77 +344,119 @@ class CatalyticDomain(Domain):
     def __repr__(self) -> str:
         ins = ",".join(str(d) for d in self.substrates)
         outs = ",".join(str(d) for d in self.products)
-        return f"CatalyticDomain({ins}<->{outs},Km={self.km:.2e},Vmax{self.vmax:.2e})"
+        return f"CatalyticDomain({ins}<->{outs},Km={self.km:.2e},Vmax={self.vmax:.2e})"
 
     def __str__(self) -> str:
         subs_cnts = Counter(str(d) for d in self.substrates)
         prods_cnts = Counter([str(d) for d in self.products])
         subs_str = " + ".join([f"{d} {k}" for k, d in subs_cnts.items()])
         prods_str = " + ".join([f"{d} {k}" for k, d in prods_cnts.items()])
-        spec = self.vmax / self.km
-        return f"{subs_str} <-> {prods_str} | spec {spec:.2e}"
+        return f"{subs_str} <-> {prods_str} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
 class CatalyticDomainFact(DomainFact):
     """
-    Container for describing a catalytic domain.
+    Container for generating a catalytic domain.
 
     Arguments:
         reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
             For stoichiometric coefficients > 1, list the molecule species multiple times.
+        km: Desired Michaelis Menten constant of the transport (in mol).
+        vmax: Desired Maximum velocity of the transport (in mol per time step).
+
+    `km` and `vmax` are target values.
+    Due to the way how codons are sampled for specific floats, the actual values for `km` and `vmax` might differ.
+    The closest available value to the given value will be used.
+
+    If any optional argument is left out (`None`) it will be sampled randomly.
     """
 
-    def __init__(self, reaction: tuple[list[Molecule], list[Molecule]]):
+    def __init__(
+        self,
+        reaction: tuple[list[Molecule], list[Molecule]],
+        km: float | None = None,
+        vmax: float | None = None,
+    ):
         substrates, products = reaction
         self.substrates = sorted(substrates)
         self.products = sorted(products)
-
-
-class TransporterDomain(Domain):
-    """
-    Container holding the specification for a transporter domain.
-
-    Arguments:
-        molecule: The molecule species which can be transported into or out of the cell by this domain.
-        km: Michaelis Menten constant of the transport (in mol).
-        vmax: Maximum velocity of the transport (in mol per time step).
-
-    The transporter domain is described for intracellular molecules of this molecule species.
-    The reciprocal of Km is used for extracellular molecules of this molecule species.
-    Vmax stays the same.
-    """
-
-    def __init__(self, molecule: Molecule, km: float, vmax: float, **kwargs: int):
-        super().__init__(**kwargs)
-        self.molecule = molecule
         self.km = km
         self.vmax = vmax
 
-    def __repr__(self) -> str:
-        return (
-            f"TransporterDomain({self.molecule},Km={self.km:.2e},Vmax={self.vmax:.2e})"
-        )
 
-    def __str__(self) -> str:
-        spec = self.vmax / self.km
-        return f"{self.molecule} transporter | spec {spec:.2e}"
-
-
-class TransporterDomainFact(DomainFact):
+class TransporterDomain(Domain):
     """
     Container for describing a transporter domain.
 
     Arguments:
         molecule: The molecule species which can be transported into or out of the cell by this domain.
+        km: Michaelis Menten constant of the transport (in mol).
+        vmax: Maximum velocity of the transport (in mol per time step).
+        is_exporter: Whether the transporter is exporting this molecule species out of the cell.
+
+    `is_exporter` is only relevant in combination with other domains on the same protein.
+    It defines in which transport direction this domain is energetically coupled with others.
     """
 
-    def __init__(self, molecule: Molecule):
+    def __init__(
+        self,
+        molecule: Molecule,
+        km: float,
+        vmax: float,
+        is_exporter: bool,
+        **kwargs: int,
+    ):
+        super().__init__(**kwargs)
         self.molecule = molecule
+        self.km = km
+        self.vmax = vmax
+        self.is_exporter = is_exporter
+
+    def __repr__(self) -> str:
+        sign = "exporter" if self.is_exporter else "importer"
+        return f"TransporterDomain({self.molecule},Km={self.km:.2e},Vmax={self.vmax:.2e},{sign})"
+
+    def __str__(self) -> str:
+        sign = "exporter" if self.is_exporter else "importer"
+        return f"{self.molecule} {sign} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
+
+
+class TransporterDomainFact(DomainFact):
+    """
+    Container for generating a transporter domain.
+
+    Arguments:
+        molecule: The molecule species which can be transported into or out of the cell by this domain.
+        km: Desired Michaelis Menten constant of the transport (in mol).
+        vmax: Desired Maximum velocity of the transport (in mol per time step).
+        is_exporter: Whether the transporter is exporting this molecule species out of the cell.
+
+    `is_exporter` is only relevant in combination with other domains on the same protein.
+    It defines in which transport direction this domain is energetically coupled with others.
+
+    `km` and `vmax` are target values.
+    Due to the way how codons are sampled for specific floats, the actual values for `km` and `vmax` might differ.
+    The closest available value to the given value will be used.
+
+    If any optional argument is left out (`None`) it will be sampled randomly.
+    """
+
+    def __init__(
+        self,
+        molecule: Molecule,
+        km: float | None = None,
+        vmax: float | None = None,
+        is_exporter: bool | None = None,
+    ):
+        self.molecule = molecule
+        self.km = km
+        self.vmax = vmax
+        self.is_exporter = is_exporter
 
 
 class RegulatoryDomain(Domain):
     """
-    Container holding the specification for a regulatory domain.
+    Container for describing a regulatory domain.
 
     Arguments:
         effector: The molecule species which will be the effector molecule.
@@ -455,22 +497,38 @@ class RegulatoryDomain(Domain):
 
 class RegulatoryDomainFact(DomainFact):
     """
-    Container for describing a regulatory domain.
+    Container for generating a regulatory domain.
 
     Arguments:
         effector: The molecule species which will be the effector molecule.
         is_transmembrane: Whether this is also a transmembrane domain.
             If true, the domain will react to extracellular molecules instead of intracellular ones.
+        km: Desired Michaelis Menten constant of the transport (in mol).
+        is_inhibiting: Whether the effector will have an activating or inhibiting effect.
+
+    `km` is a target value.
+    Due to the way how codons are sampled for specific floats, the actual value for `km` might differ.
+    The closest available value to the given value will be used.
+
+    If any optional argument is left out (`None`) it will be sampled randomly.
     """
 
-    def __init__(self, effector: Molecule, is_transmembrane: bool):
+    def __init__(
+        self,
+        effector: Molecule,
+        is_transmembrane: bool,
+        is_inhibiting: bool | None = None,
+        km: float | None = None,
+    ):
         self.effector = effector
         self.is_transmembrane = is_transmembrane
+        self.is_inhibiting = is_inhibiting
+        self.km = km
 
 
 class Protein:
     """
-    Container class to carry domains of a protein.
+    Container for describing a protein.
 
     Arguments:
         domains: All domains of the protein
@@ -506,7 +564,11 @@ class Protein:
         self.is_fwd = is_fwd
 
     def __repr__(self) -> str:
-        kwargs = {"domains": self.domains}
+        kwargs = {
+            "cds_start": self.cds_start,
+            "cds_end": self.cds_end,
+            "domains": self.domains,
+        }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
 
@@ -517,7 +579,7 @@ class Protein:
 
 class ProteinFact:
     """
-    Container for describing a protein
+    Container for generating a protein
 
     Arguments:
         domain_facts: List of all domains, each described by a domain factory.

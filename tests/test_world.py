@@ -6,6 +6,128 @@ import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES
 
 
+def test_consistency_from_genome_generation_to_proteome():
+    n_tries = 5
+    n_fails = 1
+    mi = ms.Molecule("i", 10 * 1e3)
+    mj = ms.Molecule("j", 10 * 1e3)
+    mk = ms.Molecule("k", 10 * 1e3)
+    molecules = [mi, mj, mk]
+    reactions = [([mi], [mj]), ([mi, mj], [mk])]
+    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
+    world = ms.World(chemistry=chemistry)
+
+    trsnp_dom = ms.TransporterDomainFact(
+        molecule=mi, is_exporter=False, km=1.0, vmax=1.0
+    )
+    failed = 0
+    for i in range(n_tries):
+        try:
+            prtm = [ms.ProteinFact(domain_facts=trsnp_dom)]
+            idxs = world.spawn_cells(
+                genomes=[world.generate_genome(proteome=prtm, size=27)]
+            )
+
+            assert len(idxs) == 1
+            ci = idxs[0]
+            cell = world.get_cell(by_idx=ci)
+            proteome = cell.get_proteome(world=world)
+            assert len(proteome) == 1, proteome
+            p0 = proteome[0]
+            assert len(p0.domains) == 1, p0.domains
+            d0 = p0.domains[0]
+
+            assert isinstance(d0, ms.TransporterDomain)
+            assert d0.molecule is mi
+            assert abs(d0.vmax - 1.0) < 0.5
+            assert abs(d0.km - 1.0) < 0.5
+            assert not d0.is_exporter
+
+            assert world.kinetics.N[ci][0][0] == 1, world.kinetics.N[ci]
+            assert world.kinetics.N[ci][0][3] == -1, world.kinetics.N[ci]
+            assert abs(world.kinetics.Vmax[ci][0] - 1.0) < 0.5
+            assert abs(world.kinetics.Kmf[ci][0] - 1.0) < 0.5
+            assert abs(world.kinetics.Kmb[ci][0] - 1.0) < 0.5
+        except AssertionError as err:
+            failed += 1
+            msg = f"Failed {failed} times after {i + 1} tries"
+            if failed > n_fails:
+                raise AssertionError(msg) from err
+
+    world.kill_cells(cell_idxs=list(range(world.n_cells)))
+
+    catal_dom = ms.CatalyticDomainFact(reaction=([mj], [mi]), km=1.0, vmax=1.0)
+    failed = 0
+    for i in range(n_tries):
+        try:
+            prtm = [ms.ProteinFact(domain_facts=catal_dom)]
+            idxs = world.spawn_cells(
+                genomes=[world.generate_genome(proteome=prtm, size=27)]
+            )
+
+            assert len(idxs) == 1
+            ci = idxs[0]
+            cell = world.get_cell(by_idx=ci)
+            proteome = cell.get_proteome(world=world)
+            assert len(proteome) == 1, proteome
+            p0 = proteome[0]
+            assert len(p0.domains) == 1
+            d0 = p0.domains[0]
+
+            assert isinstance(d0, ms.CatalyticDomain)
+            assert d0.substrates[0] is mj
+            assert d0.products[0] is mi
+            assert abs(d0.vmax - 1.0) < 0.5
+            assert abs(d0.km - 1.0) < 0.5
+
+            assert world.kinetics.N[ci][0][0] == 1, world.kinetics.N[ci]
+            assert world.kinetics.N[ci][0][1] == -1, world.kinetics.N[ci]
+            assert abs(world.kinetics.Vmax[ci][0] - 1.0) < 0.5
+            assert abs(world.kinetics.Kmf[ci][0] - 1.0) < 0.5
+            assert abs(world.kinetics.Kmb[ci][0] - 1.0) < 0.5
+        except AssertionError as err:
+            failed += 1
+            msg = f"Failed {failed} times after {i + 1} tries"
+            if failed > n_fails:
+                raise AssertionError(msg) from err
+
+    world.kill_cells(cell_idxs=list(range(world.n_cells)))
+
+    reg_dom = ms.RegulatoryDomainFact(
+        effector=mk, is_transmembrane=True, is_inhibiting=True, km=1.0
+    )
+    failed = 0
+    for i in range(n_tries):
+        try:
+            prtm = [ms.ProteinFact(domain_facts=[reg_dom, catal_dom])]
+            idxs = world.spawn_cells(
+                genomes=[world.generate_genome(proteome=prtm, size=48)]
+            )
+
+            assert len(idxs) == 1
+            ci = idxs[0]
+            cell = world.get_cell(by_idx=ci)
+            proteome = cell.get_proteome(world=world)
+            assert len(proteome) >= 1, proteome
+            p0 = proteome[0]
+            assert len(p0.domains) >= 2, p0.domains
+
+            i = 0 if isinstance(p0.domains[0], ms.RegulatoryDomain) else 1
+            assert isinstance(p0.domains[i], ms.RegulatoryDomain)
+            assert p0.domains[i].effector is mk
+            assert abs(p0.domains[i].km - 1.0) < 0.5
+            assert p0.domains[i].is_inhibiting
+            assert p0.domains[i].is_transmembrane
+            assert world.kinetics.A[ci][0][5] == -1, world.kinetics.A[ci]
+            assert abs(world.kinetics.Kmr[ci][0] - 1.0) < 0.5
+        except AssertionError as err:
+            print(err)
+            failed += 1
+            msg = f"Failed {failed} times after {i + 1} tries"
+            if failed > n_fails:
+                raise AssertionError(msg) from err
+
+
 def test_diffuse():
     # fmt: off
     layer0 = [

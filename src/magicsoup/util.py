@@ -1,4 +1,4 @@
-from typing import TypeVar, Sequence
+from typing import TypeVar, Sequence, Iterable
 from itertools import product
 import string
 import random
@@ -9,6 +9,11 @@ from magicsoup.constants import ALL_NTS
 def round_down(d: float, to: int = 3) -> int:
     """Round down to declared integer"""
     return math.floor(d / to) * to
+
+
+def closest_value(values: Iterable[float], key: float) -> float:
+    """Get closest value to key in values"""
+    return min(values, key=lambda d: abs(d - key))
 
 
 def randstr(n: int = 12) -> str:

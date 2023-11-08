@@ -49,6 +49,16 @@ class _LogNormWeightMapFact:
         """t: long (c, p, d)"""
         return self.weights[t]
 
+    def inverse(self) -> dict[float, list[int]]:
+        flt_map: dict[float, list[int]] = {}
+        M = self.weights.to("cpu")
+        for i in range(1, M.size(0)):
+            v = M[i].item()
+            if v not in flt_map:
+                flt_map[v] = []
+            flt_map[v].append(i)
+        return flt_map
+
 
 class _SignMapFact:
     """
@@ -164,13 +174,13 @@ class _ReactionMapFact(_VectorMapFact):
         n_signals: int,
     ) -> dict[tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]]:
         react_map = {}
+        M = self.M.to("cpu")
         for subs, prods in reactions:
             t = torch.zeros(n_signals)
             for sub in subs:
                 t[molmap[sub]] -= 1
             for prod in prods:
                 t[molmap[prod]] += 1
-            M = self.M.to("cpu")
             idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
             react_map[(tuple(subs), tuple(prods))] = idxs
         return react_map
@@ -193,12 +203,10 @@ class _TransporterMapFact(_VectorMapFact):
         n_signals = 2 * n_molecules
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_signals)]
+        vectors = [[0.0] * n_signals for _ in range(n_molecules)]
         for mi in range(n_molecules):
-            vectors[mi][mi] = 1
-            vectors[mi][mi + n_molecules] = -1
-            vectors[mi + n_molecules][mi] = -1
-            vectors[mi + n_molecules][mi + n_molecules] = 1
+            vectors[mi][mi] = -1
+            vectors[mi][mi + n_molecules] = 1
 
         super().__init__(
             vectors=vectors,
@@ -210,8 +218,8 @@ class _TransporterMapFact(_VectorMapFact):
 
     def inverse(self, molecules: list[Molecule]) -> dict[Molecule, list[int]]:
         trnsp_map = {}
+        M = self.M.to("cpu")
         for mi, mol in enumerate(molecules):
-            M = self.M.to("cpu")
             idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
             trnsp_map[mol] = idxs
         return trnsp_map
@@ -247,12 +255,17 @@ class _RegulatoryMapFact(_VectorMapFact):
             zero_value=zero_value,
         )
 
-    def inverse(self, molecules: list[Molecule]) -> dict[Molecule, list[int]]:
+    def inverse(
+        self, molecules: list[Molecule]
+    ) -> dict[tuple[Molecule, bool], list[int]]:
+        n = len(molecules)
         reg_map = {}
+        M = self.M.to("cpu")
         for mi, mol in enumerate(molecules):
-            M = self.M.to("cpu")
-            idxs = torch.argwhere(M[:, mi] != 0).flatten().tolist()
-            reg_map[mol] = idxs
+            idxs_int = torch.argwhere(M[:, mi] != 0).flatten().tolist()
+            idxs_ext = torch.argwhere(M[:, mi + n] != 0).flatten().tolist()
+            reg_map[(mol, False)] = idxs_int
+            reg_map[(mol, True)] = idxs_ext
         return reg_map
 
 
@@ -296,7 +309,7 @@ class Kinetics:
 
     Attributes on this class describe cell parameters:
 
-    - `Kmf`, `Kmb`, `Kmr` Affinities to every signal that is processed by each protein in every cell (c, p, s).
+    - `Kmf`, `Kmb`, `Kmr` Affinities to all signals processed by each protein in every cell (c, p).
       There are affinities for (f)orward and (b)ackward reactions, and for (r)egulatory domains.
     - `Vmax` Maximum velocities of every protein in every cell (c, p).
     - `E` Standard reaction Gibbs free energy of every protein in every cell (c, p).
@@ -437,6 +450,8 @@ class Kinetics:
         )
 
         # derive inverse maps for genome generation
+        self.km_2_idxs = self.km_map.inverse()
+        self.vmax_2_idxs = self.vmax_map.inverse()
         self.sign_2_idxs = self.sign_map.inverse()
         self.trnsp_2_idxs = self.transport_map.inverse(molecules=molecules)
         self.regul_2_idxs = self.effector_map.inverse(molecules=molecules)
@@ -459,9 +474,42 @@ class Kinetics:
             A list of objects that represent proteins with domains and their
             specifications.
         """
-        N_d, A_d, Km_d, Vmax_d, dom_types = self._get_proteome_tensors(
+        # get proteome tensors
+        dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
             proteomes=[[d[0] for d in proteome]]
         )
+
+        # identify domain types
+        # 1=catalytic, 2=transporter, 3=regulatory
+        is_catal = dom_types == 1  # (c, p, d)
+        is_trnsp = dom_types == 2  # (c, p, d)
+        is_reg = dom_types == 3  # (c, p, d)
+
+        # map indices of domain specifications to concrete values
+        # idx0 is a 2-codon index specific for every domain type (n=4096)
+        # idx1-3 are 1-codon used for the floats (n=64)
+        # some values are not defined for certain domain types
+        # setting their indices to 0 lets them map to empty values (0-vector, NaN)
+        catal_lng = (is_catal).long()
+        trnsp_lng = (is_trnsp).long()
+        reg_lng = (is_reg).long()
+        not_reg_lng = (~is_reg).long()
+
+        # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
+        Vmax_d = self.vmax_map(idxs0 * not_reg_lng)  # float (c, p, d)
+        Km_d = self.km_map(idxs1)  # float (c, p, d)
+        signs = self.sign_map(idxs2)  # float (c, p, d)
+
+        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
+        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c, p, d, s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c, p, d, s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # float (c, p, d, s)
+
+        # N (c, p, d, s)
+        N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
+
+        # A (c, p, d, s)
+        A_d = torch.einsum("cpds,cpd->cpds", effectors, signs)
 
         Nf_d = torch.where(N_d < 0.0, -N_d, 0.0)
         Nb_d = torch.where(N_d > 0.0, N_d, 0.0)
@@ -503,6 +551,7 @@ class Kinetics:
                             molecule=self.mi_2_mol[min(mis)],
                             km=Km_d[0][pi][di].item(),
                             vmax=Vmax_d[0][pi][di].item(),
+                            is_exporter=bool(N_d[0][pi][di][min(mis)] < 0),
                             **kwargs,
                         )
                     )
@@ -866,53 +915,6 @@ class Kinetics:
         xx[involved_prots & zero_prots] = 0.0
 
         return xx, involved_prots
-
-    def _get_proteome_tensors(
-        self,
-        proteomes: list[list[list[DomainSpecType]]],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        # separate domain specifications into different tensors
-        dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
-            proteomes=proteomes
-        )
-
-        # identify domain types
-        # 1=catalytic, 2=transporter, 3=regulatory
-        catal_mask = (dom_types == 1).float()
-        trnsp_mask = (dom_types == 2).float()
-        reg_mask = (dom_types == 3).float()
-        catal_trnsp_mask = ((dom_types == 1) | (dom_types == 2)).float()
-
-        # map indices of domain specifications to concrete values
-        # idx0 is a 2-codon index specific for every domain type (n=4096)
-        # idx1-3 are 1-codon used for the floats (n=64)
-
-        # map indices of domain specifications to scalars/vectors
-        # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        Vmaxs = self.vmax_map(idxs0)  # float (c, p, d)
-        Kms = self.km_map(idxs1)  # float (c, p, d)
-        signs = self.sign_map(idxs2)  # float (c, p, d)
-
-        reacts = self.reaction_map(idxs3)  # float (c, p, d, s)
-        trnspts = self.transport_map(idxs3)  # float (c, p, d, s)
-        effectors = self.effector_map(idxs3)  # float (c, p, d, s)
-
-        # N (c, p, d, s)
-        N_r = torch.einsum("cpds,cpd->cpds", reacts, catal_mask)
-        N_t = torch.einsum("cpds,cpd->cpds", trnspts, trnsp_mask)
-        N_d = torch.einsum("cpds,cpd->cpds", (N_r + N_t), signs)
-
-        # A (c, p, d, s)
-        A_r = torch.einsum("cpds,cpd->cpds", effectors, reg_mask)
-        A_d = torch.einsum("cpds,cpd->cpds", A_r, signs)
-
-        # Km (c, p, d)
-
-        # Vmax_d (c, p, d)
-        Vmax_d = Vmaxs * catal_trnsp_mask
-
-        return N_d, A_d, Kms, Vmax_d, dom_types
 
     def _collect_proteome_idxs(
         self,
