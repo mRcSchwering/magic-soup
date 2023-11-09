@@ -20,9 +20,9 @@ def test_molecule_amount_integrity_during_diffusion():
 def test_molecule_amount_integrity_during_reactions():
     # X and Y can react back and forth but X + Y <-> Z
     # so if Z is counted as 2, n should stay equal
-    mx = ms.Molecule("x", 10 * 1e3)
-    my = ms.Molecule("y", 20 * 1e3)
-    mz = ms.Molecule("z", 30 * 1e3)
+    mx = ms.Molecule("mx", 10 * 1e3)
+    my = ms.Molecule("my", 20 * 1e3)
+    mz = ms.Molecule("mz", 30 * 1e3)
     molecules = [mx, my, mz]
     reactions = [([mx], [my]), ([mx, my], [mz])]
 
@@ -86,9 +86,9 @@ def test_genome_generation_consistency():
     n_tries = 5
     retry = Retry(n_allowed_fails=1)
 
-    mi = ms.Molecule("i", 10 * 1e3)
-    mj = ms.Molecule("j", 10 * 1e3)
-    mk = ms.Molecule("k", 10 * 1e3)
+    mi = ms.Molecule("mi", 10 * 1e3)
+    mj = ms.Molecule("mj", 10 * 1e3)
+    mk = ms.Molecule("mk", 10 * 1e3)
     molecules = [mi, mj, mk]
     reactions = [([mi], [mj]), ([mi, mj], [mk])]
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
