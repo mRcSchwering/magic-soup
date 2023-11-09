@@ -371,8 +371,6 @@ class World:
         n_p_pads = len(cdss) + 1
         n_d_pads = sum(len(d) + 1 for d in cdss)
 
-        # TODO: check that padding cant introduce any artifacts
-
         n_pad_nts = size - req_nts
         pad_size = n_pad_nts / (n_p_pads * 0.7 + n_d_pads * 0.3)
         d_pad_size = round_down(pad_size * 0.3, to=3)
@@ -1218,7 +1216,7 @@ def _get_genome_sequences(
     regul_2_idxs: dict[tuple[Molecule, bool], list[int]],
 ) -> list[list[str]]:
     # spec: dom_type, idx0, idx1, idx2, idx3
-    # dom_type = 1 codon, idx0-2 = 1 codon, idx3 = 2 codons
+    # dom_type = 2 codon, idx0-2 = 1 codon, idx3 = 2 codons
     # domain_types: type int 1-3 -> list of 1 codon strs (no stop)
     # idx_2_one_codon: index int -> 1 codon str (no stop)
     # idx_2_two_codon: index int -> 2 codons str (2nd can be stop)

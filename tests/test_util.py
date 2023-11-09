@@ -1,3 +1,4 @@
+from typing import Iterable
 import pytest
 import magicsoup.util as util
 
@@ -54,3 +55,20 @@ def test_random_genome(s, excl):
 
     for seq in excl:
         assert seq not in g
+
+
+@pytest.mark.parametrize(
+    "vals, key, exp",
+    [
+        ([1.0, 1.4, 1.8], 1.5, 1.4),
+        ([1.0, 1.4, 1.6], 1.5, 1.4),
+        ([1.0, 1.4, 1.6], -100.0, 1.0),
+        ([1.0, 1.4, 1.6], 100.0, 1.6),
+        ([-1.0, 1.4, 1.6], 0.0, -1.0),
+        ({0.1: "a", 0.2: "b"}, 0.0, 0.1),
+        ({3: "a", 4: "b"}, 2, 3),
+    ],
+)
+def test_closest_value(vals: Iterable, key: float, exp: float):
+    res = util.closest_value(values=vals, key=key)
+    assert res == exp

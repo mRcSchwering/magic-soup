@@ -1,10 +1,7 @@
-import pytest
 import torch
+import random
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
-
-# mark all tests in this module as slow
-pytestmark = pytest.mark.slow
 
 
 def _get_kinetics(n_computations=1) -> ms.Kinetics:
@@ -18,6 +15,58 @@ def _get_kinetics(n_computations=1) -> ms.Kinetics:
         vector_enc_size=3904,
     )
     return kinetics
+
+
+def test_cell_params_are_always_set_reproduceably():
+    n_cells = 100
+    n_tries = 10
+
+    for i in range(n_tries):
+        proteomes = []
+        for _ in range(n_cells):
+            proteins = []
+            for _ in range(random.choice(list(range(20)))):
+                domains = []
+                for _ in range(random.choice([1, 1, 2])):
+                    domtype = random.choice([1, 2, 3])
+                    i0 = random.choice(list(range(61)))
+                    i1 = random.choice(list(range(61)))
+                    i2 = random.choice(list(range(61)))
+                    i3 = random.choice(list(range(3904)))
+                    domains.append(((domtype, i0, i1, i2, i3), 1, 2))
+                proteins.append(domains)
+            proteomes.append(proteins)
+
+        n_max_prots = max(len(d) for d in proteomes)
+        idxs = list(range(n_cells))
+
+        kinetics = _get_kinetics()
+        kinetics.increase_max_cells(by_n=n_cells)
+        kinetics.increase_max_proteins(max_n=n_max_prots)
+        kinetics.set_cell_params(cell_idxs=idxs, proteomes=proteomes)
+
+        N_orig = kinetics.N.clone()
+        Nb_orig = kinetics.Nb.clone()
+        Nf_orig = kinetics.Nf.clone()
+        A_orig = kinetics.A.clone()
+        Kmf_orig = kinetics.Kmf.clone()
+        Kmb_orig = kinetics.Kmb.clone()
+        Kmr_orig = kinetics.Kmr.clone()
+        Vmax_orig = kinetics.Vmax.clone()
+
+        kinetics.remove_cell_params(keep=torch.full((n_cells,), False))
+        kinetics.increase_max_cells(by_n=n_cells)
+        kinetics.increase_max_proteins(max_n=n_max_prots)
+        kinetics.set_cell_params(cell_idxs=idxs, proteomes=proteomes)
+
+        assert torch.equal(kinetics.N, N_orig), i
+        assert torch.equal(kinetics.Nb, Nb_orig), i
+        assert torch.equal(kinetics.Nf, Nf_orig), i
+        assert torch.equal(kinetics.A, A_orig), i
+        assert torch.equal(kinetics.Kmf, Kmf_orig), i
+        assert torch.equal(kinetics.Kmb, Kmb_orig), i
+        assert torch.equal(kinetics.Kmr, Kmr_orig), i
+        assert torch.equal(kinetics.Vmax, Vmax_orig), i
 
 
 def test_equilibrium_is_reached():
@@ -167,3 +216,4 @@ def test_random_kinetics_dont_explode():
         assert not torch.any(X < 0.0), X[X < 0.0].min()
         assert not torch.any(X.isnan()), X.isnan().sum()
         assert torch.all(X.isfinite()), ~X.isfinite().sum()
+        assert torch.all(X < 10_000), X[X >= 10_000]
