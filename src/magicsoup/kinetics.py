@@ -720,6 +720,13 @@ class Kinetics:
         is_act = self.A > 0.0
         Vmax_adj = self.Vmax * self.n_comp_trim
 
+        # TODO: lower n_computations by being more clever
+        #       have all c,p Qs, see on which side they are now (bool)
+        #       do full integration, see on which side they are now (bool)
+        #       if they switched sides, they overshot
+        #       only repeat integration for overshooting ones
+        #       or remember by how much they overshot
+
         for i in range(self.n_computations):
             # catalytic activity
 
@@ -889,6 +896,7 @@ class Kinetics:
         # stoichiometric numbers are prepared
         # all non-involved fields are 0
         n = mask * N  # (c, p, s)
+        # TODO: is this still needed? already have Nf/Nb
 
         # proteins which have at least 1 non-zero stoichiometric number
         involved_prots = n.sum(2) != 0.0
@@ -896,6 +904,9 @@ class Kinetics:
         # proteins which have all zero signals or which
         # don't have at least 1 non-zero stoichiometric number
         zero_prots = x.isnan().all(2)
+        # TODO: I think here is an error
+        #       what if a protein does A + B <-> C
+        #       but A=1.0,B=0.0, then it should not be able to do fwd
 
         # (1) raise each signal to its stoichiometric number
         # then (2) multiply all over protein

@@ -1638,3 +1638,6 @@ def test_reduce_velocity_in_multiple_proteins():
 
     X1 = X0 + Xd
     assert not torch.any(X1 < 0.0)
+
+
+# TODO: tests specifically for signal integration

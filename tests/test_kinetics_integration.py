@@ -69,7 +69,70 @@ def test_cell_params_are_always_set_reproduceably():
         assert torch.equal(kinetics.Vmax, Vmax_orig), i
 
 
+def test_equilibrium_is_reached_with_zeros():
+    # P0: A + B <-> C | +5 kJ
+    # P1: 3A <-> C | -10 kJ
+    # t0: A = 3.0, others 0.0
+    # expected: A drops, B rises, C first rises then drops
+    # equilibrium has a lot of B, very little A and C, A > C
+
+    # TODO: Bug:
+    # so wie ich zZ _aggregate_signals mache wird A+B nicht richtig
+    # berechnet wenn einer der beiden (zB B) 0.0 ist
+    # wenn alle substrates 0.0 sind mache ich es richtig (deswegen geht der Transporer)
+    # aber wenn nur einer 0.0 ist wird das Protein trotzdem aktiv
+    # und dann werden widerrum alle Proteine bei der negativ-Korrektur abgeschaltet
+
+    # fmt: off
+
+    # concentrations (c, s)
+    X = torch.tensor([
+        [3.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ])
+
+    # reactions (c, p, s)
+    N = torch.tensor([[
+        [-1., -1.,  1.,  0.,  0.,  0.],
+        [-3.,  0.,  1.,  0.,  0.,  0.]]])
+    
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
+
+    # affinities (c, p)
+    Kmf = torch.tensor([[8.5, 1.2]])
+    Kmb = torch.tensor([[1.2, 5.9]])
+    Kmr = torch.zeros(1, 2)
+
+    # max velocities (c, p)
+    Vmax = torch.tensor([[0.3, 0.3]])
+
+    # allosterics (c, p, s)
+    A = torch.zeros(1, 2, 6)
+
+    # fmt: on
+
+    # test
+    kinetics = _get_kinetics(n_computations=11)
+    kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
+    kinetics.Kmf = Kmf
+    kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
+    kinetics.Vmax = Vmax
+    kinetics.A = A
+
+    for _ in range(100):
+        X = kinetics.integrate_signals(X=X)
+
+    assert 0.5 > X[0][0] > 0.0
+    assert 3.0 > X[0][1] > 2.0
+    assert 0.5 > X[0][2] > 0.0
+    assert X[0][0] > X[0][2]
+
+
 def test_equilibrium_is_reached():
+    # TODO: doublecheck this test + docs for this test
     # molecules should reach equilibrium after a few steps
     # with Vmax > 1.0 higher order reactions cant reach equilibrium
     # because they overshoot
@@ -117,6 +180,8 @@ def test_equilibrium_is_reached():
 
     # allosterics (c, p, s)
     A = torch.zeros(2, 3, 4)
+
+    # fmt: on
 
     # test
     kinetics = _get_kinetics(n_computations=11)

@@ -256,6 +256,10 @@ class World:
 
         Returns:
             List of tuples of cell indexes for each unique neighboring pair.
+
+        Returned neighbors are unique.
+        So, _e.g._ return value `[(1, 4)]` describes the neighbors cell A
+        with index 1 and cell B with index 4. `(4, 1)` is not returned.
         """
 
         if len(cell_idxs) == 0:
