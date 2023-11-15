@@ -15,6 +15,7 @@ nav:
   - "tutorials.md"
   - "reference.md"
   - "other_simulations.md"
+  - "supporting_figures.md"
 
 plugins:
   - search

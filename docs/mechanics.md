@@ -112,7 +112,9 @@ and $A + D \rightleftharpoons B + C$ if not.
 
 ![reaction equilibrium](./img/reaction_equilibrium.png)
 
-_Molecule concentrations in 2 cells with one enzyme each. On the left, A $\rightleftharpoons$ B is catalyzed, which requires 10kJ. Thus, the reaction progresses to the left and more B is converted to A. On the right, the reaction is energetically coupled with C $\rightleftharpoons$ D which releases 20kJ. So, more A is converted to B._
+_Molecule concentrations in 2 cells.
+There are catalytic domains for A + B $\rightleftharpoons$ C | 5kJ and 3A $\rightleftharpoons$ C | -10kJ.
+On the left a cell with one protein that couples both domains, on the right a cell with two proteins each containing one of the two domains._
 
 Transporter domains are also involved this way.
 A transporter is seen as a reaction that converts an intracellular molecule to its extracellular version (and _vice versa_).
