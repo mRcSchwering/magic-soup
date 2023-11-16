@@ -37,6 +37,7 @@ Currently, there are three domain types: _catalytic, transporter, regulatory_.
 Each domain consists of a region of genetic code that defines the domain type itself
 and several regions that define its further specifications.
 What these specifications are depends on the domain type.
+There are some example transcriptomes in [supporting figures](./supporting_figures.md#transcriptomes).
 
 _Catalytic_ domains can catalyze one reaction.
 All possible reactions are defined in the simulation's chemistry (see [Chemistry](#chemistry)).
@@ -99,6 +100,7 @@ As further described in [Kinetics](#kinetics) the [reaction quotient](https://en
 always moves towards $K_e$.
 So, reactions tend to be favourable into the direction which deconstructs high energy molecules
 and constructs low energy molecules.
+Some implications are shown in [supporting figures](./supporting_figures.md#equilibrium-constants).
 
 However, all reactions catalyzed by the same protein are considered to be energetically coupled.
 All domains are considered when calculating $\Delta G_0$.
@@ -112,9 +114,12 @@ and $A + D \rightleftharpoons B + C$ if not.
 
 ![reaction equilibrium](./img/reaction_equilibrium.png)
 
-_Molecule concentrations in 2 cells.
-There are catalytic domains for A + B $\rightleftharpoons$ C | 5kJ and 3A $\rightleftharpoons$ C | -10kJ.
-On the left a cell with one protein that couples both domains, on the right a cell with two proteins each containing one of the two domains._
+_Uncoupled and coupled catalysis over time.
+Molecule concentrations inside a cell while it catalyzes 3A $\rightleftharpoons$ C | -10 kJ 
+and A + B $\rightleftharpoons$ C | 5 kJ each step.
+Left shows a cell with a single protein with 2 domains which are energetically coupled
+as 4A + B $\rightleftharpoons$ 2C | -5 kJ.
+Right shows a cell with 2 proteins with a single domain each for both reactions respectively._
 
 Transporter domains are also involved this way.
 A transporter is seen as a reaction that converts an intracellular molecule to its extracellular version (and _vice versa_).
@@ -122,7 +127,6 @@ For a transporter $\Delta G_0$ is always zero only $Q$ drives the reaction.
 Thus, a transporter can drive a reaction while molecules are allowed to diffuse along
 their concentration gradient, or a reaction might drive a transporter to pump molecules
 against their concentration gratient.
-
 
 ## Kinetics
 
@@ -239,13 +243,14 @@ $[A]_l$ is the concentration of activator $l$ with stoichiometric coefficient $n
 and $[I]_k$ is the concentration of inhibitor $k$ with stoichiometric coefficient $n_k$.
 If there are no activators $a_{act} = 1$ and if there are no inhibitors $a_{inh} = 0$.
 Values for $K_{m,a}$ and $K_{m,i}$ are directly defined in the domain specifications.
+There are some kinetics examples in [supporting figures](./supporting_figures.md#simple-reaction-kinetics).
 
 When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
 are created, they are sampled from a log-uniform distribution with user defined boundaries.
 If there are multiple catalytic and transporter domains,
 activating regulatory domains, or inhibiting regulatory domains
 values for $v_{max}$, $K_m$, $K_{m,a}$, $K_{m,i}$ are averaged each.
-
+Resulting distributions are shown in [supporting figures](./supporting_figures.md#vmax-and-km-distributions).
 
 ## Implementation
 

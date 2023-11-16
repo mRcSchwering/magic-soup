@@ -10,7 +10,7 @@ For every cell the number proteins per genome, domains per protein, and coding n
 Coding nucleotides are nucleotides which are part of at least 1 domain.
 Dashed lines with numbers describe medians.
 There were 3 start and 3 stop codons.
-Each domain type appeared with a frequency of 10% in all 2 codon tuples._
+Each domain type appeared with a frequency of 1% in all 2 codon tuples._
 
 
 ![](./img/supporting/different_domain_probabilities.png)
@@ -30,7 +30,7 @@ For every cell the number proteins per genome, domains per protein, and coding n
 Coding nucleotides are nucleotides which are part of at least 1 domain.
 Dashed lines with numbers describe medians.
 Facetting labels on the right describe first the number of start codons, second the number of stop codons.
-Each domain type appeared with a frequency of 10% in all 2 codon tuples._
+Each domain type appeared with a frequency of 1% in all 2 codon tuples._
 
 ## Transcriptomes
 
@@ -171,8 +171,8 @@ _Uncoupled and coupled catalysis over time.
 Molecule concentrations inside a cell while it catalyzes 3A $\rightleftharpoons$ C | -10 kJ 
 and A + B $\rightleftharpoons$ C | 5 kJ each step.
 Left shows a cell with a single protein with 2 domains which are energetically coupled
-as 4A + B $\rightleftharpoons$ 2C | -5 kJ .
-Right shows a cell with 2 proteins with a single domain each for both reactions respectively.
+as 4A + B $\rightleftharpoons$ 2C | -5 kJ.
+Right shows a cell with 2 proteins with a single domain each for both reactions respectively._
 
 ![](./img/supporting/inhibited_exporter_kinetics.png)
 

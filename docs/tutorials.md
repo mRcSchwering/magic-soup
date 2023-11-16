@@ -236,9 +236,24 @@ There are some functions for mutating genomes already provided in the `ms.mutati
 Here, I am using [point_mutations()][magicsoup.mutations.point_mutations] to apply random
 point mutations with a rate of 1e-6 per nucleotide. 40% of them are InDels.
 
+This alone would only for vertical inheritance, which is very limiting.
+[recombinations()][magicsoup.mutations.recombinations] creates random recombinations
+between genome pairs.
+Here, we subject all neighbouring cells lateral gene transfer.
+
 ```python
 def mutate_cells(world: ms.World):
     mutated = ms.point_mutations(seqs=world.cell_genomes)
+    world.update_cells(genome_idx_pairs=mutated)
+
+    nghbrs = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
+    nghbr_genomes = [(world.cell_genomes[a], world.cell_genomes[b]) for a, b in nghbrs]
+    
+    mutated = []
+    for sa, sb, idx in ms.recombinations(seq_pairs=nghbr_genomes):
+        a, b = nghbrs[idx]
+        mutated.append((sa, a))
+        mutated.append((sb, b))
     world.update_cells(genome_idx_pairs=mutated)
 ```
 
@@ -304,6 +319,16 @@ def replicate_cells(world: ms.World, aca: int, hca: int):
 
 def mutate_cells(world: ms.World):
     mutated = ms.point_mutations(seqs=world.cell_genomes)
+    world.update_cells(genome_idx_pairs=mutated)
+
+    nghbrs = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
+    nghbr_genomes = [(world.cell_genomes[a], world.cell_genomes[b]) for a, b in nghbrs]
+    
+    mutated = []
+    for sa, sb, idx in ms.recombinations(seq_pairs=nghbr_genomes):
+        a, b = nghbrs[idx]
+        mutated.append((sa, a))
+        mutated.append((sb, b))
     world.update_cells(genome_idx_pairs=mutated)
 
 def main():
@@ -611,6 +636,8 @@ We can simulate how cells with different X concentrations would grow given these
 ![](img/sim_cell_growth.png)
 _Simulated growth of cells with constant X concentrations when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
+(More examples in [supporting figures](./supporting_figures.md#survival-and-replication-rate))
+
 ### Passaging cells
 
 To keep cells in exponential growth phase indefinitely you can passage them.
@@ -627,6 +654,8 @@ As you can see all cell types except the fastest growing cell type (with $X=6$) 
 
 ![](img/splitting_cells.png)
 _Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split._
+
+(More examples in [supporting figures](./supporting_figures.md#passaging))
 
 ## Genomes
 
@@ -663,24 +692,15 @@ The plot below shows how the genome size affects the cells proteome.
 ![](img/genome_sizes.png)
 _Distributions for proteins per genome, domains per protein, and coding nucleotides per nucleotide for different genome sizes with domain probability 0.01_
 
-### Other parameters
-
 When [World][magicsoup.world.World] is initialized, it creates a [Genetics][magicsoup.genetics.Genetics] instance.
 This instances carries the logic of mapping nucleotide sequences to proteomes
 (see [Mechanics](./mechanics.md) and [Genetics][magicsoup.genetics.Genetics] for details).
 Changing the frequency by which nucleotide sequences can encode domains, changes the composition of genomes.
 By default all 3 domain types are encoded by 2 codons (6 nucleotides) and 1% of all 2-codon combinations encode for 1 of these domain types.
-Below is a plot like above that shows distributions for genomes of size 500 with domain type frequencies of 0.1%, 1% and 10%.
 
-![](img/domain_probs.png)
-_Distributions for proteins per genome, domains per protein, and coding nucleotides per nucleotide for different domain probabilities with genome size 500_
-
-With 10% frequency proteomes of size 500 create 6 to 31 proteins.
-Most of these proteins have 2 or 3 domains, and each nucleotide encodes 2 or 3 domains at the same time.
-This would probably create very complex cells from the start but make it their genomes highly unstable.
-Every mutation would have an effect on multiple proteins at the same time.
-Single domain proteins would be rare.
-
+These parameters can be changed.
+In the [supporting figures](./supporting_figures.md#genomes) there are some examples on how genome compositions
+change when these parameters are changed.
 If you want to change [Genetics][magicsoup.genetics.Genetics] for your simulation, you have to create your
 own instance and assign it to [World][magicsoup.world.World]:
 
@@ -710,6 +730,8 @@ _Chemistries with energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were 
 With lower reaction energies reactions are more dirven by reaction quotients.
 For energetically coupled transporter and catalytic domains this means transporters can power more reactions,
 _i.e._ cells can make more use of concentration gradients.
+
+(More examples in [supporting figures](./supporting_figures.md#equilibrium-constants))
 
 ## Molecule maps
 
@@ -745,3 +767,5 @@ world.molecule_map[co2] = gradient.to(device)
 The code above creates the 1D gradient that was shown in the plot for CO2.
 By effectively doing `gradient.to(world.molecule_map.device)` we make sure that
 the created tensor will be send to the same device that `world.molecule_map` was on.
+
+(More examples in [supporting figures](./supporting_figures.md#molecule-diffusion-and-degradation))
