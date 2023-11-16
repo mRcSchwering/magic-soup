@@ -75,16 +75,16 @@ Each indels indel has a 66.66% chance of being a deletion, a random single nucle
 
 ![](./img/supporting/cell_neighbors.png)
 
-_Neighbouring cells per cell with increasing cell coverage.
+_Neighbouring cells per cell with increasing cell confluency.
 Only unique neighbour pairs are counted.
-So, the maximum number of neighbours per cell at 100% coverage is 4._
+So, the maximum number of neighbours per cell at full confluency is 4._
 
 ![](./img/supporting/genome_recombinations.png)
 
 _Genomes diverge with random recombinations at different rates over time.
 Upper row shows percentage of cells which experienced at least 1 mutation.
 Lower row shows similarity distributions of each cell to its unmutated genome.
-Values at 30% cell coverage are in the left column, at 50% coverage in the right column.
+Values at 30% cell confluency are in the left column, at 50% confluency in the right column.
 Similarity is based on the normalized Levenshtein distance.
 Recombination happens by creating random strand breaks in 2 genomes and randomly re-joining them.
 Rates are random strand breakes per nucleotide.
@@ -201,7 +201,7 @@ Integral of all molecule energies over their concentrations during a simulation 
 each step.
 Simulations with only diffusion (left), only enzymatic activity (middle), and both diffusion and enzymatic activity (right).
 Energy is divided by number of pixel on map (per pixel).
-Simulations were created with the example Wood-Ljungdahl chemistry and 50% cell coverage of cells with random genomes of length 1000._
+Simulations were created with the example Wood-Ljungdahl chemistry and 50% cell confluency of cells with random genomes of length 1000._
 
 ## Survival and Replication Rate
 
