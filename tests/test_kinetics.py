@@ -1640,4 +1640,68 @@ def test_reduce_velocity_in_multiple_proteins():
     assert not torch.any(X1 < 0.0)
 
 
-# TODO: tests specifically for signal integration
+def test_multiply_signals():
+    kinetics = _get_kinetics()
+    # 4 signals: s0, s1, s2, s3
+    # 2 proteins: p0, p1, p2
+    # fmt: off
+
+    # signals (c, s)
+    X = torch.tensor([
+        [0.0, 2.0, 3.0, 4.0],  # low concentrations
+        [0.0, 200.0, 300.0, 400.0],  # high concentrations
+    ])
+
+    # stoichiometry (c, p, s)
+    N = torch.tensor([
+        [
+            [0.0, 1.0, 2.0, 0.0],  # simple
+            [2.0, 0.0, 0.0, 0.0],  # all substrates are 0
+            [1.0, 1.0, 0.0, 0.0]  # 1 of 2 substrates is 0
+        ],
+        [
+            [0.0, 10.0, 5.0, 0.0],  # high coefficients
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]
+        ],
+    ])
+
+    # mask (c, p, s)
+    M = torch.tensor([
+        [
+            [0.0, 1.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0, 0.0]
+        ],
+        [
+            [0.0, 1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]
+        ],
+    ])
+
+    # fmt: on
+
+    xx, prots = kinetics._multiply_signals(X=X, mask=M, N=N)
+    assert xx.size() == (2, 3)
+    assert prots.size() == (2, 3)
+
+    # cell 0:
+    p = prots[0]
+    x = xx[0]
+    assert p[0] == 1.0
+    assert p[1] == 1.0
+    assert p[2] == 1.0
+    assert x[0] == X[0, 1] * X[0, 2] ** 2
+    assert x[1] == 0.0
+    assert x[2] == 0.0
+
+    # cell 1:
+    p = prots[1]
+    x = xx[1]
+    assert p[0] == 1.0
+    assert p[1] == 0.0
+    assert p[2] == 0.0
+    assert x[0] == X[1, 1] ** 10 * X[1, 2] ** 5
+    assert x[1] == 0.0
+    assert x[2] == 0.0

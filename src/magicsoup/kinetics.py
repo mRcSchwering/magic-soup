@@ -732,11 +732,11 @@ class Kinetics:
 
             # signals are aggregated for forward and backward reaction
             # proteins that had no involved catalytic region should not be active
-            xxf, f_prots = self._aggregate_signals(X=X, mask=is_fwd, N=self.Nf)
+            xxf, f_prots = self._multiply_signals(X=X, mask=is_fwd, N=self.Nf)
             kf = xxf / self.Kmf
             kf[~f_prots] = 0.0  # rm artifacts created by ln
 
-            xxb, b_prots = self._aggregate_signals(X=X, mask=is_bwd, N=self.Nb)
+            xxb, b_prots = self._multiply_signals(X=X, mask=is_bwd, N=self.Nb)
             kb = xxb / self.Kmb
             kb[~b_prots] = 0.0  # rm artifacts created by ln
 
@@ -748,12 +748,12 @@ class Kinetics:
             a_cat = a_cat.nan_to_num(0.0)
 
             # inhibitor activity
-            xxi, i_prots = self._aggregate_signals(X=X, mask=is_inh, N=-self.A)
+            xxi, i_prots = self._multiply_signals(X=X, mask=is_inh, N=-self.A)
             a_inh = xxi / (xxi + self.Kmr)
             a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
 
             # activator activity
-            xxa, a_prots = self._aggregate_signals(X=X, mask=is_act, N=self.A)
+            xxa, a_prots = self._multiply_signals(X=X, mask=is_act, N=self.A)
             a_act = xxa / (xxa + self.Kmr)
             a_act[~a_prots] = 1.0  # proteins without activator should be active
 
@@ -877,9 +877,12 @@ class Kinetics:
             self.Nb = self._expand_p(t=self.Nb, n=by_n)
             self.A = self._expand_p(t=self.A, n=by_n)
 
-    def _aggregate_signals(
+    # TODO: remove
+    def _multiply_signals_old(
         self, X: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        # product(X^N) over all X
+        # where x is a signal and n its stoichiometric coifficient
         # consider:
         # - a) some proteins are not involved at all (their Ns are all 0)
         # - b) some are involved but the signal 0 (required X is 0)
@@ -925,6 +928,20 @@ class Kinetics:
         # from a legitimate stoichiometric number and non-zero signal
         xx[involved_prots & zero_prots] = 0.0
 
+        return xx, involved_prots
+
+    def _multiply_signals(
+        self, X: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        x = torch.einsum("cps,cs->cps", mask, X)
+
+        # TODO: is this needed?
+        n = mask * N  # (c, p, s)
+
+        # TODO: is involved prots needed?
+        involved_prots = n.sum(2) != 0.0
+
+        xx = torch.prod(torch.pow(x, n), 2)
         return xx, involved_prots
 
     def _collect_proteome_idxs(

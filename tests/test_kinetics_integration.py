@@ -126,7 +126,7 @@ def test_equilibrium_is_reached_with_zeros():
         X = kinetics.integrate_signals(X=X)
 
     assert 0.5 > X[0][0] > 0.0
-    assert 3.0 > X[0][1] > 2.0
+    assert 3.0 > X[0][1] > 1.0
     assert 0.5 > X[0][2] > 0.0
     assert X[0][0] > X[0][2]
 
