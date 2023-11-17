@@ -192,15 +192,49 @@ the other catalyzes 3A $\rightleftharpoons$ C | -10 kJ and is inhibited by B.
 Columns show different Km values for both inhibitors.
 Catalytic domains have Vmax=0.3 and Km=1.0._
 
+## Biochemical Patterns
+
+![](./img/supporting/switch_relay.png)
+
+_Switch with relay controlled by third molecule.
+Intracellular molecule A and B concentrations are shown while the abundance of a molecule C is changed.
+Dashed vertical lines indicate when molecule C is alternatingly added or removed.
+Cell has 2 proteins:
+one catalyzing A + E $\rightleftharpoons$ B | -10 kJ inhibited by C,
+one catalyzing B + E $\rightleftharpoons$ A | -10 kJ activated by C.
+All Km and Vmax values are 1, intracellular C alternates between 0 and 4.
+E is supplied each step._
+
+![](./img/supporting/bistable_switch.png)
+
+_Self-activating enzymes create bistable switches.
+Intracellular A and B concentrations are shown over time.
+Left shows a situation with A slightly higher than B, right shows the opposite.
+Cell has 2 proteins:
+one catalyzing A + E $\rightleftharpoons$ B | -100 kJ inhibited by A,
+one catalyzing B + E $\rightleftharpoons$ A | -100 kJ inhibited by B.
+All Km and Vmax values are 1, E is supplied each step._
+
+![](./img/supporting/bistable_switch_cascade.png)
+
+_Signal propagation through neighbouring cells with bistable switches based on self-activating enzymes.
+Intracellular A and B concentrations of 4 neighbouring cells are shown over time.
+All cells have 2 proteins:
+one catalyzing A + E $\rightleftharpoons$ B | -100 kJ inhibited by A,
+one catalyzing B + E $\rightleftharpoons$ A | -100 kJ inhibited by B.
+All Km and Vmax values are 1, E is supplied each step, A and B have permeability 0.1.
+A is increased slightly in cell 0 which triggers a new state.
+The signal propagates through diffusion and triggers the same state in the other cells._
+
 ## Free Energy in Simulation
 
 ![](./img/supporting/free_energy.png)
 
-_Energy density over time during simulation.
-Integral of all molecule energies over their concentrations during a simulation at
-each step.
-Simulations with only diffusion (left), only enzymatic activity (middle), and both diffusion and enzymatic activity (right).
-Energy is divided by number of pixel on map (per pixel).
+_Energy and entropy density over time during a simulation.
+Entropy (top) is the sum of all products of molecule concentration with its logarithm.
+Energy (bottom) is the sum of all molecule energies at every position.
+Simulations with only diffusion, only enzymatic activity, and both diffusion and enzymatic activity are shown.
+Values were divided by number of pixel on map (per pixel).
 Simulations were created with the example Wood-Ljungdahl chemistry and 50% cell confluency of cells with random genomes of length 1000._
 
 ## Survival and Replication Rate

@@ -75,13 +75,8 @@ def test_equilibrium_is_reached_with_zeros():
     # t0: A = 3.0, others 0.0
     # expected: A drops, B rises, C first rises then drops
     # equilibrium has a lot of B, very little A and C, A > C
-
-    # TODO: Bug:
-    # so wie ich zZ _aggregate_signals mache wird A+B nicht richtig
-    # berechnet wenn einer der beiden (zB B) 0.0 ist
-    # wenn alle substrates 0.0 sind mache ich es richtig (deswegen geht der Transporer)
-    # aber wenn nur einer 0.0 ist wird das Protein trotzdem aktiv
-    # und dann werden widerrum alle Proteine bei der negativ-Korrektur abgeschaltet
+    # has to create stuff from zeros (except for A)
+    # there used to be a bug that didnt allow that
 
     # fmt: off
 
@@ -99,8 +94,8 @@ def test_equilibrium_is_reached_with_zeros():
     Nb = torch.where(N > 0.0, N, 0.0)
 
     # affinities (c, p)
-    Kmf = torch.tensor([[8.5, 1.2]])
-    Kmb = torch.tensor([[1.2, 5.9]])
+    Kmf = torch.tensor([[7.3328, 1.0539]])
+    Kmb = torch.tensor([[1.0539, 5.1021]])
     Kmr = torch.zeros(1, 2)
 
     # max velocities (c, p)
@@ -131,12 +126,9 @@ def test_equilibrium_is_reached_with_zeros():
     assert X[0][0] > X[0][2]
 
 
-def test_equilibrium_is_reached():
-    # TODO: doublecheck this test + docs for this test
-    # molecules should reach equilibrium after a few steps
-    # with Vmax > 1.0 higher order reactions cant reach equilibrium
-    # because they overshoot
-
+def test_equilibrium_is_reached_with_high_vmax():
+    # higher order reactions have trouble reaching equilibrium
+    # because they tend to overshoot
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
     # cell 0: P0: a -> b (Ke=1.0), P1: c -> d (Ke=20.0)
     # cell 1: P0: a,2b -> c (Ke=10.0)

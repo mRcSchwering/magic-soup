@@ -743,10 +743,6 @@ class Kinetics:
             # custom reversible MM equation
             a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
 
-            # NaNs could have been propagated so far by stray NaN Kms
-            # they should represent 0 velocity
-            a_cat = a_cat.nan_to_num(0.0)
-
             # inhibitor activity
             xxi, i_prots = self._multiply_signals(X=X, mask=is_inh, N=-self.A)
             a_inh = xxi / (xxi + self.Kmr)
@@ -877,72 +873,26 @@ class Kinetics:
             self.Nb = self._expand_p(t=self.Nb, n=by_n)
             self.A = self._expand_p(t=self.A, n=by_n)
 
-    # TODO: remove
-    def _multiply_signals_old(
-        self, X: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # product(X^N) over all X
-        # where x is a signal and n its stoichiometric coifficient
-        # consider:
-        # - a) some proteins are not involved at all (their Ns are all 0)
-        # - b) some are involved but the signal 0 (required X is 0)
-        # - c) there can be multiple signals (Xs must be multiplied)
-        # - d) each signal has a stoichiometric number (X must be raised)
-
-        # signals are prepared as c,p,s
-        # all non-involved signals (or involved but 0)
-        # are set to NaN so that it is possible
-        # to log them later without need of EPS addition
-        x = torch.einsum("cps,cs->cps", mask, X)  # (c, p, s)
-        x[x == 0.0] = torch.nan
-
-        # stoichiometric numbers are prepared
-        # all non-involved fields are 0
-        n = mask * N  # (c, p, s)
-        # TODO: is this still needed? already have Nf/Nb
-
-        # proteins which have at least 1 non-zero stoichiometric number
-        involved_prots = n.sum(2) != 0.0
-
-        # proteins which have all zero signals or which
-        # don't have at least 1 non-zero stoichiometric number
-        zero_prots = x.isnan().all(2)
-        # TODO: I think here is an error
-        #       what if a protein does A + B <-> C
-        #       but A=1.0,B=0.0, then it should not be able to do fwd
-
-        # (1) raise each signal to its stoichiometric number
-        # then (2) multiply all over protein
-        # while ignoring non-involved signals
-        # (1) is done in log-space, all NaNs stay NaN, then
-        # (2) can be done as nansum (treats NaNs as 0) so
-        # if a protein had only 0 stoichiometric numbers or
-        # all involved signals were 0 it will be 0
-        # after exp it will become 1
-        xx = torch.exp((torch.log(x) * n).nansum(2))
-
-        # proteins that actually had a stoichiometric number
-        # but its signal was 0 became 1, but they should be 0
-        # I have to identify them with the masks calculated earlier
-        # because in xx a signal could theoretically become 1
-        # from a legitimate stoichiometric number and non-zero signal
-        xx[involved_prots & zero_prots] = 0.0
-
-        return xx, involved_prots
-
     def _multiply_signals(
         self, X: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        # calculate torch.prod(torch.pow(x, n), 2)
+        # consider:
+        # - a) some proteins are not involved at all (their Ns are all 0)
+        # - b) some are involved but the signal 0 (required X is 0)
+
+        # expand to p while keeping uninvolved 0
         x = torch.einsum("cps,cs->cps", mask, X)
 
-        # TODO: is this needed?
+        # needed because A has both positives and negatives
         n = mask * N  # (c, p, s)
 
-        # TODO: is involved prots needed?
-        involved_prots = n.sum(2) != 0.0
-
         xx = torch.prod(torch.pow(x, n), 2)
-        return xx, involved_prots
+
+        # Infs could have been created, MAX is still >e2 away from Inf
+        xx = xx.nan_to_num(nan=0.0, neginf=0.0, posinf=_MAX)
+
+        return xx, mask.sum(2) > 0.0
 
     def _collect_proteome_idxs(
         self,

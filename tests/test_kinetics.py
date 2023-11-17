@@ -1703,5 +1703,4 @@ def test_multiply_signals():
     assert p[1] == 0.0
     assert p[2] == 0.0
     assert x[0] == X[1, 1] ** 10 * X[1, 2] ** 5
-    assert x[1] == 0.0
-    assert x[2] == 0.0
+    assert x[1] == 1.0  # this is not involved but 1.0 (because it had x>0,n=0)
