@@ -698,6 +698,113 @@ class Kinetics:
         self.Kmr[cell_idxs] = 0.0
         self.Vmax[cell_idxs] = 0.0
 
+    def _correct_Xd(self, X: torch.Tensor, Xd: torch.Tensor) -> torch.Tensor:
+        # TODO: can this be done on protein level
+        #       if fwd and bwd are considered separately (interactions shouldnt matter)
+
+        # proteins can deconstruct more of a molecule than available in a cell
+        # this happens mainly with multiple proteins with low Km trying to deconstruct
+        # the same molecule species in one cell
+        # reaction stoichiometry must be obeyed, so mere X.clamp(0.0) is not allowed
+        # One could factor out which proteins must be slowed down by how much,
+        # and selectively only slow down these proteins by a certain trimming factor.
+        # However, this could create a follow-up X<0.0 situation with one of the other proteins
+        # which were not slowed down. To solve this, one would have to construct a
+        # dependency graph of the protein network, or just iterate this process often enough.
+        # Here, I am instead reducing all the cell's proteins by the same factor
+        # that way these follow-up X<0.0 situations cannot appear
+        # due to floating point precision I need to lift the cutoff from 0 to EPS
+        trim_factors = (X / -Xd - _EPS).clamp(0.0)
+        cell_trims = torch.where(X + Xd < 0.0, trim_factors, 1.0).amin(1)  # (c,)
+        Xd = torch.einsum("cs,c->cs", Xd, cell_trims)
+
+        return Xd
+
+    def _get_velocities(
+        self,
+        X: torch.Tensor,
+        Vmax: torch.Tensor,
+        is_fwd: torch.Tensor,
+        is_bwd: torch.Tensor,
+        is_inh: torch.Tensor,
+        is_act: torch.Tensor,
+    ) -> torch.Tensor:
+        # catalytic activity
+
+        # signals are aggregated for forward and backward reaction
+        # proteins that had no involved catalytic region should not be active
+        kf, f_prots = self._multiply_signals(X=X, mask=is_fwd, N=self.Nf)
+        kf /= self.Kmf
+        kf[~f_prots] = 0.0  # rm artifacts created by ln
+
+        kb, b_prots = self._multiply_signals(X=X, mask=is_bwd, N=self.Nb)
+        kb /= self.Kmb
+        kb[~b_prots] = 0.0  # rm artifacts created by ln
+
+        # custom reversible MM equation
+        a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
+
+        # inhibitor activity
+        xxi, i_prots = self._multiply_signals(X=X, mask=is_inh, N=-self.A)
+        a_inh = xxi / (xxi + self.Kmr)
+        a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
+
+        # activator activity
+        xxa, a_prots = self._multiply_signals(X=X, mask=is_act, N=self.A)
+        a_act = xxa / (xxa + self.Kmr)
+        a_act[~a_prots] = 1.0  # proteins without activator should be active
+
+        # velocity from activities
+        # as well as trimming factor of n_computations
+        V = Vmax * a_cat * (1 - a_inh) * a_act  # (c, p)
+
+        # Kms can be close to Inf, they can create Infs
+        # thus result velocity should be clamped again
+        return V.clamp(max=_MAX)
+
+    def _integrate_signals_part(
+        self,
+        part_i: int,
+        adj_vmax: torch.Tensor,
+        X: torch.Tensor,
+        is_fwd: torch.Tensor,
+        is_bwd: torch.Tensor,
+        is_inh: torch.Tensor,
+        is_act: torch.Tensor,
+    ) -> torch.Tensor:
+        # calculate normal velocities
+        V = self._get_velocities(
+            X=X,
+            Vmax=adj_vmax,
+            is_fwd=is_fwd,
+            is_bwd=is_bwd,
+            is_inh=is_inh,
+            is_act=is_act,
+        )
+
+        # trim velocities for this part
+        V *= self.alpha**part_i
+
+        # naive Xd, might produce negative X
+        Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
+
+        # correct so X is not negative
+        Xd = self._correct_Xd(X=X, Xd=Xd)
+
+        # update signals, this time no negative X
+        X = X + Xd
+
+        # above was tested without clamp(0.0) and it never failed
+        # However, if due to some floating point inaccuracies, a negative X slips through
+        # it could create either NaNs or extremely large values
+        # which would spread over the whole simulation quickly
+        # Thus, as a final measure clamp is used (it should never actually do anything)
+        X[X < 0.0] = 0.0
+        X[X.isnan()] = 0.0
+        X[X.isinf()] = _MAX
+
+        return X
+
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """
         Simulate protein work by integrating all signals.
@@ -714,87 +821,22 @@ class Kinetics:
         The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
         The number of extracellular molecules comes from `world.molecule_map` from the pixel the particular cell currently lives on.
         """
-        is_fwd = self.Nf > 0.0
-        is_bwd = self.Nb > 0.0
-        is_inh = self.A < 0.0
-        is_act = self.A > 0.0
-        Vmax_adj = self.Vmax * self.n_comp_trim
-
         # TODO: lower n_computations by being more clever
         #       have all c,p Qs, see on which side they are now (bool)
         #       do full integration, see on which side they are now (bool)
         #       if they switched sides, they overshot
         #       only repeat integration for overshooting ones
         #       or remember by how much they overshot
-
         for i in range(self.n_computations):
-            # catalytic activity
-
-            # signals are aggregated for forward and backward reaction
-            # proteins that had no involved catalytic region should not be active
-            xxf, f_prots = self._multiply_signals(X=X, mask=is_fwd, N=self.Nf)
-            kf = xxf / self.Kmf
-            kf[~f_prots] = 0.0  # rm artifacts created by ln
-
-            xxb, b_prots = self._multiply_signals(X=X, mask=is_bwd, N=self.Nb)
-            kb = xxb / self.Kmb
-            kb[~b_prots] = 0.0  # rm artifacts created by ln
-
-            # custom reversible MM equation
-            a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
-
-            # inhibitor activity
-            xxi, i_prots = self._multiply_signals(X=X, mask=is_inh, N=-self.A)
-            a_inh = xxi / (xxi + self.Kmr)
-            a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
-
-            # activator activity
-            xxa, a_prots = self._multiply_signals(X=X, mask=is_act, N=self.A)
-            a_act = xxa / (xxa + self.Kmr)
-            a_act[~a_prots] = 1.0  # proteins without activator should be active
-
-            # velocity from activities
-            # as well as trimming factor of n_computations
-            V = Vmax_adj * a_cat * (1 - a_inh) * a_act * self.alpha**i  # (c, p)
-
-            # Kms can be close to Inf, they can create Infs
-            # thus result velocity should be clamped again
-            V = V.clamp(max=_MAX)
-
-            # naive Xd, might produce negative X
-            Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
-
-            # proteins can deconstruct more of a molecule than available in a cell
-            # this happens mainly with multiple proteins with low Km trying to deconstruct
-            # the same molecule species in one cell
-            # reaction stoichiometry must be obeyed, so mere X.clamp(0.0) is not allowed
-            # One could factor out which proteins must be slowed down by how much,
-            # and selectively only slow down these proteins by a certain trimming factor.
-            # However, this could create a follow-up X<0.0 situation with one of the other proteins
-            # which were not slowed down. To solve this, one would have to construct a
-            # dependency graph of the protein network, or just iterate this process often enough.
-            # Here, I am instead reducing all the cell's proteins by the same factor
-            # that way these follow-up X<0.0 situations cannot appear
-            # due to floating point precision I need to lift the cutoff from 0 to EPS
-            trim_factors = (X / -Xd - _EPS).clamp(0.0)
-            cell_trims = torch.where(X + Xd < 0.0, trim_factors, 1.0).amin(1)  # (c,)
-            Xd = torch.einsum("cs,c->cs", Xd, cell_trims)
-
-            # update signals, this time no negative X
-            X = X + Xd
-
-            # above was tested without clamp(0.0) and it never failed
-            # However, if due to some floating point inaccuracies, a negative X slips through
-            # it could create either NaNs or extremely large values (it would ruin a simulation)
-            # Thus, as a final measure clamp is used (it should never actually do anything)
-            X = X.clamp(0.0)
-
-        # NaNs can be created when overflow creates Infs (most likely in aggregate_signals)
-        # with kinetics default values I have not been able to achieve this (>100 testruns)
-        # however non-default values (e.g. large Vmax) might achieve that
-        # once a 1 NaN is generated, it will spread over the whole simulation
-        # this is a last effort in avoiding that
-        X[X.isnan()] = 0.0
+            X = self._integrate_signals_part(
+                part_i=i,
+                adj_vmax=self.Vmax * self.n_comp_trim,
+                X=X,
+                is_fwd=self.Nf > 0.0,
+                is_bwd=self.Nb > 0.0,
+                is_inh=self.A < 0.0,
+                is_act=self.A > 0.0,
+            )
 
         return X
 
