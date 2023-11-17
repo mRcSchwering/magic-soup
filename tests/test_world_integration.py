@@ -194,5 +194,5 @@ def test_genome_generation_consistency():
             assert abs(p0.domains[i].km - 1.0) < 0.5
             assert p0.domains[i].is_inhibiting
             assert p0.domains[i].is_transmembrane
-            assert world.kinetics.A[ci][0][5] == -1, world.kinetics.A[ci]
+            assert world.kinetics.Ai[ci][0][5] == 1, world.kinetics.Ai[ci]
             assert abs(world.kinetics.Kmr[ci][0] - 1.0) < 0.5
