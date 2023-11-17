@@ -37,7 +37,7 @@ Currently, there are three domain types: _catalytic, transporter, regulatory_.
 Each domain consists of a region of genetic code that defines the domain type itself
 and several regions that define its further specifications.
 What these specifications are depends on the domain type.
-There are some example transcriptomes in [supporting figures](./supporting_figures.md#transcriptomes).
+There are some example transcriptomes in [figures](./figures.md#transcriptomes).
 
 _Catalytic_ domains can catalyze one reaction.
 All possible reactions are defined in the simulation's chemistry (see [Chemistry](#chemistry)).
@@ -68,6 +68,7 @@ _E.g._ there is no transcriptional and post-transcriptional regulation.
 Abundance, location, and efficiency of CDSs are not taken into consideration.
 Yet still this simple genetic setup can already create complex protein networks
 with hubs, feedback loops, oscillators, and cascades.
+(See some examples in [figures](./figures.md#biochemical-patterns))
 
 
 ## Chemistry
@@ -100,7 +101,7 @@ As further described in [Kinetics](#kinetics) the [reaction quotient](https://en
 always moves towards $K_e$.
 So, reactions tend to be favourable into the direction which deconstructs high energy molecules
 and constructs low energy molecules.
-Some implications are shown in [supporting figures](./supporting_figures.md#equilibrium-constants).
+Some implications are shown in [figures](./figures.md#equilibrium-constants).
 
 However, all reactions catalyzed by the same protein are considered to be energetically coupled.
 All domains are considered when calculating $\Delta G_0$.
@@ -243,14 +244,14 @@ $[A]_l$ is the concentration of activator $l$ with stoichiometric coefficient $n
 and $[I]_k$ is the concentration of inhibitor $k$ with stoichiometric coefficient $n_k$.
 If there are no activators $a_{act} = 1$ and if there are no inhibitors $a_{inh} = 0$.
 Values for $K_{m,a}$ and $K_{m,i}$ are directly defined in the domain specifications.
-There are some kinetics examples in [supporting figures](./supporting_figures.md#simple-reaction-kinetics).
+There are some kinetics examples in [figures](./figures.md#simple-reaction-kinetics).
 
 When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
 are created, they are sampled from a log-uniform distribution with user defined boundaries.
 If there are multiple catalytic and transporter domains,
 activating regulatory domains, or inhibiting regulatory domains
 values for $v_{max}$, $K_m$, $K_{m,a}$, $K_{m,i}$ are averaged each.
-Resulting distributions are shown in [supporting figures](./supporting_figures.md#vmax-and-km-distributions).
+Resulting distributions are shown in [figures](./figures.md#vmax-and-km-distributions).
 
 ## Implementation
 

@@ -636,7 +636,7 @@ We can simulate how cells with different X concentrations would grow given these
 ![](img/sim_cell_growth.png)
 _Simulated growth of cells with constant X concentrations when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
-(More examples in [supporting figures](./supporting_figures.md#survival-and-replication-rate))
+(More examples in [figures](./figures.md#survival-and-replication-rate))
 
 ### Passaging cells
 
@@ -655,7 +655,7 @@ As you can see all cell types except the fastest growing cell type (with $X=6$) 
 ![](img/splitting_cells.png)
 _Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split._
 
-(More examples in [supporting figures](./supporting_figures.md#passaging))
+(More examples in [figures](./figures.md#passaging))
 
 ## Genomes
 
@@ -699,7 +699,7 @@ Changing the frequency by which nucleotide sequences can encode domains, changes
 By default all 3 domain types are encoded by 2 codons (6 nucleotides) and 1% of all 2-codon combinations encode for 1 of these domain types.
 
 These parameters can be changed.
-In the [supporting figures](./supporting_figures.md#genomes) there are some examples on how genome compositions
+In the [figures](./figures.md#genomes) there are some examples on how genome compositions
 change when these parameters are changed.
 If you want to change [Genetics][magicsoup.genetics.Genetics] for your simulation, you have to create your
 own instance and assign it to [World][magicsoup.world.World]:
@@ -731,7 +731,7 @@ With lower reaction energies reactions are more dirven by reaction quotients.
 For energetically coupled transporter and catalytic domains this means transporters can power more reactions,
 _i.e._ cells can make more use of concentration gradients.
 
-(More examples in [supporting figures](./supporting_figures.md#equilibrium-constants))
+(More examples in [figures](./figures.md#equilibrium-constants))
 
 ## Molecule maps
 
@@ -768,4 +768,4 @@ The code above creates the 1D gradient that was shown in the plot for CO2.
 By effectively doing `gradient.to(world.molecule_map.device)` we make sure that
 the created tensor will be send to the same device that `world.molecule_map` was on.
 
-(More examples in [supporting figures](./supporting_figures.md#molecule-diffusion-and-degradation))
+(More examples in [figures](./figures.md#molecule-diffusion-and-degradation))
