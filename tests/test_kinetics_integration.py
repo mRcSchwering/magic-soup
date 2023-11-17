@@ -48,7 +48,6 @@ def test_cell_params_are_always_set_reproduceably():
         N_orig = kinetics.N.clone()
         Nb_orig = kinetics.Nb.clone()
         Nf_orig = kinetics.Nf.clone()
-        A_orig = kinetics.A.clone()
         Kmf_orig = kinetics.Kmf.clone()
         Kmb_orig = kinetics.Kmb.clone()
         Kmr_orig = kinetics.Kmr.clone()
@@ -62,7 +61,6 @@ def test_cell_params_are_always_set_reproduceably():
         assert torch.equal(kinetics.N, N_orig), i
         assert torch.equal(kinetics.Nb, Nb_orig), i
         assert torch.equal(kinetics.Nf, Nf_orig), i
-        assert torch.equal(kinetics.A, A_orig), i
         assert torch.equal(kinetics.Kmf, Kmf_orig), i
         assert torch.equal(kinetics.Kmb, Kmb_orig), i
         assert torch.equal(kinetics.Kmr, Kmr_orig), i
@@ -102,7 +100,8 @@ def test_equilibrium_is_reached_with_zeros():
     Vmax = torch.tensor([[0.3, 0.3]])
 
     # allosterics (c, p, s)
-    A = torch.zeros(1, 2, 6)
+    Ai = torch.zeros(1, 2, 6)
+    Aa = torch.zeros(1, 2, 6)
 
     # fmt: on
 
@@ -115,7 +114,8 @@ def test_equilibrium_is_reached_with_zeros():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
 
     for _ in range(100):
         X = kinetics.integrate_signals(X=X)
@@ -171,7 +171,8 @@ def test_equilibrium_is_reached_with_high_vmax():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    Ai = torch.zeros(2, 3, 4)
+    Aa = torch.zeros(2, 3, 4)
 
     # fmt: on
 
@@ -184,7 +185,8 @@ def test_equilibrium_is_reached_with_high_vmax():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
 
     for _ in range(10):
         X0 = kinetics.integrate_signals(X=X0)
@@ -221,7 +223,8 @@ def test_random_kinetics_stay_zero():
     kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 100
 
     # allosterics (c, p, s)
-    kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
+    kinetics.Ai = torch.randint(low=0, high=5, size=(n_cells, n_prots, n_mols))
+    kinetics.Aa = torch.randint(low=0, high=5, size=(n_cells, n_prots, n_mols))
 
     # affinities (c, p)
     Ke = torch.randn(n_cells, n_prots)
@@ -259,7 +262,8 @@ def test_random_kinetics_dont_explode():
     kinetics.Vmax = torch.randn(n_cells, n_prots).abs().clamp(max=1.0) * 100
 
     # allosterics (c, p, s)
-    kinetics.A = torch.randint(low=-2, high=3, size=(n_cells, n_prots, n_mols))
+    kinetics.Ai = torch.randint(low=0, high=5, size=(n_cells, n_prots, n_mols))
+    kinetics.Aa = torch.randint(low=0, high=5, size=(n_cells, n_prots, n_mols))
 
     # affinities (c, p)
     Ke = torch.randn(n_cells, n_prots)

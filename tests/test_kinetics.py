@@ -179,7 +179,8 @@ def test_cell_params_with_transporter_domains():
     N = torch.zeros(2, 3, 8)
     Nf = torch.zeros(2, 3, 8)
     Nb = torch.zeros(2, 3, 8)
-    A = torch.zeros(2, 3, 8)
+    Ai = torch.zeros(2, 3, 8)
+    Aa = torch.zeros(2, 3, 8)
 
     # test
     kinetics = _get_kinetics()
@@ -190,7 +191,8 @@ def test_cell_params_with_transporter_domains():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
@@ -252,7 +254,8 @@ def test_cell_params_with_transporter_domains():
     assert Nb[1, 1, 4] == 1
     assert (Nb[1, 1, [0, 2, 3, 5, 6, 7]] == 0).all()
 
-    assert (A == 0).all()
+    assert (Ai == 0).all()
+    assert (Aa == 0).all()
 
     # test proteome representation
 
@@ -423,7 +426,8 @@ def test_cell_params_with_regulatory_domains():
     N = torch.zeros(2, 3, 8)
     Nf = torch.zeros(2, 3, 8)
     Nb = torch.zeros(2, 3, 8)
-    A = torch.zeros(2, 3, 8)
+    Ai = torch.zeros(2, 3, 8)
+    Aa = torch.zeros(2, 3, 8)
 
     # test
     kinetics = _get_kinetics()
@@ -434,7 +438,8 @@ def test_cell_params_with_regulatory_domains():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
@@ -501,21 +506,37 @@ def test_cell_params_with_regulatory_domains():
     assert (Nf[1, 2] == 0).all()
     assert (Nb[1, 2] == 0).all()
 
-    assert A[0, 0, 2] == 1
-    assert A[0, 0, 3] == -1
-    assert (A[0, 0, [0, 1, 4, 5, 6, 7]] == 0).all()
-    assert A[0, 1, 0] == 1
-    assert A[0, 1, 4] == 1
-    assert (A[0, 1, [1, 2, 3, 5, 6, 7]] == 0).all()
-    assert (A[0, 2] == 0).all()
+    assert Ai[0, 0, 2] == 0
+    assert Ai[0, 0, 3] == 1
+    assert (Ai[0, 0, [0, 1, 4, 5, 6, 7]] == 0).all()
+    assert Ai[0, 1, 0] == 0
+    assert Ai[0, 1, 4] == 0
+    assert (Ai[0, 1, [1, 2, 3, 5, 6, 7]] == 0).all()
+    assert (Ai[0, 2] == 0).all()
 
-    assert A[1, 0, 1] == -1
-    assert A[1, 0, 5] == -1
-    assert (A[1, 0, [0, 2, 3, 4, 6, 7]] == 0).all()
-    assert A[1, 1, 0] == 0
-    assert A[1, 1, 3] == 2
-    assert (A[1, 1, [1, 2, 4, 5, 6, 7]] == 0).all()
-    assert (A[1, 2] == 0).all()
+    assert Aa[0, 0, 2] == 1
+    assert Aa[0, 0, 3] == 0
+    assert (Aa[0, 0, [0, 1, 4, 5, 6, 7]] == 0).all()
+    assert Aa[0, 1, 0] == 1
+    assert Aa[0, 1, 4] == 1
+    assert (Aa[0, 1, [1, 2, 3, 5, 6, 7]] == 0).all()
+    assert (Aa[0, 2] == 0).all()
+
+    assert Ai[1, 0, 1] == 1
+    assert Ai[1, 0, 5] == 1
+    assert (Ai[1, 0, [0, 2, 3, 4, 6, 7]] == 0).all()
+    assert Ai[1, 1, 0] == 0
+    assert Ai[1, 1, 3] == 0
+    assert (Ai[1, 1, [1, 2, 4, 5, 6, 7]] == 0).all()
+    assert (Ai[1, 2] == 0).all()
+
+    assert Aa[1, 0, 1] == 0
+    assert Aa[1, 0, 5] == 0
+    assert (Aa[1, 0, [0, 2, 3, 4, 6, 7]] == 0).all()
+    assert Aa[1, 1, 0] == 0
+    assert Aa[1, 1, 3] == 2
+    assert (Aa[1, 1, [1, 2, 4, 5, 6, 7]] == 0).all()
+    assert (Aa[1, 2] == 0).all()
 
     # test protein representation
 
@@ -707,7 +728,8 @@ def test_cell_params_with_catalytic_domains():
     N = torch.zeros(2, 3, 8)
     Nf = torch.zeros(2, 3, 8)
     Nb = torch.zeros(2, 3, 8)
-    A = torch.zeros(2, 3, 8)
+    Ai = torch.zeros(2, 3, 8)
+    Aa = torch.zeros(2, 3, 8)
 
     # test
     kinetics = _get_kinetics()
@@ -718,7 +740,8 @@ def test_cell_params_with_catalytic_domains():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
@@ -808,7 +831,8 @@ def test_cell_params_with_catalytic_domains():
     assert (Nf[1, 2] == 0).all()
     assert (Nb[1, 2] == 0).all()
 
-    assert (A == 0).all()
+    assert (Ai == 0).all()
+    assert (Aa == 0).all()
 
     # test protein representation
 
@@ -948,7 +972,8 @@ def test_simple_mm_kinetic():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    Ai = torch.zeros(2, 3, 4)
+    Aa = torch.zeros(2, 3, 4)
 
     # fmt: on
 
@@ -981,7 +1006,8 @@ def test_simple_mm_kinetic():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1038,7 +1064,8 @@ def test_mm_kinetic_with_proportions():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    Ai = torch.zeros(2, 3, 4)
+    Aa = torch.zeros(2, 3, 4)
 
     # fmt: on
 
@@ -1080,7 +1107,8 @@ def test_mm_kinetic_with_proportions():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1137,7 +1165,8 @@ def test_mm_kinetic_with_multiple_substrates():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    Ai = torch.zeros(2, 3, 4)
+    Aa = torch.zeros(2, 3, 4)
 
     # fmt: on
 
@@ -1177,7 +1206,8 @@ def test_mm_kinetic_with_multiple_substrates():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1249,7 +1279,8 @@ def test_mm_kinetic_with_cofactors():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    Ai = torch.zeros(2, 3, 4)
+    Aa = torch.zeros(2, 3, 4)
 
     # fmt: on
 
@@ -1284,7 +1315,8 @@ def test_mm_kinetic_with_cofactors():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1344,11 +1376,19 @@ def test_mm_kinetic_with_allosteric_action():
     ])
 
     # allosterics (c, p, s)
-    A = torch.tensor([
-        [   [0.0, 0.0, -1.0, 0.0],
+    Ai = torch.tensor([
+        [   [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0]   ],
+        [   [0.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]   ],
+    ])
+    Aa = torch.tensor([
+        [   [0.0, 0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0, 1.0]   ],
-        [   [0.0, 0.0, -1.0, -1.0],
+            [0.0, 0.0, 0.0, 1.0]   ],
+        [   [0.0, 0.0, 0.0, 0.0],
             [1.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]   ],
     ])
@@ -1408,7 +1448,8 @@ def test_mm_kinetic_with_allosteric_action():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1465,7 +1506,8 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    Ai = torch.zeros(2, 3, 4)
+    Aa = torch.zeros(2, 3, 4)
 
     # fmt: on
 
@@ -1514,7 +1556,8 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1574,7 +1617,8 @@ def test_reduce_velocity_in_multiple_proteins():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    Ai = torch.zeros(2, 3, 4)
+    Aa = torch.zeros(2, 3, 4)
 
     # reaction energies (c, p)
     torch.full((2, 3), -99999.9)
@@ -1623,7 +1667,8 @@ def test_reduce_velocity_in_multiple_proteins():
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
-    kinetics.A = A
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1666,23 +1711,9 @@ def test_multiply_signals():
         ],
     ])
 
-    # mask (c, p, s)
-    M = torch.tensor([
-        [
-            [0.0, 1.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [1.0, 1.0, 0.0, 0.0]
-        ],
-        [
-            [0.0, 1.0, 1.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]
-        ],
-    ])
-
     # fmt: on
 
-    xx, prots = kinetics._multiply_signals(X=X, mask=M, N=N)
+    xx, prots = kinetics._multiply_signals(X=X, N=N)
     assert xx.size() == (2, 3)
     assert prots.size() == (2, 3)
 

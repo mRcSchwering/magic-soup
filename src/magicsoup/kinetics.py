@@ -317,9 +317,9 @@ class Kinetics:
       Additionally, there are `Nf` and `Nb` which describe only forward and backward stoichiometric numbers.
       This is needed in addition to `N` to properly describe reactions that involve molecules
       which are not changed, _i.e._ where `n=0`.
-    - `A` Regulatory effect for each signal in every protein in every cell (c, p, s).
-      This is looks similar to a stoichiometric number. Numbers > 0.0 mean these molecules
-      act as activating effectors, numbers < 0.0 mean these molecules act as inhibiting effectors.
+    - `Ai`, `Aa` Regulatory effect for each signal in every protein in every cell (c, p, s).
+      `Ai` describes inhibitors, `Aa` describes activators with numbers > 0.0 describing
+      the stoichiometric number of the effector.
 
     The main method is [integrate_signals()][magicsoup.kinetics.Kinetics].
     When calling [enzymatic_activity()][magicsoup.world.World.enzymatic_activity], a matrix `X` of signals (c, s) is prepared
@@ -414,7 +414,8 @@ class Kinetics:
         self.N = self._tensor(0, 0, n_signals)
         self.Nf = self._tensor(0, 0, n_signals)
         self.Nb = self._tensor(0, 0, n_signals)
-        self.A = self._tensor(0, 0, n_signals)
+        self.Ai = self._tensor(0, 0, n_signals)
+        self.Aa = self._tensor(0, 0, n_signals)
 
         # the domain specifications return 4 indexes
         # idx 0-2 are 1-codon idxs for scalars (n=64)
@@ -642,7 +643,11 @@ class Kinetics:
 
         # effector vectors are summed up over domains
         # undefined vectors are all 0s
-        self.A[cell_idxs] = torch.einsum("cpds,cpd->cpds", effectors, signs).sum(dim=2)
+        A_d = torch.einsum("cpds,cpd->cpds", effectors, signs)
+
+        # A for inhibitors and activators are distinguished
+        self.Ai[cell_idxs] = torch.where(A_d < 0.0, -A_d, 0.0).sum(dim=2)
+        self.Aa[cell_idxs] = torch.where(A_d > 0.0, A_d, 0.0).sum(dim=2)
 
         # Kms of regulatory domains are aggregated for effectors
         # Kms from other domains are ignored using NaNs and nanmean
@@ -692,7 +697,8 @@ class Kinetics:
         self.N[cell_idxs] = 0.0
         self.Nf[cell_idxs] = 0.0
         self.Nb[cell_idxs] = 0.0
-        self.A[cell_idxs] = 0.0
+        self.Ai[cell_idxs] = 0.0
+        self.Aa[cell_idxs] = 0.0
         self.Kmf[cell_idxs] = 0.0
         self.Kmb[cell_idxs] = 0.0
         self.Kmr[cell_idxs] = 0.0
@@ -720,24 +726,16 @@ class Kinetics:
 
         return Xd
 
-    def _get_velocities(
-        self,
-        X: torch.Tensor,
-        Vmax: torch.Tensor,
-        is_fwd: torch.Tensor,
-        is_bwd: torch.Tensor,
-        is_inh: torch.Tensor,
-        is_act: torch.Tensor,
-    ) -> torch.Tensor:
+    def _get_velocities(self, X: torch.Tensor, Vmax: torch.Tensor) -> torch.Tensor:
         # catalytic activity
 
         # signals are aggregated for forward and backward reaction
         # proteins that had no involved catalytic region should not be active
-        kf, f_prots = self._multiply_signals(X=X, mask=is_fwd, N=self.Nf)
+        kf, f_prots = self._multiply_signals(X=X, N=self.Nf)
         kf /= self.Kmf
         kf[~f_prots] = 0.0  # rm artifacts created by ln
 
-        kb, b_prots = self._multiply_signals(X=X, mask=is_bwd, N=self.Nb)
+        kb, b_prots = self._multiply_signals(X=X, N=self.Nb)
         kb /= self.Kmb
         kb[~b_prots] = 0.0  # rm artifacts created by ln
 
@@ -745,12 +743,12 @@ class Kinetics:
         a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
 
         # inhibitor activity
-        xxi, i_prots = self._multiply_signals(X=X, mask=is_inh, N=-self.A)
+        xxi, i_prots = self._multiply_signals(X=X, N=self.Ai)
         a_inh = xxi / (xxi + self.Kmr)
         a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
 
         # activator activity
-        xxa, a_prots = self._multiply_signals(X=X, mask=is_act, N=self.A)
+        xxa, a_prots = self._multiply_signals(X=X, N=self.Aa)
         a_act = xxa / (xxa + self.Kmr)
         a_act[~a_prots] = 1.0  # proteins without activator should be active
 
@@ -763,27 +761,17 @@ class Kinetics:
         return V.clamp(max=_MAX)
 
     def _integrate_signals_part(
-        self,
-        part_i: int,
-        adj_vmax: torch.Tensor,
-        X: torch.Tensor,
-        is_fwd: torch.Tensor,
-        is_bwd: torch.Tensor,
-        is_inh: torch.Tensor,
-        is_act: torch.Tensor,
+        self, part_i: int, adj_vmax: torch.Tensor, X: torch.Tensor
     ) -> torch.Tensor:
         # calculate normal velocities
-        V = self._get_velocities(
-            X=X,
-            Vmax=adj_vmax,
-            is_fwd=is_fwd,
-            is_bwd=is_bwd,
-            is_inh=is_inh,
-            is_act=is_act,
-        )
+        V = self._get_velocities(X=X, Vmax=adj_vmax)
 
         # trim velocities for this part
         V *= self.alpha**part_i
+
+        # TODO: here mechanism to downgrade V according to Q/Ke
+        #       overshoot of Q/Ke must be detected
+        #       V must be reduced, then Q recalculated (needs X)
 
         # naive Xd, might produce negative X
         Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
@@ -829,13 +817,7 @@ class Kinetics:
         #       or remember by how much they overshot
         for i in range(self.n_computations):
             X = self._integrate_signals_part(
-                part_i=i,
-                adj_vmax=self.Vmax * self.n_comp_trim,
-                X=X,
-                is_fwd=self.Nf > 0.0,
-                is_bwd=self.Nb > 0.0,
-                is_inh=self.A < 0.0,
-                is_act=self.A > 0.0,
+                part_i=i, adj_vmax=self.Vmax * self.n_comp_trim, X=X
             )
 
         return X
@@ -858,7 +840,8 @@ class Kinetics:
         self.N[to_idxs] = self.N[from_idxs]
         self.Nf[to_idxs] = self.Nf[from_idxs]
         self.Nb[to_idxs] = self.Nb[from_idxs]
-        self.A[to_idxs] = self.A[from_idxs]
+        self.Ai[to_idxs] = self.Ai[from_idxs]
+        self.Aa[to_idxs] = self.Aa[from_idxs]
 
     def remove_cell_params(self, keep: torch.Tensor):
         """
@@ -878,7 +861,8 @@ class Kinetics:
         self.N = self.N[keep]
         self.Nf = self.Nf[keep]
         self.Nb = self.Nb[keep]
-        self.A = self.A[keep]
+        self.Ai = self.Ai[keep]
+        self.Aa = self.Aa[keep]
 
     def increase_max_cells(self, by_n: int):
         """
@@ -894,7 +878,8 @@ class Kinetics:
         self.N = self._expand_c(t=self.N, n=by_n)
         self.Nf = self._expand_c(t=self.Nf, n=by_n)
         self.Nb = self._expand_c(t=self.Nb, n=by_n)
-        self.A = self._expand_c(t=self.A, n=by_n)
+        self.Ai = self._expand_c(t=self.Ai, n=by_n)
+        self.Aa = self._expand_c(t=self.Aa, n=by_n)
 
     def increase_max_proteins(self, max_n: int):
         """
@@ -913,23 +898,25 @@ class Kinetics:
             self.N = self._expand_p(t=self.N, n=by_n)
             self.Nf = self._expand_p(t=self.Nf, n=by_n)
             self.Nb = self._expand_p(t=self.Nb, n=by_n)
-            self.A = self._expand_p(t=self.A, n=by_n)
+            self.Ai = self._expand_p(t=self.Ai, n=by_n)
+            self.Aa = self._expand_p(t=self.Aa, n=by_n)
 
     def _multiply_signals(
-        self, X: torch.Tensor, mask: torch.Tensor, N: torch.Tensor
+        self, X: torch.Tensor, N: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # calculate torch.prod(torch.pow(x, n), 2)
         # consider:
         # - a) some proteins are not involved at all (their Ns are all 0)
         # - b) some are involved but the signal 0 (required X is 0)
+        mask = N > 0
 
         # expand to p while keeping uninvolved 0
         x = torch.einsum("cps,cs->cps", mask, X)
 
         # needed because A has both positives and negatives
-        n = mask * N  # (c, p, s)
+        # n = mask * N  # (c, p, s)
 
-        xx = torch.prod(torch.pow(x, n), 2)
+        xx = torch.prod(torch.pow(x, N), 2)
 
         # Infs could have been created, MAX is still >e2 away from Inf
         xx = xx.nan_to_num(nan=0.0, neginf=0.0, posinf=_MAX)
