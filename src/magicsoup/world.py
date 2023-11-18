@@ -796,11 +796,11 @@ class World:
 
         xs = self.cell_positions[:, 0]
         ys = self.cell_positions[:, 1]
-        X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
-        X = self.kinetics.integrate_signals(X=X)
+        X0 = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
+        X1 = self.kinetics.integrate_signals(X=X0)
 
-        self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
-        self.cell_molecules = X[:, self._int_mol_idxs]
+        self.molecule_map[:, xs, ys] = X1[:, self._ext_mol_idxs].T
+        self.cell_molecules = X1[:, self._int_mol_idxs]
 
     @torch.no_grad()
     def diffuse_molecules(self):

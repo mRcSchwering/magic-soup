@@ -227,7 +227,7 @@ def test_random_kinetics_stay_zero():
     kinetics.Aa = torch.randint(low=0, high=5, size=(n_cells, n_prots, n_mols))
 
     # affinities (c, p)
-    Ke = torch.randn(n_cells, n_prots)
+    Ke = torch.randn(n_cells, n_prots) * 100
     kinetics.Kmf = torch.randn(n_cells, n_prots).abs()
     kinetics.Kmb = kinetics.Kmf * Ke
     kinetics.Kmr = torch.randn(n_cells, n_prots).abs()
@@ -266,7 +266,7 @@ def test_random_kinetics_dont_explode():
     kinetics.Aa = torch.randint(low=0, high=5, size=(n_cells, n_prots, n_mols))
 
     # affinities (c, p)
-    Ke = torch.randn(n_cells, n_prots)
+    Ke = torch.randn(n_cells, n_prots) * 100
     kinetics.Kmf = torch.randn(n_cells, n_prots).abs().clamp(0.001)
     kinetics.Kmb = (kinetics.Kmf * Ke).clamp(0.001)
     kinetics.Kmr = torch.randn(n_cells, n_prots).abs().clamp(0.001)

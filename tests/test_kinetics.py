@@ -938,7 +938,7 @@ def test_simple_mm_kinetic():
 
     # concentrations (c, s)
     X0 = torch.tensor([
-        [1.1, 0.9, 2.9, 0.8],
+        [2.1, 1.9, 2.9, 0.8],
         [2.9, 3.1, 2.1, 1.0],
     ])
 
@@ -1524,14 +1524,12 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     # expected outcome
     v_c0_0 = mm(X0[0, 0], X0[0, 1], Kmf[0, 0], Kmb[0, 0], Vmax[0, 0])
     v_c0_1 = mm(X0[0, 1], X0[0, 3], Kmf[0, 1], Kmb[0, 1], Vmax[0, 1])
-    # but this would lead to Xd + X0 = -0.0615 (for a)
+    # but this would lead to Xd + X0 = -0.804 (for a)
     assert X0[0, 0] - v_c0_0 < 0.0
     # so velocity should be reduced by a factor depending on current a
-    # all other proteins in this cell are reduce by the same factor
-    # to avoid follow up problems with other molecules being destroyed by other proteins
-    f = (X0[0, 0] - _EPS) / v_c0_0
+    # only P0 is reduced by this factor because its the only one reducing a
+    f = (v_c0_0 - (v_c0_0 - X0[0, 0].item())) / v_c0_0
     v_c0_0 = f * v_c0_0
-    v_c0_1 = f * v_c0_1
     dx_c0_a = -v_c0_0
     dx_c0_b = v_c0_0 - v_c0_1
     dx_c0_c = 0.0
@@ -1540,8 +1538,9 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     v_c1_0 = mm21(X0[1, 2], X0[1, 3], Kmf[1, 0], Kmb[1, 0], Vmax[1, 0])
     # but this would lead to Xd + X0 = -0.0722 (for c)
     assert X0[1, 2] - 2 * v_c1_0 < 0.0
-    # as above, velocities are reduced. here its only this protein
-    v_c1_0 = (X0[1, 2] - _EPS) / 2
+    # as above, velocities are reduced
+    f = (v_c1_0 - (v_c1_0 - X0[1, 2].item())) / v_c1_0 / 2
+    v_c1_0 = f * v_c1_0
     dx_c1_a = 0.0
     dx_c1_b = 0.0
     dx_c1_c = -2 * v_c1_0
@@ -1695,9 +1694,10 @@ def test_multiply_signals():
     X = torch.tensor([
         [0.0, 2.0, 3.0, 4.0],  # low concentrations
         [0.0, 200.0, 300.0, 400.0],  # high concentrations
+        [0.0, 0.0, 0.0, 0.0],  # all 0
     ])
 
-    # stoichiometry (c, p, s)
+    # one side of stoichiometry (c, p, s)
     N = torch.tensor([
         [
             [0.0, 1.0, 2.0, 0.0],  # simple
@@ -1709,20 +1709,28 @@ def test_multiply_signals():
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]
         ],
+        [
+            [0.0, 10.0, 5.0, 0.0],  # high coefficients
+            [0.0, 1.0, 2.0, 0.0],  # simple
+            [0.0, 0.0, 0.0, 0.0]
+        ],
     ])
 
     # fmt: on
 
+    # note: prots is a mask that identifies proteins
+    #       which are involved
+    #       xx of non-involved prots is useless
     xx, prots = kinetics._multiply_signals(X=X, N=N)
-    assert xx.size() == (2, 3)
-    assert prots.size() == (2, 3)
+    assert xx.size() == (3, 3)
+    assert prots.size() == (3, 3)
 
     # cell 0:
     p = prots[0]
     x = xx[0]
-    assert p[0] == 1.0
-    assert p[1] == 1.0
-    assert p[2] == 1.0
+    assert p[0].item() is True
+    assert p[1].item() is True
+    assert p[2].item() is True
     assert x[0] == X[0, 1] * X[0, 2] ** 2
     assert x[1] == 0.0
     assert x[2] == 0.0
@@ -1730,8 +1738,14 @@ def test_multiply_signals():
     # cell 1:
     p = prots[1]
     x = xx[1]
-    assert p[0] == 1.0
-    assert p[1] == 0.0
-    assert p[2] == 0.0
+    assert p[0].item() is True
+    assert p[1].item() is False
+    assert p[2].item() is False
     assert x[0] == X[1, 1] ** 10 * X[1, 2] ** 5
-    assert x[1] == 1.0  # this is not involved but 1.0 (because it had x>0,n=0)
+
+    p = prots[2]
+    x = xx[2]
+    assert p[0].item() is True
+    assert p[1].item() is True
+    assert p[2].item() is False
+    assert (x[:2] == 0.0).all()

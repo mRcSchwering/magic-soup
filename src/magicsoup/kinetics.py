@@ -12,9 +12,9 @@ from magicsoup.containers import (
     Domain,
 )
 
-_EPS = 1e-7
-_MIN = 1e-45
-_MAX = 1e38
+_EPS = 1e-45
+_MAX = 1e37
+_MIN = -1e37
 
 
 class _LogNormWeightMapFact:
@@ -673,7 +673,7 @@ class Kinetics:
         # energies define Ke which defines Ke = Kmf/Kmb
         # extreme energies can create Inf or 0.0, avoid them with clamp
         E = torch.einsum("cps,s->cp", N, self.mol_energies)
-        Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT).clamp(_MIN, _MAX)
+        Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT).clamp(_EPS, _MAX)
 
         # Km is sampled between a defined range
         # exessively small Km can create numerical instability
@@ -683,8 +683,8 @@ class Kinetics:
         # this operation can create again Inf or 0.0, avoided with clamp
         # this effectively limits Ke around 1e38
         is_fwd = Ke >= 1.0
-        self.Kmf[cell_idxs] = torch.where(is_fwd, Kmn, Kmn / Ke).clamp(_MIN, _MAX)
-        self.Kmb[cell_idxs] = torch.where(is_fwd, Kmn * Ke, Kmn).clamp(_MIN, _MAX)
+        self.Kmf[cell_idxs] = torch.where(is_fwd, Kmn, Kmn / Ke).clamp(_EPS, _MAX)
+        self.Kmb[cell_idxs] = torch.where(is_fwd, Kmn * Ke, Kmn).clamp(_EPS, _MAX)
 
     def unset_cell_params(self, cell_idxs: list[int]):
         """
@@ -704,28 +704,6 @@ class Kinetics:
         self.Kmr[cell_idxs] = 0.0
         self.Vmax[cell_idxs] = 0.0
 
-    def _correct_Xd(self, X: torch.Tensor, Xd: torch.Tensor) -> torch.Tensor:
-        # TODO: can this be done on protein level
-        #       if fwd and bwd are considered separately (interactions shouldnt matter)
-
-        # proteins can deconstruct more of a molecule than available in a cell
-        # this happens mainly with multiple proteins with low Km trying to deconstruct
-        # the same molecule species in one cell
-        # reaction stoichiometry must be obeyed, so mere X.clamp(0.0) is not allowed
-        # One could factor out which proteins must be slowed down by how much,
-        # and selectively only slow down these proteins by a certain trimming factor.
-        # However, this could create a follow-up X<0.0 situation with one of the other proteins
-        # which were not slowed down. To solve this, one would have to construct a
-        # dependency graph of the protein network, or just iterate this process often enough.
-        # Here, I am instead reducing all the cell's proteins by the same factor
-        # that way these follow-up X<0.0 situations cannot appear
-        # due to floating point precision I need to lift the cutoff from 0 to EPS
-        trim_factors = (X / -Xd - _EPS).clamp(0.0)
-        cell_trims = torch.where(X + Xd < 0.0, trim_factors, 1.0).amin(1)  # (c,)
-        Xd = torch.einsum("cs,c->cs", Xd, cell_trims)
-
-        return Xd
-
     def _get_velocities(self, X: torch.Tensor, Vmax: torch.Tensor) -> torch.Tensor:
         # catalytic activity
 
@@ -733,11 +711,13 @@ class Kinetics:
         # proteins that had no involved catalytic region should not be active
         kf, f_prots = self._multiply_signals(X=X, N=self.Nf)
         kf /= self.Kmf
-        kf[~f_prots] = 0.0  # rm artifacts created by ln
+        kf[~f_prots] = 0.0  # non-involved proteins are not active
+        kf[kf.isinf()] = _MAX
 
         kb, b_prots = self._multiply_signals(X=X, N=self.Nb)
         kb /= self.Kmb
-        kb[~b_prots] = 0.0  # rm artifacts created by ln
+        kb[~b_prots] = 0.0  # non-involved proteins are not active
+        kb[kb.isinf()] = _MAX
 
         # custom reversible MM equation
         a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
@@ -754,11 +734,35 @@ class Kinetics:
 
         # velocity from activities
         # as well as trimming factor of n_computations
-        V = Vmax * a_cat * (1 - a_inh) * a_act  # (c, p)
+        V = a_cat * Vmax * (1 - a_inh) * a_act  # (c, p)
 
         # Kms can be close to Inf, they can create Infs
         # thus result velocity should be clamped again
-        return V.clamp(max=_MAX)
+        return V.clamp(_MIN, _MAX)
+
+    # TODO: separate test (edge cases)
+    def _adjust_NV(self, NV: torch.Tensor, X: torch.Tensor) -> torch.Tensor:
+        # which proteins x signals are removed
+        M_rm = NV.clamp(max=0.0) < 0.0  # (c,p,s)
+
+        # which signals would all proteins remove naively
+        Xd_rm = (-NV).clamp(min=0.0).sum(1)  # (c, s)
+
+        # by how much is each signal removed too much
+        Xd_err = (-(X - Xd_rm)).clamp(min=0.0)  # (c, s)
+
+        # how does each protein have to be slowed down for each signal
+        F = (Xd_rm - Xd_err).clamp(min=0.0) / Xd_rm
+        F[F.isnan()] = 1.0
+        F[F.isinf()] = 1.0
+
+        F_prots = torch.einsum("cps,cs->cps", M_rm.float(), F)
+        F_prots[~M_rm] = 1.0  # (c,p,s)
+
+        # how much can each protein be avtive
+        F_min = F_prots.min(dim=2).values  # (c, p)
+
+        return torch.einsum("cps,cp->cps", NV, F_min)
 
     def _integrate_signals_part(
         self, part_i: int, adj_vmax: torch.Tensor, X: torch.Tensor
@@ -769,24 +773,32 @@ class Kinetics:
         # trim velocities for this part
         V *= self.alpha**part_i
 
-        # TODO: here mechanism to downgrade V according to Q/Ke
-        #       overshoot of Q/Ke must be detected
-        #       V must be reduced, then Q recalculated (needs X)
+        # hier berechne ich aufbau und abbau seperat
+        # dann kann ich nur basierend auf dem abbau proteine verlangsamen
 
-        # naive Xd, might produce negative X
-        Xd = torch.einsum("cps,cp->cs", self.N, V)  # (c, s)
+        # calculate NV
+        NV = torch.einsum("cps,cp->cps", self.N, V)
 
-        # correct so X is not negative
-        Xd = self._correct_Xd(X=X, Xd=Xd)
+        # adjust NV downward for negative concentrations
+        NV_adj = self._adjust_NV(NV=NV, X=X)
 
-        # update signals, this time no negative X
-        X = X + Xd
+        # TODO: viz checken, scheint sich auf einmal stark geändert zu haben
+        # (jetzt können molecules auf genau 0.0 runter reagieren)
 
-        # above was tested without clamp(0.0) and it never failed
-        # However, if due to some floating point inaccuracies, a negative X slips through
-        # it could create either NaNs or extremely large values
-        # which would spread over the whole simulation quickly
-        # Thus, as a final measure clamp is used (it should never actually do anything)
+        # TODO: adjust NV further to not overshoot Q/Ke
+        # 1. calc q0 = Q(X0)/Ke
+        # 2. calc X1 and q1 = Q(X1)/Ke
+        # 3. which q0 vs q1 overshot?, adjust NV_adj downwards for these
+        # 4. go back to 2.
+
+        # finally update signals
+        X = X + NV_adj.sum(1)
+
+        # when NV is adjusted downwards with F to not create negative X
+        # some floating point inaccuracies can still lead it below 0 (usually <1e-7)
+        # currently I don't have a good solution for this but to clip X
+        # However, this means there are sometimes n molecules created with the energy
+        # of (n - 1e-7) molecules (energy from nothing)
         X[X < 0.0] = 0.0
         X[X.isnan()] = 0.0
         X[X.isinf()] = _MAX
@@ -908,20 +920,19 @@ class Kinetics:
         # consider:
         # - a) some proteins are not involved at all (their Ns are all 0)
         # - b) some are involved but the signal 0 (required X is 0)
-        mask = N > 0
+        # - c) 0^n=0 but x^0=1
+        M = N > 0
 
         # expand to p while keeping uninvolved 0
-        x = torch.einsum("cps,cs->cps", mask, X)
+        x = torch.einsum("cps,cs->cps", M, X)
 
-        # needed because A has both positives and negatives
-        # n = mask * N  # (c, p, s)
-
+        # stray 1s created here
         xx = torch.prod(torch.pow(x, N), 2)
 
         # Infs could have been created, MAX is still >e2 away from Inf
         xx = xx.nan_to_num(nan=0.0, neginf=0.0, posinf=_MAX)
 
-        return xx, mask.sum(2) > 0.0
+        return xx, M.sum(2) > 0.0
 
     def _collect_proteome_idxs(
         self,
