@@ -782,9 +782,6 @@ class Kinetics:
         # adjust NV downward for negative concentrations
         NV_adj = self._adjust_NV(NV=NV, X=X)
 
-        # TODO: viz checken, scheint sich auf einmal stark geändert zu haben
-        # (jetzt können molecules auf genau 0.0 runter reagieren)
-
         # TODO: adjust NV further to not overshoot Q/Ke
         # 1. calc q0 = Q(X0)/Ke
         # 2. calc X1 and q1 = Q(X1)/Ke
