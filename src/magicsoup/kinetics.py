@@ -12,9 +12,11 @@ from magicsoup.containers import (
     Domain,
 )
 
-_EPS = 1e-45
-_MAX = 1e37
-_MIN = -1e37
+# MAX,MIN should be at least x100 away from inf
+# EPS should be 1/MAX
+_EPS = 1e-36
+_MAX = 1e36
+_MIN = -1e36
 
 
 class _LogNormWeightMapFact:
@@ -386,8 +388,8 @@ class Kinetics:
         device: str = "cpu",
         scalar_enc_size: int = 64 - 3,
         vector_enc_size: int = 4096 - 3 * 64,
-        n_computations: int = 11,
-        alpha: float = 0.6,
+        n_computations: int = 3,
+        alpha: float = 0.5,
     ):
         self.abs_temp = abs_temp
         self.device = device
@@ -407,6 +409,7 @@ class Kinetics:
 
         # working cell params
         n_signals = 2 * len(molecules)
+        self.Ke = self._tensor(0, 0)
         self.Kmf = self._tensor(0, 0)
         self.Kmb = self._tensor(0, 0)
         self.Kmr = self._tensor(0, 0)
@@ -674,6 +677,7 @@ class Kinetics:
         # extreme energies can create Inf or 0.0, avoid them with clamp
         E = torch.einsum("cps,s->cp", N, self.mol_energies)
         Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT).clamp(_EPS, _MAX)
+        self.Ke[cell_idxs] = Ke
 
         # Km is sampled between a defined range
         # exessively small Km can create numerical instability
@@ -699,6 +703,7 @@ class Kinetics:
         self.Nb[cell_idxs] = 0.0
         self.Ai[cell_idxs] = 0.0
         self.Aa[cell_idxs] = 0.0
+        self.Ke[cell_idxs] = 0.0
         self.Kmf[cell_idxs] = 0.0
         self.Kmb[cell_idxs] = 0.0
         self.Kmr[cell_idxs] = 0.0
@@ -740,10 +745,12 @@ class Kinetics:
         # thus result velocity should be clamped again
         return V.clamp(_MIN, _MAX)
 
-    # TODO: separate test (edge cases)
-    def _adjust_NV(self, NV: torch.Tensor, X: torch.Tensor) -> torch.Tensor:
+    # TODO: test: zero X, near zero X, high NV, multiple involved proteins
+    def _slow_proteins_for_negatives(
+        self, NV: torch.Tensor, X: torch.Tensor
+    ) -> torch.Tensor:
         # which proteins x signals are removed
-        M_rm = NV.clamp(max=0.0) < 0.0  # (c,p,s)
+        M_rm = NV < 0.0  # (c,p,s)
 
         # which signals would all proteins remove naively
         Xd_rm = (-NV).clamp(min=0.0).sum(1)  # (c, s)
@@ -764,43 +771,106 @@ class Kinetics:
 
         return torch.einsum("cps,cp->cps", NV, F_min)
 
+    # TODO: test: zero Xs, inf Ke, inf Q, multiple involved proteins
+    #             slowing down one protein lets other overshoot
+    #             protein must be up, then down, then not regulated...
+    def _slow_proteins_for_equilibrium(
+        self,
+        X0: torch.Tensor,
+        X1: torch.Tensor,
+        NV: torch.Tensor,
+        V: torch.Tensor,
+    ) -> torch.Tensor:
+        # adjust NV further downwards so Q does not overshoot Ke
+        # all proteins influence each other, so iterative heuristic
+        # increments to an adjustment factor are applied in steps:
+        # down-down-down = 0.05
+        # down-down      = 0.2
+        # down-down+up   = 0.35
+        # down           = 0.5
+        # down+up-down   = 0.65
+        # down+up        = 0.8
+        # down+up+up     = 0.95
+        increments = [0.5, 0.3, 0.15]
+        n_rounds = len(increments)
+        tol = 1.0  # stop adjusting if Ke ~= Q
+
+        # direction before applying Xd (t0)
+        # using V > 0 => Ke > Q0 to avoid Q0 calculation
+        is_fwd0 = V >= 0.0  # (c,p)
+
+        # running factors for adjusting NV
+        F = torch.ones_like(V)  # (c,p)
+
+        # calculate expected quotient Q1 (t1)
+        Q1 = self._get_quotient(X=X1)  # (c,p)
+
+        # direction after applying naive Xd (t1)
+        is_fwd1 = Q1 < self.Ke  # (c,p)
+
+        # these are overshooting Ke (only these are adjusted)
+        is_over = is_fwd0 != is_fwd1
+
+        for round_i, increment in enumerate(increments):
+            # these differ enough to be corrected
+            is_much = (self.Ke - Q1).abs() > tol
+
+            # mask for which velocities can be adjusted
+            M_adj = is_over & is_much
+            if torch.all(~M_adj):
+                return X1
+
+            # these need to be down regulated
+            adj_down = is_fwd0 != is_fwd1  # (c,p)
+
+            # adjust F upwards/downwards
+            F[M_adj & adj_down] -= increment
+            F[M_adj & ~adj_down] += increment
+
+            # calculate new X1
+            X1 = X0 + torch.einsum("cps,cp->cs", NV, F)  # (c,s)
+
+            # avoid final Q1 calculation
+            if round_i == n_rounds - 1:
+                return X1
+
+            # calculate expected quotient Q1 (t1)
+            Q1 = self._get_quotient(X=X1)  # (c,p)
+
+            # direction after applying naive Xd (t1)
+            is_fwd1 = Q1 < self.Ke  # (c,p)
+
+        return X1
+
     def _integrate_signals_part(
-        self, part_i: int, adj_vmax: torch.Tensor, X: torch.Tensor
+        self, adj_vmax: torch.Tensor, X0: torch.Tensor
     ) -> torch.Tensor:
         # calculate normal velocities
-        V = self._get_velocities(X=X, Vmax=adj_vmax)
-
-        # trim velocities for this part
-        V *= self.alpha**part_i
+        V = self._get_velocities(X=X0, Vmax=adj_vmax)  # (c,p)
 
         # hier berechne ich aufbau und abbau seperat
         # dann kann ich nur basierend auf dem abbau proteine verlangsamen
 
         # calculate NV
-        NV = torch.einsum("cps,cp->cps", self.N, V)
+        NV = torch.einsum("cps,cp->cps", self.N, V)  # (c,p,s)
 
         # adjust NV downward for negative concentrations
-        NV_adj = self._adjust_NV(NV=NV, X=X)
-
-        # TODO: adjust NV further to not overshoot Q/Ke
-        # 1. calc q0 = Q(X0)/Ke
-        # 2. calc X1 and q1 = Q(X1)/Ke
-        # 3. which q0 vs q1 overshot?, adjust NV_adj downwards for these
-        # 4. go back to 2.
-
-        # finally update signals
-        X = X + NV_adj.sum(1)
+        NV_adj = self._slow_proteins_for_negatives(NV=NV, X=X0)  # (c,p,s)
+        X1 = X0 + NV_adj.sum(1)  # (c,s)
 
         # when NV is adjusted downwards with F to not create negative X
         # some floating point inaccuracies can still lead it below 0 (usually <1e-7)
         # currently I don't have a good solution for this but to clip X
         # However, this means there are sometimes n molecules created with the energy
         # of (n - 1e-7) molecules (energy from nothing)
-        X[X < 0.0] = 0.0
-        X[X.isnan()] = 0.0
-        X[X.isinf()] = _MAX
+        X1[X1 < 0.0] = 0.0
+        X1[X1.isnan()] = 0.0
+        X1[X1.isinf()] = _MAX
 
-        return X
+        # adjust NV downward to avoid Q overshooting Ke
+        X1_adj = self._slow_proteins_for_equilibrium(X0=X0, X1=X1, NV=NV_adj, V=V)
+
+        return X1_adj
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -818,16 +888,11 @@ class Kinetics:
         The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
         The number of extracellular molecules comes from `world.molecule_map` from the pixel the particular cell currently lives on.
         """
-        # TODO: lower n_computations by being more clever
-        #       have all c,p Qs, see on which side they are now (bool)
-        #       do full integration, see on which side they are now (bool)
-        #       if they switched sides, they overshot
-        #       only repeat integration for overshooting ones
-        #       or remember by how much they overshot
-        for i in range(self.n_computations):
-            X = self._integrate_signals_part(
-                part_i=i, adj_vmax=self.Vmax * self.n_comp_trim, X=X
-            )
+        trim_factors = [0.7, 0.2, 0.1]
+
+        # calculate in multiple parts while reducing velocity
+        for trim in trim_factors:
+            X = self._integrate_signals_part(adj_vmax=self.Vmax * trim, X0=X)
 
         return X
 
@@ -842,6 +907,7 @@ class Kinetics:
         `from_idxs` and `to_idxs` must have the same length.
         They refer to the same cell indexes as in `world.cell_genomes`.
         """
+        self.Ke[to_idxs] = self.Ke[from_idxs]
         self.Kmf[to_idxs] = self.Kmf[from_idxs]
         self.Kmb[to_idxs] = self.Kmb[from_idxs]
         self.Kmr[to_idxs] = self.Kmr[from_idxs]
@@ -863,6 +929,7 @@ class Kinetics:
         `keep` must have the same length as `world.cell_genomes`.
         The indexes on `keep` reflect the indexes in `world.cell_genomes`.
         """
+        self.Ke = self.Ke[keep]
         self.Kmf = self.Kmf[keep]
         self.Kmb = self.Kmb[keep]
         self.Kmr = self.Kmr[keep]
@@ -880,6 +947,7 @@ class Kinetics:
         Arguments:
             by_n: By how many rows to increase the cell dimension
         """
+        self.Ke = self._expand_c(t=self.Ke, n=by_n)
         self.Kmf = self._expand_c(t=self.Kmf, n=by_n)
         self.Kmb = self._expand_c(t=self.Kmb, n=by_n)
         self.Kmr = self._expand_c(t=self.Kmr, n=by_n)
@@ -900,6 +968,7 @@ class Kinetics:
         n_prots = int(self.N.size(1))
         if max_n > n_prots:
             by_n = max_n - n_prots
+            self.Ke = self._expand_p(t=self.Ke, n=by_n)
             self.Kmf = self._expand_p(t=self.Kmf, n=by_n)
             self.Kmb = self._expand_p(t=self.Kmb, n=by_n)
             self.Kmr = self._expand_p(t=self.Kmr, n=by_n)
@@ -910,14 +979,27 @@ class Kinetics:
             self.Ai = self._expand_p(t=self.Ai, n=by_n)
             self.Aa = self._expand_p(t=self.Aa, n=by_n)
 
+    def _get_quotient(self, X: torch.Tensor) -> torch.Tensor:
+        xx_prod, prod_prots = self._multiply_signals(X=X, N=self.Nb)
+        xx_prod[~prod_prots] = 0.0
+        xx_prod[xx_prod.isinf()] = _MAX
+
+        xx_subs, subs_prots = self._multiply_signals(X=X, N=self.Nf)
+        xx_subs[~subs_prots] = 0.0
+        xx_subs[xx_subs.isinf()] = _MAX
+
+        # note: x/0=Inf, 0/x=0, 0/0=nan
+        # 0.0 and Inf is avoided as it is in Ke calculation
+        return (xx_prod / xx_subs).clamp(min=_EPS, max=_MAX).nan_to_num(1.0)
+
     def _multiply_signals(
         self, X: torch.Tensor, N: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # calculate torch.prod(torch.pow(x, n), 2)
         # consider:
-        # - a) some proteins are not involved at all (their Ns are all 0)
-        # - b) some are involved but the signal 0 (required X is 0)
-        # - c) 0^n=0 but x^0=1
+        # - some proteins are not involved at all (their Ns are all 0)
+        # - some are involved but the signal 0 (required X is 0)
+        # - 0^n=0 but x^0=1
         M = N > 0
 
         # expand to p while keeping uninvolved 0
@@ -927,8 +1009,13 @@ class Kinetics:
         xx = torch.prod(torch.pow(x, N), 2)
 
         # Infs could have been created, MAX is still >e2 away from Inf
-        xx = xx.nan_to_num(nan=0.0, neginf=0.0, posinf=_MAX)
+        # also I'm not sure how but somehow small negative values
+        # (<1e-7) can be produced (I suspect floating point errors)
+        xx[xx.isnan()] = 0.0
+        xx[xx < 0.0] = 0.0
+        xx[xx.isinf()] = _MAX
 
+        # mask (c,p) which proteins are active must be returned
         return xx, M.sum(2) > 0.0
 
     def _collect_proteome_idxs(

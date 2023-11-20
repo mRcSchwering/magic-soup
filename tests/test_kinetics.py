@@ -9,9 +9,9 @@ from magicsoup.containers import (
 )
 from magicsoup.constants import GAS_CONSTANT
 from magicsoup.kinetics import Kinetics
+from magicsoup.kinetics import _MAX, _EPS
 
 _TOLERANCE = 1e-4
-_EPS = 1e-8
 
 
 _ma = Molecule("a", energy=15 * 1e3)
@@ -79,11 +79,24 @@ _REACTION_M = torch.tensor([
 # fmt: on
 
 
-def _get_kinetics(n_computations=1) -> Kinetics:
-    kinetics = Kinetics(
+class _MockedKinetics(Kinetics):
+    # switch off iterative corrections for reaching equilibrium
+    # these would correct protein velocities downward to avoid
+    # Q overshooting Ke
+    # but it makes testing single calculations difficult
+
+    def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
+        return self._integrate_signals_part(adj_vmax=self.Vmax, X0=X)
+
+    def _slow_proteins_for_equilibrium(self, *_, **kwargs) -> torch.Tensor:
+        return kwargs["X1"]
+
+
+def _get_kinetics(use_original_class=False) -> Kinetics:
+    cls = Kinetics if use_original_class else _MockedKinetics
+    kinetics = cls(
         molecules=_MOLECULES,
         reactions=_REACTIONS,
-        n_computations=n_computations,
         abs_temp=310,
     )
     kinetics.km_map.weights = _KM_WEIGHTS.clone()
@@ -174,6 +187,7 @@ def test_cell_params_with_transporter_domains():
 
     Kmf = torch.zeros(2, 3)
     Kmb = torch.zeros(2, 3)
+    Ke = torch.zeros(2, 3)
     Kmr = torch.zeros(2, 3)
     Vmax = torch.zeros(2, 3)
     N = torch.zeros(2, 3, 8)
@@ -184,6 +198,7 @@ def test_cell_params_with_transporter_domains():
 
     # test
     kinetics = _get_kinetics()
+    kinetics.Ke = Ke
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -196,16 +211,21 @@ def test_cell_params_with_transporter_domains():
     proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
+    assert Ke[0, 0] == pytest.approx(1.0, abs=_TOLERANCE)
     assert Kmf[0, 0] == pytest.approx(0.5, abs=_TOLERANCE)
     assert Kmb[0, 0] == pytest.approx(0.5, abs=_TOLERANCE)
+    assert Ke[0, 1] == pytest.approx(1.0, abs=_TOLERANCE)
     assert Kmf[0, 1] == pytest.approx(_avg(0.5, 0.2), abs=_TOLERANCE)
     assert Kmb[0, 1] == pytest.approx(_avg(0.5, 0.2), abs=_TOLERANCE)
+    assert Ke[0, 1] == pytest.approx(1.0, abs=_TOLERANCE)
     assert Kmf[0, 2] == pytest.approx(0.0, _TOLERANCE)
     assert Kmb[0, 2] == pytest.approx(0.0, _TOLERANCE)
 
     ke_c1_1 = _ke([_ma], [_mb])
+    assert Ke[1, 0] == pytest.approx(1.0, abs=_TOLERANCE)
     assert Kmf[1, 0] == pytest.approx(_avg(0.4, 0.5, 0.6, 0.7), abs=_TOLERANCE)
     assert Kmb[1, 0] == pytest.approx(_avg(0.4, 0.5, 0.6, 0.7), abs=_TOLERANCE)
+    assert Ke[1, 1] == pytest.approx(ke_c1_1, abs=_TOLERANCE)
     assert Kmf[1, 1] == pytest.approx(_avg(0.5, 0.5), abs=_TOLERANCE)
     assert Kmb[1, 1] == pytest.approx(_avg(0.5, 0.5) * ke_c1_1, abs=_TOLERANCE)
     assert Kmf[1, 2] == pytest.approx(0.0, _TOLERANCE)
@@ -419,6 +439,7 @@ def test_cell_params_with_regulatory_domains():
     ]
     # fmt: on
 
+    Ke = torch.zeros(2, 3)
     Kmf = torch.zeros(2, 3)
     Kmb = torch.zeros(2, 3)
     Kmr = torch.zeros(2, 3)
@@ -431,6 +452,7 @@ def test_cell_params_with_regulatory_domains():
 
     # test
     kinetics = _get_kinetics()
+    kinetics.Ke = Ke
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -443,22 +465,25 @@ def test_cell_params_with_regulatory_domains():
     proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
-    ke_c0_0 = _ke([_ma], [_mb])
-    ke_c0_1 = _ke([_ma], [_mb])
+    ke_a_b = _ke([_ma], [_mb])
+    assert Ke[0, 0] == pytest.approx(ke_a_b, abs=_TOLERANCE)
     assert Kmf[0, 0] == pytest.approx(0.5, abs=_TOLERANCE)
-    assert Kmb[0, 0] == pytest.approx(0.5 * ke_c0_0, abs=_TOLERANCE)
+    assert Kmb[0, 0] == pytest.approx(0.5 * ke_a_b, abs=_TOLERANCE)
     assert Kmr[0, 0] == pytest.approx(_avg(1.0, 2.0), abs=_TOLERANCE)
+    assert Ke[0, 1] == pytest.approx(ke_a_b, abs=_TOLERANCE)
     assert Kmf[0, 1] == pytest.approx(0.5, abs=_TOLERANCE)
-    assert Kmb[0, 1] == pytest.approx(0.5 * ke_c0_1, abs=_TOLERANCE)
+    assert Kmb[0, 1] == pytest.approx(0.5 * ke_a_b, abs=_TOLERANCE)
     assert Kmr[0, 1] == pytest.approx(_avg(1.0, 1.5), abs=_TOLERANCE)
     assert Kmf[0, 2] == pytest.approx(0.0, _TOLERANCE)
     assert Kmb[0, 2] == pytest.approx(0.0, _TOLERANCE)
     assert Kmr[0, 2] == pytest.approx(0.0, _TOLERANCE)
 
+    assert Ke[1, 0] == pytest.approx(ke_a_b, abs=_TOLERANCE)
     assert Kmf[1, 0] == pytest.approx(0.5, abs=_TOLERANCE)
-    assert Kmb[1, 0] == pytest.approx(0.5 * ke_c0_0, abs=_TOLERANCE)
+    assert Kmb[1, 0] == pytest.approx(0.5 * ke_a_b, abs=_TOLERANCE)
+    assert Ke[1, 1] == pytest.approx(ke_a_b, abs=_TOLERANCE)
     assert Kmf[1, 1] == pytest.approx(0.5, abs=_TOLERANCE)
-    assert Kmb[1, 1] == pytest.approx(0.5 * ke_c0_1, abs=_TOLERANCE)
+    assert Kmb[1, 1] == pytest.approx(0.5 * ke_a_b, abs=_TOLERANCE)
     assert Kmf[1, 2] == pytest.approx(0.0, _TOLERANCE)
     assert Kmb[1, 2] == pytest.approx(0.0, _TOLERANCE)
 
@@ -721,6 +746,7 @@ def test_cell_params_with_catalytic_domains():
     ]
     # fmt: on
 
+    Ke = torch.zeros(2, 3)
     Kmf = torch.zeros(2, 3)
     Kmb = torch.zeros(2, 3)
     Kmr = torch.zeros(2, 3)
@@ -733,6 +759,7 @@ def test_cell_params_with_catalytic_domains():
 
     # test
     kinetics = _get_kinetics()
+    kinetics.Ke = Ke
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -748,17 +775,22 @@ def test_cell_params_with_catalytic_domains():
     ke_c0_0 = _ke([_ma, _md], [_mb, _mb, _mc])
     ke_c0_1 = _ke([_mb, _md], [_mc, _mb, _mc])
     ke_c0_2 = _ke([_md], [_mb, _mb])
+    assert Ke[0, 0] == pytest.approx(ke_c0_0, abs=_TOLERANCE)
     assert Kmf[0, 0] == pytest.approx(_avg(0.5, 1.5) / ke_c0_0, abs=_TOLERANCE)
     assert Kmb[0, 0] == pytest.approx(_avg(0.5, 1.5), abs=_TOLERANCE)
+    assert Ke[0, 1] == pytest.approx(ke_c0_1, abs=_TOLERANCE)
     assert Kmf[0, 1] == pytest.approx(_avg(0.9, 1.2) / ke_c0_1, abs=_TOLERANCE)
     assert Kmb[0, 1] == pytest.approx(_avg(0.9, 1.2), abs=_TOLERANCE)
+    assert Ke[0, 2] == pytest.approx(ke_c0_2, abs=_TOLERANCE)
     assert Kmf[0, 2] == pytest.approx(2.9 / ke_c0_2, abs=_TOLERANCE)
     assert Kmb[0, 2] == pytest.approx(2.9, abs=_TOLERANCE)
 
     ke_c1_0 = _ke([_mb, _md], [_ma, _mb, _mc])
     ke_c1_1 = _ke([_mb, _mb, _mc], [_mc, _md])
+    assert Ke[1, 0] == pytest.approx(ke_c1_0, abs=_TOLERANCE)
     assert Kmf[1, 0] == pytest.approx(_avg(0.3, 1.4) / ke_c1_0, _TOLERANCE)
     assert Kmb[1, 0] == pytest.approx(_avg(0.3, 1.4), _TOLERANCE)
+    assert Ke[1, 1] == pytest.approx(ke_c1_1, abs=_TOLERANCE)
     assert Kmf[1, 1] == pytest.approx(_avg(0.3, 1.7), _TOLERANCE)
     assert Kmb[1, 1] == pytest.approx(_avg(0.3, 1.7) * ke_c1_1, _TOLERANCE)
     assert Kmf[1, 2] == pytest.approx(0.0, _TOLERANCE)
@@ -1002,6 +1034,7 @@ def test_simple_mm_kinetic():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
+    kinetics.Ke = Kmb / Kmf
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1103,12 +1136,14 @@ def test_mm_kinetic_with_proportions():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
+    kinetics.Ke = Kmb / Kmf
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.Ai = Ai
     kinetics.Aa = Aa
+
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1202,6 +1237,7 @@ def test_mm_kinetic_with_multiple_substrates():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
+    kinetics.Ke = Kmb / Kmf
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1311,6 +1347,7 @@ def test_mm_kinetic_with_cofactors():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
+    kinetics.Ke = Kmb / Kmf
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1444,6 +1481,7 @@ def test_mm_kinetic_with_allosteric_action():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
+    kinetics.Ke = Kmb / Kmf
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
@@ -1551,12 +1589,14 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
+    kinetics.Ke = Kmb / Kmf
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.Ai = Ai
     kinetics.Aa = Aa
+
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1619,9 +1659,6 @@ def test_reduce_velocity_in_multiple_proteins():
     Ai = torch.zeros(2, 3, 4)
     Aa = torch.zeros(2, 3, 4)
 
-    # reaction energies (c, p)
-    torch.full((2, 3), -99999.9)
-
     # fmt: on
 
     def mm(s, p, kf, kb, v):
@@ -1642,7 +1679,7 @@ def test_reduce_velocity_in_multiple_proteins():
     assert X0[0, 0] + naive_dx_c0_a < 0.0
     # so velocity should be reduced to by a factor to not deconstruct too much a
     # all other proteins have to be reduced by the same factor to not cause downstream problems
-    f = (X0[0, 0] - _EPS) / -naive_dx_c0_a
+    f = X0[0, 0] / -naive_dx_c0_a
     v_c0_0 = v_c0_0 * f
     v_c0_1 = v_c0_1 * f
     dx_c0_a = -v_c0_0 - v_c0_1 * 2
@@ -1662,12 +1699,14 @@ def test_reduce_velocity_in_multiple_proteins():
     kinetics.N = N
     kinetics.Nf = Nf
     kinetics.Nb = Nb
+    kinetics.Ke = Kmb / Kmf
     kinetics.Kmf = Kmf
     kinetics.Kmb = Kmb
     kinetics.Kmr = Kmr
     kinetics.Vmax = Vmax
     kinetics.Ai = Ai
     kinetics.Aa = Aa
+
     Xd = kinetics.integrate_signals(X=X0) - X0
 
     assert (Xd[0, 0] - dx_c0_a).abs() < _TOLERANCE
@@ -1692,26 +1731,32 @@ def test_multiply_signals():
 
     # signals (c, s)
     X = torch.tensor([
-        [0.0, 2.0, 3.0, 4.0],  # low concentrations
-        [0.0, 200.0, 300.0, 400.0],  # high concentrations
-        [0.0, 0.0, 0.0, 0.0],  # all 0
+        [1.0, 2.0, 3.0, 4.0],  # low concentrations
+        [100.0, 200.0, 300.0, 400.0],  # high concentrations
+        [0.0, 0.0, 3.0, 4.0],  # some zeros
+        [0.0, 0.0, 0.0, 0.0],  # all zero
     ])
 
     # one side of stoichiometry (c, p, s)
     N = torch.tensor([
         [
-            [0.0, 1.0, 2.0, 0.0],  # simple
-            [2.0, 0.0, 0.0, 0.0],  # all substrates are 0
-            [1.0, 1.0, 0.0, 0.0]  # 1 of 2 substrates is 0
+            [0.0, 1.0, 2.0, 0.0],  # B + 2C
+            [3.0, 0.0, 0.0, 0.0],  # 3A
+            [0.0, 0.0, 0.0, 0.0]
         ],
         [
-            [0.0, 10.0, 5.0, 0.0],  # high coefficients
+            [10.0, 10.0, 5.0, 0.0],  # 10A + 10B + 5C
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]
         ],
         [
-            [0.0, 10.0, 5.0, 0.0],  # high coefficients
-            [0.0, 1.0, 2.0, 0.0],  # simple
+            [2.0, 1.0, 2.0, 0.0],  # 2A + B + 2C
+            [0.0, 0.0, 1.0, 2.0],  # 2D + C
+            [0.0, 0.0, 0.0, 0.0]
+        ],
+        [
+            [1.0, 1.0, 1.0, 1.0],  # A + B + C + D
+            [1.0, 2.0, 0.0, 0.0],  # A + 2B
             [0.0, 0.0, 0.0, 0.0]
         ],
     ])
@@ -1722,18 +1767,17 @@ def test_multiply_signals():
     #       which are involved
     #       xx of non-involved prots is useless
     xx, prots = kinetics._multiply_signals(X=X, N=N)
-    assert xx.size() == (3, 3)
-    assert prots.size() == (3, 3)
+    assert xx.size() == (4, 3)
+    assert prots.size() == (4, 3)
 
     # cell 0:
     p = prots[0]
     x = xx[0]
     assert p[0].item() is True
     assert p[1].item() is True
-    assert p[2].item() is True
-    assert x[0] == X[0, 1] * X[0, 2] ** 2
-    assert x[1] == 0.0
-    assert x[2] == 0.0
+    assert p[2].item() is False
+    assert x[0] == X[0, 1] * X[0, 2] ** 2  # B + 2C
+    assert x[1] == X[0, 0] ** 3  # 3A
 
     # cell 1:
     p = prots[1]
@@ -1741,11 +1785,267 @@ def test_multiply_signals():
     assert p[0].item() is True
     assert p[1].item() is False
     assert p[2].item() is False
-    assert x[0] == X[1, 1] ** 10 * X[1, 2] ** 5
+    assert x[0] == _MAX  # 10A + 10B + 5C
 
+    # cell 2:
     p = prots[2]
     x = xx[2]
     assert p[0].item() is True
     assert p[1].item() is True
     assert p[2].item() is False
-    assert (x[:2] == 0.0).all()
+    assert x[0] == 0.0  # 2A + B + 2C, where A,B=0
+    assert x[1] == X[2, 3] ** 2 * X[2, 2]  # 2D + C
+
+    # cell 3:
+    p = prots[3]
+    x = xx[3]
+    assert p[0].item() is True
+    assert p[1].item() is True
+    assert p[2].item() is False
+    assert x[0] == 0.0  # A + B + C + D, where all 0
+    assert x[1] == 0.0  # A + B + C + D, where all 0
+
+
+def test_get_quotient():
+    kinetics = _get_kinetics()
+    # 4 signals: s0, s1, s2, s3
+    # 2 proteins: p0, p1, p2
+    # fmt: off
+
+    # signals (c, s)
+    X = torch.tensor([
+        [1.0, 2.0, 3.0, 4.0],  # low concentrations
+        [100.0, 200.0, 300.0, 400.0],  # high concentrations
+        [0.0, 0.0, 10.0, 20.0],  # some zeros
+    ])
+
+    # stoichiometry (c, p, s)
+    Nf = torch.tensor([
+        [
+            [1.0, 0.0, 0.0, 0.0],  # A -> B
+            [0.0, 1.0, 0.0, 1.0],  # D + B -> C
+            [0.0, 2.0, 1.0, 0.0]   # 2B + C -> 3A
+        ],
+        [
+            [5.0, 7.0, 0.0, 0.0],  # 5A + 7B -> 10C
+            [0.0, 0.0, 20.0, 0.0], # 20C -> 30D
+            [1.0, 0.0, 0.0, 0.0]
+        ],
+        [
+            [1.0, 0.0, 3.0, 0.0],  # A + 3C -> 2D
+            [0.0, 0.0, 1.0, 0.0],  # C -> 2A
+            [1.0, 0.0, 0.0, 0.0]   # A -> B 
+        ],
+    ])
+    Nb = torch.tensor([
+        [
+            [0.0, 1.0, 0.0, 0.0],  # A -> B
+            [0.0, 0.0, 1.0, 0.0],  # D + B -> C
+            [3.0, 0.0, 0.0, 0.0]   # 2B + C -> 3A
+        ],
+        [
+            [0.0, 0.0, 10.0, 0.0],  # 5A + 7B -> 10C
+            [0.0, 0.0, 0.0, 30.0],  # 20C -> 30D
+            [0.0, 0.0, 0.0, 0.0]
+        ],
+        [
+            [0.0, 0.0, 0.0, 2.0],  # A + 3C -> 2D
+            [2.0, 0.0, 0.0, 0.0],  # C -> 2A
+            [0.0, 1.0, 0.0, 0.0]   # A -> B 
+        ],
+    ])
+
+    # fmt: on
+
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
+    Q = kinetics._get_quotient(X=X)
+
+    # cell 0
+    q = Q[0]
+    x = X[0]
+    assert q[0] == x[1] / x[0]  # A -> B
+    assert q[1] == x[2] / (x[1] * x[3])  # D + B -> C
+    assert q[2] == x[0] ** 3 / (x[1] ** 2 * x[2])  # 2B + C -> 3A
+
+    # cell 1
+    q = Q[1]
+    x = X[1]
+    assert q[0] == x[2] ** 10 / (x[0] ** 5 * x[1] ** 7)  # 5A + 7B -> 10C
+    assert q[1] == 1.0  # 20C -> 30d (both max out so _MAX/_MAX)
+
+    # cell 2
+    q = Q[2]
+    x = X[2]
+    assert q[0] == _MAX  # A + 3C -> 2D where A is 0.0
+    assert q[1] == _EPS  # C -> 2A where A is 0.0
+    assert q[2] == 1.0  # A -> B where A,B are 0.0
+
+
+def test_zeros_dont_stop_reactions():
+    # P0: A + B <-> C | +5 kJ
+    # P1: 3A <-> C | -10 kJ
+    # t0: A = 3.0, others 0.0
+    # expected: A drops, B rises, C first rises then drops
+    # equilibrium has a lot of B, very little A and C, A > C
+    # has to create stuff from zeros (except for A)
+    # there used to be a bug that didnt allow that
+
+    # fmt: off
+
+    # concentrations (c, s)
+    X = torch.tensor([
+        [3.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ])
+
+    # reactions (c, p, s)
+    N = torch.tensor([[
+        [-1., -1.,  1.,  0.,  0.,  0.],
+        [-3.,  0.,  1.,  0.,  0.,  0.]]])
+    
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
+
+    # affinities (c, p)
+    Kmf = torch.tensor([[7.3328, 1.0539]])
+    Kmb = torch.tensor([[1.0539, 5.1021]])
+    Kmr = torch.zeros(1, 2)
+
+    # max velocities (c, p)
+    Vmax = torch.tensor([[0.3, 0.3]])
+
+    # allosterics (c, p, s)
+    Ai = torch.zeros(1, 2, 6)
+    Aa = torch.zeros(1, 2, 6)
+
+    # fmt: on
+
+    # test
+    kinetics = _get_kinetics(use_original_class=True)
+    kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
+    kinetics.Ke = Kmb / Kmf
+    kinetics.Kmf = Kmf
+    kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
+    kinetics.Vmax = Vmax
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
+
+    X1 = kinetics.integrate_signals(X=X)
+    assert 0.0 < X1[0][0] < 3.0
+    assert 0.0 < X1[0][1] < 1.0
+    assert 0.0 < X1[0][2] < 1.0
+    assert X1[0][0] > X1[0][2]
+
+    X2 = kinetics.integrate_signals(X=X1)
+    assert 0.0 < X2[0][0] < X1[0][0]
+    assert 0.0 < X2[0][1] > X1[0][1]
+    assert 0.0 < X1[0][2] >= X1[0][2]
+    assert X2[0][0] > X2[0][2]
+
+
+def test_equilibrium_is_quickly_reached():
+    # higher order reactions have trouble reaching equilibrium
+    # because they tend to overshoot, then jump back and forth
+    # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
+    # cell 0: P0: a -> b, P1: c -> d
+    # cell 1: P0: 10a,10b -> c
+    # Ke all 1.0, Vmax all 100
+    # fmt: off
+
+    # concentrations (c, s)
+    X0 = torch.tensor([
+        [100.0, 0.0, 0.0, 100.0],
+        [100.0, 100.0, 0.0, 0.0],
+    ])
+
+    # reactions (c, p, s)
+    N = torch.tensor([
+        [   [-1.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+        [   [-5.0, -5.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+    ])
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
+
+    # affinities (c, p)
+    Ke = torch.tensor([
+        [1.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ]) 
+    Kmf = Ke.clone()
+    Kmb = Ke.clone()
+    Kmr = torch.zeros(2, 3)
+
+    # max velocities (c, p)
+    Vmax = torch.tensor([
+        [100.0, 100.0, 0.0],
+        [100.0, 0.0, 0.0],
+    ])
+
+    # allosterics (c, p, s)
+    Ai = torch.zeros(2, 3, 4)
+    Aa = torch.zeros(2, 3, 4)
+
+    # fmt: on
+
+    # test
+    kinetics = _get_kinetics(use_original_class=True)
+    kinetics.N = N
+    kinetics.Nf = Nf
+    kinetics.Nb = Nb
+    kinetics.Ke = Ke
+    kinetics.Kmf = Kmf
+    kinetics.Kmb = Kmb
+    kinetics.Kmr = Kmr
+    kinetics.Vmax = Vmax
+    kinetics.Ai = Ai
+    kinetics.Aa = Aa
+
+    def _get_q_c0_0(X: torch.Tensor) -> float:
+        return (X[0, 1] / X[0, 0]).item()
+
+    def _get_q_c0_1(X: torch.Tensor) -> float:
+        return (X[0, 3] / X[0, 2]).item()
+
+    def _get_q_c1_0(X: torch.Tensor) -> float:
+        return (X[1, 2] / (X[1, 0] ** 10 * X[1, 1] ** 10)).item()
+
+    def _get_diff(q: float, ke=1.0) -> float:
+        return abs(q - ke)
+
+    q0_c0_0 = _get_q_c0_0(X0)
+    q0_c0_1 = _get_q_c0_1(X0)
+    q0_c1_0 = _get_q_c1_0(X0)
+
+    X1 = kinetics.integrate_signals(X=X0)
+    q1_c0_0 = _get_q_c0_0(X1)
+    q1_c0_1 = _get_q_c0_1(X1)
+    q1_c1_0 = _get_q_c1_0(X1)
+    assert _get_diff(q1_c0_0) <= _get_diff(q0_c0_0)
+    assert _get_diff(q1_c0_1) <= _get_diff(q0_c0_1)
+    assert _get_diff(q1_c1_0) <= _get_diff(q0_c1_0)
+    assert q1_c0_0 == pytest.approx(1.0, abs=0.5)
+    assert q1_c0_1 == pytest.approx(1.0, abs=0.5)
+
+    X2 = kinetics.integrate_signals(X=X1)
+    q2_c0_0 = _get_q_c0_0(X2)
+    q2_c0_1 = _get_q_c0_1(X2)
+    q2_c1_0 = _get_q_c1_0(X2)
+    assert _get_diff(q2_c0_0) <= _get_diff(q1_c0_0)
+    assert _get_diff(q2_c0_1) <= _get_diff(q1_c0_1)
+    assert _get_diff(q2_c1_0) <= _get_diff(q1_c1_0)
+
+    X3 = kinetics.integrate_signals(X=X2)
+    q3_c0_0 = _get_q_c0_0(X3)
+    q3_c0_1 = _get_q_c0_1(X3)
+    q3_c1_0 = _get_q_c1_0(X3)
+    assert _get_diff(q3_c0_0) <= _get_diff(q2_c0_0)
+    assert _get_diff(q3_c0_1) <= _get_diff(q2_c0_1)
+    assert _get_diff(q3_c1_0) <= _get_diff(q2_c1_0)
+    assert q3_c1_0 == pytest.approx(1.0, abs=1.0)
