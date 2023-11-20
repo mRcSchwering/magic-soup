@@ -763,7 +763,7 @@ class Kinetics:
         # down+up-down   = 0.65
         # down+up        = 0.8
         # down+up+up     = 0.95
-        increments = [0.5, 0.3, 0.15]
+        increments = (0.5, 0.3, 0.15)
         n_rounds = len(increments)
         tol = 1.0  # stop adjusting if Ke ~= Q
 
@@ -801,6 +801,7 @@ class Kinetics:
 
             # calculate new X1
             X1 = X0 + torch.einsum("cps,cp->cs", NV, F)  # (c,s)
+            X1[X1 < 0.0] = 0.0
 
             # avoid final Q1 calculation
             if round_i == n_rounds - 1:
@@ -830,14 +831,11 @@ class Kinetics:
         NV_adj = self._slow_proteins_for_negatives(NV=NV, X=X0)  # (c,p,s)
         X1 = X0 + NV_adj.sum(1)  # (c,s)
 
-        # when NV is adjusted downwards with F to not create negative X
-        # some floating point inaccuracies can still lead it below 0 (usually <1e-7)
+        # some floating point inaccuracies can still lead X below 0 (usually <1e-7)
         # currently I don't have a good solution for this but to clip X
         # However, this means there are sometimes n molecules created with the energy
         # of (n - 1e-7) molecules (energy from nothing)
         X1[X1 < 0.0] = 0.0
-        X1[X1.isnan()] = 0.0
-        X1[X1.isinf()] = _MAX
 
         # adjust NV downward to avoid Q overshooting Ke
         X1_adj = self._slow_proteins_for_equilibrium(X0=X0, X1=X1, NV=NV_adj, V=V)
@@ -865,7 +863,9 @@ class Kinetics:
         # reaction equilibrium if it was overshot in the previous part
         trim_factors = (0.7, 0.2, 0.1)
         for trim in trim_factors:
-            X = self._integrate_signals_part(adj_vmax=self.Vmax * trim, X0=X)
+            X = self._integrate_signals_part(
+                adj_vmax=(self.Vmax * trim).clamp(0.0), X0=X
+            )
         return X
 
     def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
