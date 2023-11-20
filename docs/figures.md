@@ -1,4 +1,4 @@
-# Supporting Figures
+# Figures
 
 ## Genomes
 

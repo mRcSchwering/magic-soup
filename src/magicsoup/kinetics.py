@@ -295,11 +295,6 @@ class Kinetics:
             This should be the output of `max(genetics.one_codon_map.values())`.
         vector_enc_size: Number of tokens that can be used to encode the vectors for reactions and molecules.
             This should be the output of `max(genetics.two_codon_map.values())`.
-        n_computations: In how many computations to integrate signals. With a higher number chemical equilibriums
-            are reached smoother but it takes more time to compute (see details below about computation).
-        alpha: A trimming factor used to trim velocity at each step during signal integration. This number
-            can be adjusted if `n_computations` is changed and reactions don't reach their equilibrium state
-            anymore (see details below about computation).
 
     There are `c` cells, `p` proteins, `s` signals.
     Signals are basically molecule species, but we have to differentiate between intra- and extracellular molecule species.
@@ -357,25 +352,11 @@ class Kinetics:
     will progress its reaction at full speed $V_{max}$. This rate can be so high that, within one step, $Q$ surpasses
     $K_E$. In the next step it will move at full speed into the opposite direction, overshooting $K_E$ again, and so on.
     Reactions with high stoichiometric numbers are more prone to this as their rate functions are sharper.
-    To combat this one can divide the whole computation into many steps.
-    This is what `n_computations` is for. $V_{max}$ is decreased appropriately.
-    However, with this alone one would have to perform over 100 computations per step in order to make some
-    extreme reactions reach their equilibrium state.
-    Thus, with each computation in `n_computations` the reaction rate is exponentially decayed.
-    This has the effect that, while in the first few computations a reaction might still overshoot $K_E$,
-    during the last computations rates are so low, that even extremely volatile reactions can come close
-    to their intended equilibrium. The factor of this exponential decay is `alpha`.
-    For $V_{max} \le 100$ and $K_M \ge 0.01$ `n_computations=11` and `alpha=0.6` seem to work very well
-    (few computations, but stable equilibriums). You can always increase `n_computations`, but if you
-    decrease it, you might also want to try out different `alpha` values.
-
-    With the `n_computation` and `alpha` trick above, chances of enzymes trying to deconstruct more
-    substrate than available is very low. However, it can still happen. Sometimes it is also floating point
-    inaccuracies that can tip a near-zero value below zero. Thus, before the updated signals tensor `X`
-    gets returned, it is checked for negative concentrations.
-    Then, protein velocities for all cells with below zero concentrations is reduced and `X` is calculated again.
-    They are reduced by a factor that will create $X = \epsilon \gt 0$ for the signals that
-    were negative in the first calculation.
+    To combat this [integrate_signals()][magicsoup.kinetics.Kinetics] works by iteratively approaching
+    $V_{max}$ on multiple levels of the computation.
+    The approach was tuned to compute fast and give satifisfying reults with certain conditions in mind.
+    $V_{max} \le 100$, $K_M \ge 0.01$, and concentrations $X$ generally not much higher than 100.
+    Violating these assumptions could lead to reaction quotients constantly overshooting their equilibrium.
     """
 
     def __init__(
@@ -388,19 +369,10 @@ class Kinetics:
         device: str = "cpu",
         scalar_enc_size: int = 64 - 3,
         vector_enc_size: int = 4096 - 3 * 64,
-        n_computations: int = 3,
-        alpha: float = 0.5,
     ):
         self.abs_temp = abs_temp
         self.device = device
         self.abs_temp = abs_temp
-
-        # calculate signal integration in n_computation steps
-        # to reach equilibrium Ke faster, steps get increasingly slower
-        # trim(i) = trim0 * alpha^i and sum(trim0 * alpha^i) = 1 over all i
-        self.n_computations = n_computations
-        self.alpha = alpha
-        self.n_comp_trim = 1 / sum(self.alpha**d for d in range(self.n_computations))
 
         self.mol_energies = self._tensor_from([d.energy for d in molecules] * 2)
         self.mol_2_mi = {d: i for i, d in enumerate(molecules)}
@@ -888,12 +860,12 @@ class Kinetics:
         The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
         The number of extracellular molecules comes from `world.molecule_map` from the pixel the particular cell currently lives on.
         """
-        trim_factors = [0.7, 0.2, 0.1]
-
         # calculate in multiple parts while reducing velocity
+        # trim factors get increasingly smaller to make it more likely to approach the
+        # reaction equilibrium if it was overshot in the previous part
+        trim_factors = (0.7, 0.2, 0.1)
         for trim in trim_factors:
             X = self._integrate_signals_part(adj_vmax=self.Vmax * trim, X0=X)
-
         return X
 
     def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
