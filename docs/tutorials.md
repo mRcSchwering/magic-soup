@@ -604,7 +604,7 @@ If you just randomly pick some numbers, one of 2 things is likely to happen:
 - **All cells die** On average cells die before they have a chance to replicate.
   If they die very slowly, it might mean it is too hard to replicate.
   If they die very quickly, the kill-rate is too high.
-- **Cells overgrow the map, then cease doing anything** The kill-rate is too low.
+- **Cells overgrow the map, then nothing happens** The kill-rate is too low.
   Only cells at the edge of the growing colony had a chance to adapt.
   Once the map is fully overgrown adaption ceases.
   There might be a better adapted cell somewhere but it cannot replicate anymore.
