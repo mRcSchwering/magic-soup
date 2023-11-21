@@ -8,7 +8,7 @@ Dummy run to test simulation performance in realistic environment
 Last runs:
 
 - 2023-06-08 EC2 GPU: 0.7s / 1k cells, 4.5s / 40k cells (0.9s activity, 1.2 mutate genomes, 2 replicate)
-
+- 2023-11-21 EC2 GPU: 0.05s / 1k cells, 1.2s / 40k cells (0.3s activity, 0.7 mutate genomes, 0.03 replicate)
 """
 from argparse import ArgumentParser, Namespace
 from contextlib import contextmanager
@@ -121,7 +121,7 @@ def main(args: Namespace):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--map-size", default=254, type=int)
+    parser.add_argument("--map-size", default=256, type=int)
     parser.add_argument("--n-steps", default=1000, type=int)
     parser.add_argument("--init-genome-size", default=500, type=int)
     parser.add_argument("--init-molmap", default="randn", type=str)
