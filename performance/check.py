@@ -3,9 +3,13 @@ Little helper script for checking the performance of some functions
 
     PYTHONPATH=./src python performance/check.py --n=1000 --s=1000
 
-- v0.2.2 (python3.9,torch1.13) add/update cells is around 0.3s
-- v0.3.0 (python3.10,torch2.0) add/update cells is around 0.4s
-- v0.5.0 (python3.10,torch2.0) add/update cells is around 0.7s
+v0.7.0:
+1,000 genomes, 500 size, 4 workers
+(0.42+-0.05)s - add cells
+(0.43+-0.02)s - update cells
+(0.09+-0.01)s - replicate cells
+(0.22+-0.06)s - enzymatic activity
+(0.06+-0.01)s - get neighbors
 """
 import time
 from argparse import ArgumentParser
