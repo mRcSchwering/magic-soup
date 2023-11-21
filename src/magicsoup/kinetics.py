@@ -457,9 +457,9 @@ class Kinetics:
 
         # identify domain types
         # 1=catalytic, 2=transporter, 3=regulatory
-        is_catal = dom_types == 1  # (c, p, d)
-        is_trnsp = dom_types == 2  # (c, p, d)
-        is_reg = dom_types == 3  # (c, p, d)
+        is_catal = dom_types == 1  # (c,p,d)
+        is_trnsp = dom_types == 2  # (c,p,d)
+        is_reg = dom_types == 3  # (c,p,d)
 
         # map indices of domain specifications to concrete values
         # idx0 is a 2-codon index specific for every domain type (n=4096)
@@ -472,14 +472,14 @@ class Kinetics:
         not_reg_lng = (~is_reg).long()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        Vmax_d = self.vmax_map(idxs0 * not_reg_lng)  # float (c, p, d)
-        Km_d = self.km_map(idxs1)  # float (c, p, d)
-        signs = self.sign_map(idxs2)  # float (c, p, d)
+        Vmax_d = self.vmax_map(idxs0 * not_reg_lng)  # float (c,p,d)
+        Km_d = self.km_map(idxs1)  # float (c,p,d)
+        signs = self.sign_map(idxs2)  # float (c,p,d)
 
         # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c, p, d, s)
-        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c, p, d, s)
-        effectors = self.effector_map(idxs3 * reg_lng)  # float (c, p, d, s)
+        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c,p,d,s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c,p,d,s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # float (c,p,d,s)
 
         # N (c, p, d, s)
         N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
@@ -588,9 +588,9 @@ class Kinetics:
 
         # identify domain types
         # 1=catalytic, 2=transporter, 3=regulatory
-        is_catal = dom_types == 1  # (c, p, d)
-        is_trnsp = dom_types == 2  # (c, p, d)
-        is_reg = dom_types == 3  # (c, p, d)
+        is_catal = dom_types == 1  # (c,p,d)
+        is_trnsp = dom_types == 2  # (c,p,d)
+        is_reg = dom_types == 3  # (c,p,d)
 
         # map indices of domain specifications to concrete values
         # idx0 is a 2-codon index specific for every domain type (n=4096)
@@ -603,14 +603,14 @@ class Kinetics:
         not_reg_lng = (~is_reg).long()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # float (c, p, d)
-        Kms = self.km_map(idxs1)  # float (c, p, d)
-        signs = self.sign_map(idxs2)  # float (c, p, d)
+        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # float (c,p,d)
+        Kms = self.km_map(idxs1)  # float (c,p,d)
+        signs = self.sign_map(idxs2)  # float (c,p,d)
 
         # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c, p, d, s)
-        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c, p, d, s)
-        effectors = self.effector_map(idxs3 * reg_lng)  # float (c, p, d, s)
+        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c,p,d,s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c,p,d,s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # float (c,p,d,s)
 
         # Vmax are averaged over domains
         # undefined Vmax enries are NaN and are ignored by nanmean
@@ -680,193 +680,6 @@ class Kinetics:
         self.Kmb[cell_idxs] = 0.0
         self.Kmr[cell_idxs] = 0.0
         self.Vmax[cell_idxs] = 0.0
-
-    def _get_velocities(self, X: torch.Tensor, Vmax: torch.Tensor) -> torch.Tensor:
-        # catalytic activity
-
-        # signals are aggregated for forward and backward reaction
-        # proteins that had no involved catalytic region should not be active
-        kf, f_prots = self._multiply_signals(X=X, N=self.Nf)
-        kf /= self.Kmf
-        kf[~f_prots] = 0.0  # non-involved proteins are not active
-        kf[kf.isinf()] = _MAX
-
-        kb, b_prots = self._multiply_signals(X=X, N=self.Nb)
-        kb /= self.Kmb
-        kb[~b_prots] = 0.0  # non-involved proteins are not active
-        kb[kb.isinf()] = _MAX
-
-        # custom reversible MM equation
-        a_cat = (kf - kb) / (1 + kf + kb)  # (c, p)
-
-        # inhibitor activity
-        xxi, i_prots = self._multiply_signals(X=X, N=self.Ai)
-        a_inh = xxi / (xxi + self.Kmr)
-        a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
-
-        # activator activity
-        xxa, a_prots = self._multiply_signals(X=X, N=self.Aa)
-        a_act = xxa / (xxa + self.Kmr)
-        a_act[~a_prots] = 1.0  # proteins without activator should be active
-
-        # velocity from activities
-        # as well as trimming factor of n_computations
-        V = a_cat * Vmax * (1 - a_inh) * a_act  # (c, p)
-
-        # Kms can be close to Inf, they can create Infs
-        # thus result velocity should be clamped again
-        return V.clamp(_MIN, _MAX)
-
-    # TODO: test: zero X, near zero X, high NV, multiple involved proteins
-    def _slow_proteins_for_negatives(
-        self, NV: torch.Tensor, X: torch.Tensor
-    ) -> torch.Tensor:
-        # which proteins x signals are removed
-        M_rm = NV < 0.0  # (c,p,s)
-
-        # which signals would all proteins remove naively
-        Xd_rm = (-NV).clamp(min=0.0).sum(1)  # (c, s)
-
-        # by how much is each signal removed too much
-        Xd_err = (-(X - Xd_rm)).clamp(min=0.0)  # (c, s)
-
-        # how does each protein have to be slowed down for each signal
-        F = (Xd_rm - Xd_err).clamp(min=0.0) / Xd_rm
-        F[F.isnan()] = 1.0
-        F[F.isinf()] = 1.0
-
-        F_prots = torch.einsum("cps,cs->cps", M_rm.float(), F)
-        F_prots[~M_rm] = 1.0  # (c,p,s)
-
-        # how much can each protein be avtive
-        F_min = F_prots.min(dim=2).values  # (c, p)
-
-        return torch.einsum("cps,cp->cps", NV, F_min)
-
-    # TODO: test: zero Xs, inf Ke, inf Q, multiple involved proteins
-    #             slowing down one protein lets other overshoot
-    #             protein must be up, then down, then not regulated...
-    def _slow_proteins_for_equilibrium(
-        self,
-        X0: torch.Tensor,
-        X1: torch.Tensor,
-        NV: torch.Tensor,
-        V: torch.Tensor,
-    ) -> torch.Tensor:
-        # adjust NV further downwards so Q does not overshoot Ke
-        # all proteins influence each other, so iterative heuristic
-        # increments to an adjustment factor are applied in steps:
-        # down-down-down = 0.05
-        # down-down      = 0.2
-        # down-down+up   = 0.35
-        # down           = 0.5
-        # down+up-down   = 0.65
-        # down+up        = 0.8
-        # down+up+up     = 0.95
-        increments = (0.5, 0.3, 0.15)
-        n_rounds = len(increments)
-        tol = 1.0  # stop adjusting if Ke ~= Q
-
-        # direction before applying Xd (t0)
-        # using V > 0 => Ke > Q0 to avoid Q0 calculation
-        is_fwd0 = V >= 0.0  # (c,p)
-
-        # running factors for adjusting NV
-        F = torch.ones_like(V)  # (c,p)
-
-        # calculate expected quotient Q1 (t1)
-        Q1 = self._get_quotient(X=X1)  # (c,p)
-
-        # direction after applying naive Xd (t1)
-        is_fwd1 = Q1 < self.Ke  # (c,p)
-
-        # these are overshooting Ke (only these are adjusted)
-        is_over = is_fwd0 != is_fwd1
-
-        for round_i, increment in enumerate(increments):
-            # these differ enough to be corrected
-            is_much = (self.Ke - Q1).abs() > tol
-
-            # mask for which velocities can be adjusted
-            M_adj = is_over & is_much
-            if torch.all(~M_adj):
-                return X1
-
-            # these need to be down regulated
-            adj_down = is_fwd0 != is_fwd1  # (c,p)
-
-            # adjust F upwards/downwards
-            F[M_adj & adj_down] -= increment
-            F[M_adj & ~adj_down] += increment
-
-            # calculate new X1
-            X1 = X0 + torch.einsum("cps,cp->cs", NV, F)  # (c,s)
-            X1[X1 < 0.0] = 0.0
-
-            # avoid final Q1 calculation
-            if round_i == n_rounds - 1:
-                return X1
-
-            # calculate expected quotient Q1 (t1)
-            Q1 = self._get_quotient(X=X1)  # (c,p)
-
-            # direction after applying naive Xd (t1)
-            is_fwd1 = Q1 < self.Ke  # (c,p)
-
-        return X1
-
-    def _integrate_signals_part(
-        self, adj_vmax: torch.Tensor, X0: torch.Tensor
-    ) -> torch.Tensor:
-        # calculate normal velocities
-        V = self._get_velocities(X=X0, Vmax=adj_vmax)  # (c,p)
-
-        # hier berechne ich aufbau und abbau seperat
-        # dann kann ich nur basierend auf dem abbau proteine verlangsamen
-
-        # calculate NV
-        NV = torch.einsum("cps,cp->cps", self.N, V)  # (c,p,s)
-
-        # adjust NV downward for negative concentrations
-        NV_adj = self._slow_proteins_for_negatives(NV=NV, X=X0)  # (c,p,s)
-        X1 = X0 + NV_adj.sum(1)  # (c,s)
-
-        # some floating point inaccuracies can still lead X below 0 (usually <1e-7)
-        # currently I don't have a good solution for this but to clip X
-        # However, this means there are sometimes n molecules created with the energy
-        # of (n - 1e-7) molecules (energy from nothing)
-        X1[X1 < 0.0] = 0.0
-
-        # adjust NV downward to avoid Q overshooting Ke
-        X1_adj = self._slow_proteins_for_equilibrium(X0=X0, X1=X1, NV=NV_adj, V=V)
-
-        return X1_adj
-
-    def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
-        """
-        Simulate protein work by integrating all signals.
-
-        Arguments:
-            X: Tensor of every signal in every cell (c, s). Must all be >= 0.0.
-
-        Returns:
-            New tensor of the same shape which represents the updated signals for every cell.
-
-        The order of cells in `X` is the same as in `world.cell_genomes`
-        The order of signals is first all intracellular molecule species in the same order as `chemistry.molecules`,
-        then again all molecule species in the same order but this time describing extracellular molecule species.
-        The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
-        The number of extracellular molecules comes from `world.molecule_map` from the pixel the particular cell currently lives on.
-        """
-        # calculate in multiple parts while reducing velocity
-        # trim factors get increasingly smaller to make it more likely to approach the
-        # reaction equilibrium if it was overshot in the previous part
-        trim_factors = (0.7, 0.2, 0.1)
-        for trim in trim_factors:
-            X = self._integrate_signals_part(
-                adj_vmax=(self.Vmax * trim).clamp(0.0), X0=X
-            )
-        return X
 
     def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
         """
@@ -950,6 +763,159 @@ class Kinetics:
             self.Nb = self._expand_p(t=self.Nb, n=by_n)
             self.Ai = self._expand_p(t=self.Ai, n=by_n)
             self.Aa = self._expand_p(t=self.Aa, n=by_n)
+
+    def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
+        """
+        Simulate protein work by integrating all signals.
+
+        Arguments:
+            X: Tensor of every signal in every cell (c, s). Must all be >= 0.0.
+
+        Returns:
+            New tensor of the same shape which represents the updated signals for every cell.
+
+        The order of cells in `X` is the same as in `world.cell_genomes`
+        The order of signals is first all intracellular molecule species in the same order as `chemistry.molecules`,
+        then again all molecule species in the same order but this time describing extracellular molecule species.
+        The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
+        The number of extracellular molecules comes from `world.molecule_map` from the pixel the particular cell currently lives on.
+        """
+        # calculate in multiple parts while reducing velocity
+        # trim factors get increasingly smaller to make it more likely to approach the
+        # reaction equilibrium if it was overshot in the previous part
+        trim_factors = (0.7, 0.2, 0.1)
+        for trim in trim_factors:
+            X = self._integrate_signals_part(
+                adj_vmax=(self.Vmax * trim).clamp(0.0), X0=X
+            )
+        return X
+
+    def _integrate_signals_part(
+        self, adj_vmax: torch.Tensor, X0: torch.Tensor
+    ) -> torch.Tensor:
+        V = self._get_velocities(X=X0, Vmax=adj_vmax)  # (c,p)
+
+        # NV to keep synthesis and deconstruction separate
+        NV = torch.einsum("cps,cp->cps", self.N, V)  # (c,p,s)
+
+        # adjust NV downward to avoid negative concentrations
+        NV_adj = self._get_negative_adjusted_nv(NV=NV, X=X0)  # (c,p,s)
+        X1 = X0 + NV_adj.sum(1)  # (c,s)
+        X1[X1 < 0.0] = 0.0  # small floating point errors can lead to -1e-7
+
+        # adjust X downward to avoid Q overshooting Ke
+        X1_adj = self._get_equilibrium_adjusted_x(X0=X0, X1=X1, NV=NV_adj, V=V)
+
+        return X1_adj
+
+    def _get_velocities(self, X: torch.Tensor, Vmax: torch.Tensor) -> torch.Tensor:
+        # catalytic activity
+
+        # signals are aggregated for forward and backward reaction
+        # proteins that had no involved catalytic region should not be active
+        kf, f_prots = self._multiply_signals(X=X, N=self.Nf)
+        kf /= self.Kmf
+        kf[~f_prots] = 0.0  # non-involved proteins are not active
+        kf[kf.isinf()] = _MAX
+
+        kb, b_prots = self._multiply_signals(X=X, N=self.Nb)
+        kb /= self.Kmb
+        kb[~b_prots] = 0.0  # non-involved proteins are not active
+        kb[kb.isinf()] = _MAX
+
+        # custom reversible MM equation
+        a_cat = (kf - kb) / (1 + kf + kb)  # (c,p)
+
+        # inhibitor activity
+        xxi, i_prots = self._multiply_signals(X=X, N=self.Ai)
+        a_inh = xxi / (xxi + self.Kmr)
+        a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
+
+        # activator activity
+        xxa, a_prots = self._multiply_signals(X=X, N=self.Aa)
+        a_act = xxa / (xxa + self.Kmr)
+        a_act[~a_prots] = 1.0  # proteins without activator should be active
+
+        # velocity from activities
+        # as well as trimming factor of n_computations
+        V = a_cat * Vmax * (1 - a_inh) * a_act  # (c,p)
+
+        # Kms can be close to Inf, they can create Infs
+        # thus result velocity should be clamped again
+        return V.clamp(_MIN, _MAX)
+
+    def _get_equilibrium_adjusted_x(
+        self,
+        X0: torch.Tensor,
+        X1: torch.Tensor,
+        NV: torch.Tensor,
+        V: torch.Tensor,
+    ) -> torch.Tensor:
+        # adjust NV downwards so Q does not overshoot Ke
+        # must calculate X1 and Q1 to do adjustments, X1 is returned
+        # all proteins influence each others Q, so iterative heuristic
+        # increments to an adjustment factor in steps
+        increments = (0.5, 0.25, 0.125, 0.0625)
+
+        # stop adjusting if Ke ~= Q
+        upper_thresh = 1.5
+        lower_thresh = 1 / 1.5
+
+        has_impact = V.abs() > 0.1
+        is_fwd = V > 0.0
+
+        # running factors for adjusting NV
+        F = torch.ones_like(V)  # (c,p)
+        for increment in increments:
+            # calculate expected quotient Q1 and compare to Ke (t1)
+            Q1 = self._get_quotient(X=X1)  # (c,p)
+            QKe = Q1 / self.Ke
+
+            # fwd reaction: Q -> Ke from below, QKe > 1 is overshoot
+            # bwd reaction: Q -> Ke from above, QKe < 1 is overshoot
+            # reactions cant be adjusted higher than 1.0
+
+            v_too_low = torch.where(is_fwd, QKe < lower_thresh, QKe > upper_thresh)
+            v_too_low[is_fwd & (F == 1.0)] = False
+
+            v_too_high = torch.where(is_fwd, QKe > upper_thresh, QKe < lower_thresh)
+            v_too_high[~is_fwd & (F == 0.0)] = False
+
+            # mask for which velocities can be adjusted
+            if not torch.any((v_too_low | v_too_high) & has_impact):
+                return X1
+
+            # adjust F upwards/downwards
+            F[v_too_high] -= increment
+            F[v_too_low] += increment
+            F[F > 1.0] = 1.0
+            F[F < 0.0] = 0.0
+
+            # calculate new X1
+            X1 = X0 + torch.einsum("cps,cp->cs", NV, F)  # (c,s)
+            X1[X1 < 0.0] = 0.0
+
+        return X1
+
+    def _get_negative_adjusted_nv(
+        self, NV: torch.Tensor, X: torch.Tensor
+    ) -> torch.Tensor:
+        # how does each protein have to be slowed down for each signal
+        # so not more signal than available is removed
+        F = X / (-NV).clamp(min=0.0).sum(1)  # (c,s)
+        F[F > 1.0] = 1.0
+
+        # which signals are removed by each protein
+        M_rm = NV < 0.0  # (c,p,s)
+
+        # factor for slowing down each protein for each signal
+        F_prots = torch.einsum("cps,cs->cps", M_rm.float(), F)
+        F_prots[~M_rm] = 1.0  # (c,p,s)
+
+        # how much can each protein be active at most
+        F_min = F_prots.min(dim=2).values  # (c,p)
+
+        return torch.einsum("cps,cp->cps", NV, F_min)
 
     def _get_quotient(self, X: torch.Tensor) -> torch.Tensor:
         xx_prod, prod_prots = self._multiply_signals(X=X, N=self.Nb)
@@ -1035,11 +1001,11 @@ class Kinetics:
             c_idxs2.append(p_idxs2 + [empty_seq] * p_pad)
             c_idxs3.append(p_idxs3 + [empty_seq] * p_pad)
 
-        dom_types = self._tensor_from(c_dts)  # long (c, p, d)
-        idxs0 = self._tensor_from(c_idxs0)  # long (c, p, d)
-        idxs1 = self._tensor_from(c_idxs1)  # long (c, p, d)
-        idxs2 = self._tensor_from(c_idxs2)  # long (c, p, d)
-        idxs3 = self._tensor_from(c_idxs3)  # long (c, p, d)
+        dom_types = self._tensor_from(c_dts)  # long (c,p,d)
+        idxs0 = self._tensor_from(c_idxs0)  # long (c,p,d)
+        idxs1 = self._tensor_from(c_idxs1)  # long (c,p,d)
+        idxs2 = self._tensor_from(c_idxs2)  # long (c,p,d)
+        idxs3 = self._tensor_from(c_idxs3)  # long (c,p,d)
         return dom_types, idxs0, idxs1, idxs2, idxs3
 
     def _expand_c(self, t: torch.Tensor, n: int) -> torch.Tensor:

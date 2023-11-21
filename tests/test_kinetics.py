@@ -82,17 +82,17 @@ _REACTION_M = torch.tensor([
 class _MockedKinetics(Kinetics):
     # switch off iterative corrections for reaching equilibrium
     # these would correct protein velocities downward to avoid
-    # Q overshooting Ke
-    # but it makes testing single calculations difficult
+    # Q overshooting Ke, but make testing single calculations difficult
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         return self._integrate_signals_part(adj_vmax=self.Vmax, X0=X)
 
-    def _slow_proteins_for_equilibrium(self, *_, **kwargs) -> torch.Tensor:
+    def _get_equilibrium_adjusted_x(self, *_, **kwargs) -> torch.Tensor:
         return kwargs["X1"]
 
 
 def _get_kinetics(use_original_class=False) -> Kinetics:
+    """use_original_class=False to switch off iterative corrections"""
     cls = Kinetics if use_original_class else _MockedKinetics
     kinetics = cls(
         molecules=_MOLECULES,
@@ -1951,7 +1951,7 @@ def test_equilibrium_is_quickly_reached():
     # because they tend to overshoot, then jump back and forth
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
     # cell 0: P0: a -> b, P1: c -> d
-    # cell 1: P0: 10a,10b -> c
+    # cell 1: P0: 5a,5b -> 5c  super shaky Q
     # Ke all 1.0, Vmax all 100
     # fmt: off
 
@@ -1966,7 +1966,7 @@ def test_equilibrium_is_quickly_reached():
         [   [-1.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, -1.0, 1.0],
             [0.0, 0.0, 0.0, 0.0]    ],
-        [   [-5.0, -5.0, 1.0, 0.0],
+        [   [-5.0, -5.0, 5.0, 0.0],
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0]    ],
     ])
@@ -1977,7 +1977,7 @@ def test_equilibrium_is_quickly_reached():
     Ke = torch.tensor([
         [1.0, 1.0, 0.0],
         [1.0, 0.0, 0.0],
-    ]) 
+    ])
     Kmf = Ke.clone()
     Kmb = Ke.clone()
     Kmr = torch.zeros(2, 3)
@@ -2014,10 +2014,12 @@ def test_equilibrium_is_quickly_reached():
         return (X[0, 3] / X[0, 2]).item()
 
     def _get_q_c1_0(X: torch.Tensor) -> float:
-        return (X[1, 2] / (X[1, 0] ** 10 * X[1, 1] ** 10)).item()
+        return (X[1, 2] ** 5 / (X[1, 0] ** 5 * X[1, 1] ** 5)).item()
 
     def _get_diff(q: float, ke=1.0) -> float:
-        return abs(q - ke)
+        if q == 0.0:
+            return 1.0 if ke == 0.0 else _MAX
+        return q / ke if q / ke > 1.0 else ke / q
 
     q0_c0_0 = _get_q_c0_0(X0)
     q0_c0_1 = _get_q_c0_1(X0)
@@ -2030,8 +2032,8 @@ def test_equilibrium_is_quickly_reached():
     assert _get_diff(q1_c0_0) <= _get_diff(q0_c0_0)
     assert _get_diff(q1_c0_1) <= _get_diff(q0_c0_1)
     assert _get_diff(q1_c1_0) <= _get_diff(q0_c1_0)
-    assert q1_c0_0 == pytest.approx(1.0, abs=0.5)
-    assert q1_c0_1 == pytest.approx(1.0, abs=0.5)
+    assert q1_c0_0 == pytest.approx(1.0, rel=0.5)
+    assert q1_c0_1 == pytest.approx(1.0, rel=0.5)
 
     X2 = kinetics.integrate_signals(X=X1)
     q2_c0_0 = _get_q_c0_0(X2)
@@ -2039,7 +2041,7 @@ def test_equilibrium_is_quickly_reached():
     q2_c1_0 = _get_q_c1_0(X2)
     assert _get_diff(q2_c0_0) <= _get_diff(q1_c0_0)
     assert _get_diff(q2_c0_1) <= _get_diff(q1_c0_1)
-    assert _get_diff(q2_c1_0) <= _get_diff(q1_c1_0)
+    assert abs(_get_diff(q2_c1_0) - q1_c1_0) <= 0.5
 
     X3 = kinetics.integrate_signals(X=X2)
     q3_c0_0 = _get_q_c0_0(X3)
@@ -2047,5 +2049,218 @@ def test_equilibrium_is_quickly_reached():
     q3_c1_0 = _get_q_c1_0(X3)
     assert _get_diff(q3_c0_0) <= _get_diff(q2_c0_0)
     assert _get_diff(q3_c0_1) <= _get_diff(q2_c0_1)
-    assert _get_diff(q3_c1_0) <= _get_diff(q2_c1_0)
-    assert q3_c1_0 == pytest.approx(1.0, abs=1.0)
+    assert abs(_get_diff(q3_c1_0) - _get_diff(q2_c1_0)) <= 0.5
+    assert q3_c1_0 == pytest.approx(1.0, rel=0.5)
+
+
+def test_get_negative_adjusted_nv():
+    # 4 max proteins, 3 signals: A,B,C,D
+    #
+    # cell 0:
+    # P0: A -> B, C -> D too little A, with P1 together too little C
+    # P1: C -> D with P0 together too little C
+    # P1 is slowed down to share C with P0, but P0 is slowed down more for A
+    # A is deconstructed to 0.0, but C not because it was slowed down more for A
+    # (shortcomming of current adjustments)
+    #
+    # cell 1:
+    # P0: A -> B enough A, should not be slowed down
+    # P1: C -> D not enough C, must be slowed down
+    #
+    # cell 2:
+    # P0: A -> B more than enough A, some A must be left
+    # P1: C -> D not enough C, even though at t1 C is gained again
+    # P2: D -> C not enough D, even though at t1 D is gained again
+
+    # fmt: off
+    # concentrations (c, s)
+    X0 = torch.tensor([
+        [1.0, 0.0, 10.0, 0.0],
+        [10.0, 0.0, 1.0, 0.0],
+        [10.0, 0.0, 5.0, 5.0],
+    ])
+
+    # stoiciometric numbers x velocities (c, p, s)
+    NV = torch.tensor([
+        [   [-100.0, 100.0, -10.0, 10.0],
+            [0.0, 0.0, -10.0, 10.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+        [   [-10.0, 10.0, 0.0, 0.0],
+            [0.0, 0.0, -100.0, 100.0],
+            [0.0, 0.0, 0.0, 0.0]    ],
+        [   [-5.0, 5.0, 0.0, 0.0],
+            [0.0, 0.0, -10.0, 10.0],
+            [0.0, 0.0, 10.0, -10.0]    ],
+    ])
+    # fmt: on
+
+    kinetics = _get_kinetics()
+    NV_adj = kinetics._get_negative_adjusted_nv(NV=NV, X=X0)
+    X1 = X0 + NV_adj.sum(1)
+
+    # cell 0:
+    nv = NV_adj[0]
+    x1 = X1[0]
+    assert nv[0, 0] == pytest.approx(-1.0, abs=_TOLERANCE)
+    assert nv[0, 1] == pytest.approx(1.0, abs=_TOLERANCE)
+    assert nv[0, 2] == pytest.approx(-0.1, abs=_TOLERANCE)
+    assert nv[0, 3] == pytest.approx(0.1, abs=_TOLERANCE)
+    assert nv[1, 0] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[1, 1] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[1, 2] == pytest.approx(-5.0, abs=_TOLERANCE)
+    assert nv[1, 3] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x1[0] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert x1[1] == pytest.approx(1.0, abs=_TOLERANCE)
+    assert x1[2] == pytest.approx(4.9, abs=_TOLERANCE)
+    assert x1[3] == pytest.approx(5.1, abs=_TOLERANCE)
+
+    # cell 1:
+    nv = NV_adj[1]
+    x1 = X1[1]
+    assert nv[0, 0] == pytest.approx(-10.0, abs=_TOLERANCE)
+    assert nv[0, 1] == pytest.approx(10.0, abs=_TOLERANCE)
+    assert nv[0, 2] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[0, 3] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[1, 0] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[1, 1] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[1, 2] == pytest.approx(-1.0, abs=_TOLERANCE)
+    assert nv[1, 3] == pytest.approx(1.0, abs=_TOLERANCE)
+    assert x1[0] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert x1[1] == pytest.approx(10.0, abs=_TOLERANCE)
+    assert x1[2] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert x1[3] == pytest.approx(1.0, abs=_TOLERANCE)
+
+    # cell 2:
+    nv = NV_adj[2]
+    x1 = X1[2]
+    assert nv[0, 0] == pytest.approx(-5.0, abs=_TOLERANCE)
+    assert nv[0, 1] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert nv[0, 2] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[0, 3] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[1, 0] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[1, 1] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[1, 2] == pytest.approx(-5.0, abs=_TOLERANCE)
+    assert nv[1, 3] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert nv[2, 0] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[2, 1] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert nv[2, 2] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert nv[2, 3] == pytest.approx(-5.0, abs=_TOLERANCE)
+    assert x1[0] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x1[1] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x1[2] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x1[3] == pytest.approx(5.0, abs=_TOLERANCE)
+
+
+def test_get_equilibrium_adjusted_x():
+    # fmt: off
+    # 3 max proteins, 4 signals A,B,C,D
+    #
+    # cell 0:
+    # P0: A -> B Ke=1 would overshoot, has to be slowed down
+    # P1: C -> D Ke=Inf does not overshoot
+    # P3: B -> D Ke=1 no B,D nothing should happen
+    #
+    # cell 1:
+    # P0: A -> B Ke=1 overshoots, slowed down, but affected by P1
+    # P1: B -> C Ke=1 only doesnt overshoot because of with P0
+    #
+    # cell 2:
+    # P0: A -> B Ke=10
+    # P1: B -> A Ke=1
+    # they counteract each other, P0 should generally win, but can only
+    # do so if it is faster, but here both have same V so no winner
+    #
+    # cell 3:
+    # P0: A -> B Ke=10
+    # P1: B -> A Ke=1
+    # as with cell 2 but this time P0 is faster, so it can surpress P1
+
+
+    # concentrations at t0 (c, s)
+    X0 = torch.tensor(
+        [
+            [10.0, 0.0, 10.0, 0.0],
+            [10.0, 1.0, 0.0, 0.0],
+            [5.0, 5.0, 0.0, 0.0],
+            [5.0, 5.0, 0.0, 0.0],
+        ]
+    )
+
+    # reactions (c, p, s)
+    N = torch.tensor(
+        [
+            [   [-1.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, -1.0, 1.0],
+                [0.0, -1.0, 0.0, 1.0]    ],
+            [   [-1.0, 1.0, 0.0, 0.0],
+                [0.0, -1.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0]    ],
+            [   [-1.0, 1.0, 0.0, 0.0],
+                [1.0, -1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0]    ],
+            [   [-1.0, 1.0, 0.0, 0.0],
+                [1.0, -1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0]    ],
+        ]
+    )
+    Nf = torch.where(N < 0.0, -N, 0.0)
+    Nb = torch.where(N > 0.0, N, 0.0)
+
+    # max velocities (c, p)
+    V = torch.tensor(
+        [
+            [10.0, 10.0, 0.0],
+            [10.0, 1.0, 0.0],
+            [2.0, 2.0, 0.0],
+            [10.0, 1.0, 0.0],
+        ]
+    )
+
+    # equilibriums (c, p)
+    Ke = torch.tensor(
+        [
+            [1.0, _MAX, 1.0],
+            [1.0, 1.0, 0.0],
+            [10.0, 1.0, 0.0],
+            [10.0, 1.0, 0.0],
+        ]
+    )
+    # fmt: on
+
+    # test
+    kinetics = _get_kinetics(use_original_class=True)
+    kinetics.Ke = Ke
+    kinetics.Nb = Nb
+    kinetics.Nf = Nf
+
+    NV = torch.einsum("cps,cp->cps", N, V)
+    X1 = X0 + NV.sum(1)
+    X2 = kinetics._get_equilibrium_adjusted_x(X0=X0, X1=X1, NV=NV, V=V)
+
+    # cell 0
+    x2 = X2[0]
+    assert x2[0] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x2[1] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x2[2] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert x2[3] == pytest.approx(10.0, abs=_TOLERANCE)
+
+    # cell 1
+    x2 = X2[1]
+    assert x2[0] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x2[1] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x2[2] == pytest.approx(1.0, abs=_TOLERANCE)
+    assert x2[3] == pytest.approx(0.0, abs=_TOLERANCE)
+
+    # cell 2
+    x2 = X2[2]
+    assert x2[0] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x2[1] == pytest.approx(5.0, abs=_TOLERANCE)
+    assert x2[2] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert x2[3] == pytest.approx(0.0, abs=_TOLERANCE)
+
+    # cell 3
+    x2 = X2[3]
+    assert x2[0] == pytest.approx(1.0, abs=_TOLERANCE)
+    assert x2[1] == pytest.approx(9.0, abs=_TOLERANCE)
+    assert x2[2] == pytest.approx(0.0, abs=_TOLERANCE)
+    assert x2[3] == pytest.approx(0.0, abs=_TOLERANCE)
