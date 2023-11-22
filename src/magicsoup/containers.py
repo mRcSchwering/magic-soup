@@ -460,19 +460,17 @@ class RegulatoryDomain(Domain):
 
     Arguments:
         effector: The molecule species which will be the effector molecule.
-        km: Michaelis Menten constant of the transport (in mol).
+        hill: Hill coefficient describing degree of cooperativity
+        km: ligand concentration producing half occupation
         is_inhibiting: Whether this is an inhibiting regulatory domain (otherwise activating).
         is_transmembrane: Whether this is also a transmembrane domain.
             If true, the domain will react to extracellular molecules instead of intracellular ones.
-
-    I think the term Michaelis Menten constant in a regulatory domain is a bit weird
-    since there is no product being created.
-    However, the kinetics of the amount of activation or inhibition are the same.
     """
 
     def __init__(
         self,
         effector: Molecule,
+        hill: int,
         km: float,
         is_inhibiting: bool,
         is_transmembrane: bool,
@@ -481,18 +479,19 @@ class RegulatoryDomain(Domain):
         super().__init__(**kwargs)
         self.effector = effector
         self.km = km
+        self.hill = int(hill)
         self.is_transmembrane = is_transmembrane
         self.is_inhibiting = is_inhibiting
 
     def __repr__(self) -> str:
         loc = "transmembrane" if self.is_transmembrane else "cytosolic"
         eff = "inhibiting" if self.is_inhibiting else "activating"
-        return f"ReceptorDomain({self.effector},Km={self.km:.2e},{loc},{eff})"
+        return f"ReceptorDomain({self.effector},Km={self.km:.2e},hill={self.hill},{loc},{eff})"
 
     def __str__(self) -> str:
         loc = "[e]" if self.is_transmembrane else "[i]"
         post = "inhibitor" if self.is_inhibiting else "activator"
-        return f"{self.effector}{loc} {post} | Km {self.km:.2e}"
+        return f"{self.effector}{loc} {post} | Km {self.km:.2e} Hill {self.hill}"
 
 
 class RegulatoryDomainFact(DomainFact):
@@ -504,10 +503,12 @@ class RegulatoryDomainFact(DomainFact):
         is_transmembrane: Whether this is also a transmembrane domain.
             If true, the domain will react to extracellular molecules instead of intracellular ones.
         km: Desired Michaelis Menten constant of the transport (in mol).
+        hill: Hill coefficient describing degree of cooperativity (1, 3, or 5)
         is_inhibiting: Whether the effector will have an activating or inhibiting effect.
 
-    `km` is a target value.
-    Due to the way how codons are sampled for specific floats, the actual value for `km` might differ.
+    `km` and `hill` are target values.
+    Due to the way how codons are sampled for specific values,
+    the final value for `km` and `hill` might differ.
     The closest available value to the given value will be used.
 
     If any optional argument is left out (`None`) it will be sampled randomly.
@@ -519,11 +520,13 @@ class RegulatoryDomainFact(DomainFact):
         is_transmembrane: bool,
         is_inhibiting: bool | None = None,
         km: float | None = None,
+        hill: int | None = None,
     ):
         self.effector = effector
         self.is_transmembrane = is_transmembrane
         self.is_inhibiting = is_inhibiting
         self.km = km
+        self.hill = hill
 
 
 class Protein:

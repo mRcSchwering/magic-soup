@@ -313,7 +313,7 @@ def test_generate_genome():
     p1 = ms.ProteinFact(
         domain_facts=[
             ms.TransporterDomainFact(molecule=mi),
-            ms.RegulatoryDomainFact(effector=mk, is_transmembrane=True),
+            ms.RegulatoryDomainFact(effector=mk, is_transmembrane=True, hill=3),
         ]
     )
 
@@ -357,7 +357,7 @@ def test_generate_genome():
                     if dom.molecule == mi:
                         has_ti = True
                 if isinstance(dom, ms.RegulatoryDomain):
-                    if dom.effector == mk and dom.is_inhibiting:
+                    if dom.effector == mk and dom.is_inhibiting and dom.hill == 3:
                         has_rk = True
 
             if has_ckij and has_cij:

@@ -367,6 +367,7 @@ class World:
             idx_2_two_codon=self.genetics.idx_2_two_codon,
             vmax_2_idxs=self.kinetics.vmax_2_idxs,
             km_2_idxs=self.kinetics.km_2_idxs,
+            hill_2_idxs=self.kinetics.hill_2_idxs,
             sign_2_idxs=self.kinetics.sign_2_idxs,
             catal_2_idxs=self.kinetics.catal_2_idxs,
             regul_2_idxs=self.kinetics.regul_2_idxs,
@@ -1213,6 +1214,7 @@ def _get_genome_sequences(
     idx_2_one_codon: dict[int, str],
     idx_2_two_codon: dict[int, str],
     km_2_idxs: dict[float, list[int]],
+    hill_2_idxs: dict[int, list[int]],
     vmax_2_idxs: dict[float, list[int]],
     sign_2_idxs: dict[bool, list[int]],
     catal_2_idxs: dict[tuple[tuple[Molecule, ...], tuple[Molecule, ...]], list[int]],
@@ -1234,7 +1236,7 @@ def _get_genome_sequences(
         for dom in prot.domain_facts:
             # Domain structure:
             # 0: domain type definition (1=catalytic, 2=transporter, 3=regulatory)
-            # 1-3: 3 x 1-codon specifications (Vmax, Km, sign)
+            # 1-3: 3 x 1-codon specifications (Vmax, Km, sign, hill)
             # 4: 1 x 2-codon specification (reaction, molecule, effector)
 
             if isinstance(dom, CatalyticDomainFact):
@@ -1272,6 +1274,7 @@ def _get_genome_sequences(
                     stop_codons=stop_codons,
                     sign_2_idxs=sign_2_idxs,
                     km_2_idxs=km_2_idxs,
+                    hill_2_idxs=hill_2_idxs,
                     regul_2_idxs=regul_2_idxs,
                     idx_2_one_codon=idx_2_one_codon,
                     idx_2_two_codon=idx_2_two_codon,
@@ -1289,18 +1292,25 @@ def _get_regulatory_domain_sequence(
     stop_codons: list[str],
     sign_2_idxs: dict[bool, list[int]],
     km_2_idxs: dict[float, list[int]],
+    hill_2_idxs: dict[int, list[int]],
     regul_2_idxs: dict[tuple[Molecule, bool], list[int]],
     idx_2_one_codon: dict[int, str],
     idx_2_two_codon: dict[int, str],
 ) -> str:
     # regulatory domain type: 3
-    # idx0: - (1 codon, no stop)
+    # idx0: hill coefficient (1 codon, no stop)
     # idx1: Km (1 codon, no stop)
     # idx2: sign (1 codon, no stop)
     # idx3: effector (2 codon, 2nd can be stop)
     # is_transmembrane defined by effector (int/ext molecules)
     dom_seq = random.choice(domain_types[3])
-    i0_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
+
+    if dom.hill is not None:
+        val = closest_value(values=hill_2_idxs, key=dom.hill)
+        i0 = random.choice(hill_2_idxs[int(val)])
+        i0_seq = idx_2_one_codon[i0]
+    else:
+        i0_seq = random_genome(s=CODON_SIZE, excl=stop_codons)
 
     if dom.km is not None:
         val = closest_value(values=km_2_idxs, key=dom.km)

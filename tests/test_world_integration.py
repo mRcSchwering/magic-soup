@@ -171,7 +171,7 @@ def test_genome_generation_consistency():
     # the reverse complement can always harbour another protein
 
     reg_dom = ms.RegulatoryDomainFact(
-        effector=mk, is_transmembrane=True, is_inhibiting=True, km=1.0
+        effector=mk, is_transmembrane=True, is_inhibiting=True, km=1.0, hill=3
     )
     for i in range(n_tries):
         with retry.catch_assert(i):
@@ -194,5 +194,6 @@ def test_genome_generation_consistency():
             assert abs(p0.domains[i].km - 1.0) < 0.5
             assert p0.domains[i].is_inhibiting
             assert p0.domains[i].is_transmembrane
-            assert world.kinetics.Ai[ci][0][5] == 1, world.kinetics.Ai[ci]
-            assert abs(world.kinetics.Kmr[ci][0] - 1.0) < 0.5
+            assert p0.domains[i].hill == 3
+            assert world.kinetics.A[ci, 0, 5] == -3, world.kinetics.A[ci]
+            assert abs(world.kinetics.Kmr[ci, 0, 5] - 1.0) < 0.5

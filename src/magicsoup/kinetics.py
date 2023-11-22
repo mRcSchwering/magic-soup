@@ -19,6 +19,34 @@ _MAX = 1e36
 _MIN = -1e36
 
 
+class _HillMapFact:
+    """
+    Creates an object that maps tokens to 1, 2, 3, 4, 5
+    with chances 52%, 26%, 13%, 6%, 3% respectively.
+    """
+
+    def __init__(self, max_token: int, device: str = "cpu", zero_value: float = 0.0):
+        choices = [5] + 2 * [4] + 4 * [3] + 8 * [2] + 16 * [1]
+        numbers = torch.tensor([zero_value] + random.choices(choices, k=max_token))
+        self.numbers = numbers.to(device)
+
+    def __call__(self, t: torch.Tensor) -> torch.Tensor:
+        """t: long (c, p, d)"""
+        return self.numbers[t]
+
+    def inverse(self) -> dict[int, list[int]]:
+        numbers_map = {}
+        M = self.numbers.to("cpu")
+        numbers_map[1] = torch.argwhere(M == 1.0).flatten().tolist()
+        numbers_map[3] = torch.argwhere(M == 3.0).flatten().tolist()
+        numbers_map[5] = torch.argwhere(M == 5.0).flatten().tolist()
+        return numbers_map
+
+
+# TODO: macht es Sinn Km anders so zu samplen?
+#       lognorm ist gut, aber es müsste bei 1 losgehen
+#       weil Km<1 ja quasi nach 1/Km projeziert wird
+#       d.h. ich sample eigentlich viel mehr aus dem tail
 class _LogNormWeightMapFact:
     """
     Creates an object that maps tokens to a float
@@ -306,17 +334,18 @@ class Kinetics:
 
     Attributes on this class describe cell parameters:
 
-    - `Kmf`, `Kmb`, `Kmr` Affinities to all signals processed by each protein in every cell (c, p).
-      There are affinities for (f)orward and (b)ackward reactions, and for (r)egulatory domains.
+    - `Kmf`, `Kmb`, `Kmr` Affinities to all signals processed by each protein in each cell (c, p).
+      There are affinities for (f)orward and (b)ackward reactions.
+    - `Kmr` Affinity of each regulating signal for each protein and each cell (c, p, s).
     - `Vmax` Maximum velocities of every protein in every cell (c, p).
     - `E` Standard reaction Gibbs free energy of every protein in every cell (c, p).
     - `N` Stoichiometric number for every signal that is processed by each protein in every cell (c, p, s).
       Additionally, there are `Nf` and `Nb` which describe only forward and backward stoichiometric numbers.
       This is needed in addition to `N` to properly describe reactions that involve molecules
       which are not changed, _i.e._ where `n=0`.
-    - `Ai`, `Aa` Regulatory effect for each signal in every protein in every cell (c, p, s).
-      `Ai` describes inhibitors, `Aa` describes activators with numbers > 0.0 describing
-      the stoichiometric number of the effector.
+    - `A` Allosteric modulation for each signal in every protein in every cell (c, p, s).
+      The number represents the hill coefficient. Positive coefficients have an activating effect,
+      negative have an inhibiting effect.
 
     The main method is [integrate_signals()][magicsoup.kinetics.Kinetics].
     When calling [enzymatic_activity()][magicsoup.world.World.enzymatic_activity], a matrix `X` of signals (c, s) is prepared
@@ -336,9 +365,7 @@ class Kinetics:
 
     Note: All default values are based on the assumption that energies are in J, a time step represents 1s,
     and molecule numbers are in mM
-    If you change the defaults, you might reconsider how these numbers should be interpreted.
-    If you lower the minimum `Km` or raise the maximum `Vmax`, please also note the comments about
-    `n_computation` and `alpha` below.
+    If you change the defaults, you need to reconsider how these numbers should be interpreted.
 
     The kinetics used here can never create negative molecule concentrations and make the reaction quotient move
     towards to equilibrium constant at all times.
@@ -384,13 +411,12 @@ class Kinetics:
         self.Ke = self._tensor(0, 0)
         self.Kmf = self._tensor(0, 0)
         self.Kmb = self._tensor(0, 0)
-        self.Kmr = self._tensor(0, 0)
+        self.Kmr = self._tensor(0, 0, n_signals)
         self.Vmax = self._tensor(0, 0)
         self.N = self._tensor(0, 0, n_signals)
         self.Nf = self._tensor(0, 0, n_signals)
         self.Nb = self._tensor(0, 0, n_signals)
-        self.Ai = self._tensor(0, 0, n_signals)
-        self.Aa = self._tensor(0, 0, n_signals)
+        self.A = self._tensor(0, 0, n_signals)
 
         # the domain specifications return 4 indexes
         # idx 0-2 are 1-codon idxs for scalars (n=64)
@@ -409,6 +435,8 @@ class Kinetics:
         )
 
         self.sign_map = _SignMapFact(max_token=scalar_enc_size, device=device)
+
+        self.hill_map = _HillMapFact(max_token=scalar_enc_size, device=device)
 
         self.reaction_map = _ReactionMapFact(
             molmap=self.mol_2_mi,
@@ -429,6 +457,7 @@ class Kinetics:
         self.km_2_idxs = self.km_map.inverse()
         self.vmax_2_idxs = self.vmax_map.inverse()
         self.sign_2_idxs = self.sign_map.inverse()
+        self.hill_2_idxs = self.hill_map.inverse()
         self.trnsp_2_idxs = self.transport_map.inverse(molecules=molecules)
         self.regul_2_idxs = self.effector_map.inverse(molecules=molecules)
         self.catal_2_idxs = self.reaction_map.inverse(
@@ -473,6 +502,7 @@ class Kinetics:
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
         Vmax_d = self.vmax_map(idxs0 * not_reg_lng)  # float (c,p,d)
+        Hills = self.hill_map(idxs0 * reg_lng)  # float (c,p,d)
         Km_d = self.km_map(idxs1)  # float (c,p,d)
         signs = self.sign_map(idxs2)  # float (c,p,d)
 
@@ -485,7 +515,7 @@ class Kinetics:
         N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
 
         # A (c, p, d, s)
-        A_d = torch.einsum("cpds,cpd->cpds", effectors, signs)
+        A_d = torch.einsum("cpds,cpd->cpds", effectors, signs * Hills)
 
         Nf_d = torch.where(N_d < 0.0, -N_d, 0.0)
         Nb_d = torch.where(N_d > 0.0, N_d, 0.0)
@@ -532,7 +562,7 @@ class Kinetics:
                         )
                     )
 
-                # regulatory domain (A has one +1 or -1)
+                # regulatory domain (A has one signal != 0)
                 if dom_types[0][pi][di].item() == 3:
                     mi = int(torch.argwhere(A_d[0][pi][di] != 0)[0].item())
                     if mi in self.mi_2_mol:
@@ -545,7 +575,8 @@ class Kinetics:
                         RegulatoryDomain(
                             effector=mol,
                             km=Km_d[0][pi][di].item(),
-                            is_inhibiting=bool((A_d[0][pi][di][mi] == -1).item()),
+                            hill=int(A_d[0, pi, di, mi].abs()),
+                            is_inhibiting=bool((A_d[0][pi][di][mi] < 0).item()),
                             is_transmembrane=is_trnsm,
                             **kwargs,
                         )
@@ -604,6 +635,7 @@ class Kinetics:
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
         Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # float (c,p,d)
+        Hills = self.hill_map(idxs0 * reg_lng)  # float (c,p,d)
         Kms = self.km_map(idxs1)  # float (c,p,d)
         signs = self.sign_map(idxs2)  # float (c,p,d)
 
@@ -616,19 +648,22 @@ class Kinetics:
         # undefined Vmax enries are NaN and are ignored by nanmean
         self.Vmax[cell_idxs] = Vmaxs.nanmean(dim=2).nan_to_num(0.0)
 
-        # effector vectors are summed up over domains
-        # undefined vectors are all 0s
-        A_d = torch.einsum("cpds,cpd->cpds", effectors, signs)
+        # effector vectors are multiplied with signs and hill coefficients
+        # and summed up over domains
+        A = torch.einsum("cpds,cpd->cps", effectors, signs * Hills)
 
-        # A for inhibitors and activators are distinguished
-        self.Ai[cell_idxs] = torch.where(A_d < 0.0, -A_d, 0.0).sum(dim=2)
-        self.Aa[cell_idxs] = torch.where(A_d > 0.0, A_d, 0.0).sum(dim=2)
+        # Kms from other domains are ignored using NaNs
+        # their Kms must be seperated for each signal
+        Kmr_d = torch.where(is_reg, Kms, torch.nan)  # (c,p,d)
+        Kmr_ds = torch.einsum("cpds,cpd->cpds", effectors, Kmr_d)
 
-        # Kms of regulatory domains are aggregated for effectors
-        # Kms from other domains are ignored using NaNs and nanmean
-        self.Kmr[cell_idxs] = (
-            torch.where(is_reg, Kms, torch.nan).nanmean(dim=2).nan_to_num(0.0)
-        )
+        # average Kmrs, ignored unused with nanmean
+        Kmr_ds[Kmr_ds == 0.0] = torch.nan  # effectors introduce 0s
+        Kmr = Kmr_ds.nanmean(dim=2).nan_to_num(0.0)  # (c,p,s)
+
+        # Kms of regulatory domains are already multiplied with Hill coefficients
+        self.Kmr[cell_idxs] = torch.pow(Kmr, A)
+        self.A[cell_idxs] = A
 
         # reaction stoichiometry N is derived from transporter and catalytic vectors
         # vectors for regulatory domains or emptpy proteins are all 0s
@@ -673,8 +708,7 @@ class Kinetics:
         self.N[cell_idxs] = 0.0
         self.Nf[cell_idxs] = 0.0
         self.Nb[cell_idxs] = 0.0
-        self.Ai[cell_idxs] = 0.0
-        self.Aa[cell_idxs] = 0.0
+        self.A[cell_idxs] = 0.0
         self.Ke[cell_idxs] = 0.0
         self.Kmf[cell_idxs] = 0.0
         self.Kmb[cell_idxs] = 0.0
@@ -700,8 +734,7 @@ class Kinetics:
         self.N[to_idxs] = self.N[from_idxs]
         self.Nf[to_idxs] = self.Nf[from_idxs]
         self.Nb[to_idxs] = self.Nb[from_idxs]
-        self.Ai[to_idxs] = self.Ai[from_idxs]
-        self.Aa[to_idxs] = self.Aa[from_idxs]
+        self.A[to_idxs] = self.A[from_idxs]
 
     def remove_cell_params(self, keep: torch.Tensor):
         """
@@ -722,8 +755,7 @@ class Kinetics:
         self.N = self.N[keep]
         self.Nf = self.Nf[keep]
         self.Nb = self.Nb[keep]
-        self.Ai = self.Ai[keep]
-        self.Aa = self.Aa[keep]
+        self.A = self.A[keep]
 
     def increase_max_cells(self, by_n: int):
         """
@@ -740,8 +772,7 @@ class Kinetics:
         self.N = self._expand_c(t=self.N, n=by_n)
         self.Nf = self._expand_c(t=self.Nf, n=by_n)
         self.Nb = self._expand_c(t=self.Nb, n=by_n)
-        self.Ai = self._expand_c(t=self.Ai, n=by_n)
-        self.Aa = self._expand_c(t=self.Aa, n=by_n)
+        self.A = self._expand_c(t=self.A, n=by_n)
 
     def increase_max_proteins(self, max_n: int):
         """
@@ -761,8 +792,7 @@ class Kinetics:
             self.N = self._expand_p(t=self.N, n=by_n)
             self.Nf = self._expand_p(t=self.Nf, n=by_n)
             self.Nb = self._expand_p(t=self.Nb, n=by_n)
-            self.Ai = self._expand_p(t=self.Ai, n=by_n)
-            self.Aa = self._expand_p(t=self.Aa, n=by_n)
+            self.A = self._expand_p(t=self.A, n=by_n)
 
     def integrate_signals(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -809,39 +839,40 @@ class Kinetics:
         return X1_adj
 
     def _get_velocities(self, X: torch.Tensor, Vmax: torch.Tensor) -> torch.Tensor:
-        # catalytic activity
-
+        # catalytic activity X^N / Km
         # signals are aggregated for forward and backward reaction
         # proteins that had no involved catalytic region should not be active
-        kf, f_prots = self._multiply_signals(X=X, N=self.Nf)
+        kf, f_prots = self._multiply_signals(X=X, N=self.Nf)  # (c,p)
         kf /= self.Kmf
         kf[~f_prots] = 0.0  # non-involved proteins are not active
-        kf[kf.isinf()] = _MAX
+        kf[kf.isinf()] = _MAX  # possibly Inf after Km division
 
-        kb, b_prots = self._multiply_signals(X=X, N=self.Nb)
+        kb, b_prots = self._multiply_signals(X=X, N=self.Nb)  # (c,p)
         kb /= self.Kmb
         kb[~b_prots] = 0.0  # non-involved proteins are not active
-        kb[kb.isinf()] = _MAX
+        kb[kb.isinf()] = _MAX  # possibly Inf after Km division
 
-        # custom reversible MM equation
+        # reversible MM equation
         a_cat = (kf - kb) / (1 + kf + kb)  # (c,p)
 
-        # inhibitor activity
-        xxi, i_prots = self._multiply_signals(X=X, N=self.Ai)
-        a_inh = xxi / (xxi + self.Kmr)
-        a_inh[~i_prots] = 0.0  # proteins without inhibitor should be active
-
-        # activator activity
-        xxa, a_prots = self._multiply_signals(X=X, N=self.Aa)
-        a_act = xxa / (xxa + self.Kmr)
-        a_act[~a_prots] = 1.0  # proteins without activator should be active
+        # allosteric modulation X^A / (X^A + K^A)
+        # A=1 => a=x/(x+k) is activating [0;1]
+        # A=-1 => a=k/(k+x)=1-x/(x+k) is deactivating (0;1] (X=0 is undefined)
+        # A=0 => a=1/2, so they have to be set back to 1.0
+        # here each signal is considered with seperate Km
+        is_reg = self.A != 0.0
+        x_reg = torch.einsum("cps,cs->cps", is_reg.float(), X)
+        a_reg_s = torch.pow(x_reg, self.A)  # (c,p,s)
+        a_reg_s = a_reg_s / (a_reg_s + self.Kmr)  # Kmr already has power
+        a_reg_s[a_reg_s.isnan()] = 1.0  # A<0,X=0 => inhibitor not present, so active
+        a_reg_s[~is_reg] = 1.0  # set all uninvolved to 1
+        a_reg = torch.prod(a_reg_s, 2)  # (c,p)
+        a_reg[a_reg.isinf()] = _MAX  # possibly Inf divisions, multiplications
 
         # velocity from activities
-        # as well as trimming factor of n_computations
-        V = a_cat * Vmax * (1 - a_inh) * a_act  # (c,p)
+        V = a_cat * Vmax * a_reg  # (c,p)
 
-        # Kms can be close to Inf, they can create Infs
-        # thus result velocity should be clamped again
+        # activities close to Inf could create Inf in multiplication
         return V.clamp(_MIN, _MAX)
 
     def _get_equilibrium_adjusted_x(
