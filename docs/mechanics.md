@@ -53,8 +53,8 @@ _Regulatory_ domains can regulate a protein through an effector molecule.
 A protein with only a regulatory domain has no function.
 But if the protein also has a catalytic or transporter domain, the regulatory
 domain can up- or down-regulate this domain.
-Specifications are the effector molecule species, whether it is an activating or inhibiting
-effector, the affinity to that effector.
+Specifications are the effector molecule species, a hill coefficient, whether it is an activating or inhibiting
+effector, the affinity of that effector.
 
 Affinity and maximum velocity are kinetic parameters which are described in [Kinetics](#kinetics) in more detail.
 Which specific combination of nucleotides encodes which specific parameter, _e.g._ a particular maximum velocity value,
@@ -225,32 +225,23 @@ K_m,      & \text{if $K_e < 1$}
 \end{cases}
 \]
 
-Regulatory activity $a_{reg}$ with inhibiting effector molecules (inhibitors) I
-and activating effector molecules (activators) A is modeled as
+Regulatory activity $a_{reg}$ with effector molecules is modeled as
 
 $$
-a_{reg} = a_{act} (1 - a_{inh}) = \frac{X_A}{K_{m,a} + X_A} (1 - \frac{X_I}{K_{m,i} + X_I})
+a_{reg} = \prod^{\text{effectors}} \frac{[A]_l^{h_l}}{[A]_l^{h_l} + K_{a,l}^{h_l}}
 $$
 
-with
-
-$$
-X_A = \prod^{\text{activators}} [A]_l^{n_l} \text{  ,  }  X_I = \prod^{\text{inhibitors}} [I]_k^{n_k}
-$$
-
-where $K_{m,a}$ defines the reciprocal affinity of activators,
-$K_{m,i}$ defines the reciprocal affinity of inhibitors,
-$[A]_l$ is the concentration of activator $l$ with stoichiometric coefficient $n_l$,
-and $[I]_k$ is the concentration of inhibitor $k$ with stoichiometric coefficient $n_k$.
-If there are no activators $a_{act} = 1$ and if there are no inhibitors $a_{inh} = 0$.
-Values for $K_{m,a}$ and $K_{m,i}$ are directly defined in the domain specifications.
+where $[A]_l$ is the concentration of effector molecule $l$,
+$h_l$ is the hill coefficient,
+and $K_{a,l}$ is the effector concentration producing half occupation.
+$h_l > 0$ for activating effectors, $h_l < 0$ for inhibiting effectors.
+Proteins without regulatory domains are always allowed to be active.
 There are some kinetics examples in [figures](./figures.md#simple-reaction-kinetics).
 
 When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
 are created, they are sampled from a log-uniform distribution with user defined boundaries.
-If there are multiple catalytic and transporter domains,
-activating regulatory domains, or inhibiting regulatory domains
-values for $v_{max}$, $K_m$, $K_{m,a}$, $K_{m,i}$ are averaged each.
+If there are multiple catalytic or transporter domains
+values for $v_{max}$, $K_m$, $K_{m,a}$, $K_{m,i}$ are averaged.
 Resulting distributions are shown in [figures](./figures.md#vmax-and-km-distributions).
 All defaults were chosen with some assumptions in mind:
 (1) molecule numbers (such as in `world.molecule_map`) represent mM,

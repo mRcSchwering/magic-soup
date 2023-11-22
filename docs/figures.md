@@ -298,10 +298,18 @@ Passaging is always done in a biased way with split ratio 0.2 when total cell nu
 During passaging a bias factor increases the tendency to sample the same amount of cells of every cell line.
 Rows show different values for this bias factor._
 
-## Miachelis-Menten Kinetics
+## Kinetics Constants
 
 ![](./img/supporting/mm_kinetics.png)
 
-_Miachelis-Menten kinetics with varying Km, Vmax, and n.
-Plots show y over x with $y = V_{max} x^n / (x + K_m)^n$.
+_Miachelis-Menten kinetics for multiple substrates with varying Km, Vmax, and n.
+Plots show y over x with $y = V_{max} x^n / (x^n + K_m)$.
 Parameters are always Vmax=1.0, Km=1.0, n=1 except for where they are varyied as indicated by colors._
+
+![](./img/supporting/allosteric_modulation.png)
+
+_Allosteric modulation with cooperativity over ligand concentration.
+Modulation is $y = x^h / (x^h + K_a)$ where h is the hill coefficient and K_a the ligand concentration
+producing half occupation.
+Top row shows negative cooperativity (-h), bottom row positive (h).
+Columns show different values for K_a, colors different values for h._
