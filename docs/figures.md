@@ -133,15 +133,6 @@ These randomly generated chemistries have molecules with energies of 10 kJ, 100 
 Light dashed line shows an equilibrium constant of 100, the dark dashed lined 0.
 Reactions with equilibrium constants far beyong the light dashed line become practically irreversible._
 
-## Vmax and Km Distributions
-
-![](./img/supporting/vmax_km_distributions.png)
-
-_Vmax and Km distributions of randomly generated proteins.
-Proteins are from 1000 cells with random genomes of length 1000 each.
-Reaction kinetics have a Km range of 0.01 to 100 and a Vmax range of 0.001 to 100.
-Dashed lines with text describe medians._
-
 ## Simple Reaction Kinetics
 
 ![](./img/supporting/simple_exporter_kinetics.png)
@@ -305,6 +296,15 @@ Cell lines differ in their intracellular x concentrations as indicated by colors
 Passaging is always done in a biased way with split ratio 0.2 when total cell number reaches 7000.
 During passaging a bias factor increases the tendency to sample the same amount of cells of every cell line.
 Rows show different values for this bias factor._
+
+## Kinetics Constants Distributions
+
+![](./img/supporting/constant_distributions.png)
+
+_Vmax, Km, Ka distributions of randomly generated proteins.
+Proteins are from 1000 cells with random genomes of length 1000 each.
+Reaction kinetics have a Km range of 0.01 to 100 and a Vmax range of 0.001 to 100.
+Dashed lines with text describe medians._
 
 ## Kinetics Constants
 

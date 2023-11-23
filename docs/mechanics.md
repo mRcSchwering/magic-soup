@@ -239,10 +239,10 @@ Proteins without regulatory domains are always allowed to be active.
 There are some kinetics examples in [figures](./figures.md#simple-reaction-kinetics).
 
 When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
-are created, they are sampled from a log-uniform distribution with user defined boundaries.
-If there are multiple catalytic or transporter domains
-values for $v_{max}$, $K_m$, $K_{m,a}$, $K_{m,i}$ are averaged.
-Resulting distributions are shown in [figures](./figures.md#vmax-and-km-distributions).
+are created, they are sampled from distributions with user defined boundaries.
+For multiple domains specifications with overlapping
+values for $v_{max}$, $K_m$, $K_a$ are averaged.
+Resulting distributions are shown in [figures](./figures.md#kinetics-constants-distributions).
 All defaults were chosen with some assumptions in mind:
 (1) molecule numbers (such as in `world.molecule_map`) represent mM,
 (2) a time step represents 1 second,
