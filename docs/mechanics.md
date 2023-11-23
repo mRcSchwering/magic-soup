@@ -191,7 +191,7 @@ X_S =
 X_P = \frac{1}{K_{m,2}} \prod^{\text{products}} [P]_j^{n_j}
 $$
 
-where $a_{reg} \in [0;1]$ is regulatory activity (details below),
+where $a_{reg} \in [0;1]$ is allosteric regulation (details below),
 $[S]_i$ is the concentration of substrate $i$ with stoichiometric coefficient $n_i$,
 and $[P]_j$ is the concentration of product $j$ with stoichiometric coefficient $n_j$.
 Concentration change over time of any molecule species can be calculated by multiplying its 
@@ -225,7 +225,7 @@ K_m,      & \text{if $K_e < 1$}
 \end{cases}
 \]
 
-Regulatory activity $a_{reg}$ with effector molecules is modeled as
+Allosteric regulation $a_{reg}$ with effector molecules A is modeled as
 
 $$
 a_{reg} = \prod^{\text{effectors}} \frac{[A]_l^{h_l}}{[A]_l^{h_l} + K_{a,l}^{h_l}}

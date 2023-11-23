@@ -226,6 +226,14 @@ All Km and Vmax values are 1, E is supplied each step, A and B have permeability
 A is increased slightly in cell 0 which triggers a new state.
 The signal propagates through diffusion and triggers the same state in the other cells._
 
+![](./img/supporting/cyclic_pathway.png)
+
+_Simulated cyclic biochemical pathway.
+Intracellular molecule concentrations of cell with 4 proteins catalyzing
+$A + E \rightleftharpoons B$ | -100 kJ, $B + E \rightleftharpoons C$ | -100 kJ,
+$C + E \rightleftharpoons D$ | -100 kJ, and $D + E \rightleftharpoons A$ | -100 kJ.
+Simulation starts with only intracellular A, E is supplied at each step._
+
 ## Free Energy in Simulation
 
 ![](./img/supporting/free_energy.png)
