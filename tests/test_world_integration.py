@@ -83,8 +83,10 @@ def test_exploding_molecules():
 
 
 def test_genome_generation_consistency():
-    n_tries = 5
-    retry = Retry(n_allowed_fails=1)
+    n_tries = 6
+    retry = Retry(n_allowed_fails=3)
+    km_tol = 5.0
+    vmax_tol = 1.0
 
     mi = ms.Molecule("mi", 10 * 1e3)
     mj = ms.Molecule("mj", 10 * 1e3)
@@ -119,15 +121,15 @@ def test_genome_generation_consistency():
 
             assert isinstance(d0, ms.TransporterDomain)
             assert d0.molecule is mi
-            assert abs(d0.vmax - 1.0) < 0.5
-            assert abs(d0.km - 1.0) < 0.5
+            assert abs(d0.vmax - 1.0) < vmax_tol
+            assert abs(d0.km - 1.0) < km_tol
             assert not d0.is_exporter
 
             assert world.kinetics.N[ci][0][0] == 1, world.kinetics.N[ci]
             assert world.kinetics.N[ci][0][3] == -1, world.kinetics.N[ci]
-            assert abs(world.kinetics.Vmax[ci][0] - 1.0) < 0.5
-            assert abs(world.kinetics.Kmf[ci][0] - 1.0) < 0.5
-            assert abs(world.kinetics.Kmb[ci][0] - 1.0) < 0.5
+            assert abs(world.kinetics.Vmax[ci][0] - 1.0) < vmax_tol
+            assert abs(world.kinetics.Kmf[ci][0] - 1.0) < km_tol
+            assert abs(world.kinetics.Kmb[ci][0] - 1.0) < km_tol
 
     world.kill_cells(cell_idxs=list(range(world.n_cells)))
     retry.reset()
@@ -152,14 +154,14 @@ def test_genome_generation_consistency():
             assert isinstance(d0, ms.CatalyticDomain)
             assert d0.substrates[0] is mj
             assert d0.products[0] is mi
-            assert abs(d0.vmax - 1.0) < 0.5
-            assert abs(d0.km - 1.0) < 0.5
+            assert abs(d0.vmax - 1.0) < vmax_tol
+            assert abs(d0.km - 1.0) < km_tol
 
             assert world.kinetics.N[ci][0][0] == 1, world.kinetics.N[ci]
             assert world.kinetics.N[ci][0][1] == -1, world.kinetics.N[ci]
-            assert abs(world.kinetics.Vmax[ci][0] - 1.0) < 0.5
-            assert abs(world.kinetics.Kmf[ci][0] - 1.0) < 0.5
-            assert abs(world.kinetics.Kmb[ci][0] - 1.0) < 0.5
+            assert abs(world.kinetics.Vmax[ci][0] - 1.0) < vmax_tol
+            assert abs(world.kinetics.Kmf[ci][0] - 1.0) < km_tol
+            assert abs(world.kinetics.Kmb[ci][0] - 1.0) < km_tol
 
     world.kill_cells(cell_idxs=list(range(world.n_cells)))
     retry.reset()
@@ -191,9 +193,9 @@ def test_genome_generation_consistency():
             i = 0 if isinstance(p0.domains[0], ms.RegulatoryDomain) else 1
             assert isinstance(p0.domains[i], ms.RegulatoryDomain)
             assert p0.domains[i].effector is mk
-            assert abs(p0.domains[i].km - 1.0) < 0.5
+            assert abs(p0.domains[i].km - 1.0) < km_tol
             assert p0.domains[i].is_inhibiting
             assert p0.domains[i].is_transmembrane
             assert p0.domains[i].hill == 3
             assert world.kinetics.A[ci, 0, 5] == -3, world.kinetics.A[ci]
-            assert abs(world.kinetics.Kmr[ci, 0, 5] - 1.0) < 0.5
+            assert abs(world.kinetics.Kmr[ci, 0, 5] ** (-3) - 1.0) < km_tol

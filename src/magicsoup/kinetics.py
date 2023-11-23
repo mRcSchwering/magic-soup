@@ -43,10 +43,48 @@ class _HillMapFact:
         return numbers_map
 
 
-# TODO: macht es Sinn Km anders so zu samplen?
-#       lognorm ist gut, aber es müsste bei 1 losgehen
-#       weil Km<1 ja quasi nach 1/Km projeziert wird
-#       d.h. ich sample eigentlich viel mehr aus dem tail
+class _CustomWeightMapFact:
+    """
+    Creates an object that maps tokens to a float
+    which is sampled from a population. The population is a
+    uniform [1,max_weight] distribution which is then extended
+    with its reciprocal
+    """
+
+    def __init__(
+        self,
+        max_token: int,
+        weight_range: tuple[float, float],
+        device: str = "cpu",
+        zero_value: float = torch.nan,
+    ):
+        min_w = min(weight_range)
+        max_w = max(weight_range)
+        pop = [random.uniform(1.0, max_w) for _ in range(max_token)]
+        pop.extend([1 / d for d in pop])
+        pop = [d for d in pop if min_w <= d <= max_w]
+
+        non_zero_weights: list[float] = []
+        for _ in range(max_token):
+            non_zero_weights.append(random.choice(pop))
+        weights = torch.tensor([zero_value] + non_zero_weights)
+        self.weights = weights.to(device)
+
+    def __call__(self, t: torch.Tensor) -> torch.Tensor:
+        """t: long (c, p, d)"""
+        return self.weights[t]
+
+    def inverse(self) -> dict[float, list[int]]:
+        flt_map: dict[float, list[int]] = {}
+        M = self.weights.to("cpu")
+        for i in range(1, M.size(0)):
+            v = M[i].item()
+            if v not in flt_map:
+                flt_map[v] = []
+            flt_map[v].append(i)
+        return flt_map
+
+
 class _LogNormWeightMapFact:
     """
     Creates an object that maps tokens to a float
@@ -422,7 +460,7 @@ class Kinetics:
         # idx 0-2 are 1-codon idxs for scalars (n=64)
         # idx3 is a 2-codon idx for vetors (n=4096)
 
-        self.km_map = _LogNormWeightMapFact(
+        self.km_map = _CustomWeightMapFact(
             max_token=scalar_enc_size,
             weight_range=km_range,
             device=device,
