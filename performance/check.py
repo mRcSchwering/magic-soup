@@ -4,12 +4,17 @@ Little helper script for checking the performance of some functions
     PYTHONPATH=./src python performance/check.py --n=1000 --s=1000
 
 v0.7.0:
+
 1,000 genomes, 500 size, 4 workers
 (0.42+-0.05)s - add cells
 (0.43+-0.02)s - update cells
 (0.09+-0.01)s - replicate cells
 (0.22+-0.06)s - enzymatic activity
 (0.06+-0.01)s - get neighbors
+
+Running update_cells
+10,000 cells, 1,000 genome size, 4 workers
+(8.23+-0.41)s - update cells
 """
 import time
 from argparse import ArgumentParser
@@ -17,14 +22,7 @@ import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
-CODON_SIZE = 3
-MIN_CDS_SIZE = 12
-START_CODONS = ("TTG", "GTG", "ATG")
-STOP_CODONS = ("TGA", "TAG", "TAA")
-NON_POLAR_AAS = ["F", "L", "I", "M", "V", "P", "A", "W", "G"]
-POLAR_AAS = ["S", "T", "Y", "Q", "N", "C"]
-BASIC_AAS = ["H", "K", "R"]
-ACIDIC_AAS = ["D", "E"]
+
 
 # fmt: off
 CODON_TABLE = {
@@ -135,29 +133,44 @@ def get_neighbors(w: int, n: int, s: int):
     return m, s
 
 
-def main(n: int, s: int, w: int):
-    print(f"{n:,} genomes, {s:,} size, {w} workers")
+def main(parts: list, n: int, s: int, w: int):
+    print(f"Running {', '.join(parts)}")
+    print(f"{n:,} cells, {s:,} genome size, {w} workers")
 
-    mu, sd = add_cells(w=w, n=n, s=s)
-    print(f"({mu:.2f}+-{sd:.2f})s - add cells")
+    if "add_cells" in parts:
+        mu, sd = add_cells(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - add cells")
 
-    mu, sd = update_cells(w=w, n=n, s=s)
-    print(f"({mu:.2f}+-{sd:.2f})s - update cells")
+    if "update_cells" in parts:
+        mu, sd = update_cells(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - update cells")
 
-    mu, sd = replicate_cells(w=w, n=n, s=s)
-    print(f"({mu:.2f}+-{sd:.2f})s - replicate cells")
+    if "replicate_cells" in parts:
+        mu, sd = replicate_cells(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - replicate cells")
 
-    mu, sd = enzymatic_activity(w=w, n=n, s=s)
-    print(f"({mu:.2f}+-{sd:.2f})s - enzymatic activity")
+    if "enzymatic_activity" in parts:
+        mu, sd = enzymatic_activity(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - enzymatic activity")
 
-    mu, sd = get_neighbors(w=w, n=n, s=s)
-    print(f"({mu:.2f}+-{sd:.2f})s - get neighbors")
+    if "get_neighbors" in parts:
+        mu, sd = get_neighbors(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - get neighbors")
 
 
 if __name__ == "__main__":
+    default_parts: list[str] = [
+        "add_cells",
+        "update_cells",
+        "replicate_cells",
+        "enzymatic_activity",
+        "get_neighbors",
+    ]
+
     parser = ArgumentParser()
-    parser.add_argument("--n", default=1_000, type=int)
-    parser.add_argument("--s", default=500, type=int)
-    parser.add_argument("--workers", default=4, type=int)
+    parser.add_argument("--parts", default=default_parts, nargs="*", action="store")
+    parser.add_argument("--n-cells", default=10_000, type=int)
+    parser.add_argument("--genome-size", default=1_000, type=int)
+    parser.add_argument("--n-workers", default=4, type=int)
     args = parser.parse_args()
-    main(n=args.n, s=args.s, w=args.workers)
+    main(parts=args.parts, n=args.n_cells, s=args.genome_size, w=args.n_workers)
