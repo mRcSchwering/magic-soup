@@ -16,48 +16,26 @@ Running update_cells
 10,000 cells, 1,000 genome size, 4 workers
 (8.23+-0.41)s - update cells
 """
+import random
 import time
 from argparse import ArgumentParser
 import magicsoup as ms
+from magicsoup import functions as fn
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
 
 
-# fmt: off
-CODON_TABLE = {
-    "TTT": 1,   "TCT": 2,   "TAT": 3,   "TGT": 4,
-    "TTC": 5,   "TCC": 6,   "TAC": 7,   "TGC": 8,
-    "TTA": 9,   "TCA": 10,  "TAA": 11,  "TGA": 12,
-    "TTG": 13,  "TCG": 14,  "TAG": 15,  "TGG": 16,
-    "CTT": 17,  "CCT": 18,  "CAT": 19,  "CGT": 20,
-    "CTC": 21,  "CCC": 22,  "CAC": 23,  "CGC": 24,
-    "CTA": 25,  "CCA": 26,  "CAA": 27,  "CGA": 28,
-    "CTG": 29,  "CCG": 30,  "CAG": 31,  "CGG": 32,
-    "ATT": 33,  "ACT": 34,  "AAT": 35,  "AGT": 36,
-    "ATC": 37,  "ACC": 38,  "AAC": 39,  "AGC": 40,
-    "ATA": 41,  "ACA": 42,  "AAA": 43,  "AGA": 44,
-    "ATG": 45,  "ACG": 46,  "AAG": 47,  "AGG": 48,
-    "GTT": 49,  "GCT": 50,  "GAT": 51,  "GGT": 52,
-    "GTC": 53,  "GCC": 54,  "GAC": 55,  "GGC": 56,
-    "GTA": 57,  "GCA": 58,  "GAA": 59,  "GGA": 60,
-    "GTG": 61,  "GCG": 62,  "GAG": 63,  "GGG": 64
-}
-AA_MAP = {
-    "Stop": 0,  # not defined
-    "A": 1, "F": 2, "G": 3, "I": 4, "L": 5, "M": 6, "P": 7, "V": 8, "W": 9,  # non-polar 1-9
-    "C": 10, "N": 11, "Q": 12, "S": 13, "T": 14, "Y": 15,  # polar 10-15
-    "H": 16, "K": 17, "R": 18,  # basic 16-18
-    "D": 19, "E": 20  # acidic 19-20
-}
-# fmt: on
+def _gen_genomes(n: int, s: int, d=0.1) -> list[str]:
+    pop = [-int(n * d), 0, int(n * d)]
+    return [ms.random_genome(s + random.choice(pop)) for _ in range(n)]
 
 
 def add_cells(w: int, n: int, s: int):
     tds = []
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
-        genomes = [ms.random_genome(s) for _ in range(n)]
+        genomes = _gen_genomes(n, s)
 
         t0 = time.time()
         world.spawn_cells(genomes=genomes)
@@ -72,7 +50,7 @@ def update_cells(w: int, n: int, s: int):
     tds = []
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
-        genomes = [ms.random_genome(s) for _ in range(n)]
+        genomes = _gen_genomes(n, s)
         world.spawn_cells(genomes=genomes)
 
         t0 = time.time()
@@ -89,7 +67,7 @@ def replicate_cells(w: int, n: int, s: int):
     tds = []
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
-        genomes = [ms.random_genome(s) for _ in range(n)]
+        genomes = _gen_genomes(n, s)
         idxs = world.spawn_cells(genomes=genomes)
 
         t0 = time.time()
@@ -105,7 +83,7 @@ def enzymatic_activity(w: int, n: int, s: int):
     tds = []
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
-        genomes = [ms.random_genome(s) for _ in range(n)]
+        genomes = _gen_genomes(n, s)
         world.spawn_cells(genomes=genomes)
 
         t0 = time.time()
@@ -121,13 +99,56 @@ def get_neighbors(w: int, n: int, s: int):
     tds = []
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, workers=w)
-        genomes = [ms.random_genome(s) for _ in range(n)]
+        genomes = _gen_genomes(n, s)
         world.spawn_cells(genomes=genomes)
 
         t0 = time.time()
         _ = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
         tds.append(time.time() - t0)
 
+    m = sum(tds) / R
+    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
+    return m, s
+
+
+def get_point_mutations(w: int, n: int, s: int):
+    tds = []
+    for _ in range(R):
+        gs = _gen_genomes(n, s)
+        t0 = time.time()
+        pairs = ms.point_mutations(seqs=gs)
+        tds.append(time.time() - t0)
+        assert len(pairs) > 0
+    m = sum(tds) / R
+    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
+    return m, s
+
+
+def get_point_mutations_np(w: int, n: int, s: int):
+    tds = []
+    gs = _gen_genomes(n, s)
+    pairs = fn.point_mutations(seqs=gs)
+    for _ in range(R):
+        gs = _gen_genomes(n, s)
+        t0 = time.time()
+        pairs = fn.point_mutations(seqs=gs)
+        tds.append(time.time() - t0)
+        assert len(pairs) > 0
+    m = sum(tds) / R
+    s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
+    return m, s
+
+
+def get_point_mutations_np2(w: int, n: int, s: int):
+    tds = []
+    gs = _gen_genomes(n, s)
+    pairs = fn.point_mutations2(seqs=gs)
+    for _ in range(R):
+        gs = _gen_genomes(n, s)
+        t0 = time.time()
+        pairs = fn.point_mutations2(seqs=gs)
+        tds.append(time.time() - t0)
+        assert len(pairs) > 0
     m = sum(tds) / R
     s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
     return m, s
@@ -156,6 +177,14 @@ def main(parts: list, n: int, s: int, w: int):
     if "get_neighbors" in parts:
         mu, sd = get_neighbors(w=w, n=n, s=s)
         print(f"({mu:.2f}+-{sd:.2f})s - get neighbors")
+
+    if "point_mutations" in parts:
+        mu, sd = get_point_mutations(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - point_mutations")
+        mu, sd = get_point_mutations_np(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - point_mutations_np")
+        mu, sd = get_point_mutations_np2(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - point_mutations_np2")
 
 
 if __name__ == "__main__":

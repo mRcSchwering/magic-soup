@@ -3,6 +3,10 @@ import torch
 from magicsoup.constants import ALL_NTS
 
 
+# TODO: check where torch.argwhere might be better
+#       with torch.nonzero (can be directly used for indexing)
+
+
 def substitution(seq: str, idx: int) -> str:
     """
     Create a substitution at specific place in a nucleotide sequence.
