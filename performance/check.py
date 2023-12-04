@@ -27,7 +27,7 @@ R = 5
 
 
 def _gen_genomes(n: int, s: int, d=0.1) -> list[str]:
-    pop = [-int(n * d), 0, int(n * d)]
+    pop = [-int(s * d), s, int(s * d)]
     return [ms.random_genome(s + random.choice(pop)) for _ in range(n)]
 
 
@@ -124,14 +124,14 @@ def get_point_mutations(w: int, n: int, s: int):
     return m, s
 
 
-def get_point_mutations_np(w: int, n: int, s: int):
+def get_point_mutations_numba_string_list(w: int, n: int, s: int):
     tds = []
     gs = _gen_genomes(n, s)
-    pairs = fn.point_mutations(seqs=gs)
+    pairs = fn.point_mutations_string_list(seqs=gs)
     for _ in range(R):
         gs = _gen_genomes(n, s)
         t0 = time.time()
-        pairs = fn.point_mutations(seqs=gs)
+        pairs = fn.point_mutations_string_list(seqs=gs)
         tds.append(time.time() - t0)
         assert len(pairs) > 0
     m = sum(tds) / R
@@ -139,16 +139,20 @@ def get_point_mutations_np(w: int, n: int, s: int):
     return m, s
 
 
-def get_point_mutations_np2(w: int, n: int, s: int):
+def get_point_mutations_numba_int_list(w: int, n: int, s: int):
     tds = []
     gs = _gen_genomes(n, s)
-    pairs = fn.point_mutations2(seqs=gs)
+    pairs = fn.point_mutations_int_list(seqs=gs)
     for _ in range(R):
         gs = _gen_genomes(n, s)
         t0 = time.time()
-        pairs = fn.point_mutations2(seqs=gs)
-        tds.append(time.time() - t0)
+        _ = fn.point_mutations_int_list_raw(seqs=gs)
+        t1 = time.time()
+        pairs = fn.point_mutations_int_list(seqs=gs)
+        t2 = time.time()
+        tds.append(t2 - t1 - (t1 - t0))
         assert len(pairs) > 0
+        t0 = time.time()
     m = sum(tds) / R
     s = sum((d - m) ** 2 / R for d in tds) ** (1 / 2)
     return m, s
@@ -180,11 +184,13 @@ def main(parts: list, n: int, s: int, w: int):
 
     if "point_mutations" in parts:
         mu, sd = get_point_mutations(w=w, n=n, s=s)
-        print(f"({mu:.2f}+-{sd:.2f})s - point_mutations")
-        mu, sd = get_point_mutations_np(w=w, n=n, s=s)
-        print(f"({mu:.2f}+-{sd:.2f})s - point_mutations_np")
-        mu, sd = get_point_mutations_np2(w=w, n=n, s=s)
-        print(f"({mu:.2f}+-{sd:.2f})s - point_mutations_np2")
+        print(f"({mu:.2f}+-{sd:.2f})s - point_mutations original")
+        mu, sd = get_point_mutations_numba_string_list(w=w, n=n, s=s)
+        print(f"({mu:.2f}+-{sd:.2f})s - point_mutations numba string list")
+        mu, sd = get_point_mutations_numba_int_list(w=w, n=n, s=s)
+        print(
+            f"({mu:.2f}+-{sd:.2f})s - point_mutations_numba int list (w/o conversion)"
+        )
 
 
 if __name__ == "__main__":

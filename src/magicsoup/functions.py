@@ -29,37 +29,11 @@ def _indel(seq: str, idx: int) -> str:
     return seq[:idx] + ALL_NTS[nti] + seq[idx:]
 
 
-@njit(parallel=True)
-def _point_mutations(seqs: list[str], p: float, p_indel: float) -> list[int]:
-    n = len(seqs)
-    if n == 0:
-        return List([d for d in range(0)])
-
-    lens = [len(d) for d in seqs]
-    s_max = max(lens)
-
-    mask = np.zeros((n, s_max), dtype=np.uint16)
-    for i, s in enumerate(lens):
-        mask[i, :s] = 1
-
-    muts = np.random.binomial(n=1, p=p, size=(n, s_max))
-    mut_idxs = np.argwhere(muts * mask)
-
-    n_muts = len(mut_idxs)
-    indels = np.random.binomial(n=1, p=p_indel, size=(n_muts))
-
-    for (seq_i, pos_i), is_indel in zip(mut_idxs, indels):
-        if bool(is_indel):
-            seqs[seq_i] = _indel(seq=seqs[seq_i], idx=pos_i)
-        else:
-            seqs[seq_i] = _substitution(seq=seqs[seq_i], idx=pos_i)
-
-    return List(set([d[0].item() for d in mut_idxs]))
-
-
 # TODO: how to get rid of warning?
 @njit(parallel=True)
-def _point_mutations2(seqs: list[str], p: float, p_indel: float) -> np.ndarray:
+def _point_mutations_string_list(
+    seqs: list[str], p: float, p_indel: float
+) -> np.ndarray:
     n = len(seqs)
 
     chgnd_idxs = np.full((n,), -1, dtype=np.int32)
@@ -81,15 +55,66 @@ def _point_mutations2(seqs: list[str], p: float, p_indel: float) -> np.ndarray:
     return chgnd_idxs[chgnd_idxs > -1]
 
 
-def point_mutations(seqs: list[str], p=1e-6, p_indel=0.4) -> list[tuple[str, int]]:
-    seqs_lst = List(seqs)
-    idxs = _point_mutations(seqs_lst, p, p_indel)
-    seqs = list(seqs)
-    return [(seqs[i], i) for i in idxs]
+_NT_INTS = (65, 67, 84, 71)  # A, C, T, G
 
 
-def point_mutations2(seqs: list[str], p=1e-6, p_indel=0.4) -> list[tuple[str, int]]:
+# TODO: how to get rid of warning?
+@njit(parallel=True)
+def _point_mutations_int_list(
+    arrs: list[np.ndarray], p: float, p_indel: float
+) -> np.ndarray:
+    n = len(arrs)
+
+    chgnd_idxs = np.full((n,), -1, dtype=np.int32)
+    for arr_i in prange(n):  # pylint: disable=not-an-iterable
+        lst = [d for d in arrs[arr_i]]
+        lst_len = len(lst)
+        mut_idxs = [i for i in range(lst_len - 1, -1, -1) if _bernoulli(p)]
+        if len(mut_idxs) < 1:
+            continue
+
+        chgnd_idxs[arr_i] = arr_i
+        indels = np.random.binomial(n=1, p=p_indel, size=len(mut_idxs))
+
+        for idx, is_indel in zip(mut_idxs, indels):
+            if is_indel:
+                is_del = random.random() > 0.333
+                if is_del:
+                    del lst[idx]
+                else:
+                    nti = random.randint(0, len(_NT_INTS) - 1)
+                    lst.insert(idx, _NT_INTS[nti])
+            else:
+                nti = random.randint(0, len(_NT_INTS) - 1)
+                lst[idx] = _NT_INTS[nti]
+
+        arrs[arr_i] = np.array(lst, dtype=np.uint8)
+
+    return chgnd_idxs[chgnd_idxs > -1]
+
+
+def point_mutations_string_list(
+    seqs: list[str], p=1e-6, p_indel=0.4
+) -> list[tuple[str, int]]:
     seqs_lst = List(seqs)
-    idxs = _point_mutations2(seqs_lst, p, p_indel)
+    idxs = _point_mutations_string_list(seqs_lst, p, p_indel)
     seqs = list(seqs_lst)
     return [(seqs[i], i) for i in idxs]
+
+
+def point_mutations_int_list(
+    seqs: list[str], p=1e-6, p_indel=0.4
+) -> list[tuple[str, int]]:
+    lst = List([np.frombuffer(d.encode(), dtype=np.uint8) for d in seqs])
+    res = _point_mutations_int_list(lst, p, p_indel)
+    seqs = [d.tostring().decode() for d in lst]  # type: ignore
+    return [(seqs[i], i) for i in res]
+
+
+def point_mutations_int_list_raw(
+    seqs: list[str], p=1e-6, p_indel=0.4
+) -> list[tuple[str, int]]:
+    lst = List([np.frombuffer(d.encode(), dtype=np.uint8) for d in seqs])
+    # res = _point_mutations_int_list(lst, p, p_indel)
+    seqs = [d.tostring().decode() for d in lst]  # type: ignore
+    return [(seqs[i], i) for i in range(100)]
