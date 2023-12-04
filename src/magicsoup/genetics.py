@@ -3,6 +3,9 @@ import random
 import torch.multiprocessing as mp
 from magicsoup.util import reverse_complement, nt_seqs
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
+from magicsoup import genetics_functions as gfn
+from numba import types as tps  # type: ignore
+from numba.typed import List, Dict  # pylint: disable=no-name-in-module
 
 
 def _get_n(p: float, s: int, name: str) -> int:
@@ -321,6 +324,34 @@ class Genetics:
             dom_seqs = pool.starmap(_translate_genome, args)
 
         return dom_seqs
+
+    def translate_genomes_nb(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
+        genomes_lst = List(genomes)
+        start_codons = List(self.start_codons)
+        stop_codons = List(self.stop_codons)
+
+        domain_map = Dict.empty(tps.unicode_type, tps.uint16)
+        for k, d in self.domain_map.items():
+            domain_map[k] = d
+
+        one_codon_map = Dict.empty(tps.unicode_type, tps.uint16)
+        for k, d in self.one_codon_map.items():
+            one_codon_map[k] = d
+
+        two_codon_map = Dict.empty(tps.unicode_type, tps.uint16)
+        for k, d in self.two_codon_map.items():
+            two_codon_map[k] = d
+
+        res = gfn.translate_genomes(
+            genomes_lst,
+            self.dom_size,
+            start_codons,
+            stop_codons,
+            domain_map,
+            one_codon_map,
+            two_codon_map,
+        )
+        return list(res)
 
     def _get_non_stop_seqs(self, n_codons: int) -> list[str]:
         all_seqs = nt_seqs(n=n_codons * CODON_SIZE)
