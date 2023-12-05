@@ -1,7 +1,7 @@
 """
 Little helper script for checking the performance of some functions
 
-    PYTHONPATH=./src python performance/check.py
+    PYTHONPATH=./python python performance/check.py
 
 v0.9.0:
 10,000 cells, 1,000 genome size, 4 workers

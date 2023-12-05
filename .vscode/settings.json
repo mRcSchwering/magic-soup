@@ -1,10 +1,12 @@
 {
   "python.envFile": "${workspaceFolder}/vscode.env",
-  "terminal.integrated.env.linux": { "PYTHONPATH": "${workspaceFolder}/src" },
-  "jupyter.notebookFileRoot": "${workspaceFolder}/src",
+  "terminal.integrated.env.linux": {
+    "PYTHONPATH": "${workspaceFolder}/python"
+  },
+  "jupyter.notebookFileRoot": "${workspaceFolder}/python",
   "pylint.args": [
     "--init-hook",
-    "import sys; sys.path.append('./src')",
+    "import sys; sys.path.append('./python')",
     "--generated-members",
     "torch.*"
   ],

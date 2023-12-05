@@ -10,7 +10,7 @@
 
 set -e
 
-version=$(head -n 1 ./src/magicsoup/__init__.py)
+version=$(head -n 1 ./python/magicsoup/__init__.py)
 read -p "Build and release as ${version}? (Y/N)" confirm
 [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
 

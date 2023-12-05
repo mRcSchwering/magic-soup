@@ -1,7 +1,7 @@
 """
 Dummy run to test simulation performance in realistic environment
 
-    PYTHONPATH=./src python -m example --help
+    PYTHONPATH=./python python -m example --help
     ...
     tensorboard --host 0.0.0.0 --logdir=./example/runs
 """

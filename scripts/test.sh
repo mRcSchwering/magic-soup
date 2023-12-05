@@ -9,4 +9,4 @@
 
 set -e
 
-PYTHONPATH=$PYTHONPATH:./src pytest "$@"
+PYTHONPATH=$PYTHONPATH:./python pytest "$@"
