@@ -10,8 +10,8 @@ description = "Simulation for cell metabolic and transduction pathway evolution"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "numpy>=1.24.0,<1.25.0",
-  "torch>=2.0.0,<2.1.0"
+  "numpy>=1.24.0,<1.27.0",
+  "torch>=2.0.0,<2.2.0"
 ]
 classifiers = [
     "Environment :: Console",
