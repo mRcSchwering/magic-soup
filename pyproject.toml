@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "magicsoup"
-version = "0.10.1"
+version = "0.10.2"
 authors = [{ name="Marc", email="schweringmarc01@gmail.com" }]
 description = "Simulation for cell metabolic and transduction pathway evolution"
 readme = "README.md"
