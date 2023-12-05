@@ -4,5 +4,5 @@ __pycache__/
 .pytest_cache
 
 dist/
-src/magicsoup.egg-info/
+python/magicsoup.egg-info/
 runs/

@@ -4,11 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "magicsoup"
-dynamic = ["version", "dependencies"]
+version = "0.10.0"
 authors = [{ name="Marc", email="schweringmarc01@gmail.com" }]
 description = "Simulation for cell metabolic and transduction pathway evolution"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24.0,<1.25.0",
+  "torch>=2.0.0,<2.1.0"
+]
 classifiers = [
     "Environment :: Console",
     "Environment :: GPU",
@@ -28,6 +32,6 @@ classifiers = [
 "Homepage" = "https://github.com/mRcSchwering/magic-soup"
 "Bug Tracker" = "https://github.com/mRcSchwering/magic-soup/issues"
 
-[tool.setuptools.dynamic]
-version = {attr = "magicsoup.__version__"}
-dependencies = {file = ["requirements.txt"]}
+[tool.setuptools]
+packages = ["magicsoup"]
+package-dir = {"" = "python"}
