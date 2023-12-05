@@ -36,3 +36,7 @@ classifiers = [
 python-source = "python"  # python source
 module-name = "magicsoup._lib"  # python module name
 sdist-include = ["LICENSE", "README.md"]  # source distro files
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+import-mode = "append"

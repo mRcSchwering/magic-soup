@@ -43,7 +43,7 @@ jobs:
         run: |
           set -e
           pip install magicsoup --find-links dist --force-reinstall
-        # TODO: fix tests
+        # TODO: fix tests (needs to install python/req.txt)
         # run: |
         #   set -e
         #   pip install magicsoup --find-links dist --force-reinstall
