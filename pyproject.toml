@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
 
 [project]
 name = "magicsoup"
@@ -32,6 +32,7 @@ classifiers = [
 "Homepage" = "https://github.com/mRcSchwering/magic-soup"
 "Bug Tracker" = "https://github.com/mRcSchwering/magic-soup/issues"
 
-[tool.setuptools]
-packages = ["magicsoup"]
-package-dir = {"" = "python"}
+[tool.maturin]
+python-source = "python"  # python source
+module-name = "magicsoup._lib"  # python module name
+sdist-include = ["LICENSE", "README.md"]  # source distro files

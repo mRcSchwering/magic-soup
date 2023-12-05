@@ -2,10 +2,8 @@ name: magicsoup_dev
 
 dependencies:
   - python=3.10
-  - twine
   - pip
   - pip:
-      - build
       - mypy
       - -r python/requirements.txt
       - -r tests/requirements.txt
