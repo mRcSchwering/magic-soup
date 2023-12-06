@@ -16,6 +16,7 @@ import time
 import random
 from argparse import ArgumentParser
 import magicsoup as ms
+from magicsoup import _lib  # type: ignore
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
@@ -102,6 +103,16 @@ def get_point_mutations(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
+def get_test(w: int, n: int, s: int):
+    tds = []
+    for _ in range(R):
+        genomes = _gen_genomes(n=n, s=s)
+        t0 = time.time()
+        _ = _lib.point_mutations(genomes, 1e-6, 0.4)
+        tds.append(time.time() - t0)
+    return _summary(tds=tds)
+
+
 def main(parts: list, n: int, s: int, w: int):
     print(f"Running {', '.join(parts)}")
     print(f"{n:,} cells, {s:,} genome size, {w} workers")
@@ -129,6 +140,10 @@ def main(parts: list, n: int, s: int, w: int):
     if "point_mutations" in parts:
         smry = get_point_mutations(w=w, n=n, s=s)
         print(f"{smry} - point mutations")
+
+    if "test" in parts:
+        smry = get_test(w=w, n=n, s=s)
+        print(f"{smry} - test")
 
 
 if __name__ == "__main__":

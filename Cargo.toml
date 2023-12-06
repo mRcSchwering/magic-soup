@@ -8,4 +8,7 @@ crate-type = ["cdylib"]
 path = "rust/lib.rs"
 
 [dependencies]
+rand_distr = { version = "*" }
+rayon = { version = "*" }
+rand = { version = "*" }
 pyo3 = { version = "0.20.0", features = ["extension-module"] }
