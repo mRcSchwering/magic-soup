@@ -39,4 +39,3 @@ sdist-include = ["LICENSE", "README.md"]  # source distro files
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-import-mode = "append"

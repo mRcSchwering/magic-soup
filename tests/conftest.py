@@ -1,4 +1,12 @@
+import random
 from contextlib import contextmanager
+from magicsoup.util import random_genome
+
+
+def gen_genomes(n: int, s: int, d=0.1) -> list[str]:
+    """Generate unequel length genomes"""
+    pop = [-int(s * d), -int(s * d / 2), s, int(s * d / 2), int(s * d)]
+    return [random_genome(s + random.choice(pop)) for _ in range(n)]
 
 
 class Retry:

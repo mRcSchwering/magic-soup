@@ -72,8 +72,14 @@ fn translate_genomes(
 }
 
 #[pyfunction]
-fn point_mutations(seqs: Vec<String>, p: f64, p_indel: f64, p_del: f64) -> Vec<(String, usize)> {
-    mutations::point_mutate_seqs(seqs, p, p_indel, p_del)
+fn point_mutations(
+    py: Python<'_>,
+    seqs: Vec<String>,
+    p: f64,
+    p_indel: f64,
+    p_del: f64,
+) -> Vec<(String, usize)> {
+    py.allow_threads(move || mutations::point_mutate_seqs(seqs, p, p_indel, p_del))
 }
 
 #[pymodule]

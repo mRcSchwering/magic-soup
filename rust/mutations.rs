@@ -30,25 +30,27 @@ fn point_mutate_seq(
         n_muts = len;
     }
 
-    let mut_idxs = rand::seq::index::sample(&mut rng, len, n_muts);
+    let mut mut_idxs = rand::seq::index::sample(&mut rng, len, n_muts).into_vec();
+    mut_idxs.sort();
 
     let mut offset: isize = 0;
-    for idx in mut_idxs {
+    for idx in mut_idxs.iter() {
+        let rng_idx: usize = (*idx as isize + offset) as usize;
         if rng.gen_bool(p_indel) {
             if rng.gen_bool(p_del) {
-                seq.remove((idx as isize + offset) as usize);
+                seq.remove(rng_idx);
                 offset -= 1;
             } else {
                 let nt = NTS.choose(&mut rng);
                 if let Some(d) = nt {
-                    seq.insert((idx as isize + offset) as usize, *d);
+                    seq.insert(rng_idx, *d);
                     offset += 1;
                 }
             }
         } else {
             let nt = NTS.choose(&mut rng);
             if let Some(d) = nt {
-                seq.replace_range(idx..(idx + 1), &d.to_string());
+                seq.replace_range(rng_idx..(rng_idx + 1), &d.to_string());
             }
         }
     }

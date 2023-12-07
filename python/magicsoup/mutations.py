@@ -1,33 +1,6 @@
 import random
 import torch
-from magicsoup.constants import ALL_NTS
 from magicsoup import _lib  # type: ignore
-
-
-def substitution(seq: str, idx: int) -> str:
-    """
-    Create a substitution at specific place in a nucleotide sequence.
-
-    Arguments:
-        seq: nucleotide sequence
-        idx: index of substitution
-    """
-    nt = random.choice(ALL_NTS)
-    return seq[:idx] + nt + seq[idx + 1 :]
-
-
-def indel(seq: str, idx: int) -> str:
-    """
-    Create insertion or deletion (2:1 chance) at a specific place in a nucleotide sequence.
-
-    Arguments:
-        seq: nucleotide sequence
-        idx: index of indel
-    """
-    if random.choice([True, True, False]):
-        return seq[:idx] + seq[idx + 1 :]
-    nt = random.choice(ALL_NTS)
-    return seq[:idx] + nt + seq[idx:]
 
 
 def point_mutations(
@@ -107,3 +80,9 @@ def recombinations(
         tmps.append((lft_new, rght_new, row_i))
 
     return tmps
+
+
+def recombinations_rs(
+    seq_pairs: list[tuple[str, str]], p: float = 1e-8
+) -> list[tuple[str, str, int]]:
+    return _lib.recombinations(seq_pairs)
