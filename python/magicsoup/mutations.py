@@ -1,6 +1,7 @@
 import random
 import torch
 from magicsoup.constants import ALL_NTS
+from magicsoup import _lib  # type: ignore
 
 
 def substitution(seq: str, idx: int) -> str:
@@ -78,6 +79,13 @@ def point_mutations(
 
     idxs = list(set(d[0] for d in mut_idxs))
     return [(tmps[i], i) for i in idxs]
+
+
+def point_mutations_rs(
+    seqs: list[str], p: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66
+) -> list[tuple[str, int]]:
+    """rs version of [point_mutations][magicsoup.mutations.point_mutations]"""
+    return _lib.point_mutations(seqs, p, p_indel, p_del)
 
 
 def recombinations(

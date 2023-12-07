@@ -3,6 +3,7 @@ import random
 import torch.multiprocessing as mp
 from magicsoup.util import reverse_complement, nt_seqs
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
+from magicsoup import _lib  # type: ignore
 
 
 def _get_n(p: float, s: int, name: str) -> int:
@@ -79,6 +80,16 @@ def _get_coding_regions(
                 break
 
     return out
+
+
+def _get_coding_regions_rs(
+    seq: str,
+    min_cds_size: int,
+    start_codons: list[str],
+    stop_codons: list[str],
+    is_fwd: bool,
+) -> list[tuple[str, int, int, bool]]:
+    return _lib.get_coding_regions(seq, min_cds_size, start_codons, stop_codons, is_fwd)
 
 
 def _extract_domains(
@@ -242,6 +253,7 @@ class Genetics:
         # a domain can begin and end with start/stop codons
         # so min CDS size = dom_size
         self.dom_size = (n_dom_type_codons + 5) * CODON_SIZE
+        self.dom_type_size = n_dom_type_codons * CODON_SIZE
 
         # setup domain type definitions
         # sequences including stop codons are useless, since they would terminate the CDS
@@ -321,6 +333,19 @@ class Genetics:
             dom_seqs = pool.starmap(_translate_genome, args)
 
         return dom_seqs
+
+    def translate_genomes_rs(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
+        """rs version of [translate_genomes()][magicsoup.genetics.Genetics.translate_genomes]"""
+        return _lib.translate_genomes(
+            genomes,
+            self.start_codons,
+            self.stop_codons,
+            self.domain_map,
+            self.one_codon_map,
+            self.two_codon_map,
+            self.dom_size,
+            self.dom_type_size,
+        )
 
     def _get_non_stop_seqs(self, n_codons: int) -> list[str]:
         all_seqs = nt_seqs(n=n_codons * CODON_SIZE)

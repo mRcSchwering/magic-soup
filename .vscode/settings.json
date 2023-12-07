@@ -19,7 +19,9 @@
     }
   },
   "[rust]": {
-    "editor.tabSize": 4
+    "editor.tabSize": 4,
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
   },
   "ruff.lint.args": ["--ignore=E501"]
 }
