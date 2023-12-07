@@ -119,7 +119,7 @@ def get_test(w: int, n: int, s: int):
     for _ in range(R):
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
-        genetics.translate_genomes_rs(genomes=genomes)
+        # genetics.translate_genomes_rs(genomes=genomes)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 

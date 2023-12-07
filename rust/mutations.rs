@@ -5,7 +5,7 @@ use rayon::prelude::*;
 
 const NTS: [char; 4] = ['A', 'C', 'T', 'G'];
 
-/// Consume string and mutate it with point mutations
+/// Mutate string with point mutations
 /// p mutations per nucleotide, p_indel chance of indel (vs substitution), p_del chance of deletion (vs insertsion)
 /// Returns None if no mutation happened
 fn point_mutate_seq(
@@ -63,11 +63,9 @@ pub fn point_mutate_seqs(
     p_indel: f64,
     p_del: f64,
 ) -> Vec<(String, usize)> {
-    let res: Vec<(String, usize)> = seqs
-        .into_par_iter()
+    seqs.into_par_iter()
         .enumerate()
         .map(|(i, d)| point_mutate_seq(d, i, p, p_indel, p_del))
         .filter_map(std::convert::identity)
-        .collect();
-    res
+        .collect()
 }

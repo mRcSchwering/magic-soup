@@ -1,7 +1,7 @@
 import pytest
 import magicsoup as ms
-from magicsoup.genetics import _get_coding_regions, _extract_domains
-from magicsoup.constants import CODON_SIZE
+from magicsoup.constants import CODON_SIZE, ProteinSpecType
+from magicsoup import _lib  # type: ignore
 
 
 # (genome, (cds, start))
@@ -58,6 +58,39 @@ _DATA: list[tuple[str, list[tuple[str, int]]]] = [
 ]
 
 
+def _get_coding_regions_rs(
+    seq: str,
+    min_cds_size: int,
+    start_codons: list[str],
+    stop_codons: list[str],
+    is_fwd: bool,
+) -> list[tuple[str, int, int, bool]]:
+    return _lib.get_coding_regions(seq, min_cds_size, start_codons, stop_codons, is_fwd)
+
+
+def _extract_domains_rs(
+    cdss: list[tuple[str, int, int, bool]],
+    dom_size: int,
+    dom_type_size: int,
+    dom_type_map: dict[str, int],
+    one_codon_map: dict[str, int],
+    two_codon_map: dict[str, int],
+) -> list[ProteinSpecType]:
+    return _lib.extract_domains(
+        cdss, dom_size, dom_type_size, dom_type_map, one_codon_map, two_codon_map
+    )
+
+
+def _reverse_complement_rs(seq: str) -> str:
+    return _lib.reverse_complement(seq)
+
+
+def test_reverse_complement():
+    seq = "ACTGG"
+    res = _reverse_complement_rs(seq=seq)
+    assert res == "CCAGT"
+
+
 @pytest.mark.parametrize("seq, exp", _DATA)
 def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]):
     # 1 codon is too small to express p=0.01 domain types
@@ -72,7 +105,7 @@ def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]):
     }
 
     seq = "".join(seq.replace("\n", "").split())
-    res = _get_coding_regions(seq, **kwargs)  # type: ignore
+    res = _get_coding_regions_rs(seq, **kwargs)  # type: ignore
     exp_cdss, exp_starts = map(list, zip(*exp))
 
     assert len(res) == len(exp)
@@ -107,7 +140,7 @@ def test_extract_domains():
     # - cds 4: defines exactly 2 domains, a 3rd type 2 start is in the middle   => 2 res[3]
     # fmt: on
 
-    res = _extract_domains(
+    res = _extract_domains_rs(
         cdss=cdss,
         dom_type_size=dom_type_size,
         dom_size=dom_size,
@@ -115,6 +148,7 @@ def test_extract_domains():
         one_codon_map=one_codon_map,
         two_codon_map=two_codon_map,
     )
+    # TODO: DomainTypeSpec is a list now
 
     # res[i]: (domain list, cds start, cds end, is fwd)
     # res[i][0][j]: (domain spec, dom start, dom end)
@@ -134,19 +168,19 @@ def test_extract_domains():
     assert res[3][1] == 12
     assert res[3][2] == 48
     assert res[3][3] is True
-    assert res[0][0][0][0] == (1, 2, 5, 1, 3)
+    assert res[0][0][0][0] == [1, 2, 5, 1, 3]
     assert res[0][0][0][1] == 6
     assert res[0][0][0][2] == 6 + dom_size
-    assert res[1][0][0][0] == (2, 3, 4, 2, 3)
+    assert res[1][0][0][0] == [2, 3, 4, 2, 3]
     assert res[1][0][0][1] == 6
     assert res[1][0][0][2] == 6 + dom_size
-    assert res[2][0][0][0] == (1, 3, 4, 5, 2)
+    assert res[2][0][0][0] == [1, 3, 4, 5, 2]
     assert res[2][0][0][1] == 0
     assert res[2][0][0][2] == 0 + dom_size
-    assert res[3][0][0][0] == (3, 3, 4, 2, 3)
+    assert res[3][0][0][0] == [3, 3, 4, 2, 3]
     assert res[3][0][0][1] == 0
     assert res[3][0][0][2] == 0 + dom_size
-    assert res[3][0][1][0] == (2, 1, 2, 3, 4)
+    assert res[3][0][1][0] == [2, 1, 2, 3, 4]
     assert res[3][0][1][1] == 18
     assert res[3][0][1][2] == 18 + dom_size
 

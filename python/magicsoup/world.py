@@ -151,9 +151,7 @@ class World:
         self.abs_temp = abs_temp
         self.chemistry = chemistry
 
-        self.genetics = Genetics(
-            start_codons=start_codons, stop_codons=stop_codons, workers=workers
-        )
+        self.genetics = Genetics(start_codons=start_codons, stop_codons=stop_codons)
 
         self.kinetics = Kinetics(
             molecules=chemistry.molecules,
@@ -910,7 +908,6 @@ class World:
 
         if workers is not None:
             obj.workers = workers
-            obj.genetics.workers = workers
 
         return obj
 

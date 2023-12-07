@@ -31,60 +31,28 @@ def indel(seq: str, idx: int) -> str:
 
 
 def point_mutations(
-    seqs: list[str], p: float = 1e-6, p_indel: float = 0.4
+    seqs: list[str], p: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66
 ) -> list[tuple[str, int]]:
     """
     Add point mutations to a list of nucleotide sequences.
     Mutations are substitutions and indels.
-    If an indel occurs, there is a 2:1 chance of it being a deletion vs insertion.
 
     Arguments:
         seqs: nucleotide sequences
         p: probability of a mutation per nucleotide
-        p_indel: probability of any point mutation being a deletion or insertion
+        p_indel: probability of any point mutation being an indel
                  (inverse probability of it being a substitution)
+        p_del: probability of any indel being a deletion
+               (inverse probability of it being an insertion)
 
     Returns:
         List of mutated sequences and their indices from `seqs`.
 
     The returned list only contains sequences which experienced at least one mutation.
     The new sequences are returned together with their `seqs` index.
-    E.g. if this index is 5 it means `seqs[5]` was mutated and the resulting sequence is
+    E.g. `("...", 5)` means `seqs[5]` was mutated and the resulting sequence is
     in the tuple.
     """
-    n = len(seqs)
-    if n == 0:
-        return []
-
-    lens = [len(d) for d in seqs]
-    s_max = max(lens)
-
-    mask = torch.zeros(n, s_max)
-    for i, s in enumerate(lens):
-        mask[i, :s] = True
-
-    probs = torch.full((n, s_max), p)
-    muts = torch.bernoulli(probs)
-    mut_idxs = torch.argwhere(muts * mask).tolist()
-
-    probs = torch.full((len(mut_idxs),), p_indel)
-    indels = torch.bernoulli(probs).to(torch.bool).tolist()
-
-    tmps = [d for d in seqs]
-    for (seq_i, pos_i), is_indel in zip(mut_idxs, indels):
-        if is_indel:
-            tmps[seq_i] = indel(seq=tmps[seq_i], idx=pos_i)
-        else:
-            tmps[seq_i] = substitution(seq=tmps[seq_i], idx=pos_i)
-
-    idxs = list(set(d[0] for d in mut_idxs))
-    return [(tmps[i], i) for i in idxs]
-
-
-def point_mutations_rs(
-    seqs: list[str], p: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66
-) -> list[tuple[str, int]]:
-    """rs version of [point_mutations][magicsoup.mutations.point_mutations]"""
     return _lib.point_mutations(seqs, p, p_indel, p_del)
 
 

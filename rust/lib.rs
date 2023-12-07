@@ -17,8 +17,31 @@ fn get_coding_regions(
     stop_codons: Vec<String>,
     is_fwd: bool,
 ) -> Vec<(String, usize, usize, bool)> {
-    let res = genetics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd);
-    res
+    genetics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
+}
+
+#[pyfunction]
+fn extract_domains(
+    cdss: Vec<(String, usize, usize, bool)>,
+    dom_size: usize,
+    dom_type_size: usize,
+    dom_type_map: HashMap<String, usize>,
+    one_codon_map: HashMap<String, usize>,
+    two_codon_map: HashMap<String, usize>,
+) -> Vec<genetics::ProteinSpecType> {
+    genetics::extract_domains(
+        &cdss,
+        &dom_size,
+        &dom_type_size,
+        &dom_type_map,
+        &one_codon_map,
+        &two_codon_map,
+    )
+}
+
+#[pyfunction]
+fn reverse_complement(seq: String) -> String {
+    genetics::reverse_complement(&seq)
 }
 
 #[pyfunction]
@@ -34,7 +57,7 @@ fn translate_genomes(
     dom_type_size: usize,
 ) -> Vec<Vec<genetics::ProteinSpecType>> {
     // TODO: always release GIL (py.allow_threads)?
-    let res = py.allow_threads(|| {
+    py.allow_threads(|| {
         genetics::translate_genomes(
             &genomes,
             &start_codons,
@@ -45,14 +68,12 @@ fn translate_genomes(
             &dom_size,
             &dom_type_size,
         )
-    });
-    res
+    })
 }
 
 #[pyfunction]
 fn point_mutations(seqs: Vec<String>, p: f64, p_indel: f64, p_del: f64) -> Vec<(String, usize)> {
-    let res = mutations::point_mutate_seqs(seqs, p, p_indel, p_del);
-    res
+    mutations::point_mutate_seqs(seqs, p, p_indel, p_del)
 }
 
 #[pymodule]
@@ -60,5 +81,7 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
     m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
     m.add_function(wrap_pyfunction!(get_coding_regions, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
+    m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     Ok(())
 }

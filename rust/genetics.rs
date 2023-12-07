@@ -6,6 +6,9 @@ static CODON_SIZE: usize = 3;
 pub type DomainSpecType = ([usize; 5], usize, usize);
 pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 
+/// Find all CDSs in genome using start and stop codons.
+/// Each CDS has a minimum size of min_cds_size.
+/// Returns each CDS with start and stop indices on genome and is_fwd.
 pub fn get_coding_regions(
     seq: &str,
     min_cds_size: &usize,
@@ -85,7 +88,13 @@ pub fn get_coding_regions(
     res
 }
 
-fn extract_domains(
+/// Extract domain specification from a list of CDSs.
+/// Domains are defined by DNA regions which map to domain type and indices.
+/// Mappings are defined by HashMaps, sizes by ints.
+/// Returns list of protein specifications, which are in turn each a list with
+/// domain specifications with each specification indices, start/stop indices,
+/// and strand direction information.
+pub fn extract_domains(
     cdss: &Vec<(String, usize, usize, bool)>,
     dom_size: &usize,
     dom_type_size: &usize,
@@ -134,7 +143,8 @@ fn extract_domains(
     prot_doms
 }
 
-fn reverse_complement(seq: &str) -> String {
+/// Reverse completemt of a DNA sequence (only 'A', 'C', 'T', 'G')
+pub fn reverse_complement(seq: &str) -> String {
     seq.chars()
         .rev()
         .filter_map(|d| match d {
@@ -147,6 +157,8 @@ fn reverse_complement(seq: &str) -> String {
         .collect()
 }
 
+/// For a genome, extract CDSs on forward and reverse-complement,
+/// then extract protein specification for each CDS and return them.
 pub fn translate_genome(
     genome: &str,
     start_codons: &Vec<String>,
@@ -164,18 +176,17 @@ pub fn translate_genome(
 
     cdsf.append(&mut cdsb);
 
-    let prot_doms = extract_domains(
+    extract_domains(
         &cdsf,
         dom_size,
         dom_type_size,
         domain_map,
         one_codon_map,
         two_codon_map,
-    );
-
-    prot_doms
+    )
 }
 
+// Threaded version of translate_genome() for multiple genomes
 pub fn translate_genomes(
     genomes: &Vec<String>,
     start_codons: &Vec<String>,
@@ -186,7 +197,7 @@ pub fn translate_genomes(
     dom_size: &usize,
     dom_type_size: &usize,
 ) -> Vec<Vec<ProteinSpecType>> {
-    let res: Vec<Vec<ProteinSpecType>> = genomes
+    genomes
         .into_par_iter()
         .map(|d| {
             translate_genome(
@@ -200,6 +211,5 @@ pub fn translate_genomes(
                 &dom_type_size,
             )
         })
-        .collect();
-    res
+        .collect()
 }

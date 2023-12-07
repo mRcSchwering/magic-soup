@@ -64,19 +64,6 @@ def random_genome(s=500, excl: list[str] | None = None) -> str:
     return out
 
 
-def reverse_complement(seq: str) -> str:
-    """Reverse-complement of a nucleotide sequence"""
-    rvsd = seq[::-1]
-    return (
-        rvsd.replace("A", "-")
-        .replace("T", "A")
-        .replace("-", "T")
-        .replace("G", "-")
-        .replace("C", "G")
-        .replace("-", "C")
-    )
-
-
 def variants(seq: str) -> list[str]:
     """
     Generate all possible nucleotide sequences from a template string.
