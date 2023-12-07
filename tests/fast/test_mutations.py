@@ -7,14 +7,11 @@ def test_point_mutations():
     seqs = ["AAAAAAAAAA"] * 100
     mutated = muts.point_mutations(seqs=seqs, p=0.1, p_indel=0.0)
     assert len(mutated) > 50  # chance >= 99.7%
+    assert all(len(d) == 10 for d, _ in mutated)
 
-    are_ok = 0
-    for new, _ in mutated:
-        assert len(new) == 10
-        d = sum(d != "A" for d in new)
-        if 0 < d < 5:  # 1 expected, sometimes up to 4
-            are_ok += 1
-    assert are_ok > len(mutated) * 0.7
+    # 1 expected, sometimes up to 4
+    n_ok = sum(0 < sum(dd != "A" for dd in d) < 5 for d, _ in mutated)
+    assert n_ok > len(mutated) * 0.7
 
     mutated = muts.point_mutations(seqs=seqs, p=0.1, p_indel=1.0, p_del=1.0)
     assert len(mutated) > 50  # chance >= 99.7%
@@ -28,21 +25,22 @@ def test_point_mutations():
     mutated = muts.point_mutations(seqs=seqs, p=0.1)
     assert len(mutated) > 50  # chance >= 99.7%
 
-    are_ok = 0
-    for new, idx in mutated:
-        if seqs[idx] != new:
-            are_ok += 1
-    assert are_ok > len(mutated) * 0.7
+    n_ok = sum(seqs[i] != d for d, i in mutated)
+    assert n_ok > len(mutated) * 0.7
 
 
 def test_recombinations():
     seq_pair = ("AAAAAAAAAA", "CCCCCCCCCC")
 
-    mutated = muts.recombinations(seq_pairs=[seq_pair] * 50, p=1 / 20)
-    assert len(mutated) > 20
+    mutated = muts.recombinations(seq_pairs=[seq_pair] * 100, p=0.1)
+    assert len(mutated) > 50  # chance >= 99.7%
+    assert all(len(a) + len(b) == 20 for a, b, _ in mutated)
 
-    is_ok = 0
-    for lft, rgt, _ in mutated:
-        if set(lft) != {"A"} or set(rgt) != {"C"}:
-            is_ok += 1
-    assert is_ok > len(mutated) * 0.7
+    n_ok = sum("A" in b or "C" in a for a, b, _ in mutated)
+    assert n_ok > len(mutated) * 0.7
+
+    mutated = muts.recombinations(
+        seq_pairs=[("AAAA", "CCCC"), ("AAAACCCC", ""), ("", "AAAACCCC")], p=1.0
+    )
+    assert len(mutated) == 3  # chance >= 99.7%
+    assert all(len(a) + len(b) == 8 for a, b, _ in mutated)

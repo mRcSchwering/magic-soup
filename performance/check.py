@@ -107,7 +107,9 @@ def get_original(w: int, n: int, s: int):
     for _ in range(R):
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
-        _ = ms.mutations.recombinations(seq_pairs=list(zip(genomes, reversed(genomes))))
+        _ = ms.mutations.recombinations_old(
+            seq_pairs=list(zip(genomes, reversed(genomes)))
+        )
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -153,8 +155,8 @@ def main(parts: list, n: int, s: int, w: int):
     if "test" in parts:
         smry = get_test(w=w, n=n, s=s)
         print(f"{smry} - test")
-        # smry = get_original(w=w, n=n, s=s)
-        # print(f"{smry} - original")
+        smry = get_original(w=w, n=n, s=s)
+        print(f"{smry} - original")
 
 
 if __name__ == "__main__":

@@ -29,25 +29,9 @@ def point_mutations(
     return _lib.point_mutations(seqs, p, p_indel, p_del)
 
 
-def recombinations(
+def recombinations_old(
     seq_pairs: list[tuple[str, str]], p: float = 1e-8
 ) -> list[tuple[str, str, int]]:
-    """
-    Add random recombinations to pairs of nucleotide sequences.
-    The recombination happens by creating random strand breaks in the input sequence pairs
-    and randomly re-joining them.
-
-    Arguments:
-        seq_pairs: nucleotide sequence pairs
-        p: probability of a strand break per nucleotide
-
-    Returns:
-        List of mutated sequence pairs and their indices.
-
-    The returned list only contains sequence pairs that experienced a recombination.
-    The new sequence paris are returned and in addition to that their `seq_pairs` index.
-    E.g. if it's 5, it means `seq_pairs[5]` was mutated and the resulting sequences are in this 3-tuple.
-    """
     n = len(seq_pairs)
     if n == 0:
         return []
@@ -82,7 +66,25 @@ def recombinations(
     return tmps
 
 
-def recombinations_rs(
+def recombinations(
     seq_pairs: list[tuple[str, str]], p: float = 1e-8
 ) -> list[tuple[str, str, int]]:
-    return _lib.recombinations(seq_pairs)
+    """
+    Add random recombinations to pairs of nucleotide sequences.
+    The recombination happens by creating random strand breaks in the input sequence pairs
+    and randomly re-joining them.
+
+    Arguments:
+        seq_pairs: nucleotide sequence pairs
+        p: probability of a strand break per nucleotide
+
+    Returns:
+        List of mutated sequence pairs and their indices.
+
+    The returned list only contains sequence pairs that experienced a recombination.
+    The new sequence paris are returned and in addition to that their `seq_pairs` index.
+    E.g. if it's 5, it means `seq_pairs[5]` was mutated and the resulting sequences are in this 3-tuple.
+    """
+    if len(seq_pairs) == 0:
+        return []
+    return _lib.recombinations(seq_pairs, p)

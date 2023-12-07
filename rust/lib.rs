@@ -56,7 +56,7 @@ fn translate_genomes(
     dom_size: usize,
     dom_type_size: usize,
 ) -> Vec<Vec<genetics::ProteinSpecType>> {
-    // TODO: always release GIL (py.allow_threads)?
+    // TODO: always release GIL (py.allow_threads)? (is this slower?)
     py.allow_threads(|| {
         genetics::translate_genomes(
             &genomes,
@@ -82,6 +82,15 @@ fn point_mutations(
     py.allow_threads(move || mutations::point_mutate_seqs(seqs, p, p_indel, p_del))
 }
 
+#[pyfunction]
+fn recombinations(
+    py: Python<'_>,
+    seq_pairs: Vec<(String, String)>,
+    p: f64,
+) -> Vec<(String, String, usize)> {
+    py.allow_threads(move || mutations::recombinate_seq_pairs(seq_pairs, p))
+}
+
 #[pymodule]
 fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
@@ -89,5 +98,6 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_coding_regions, m)?)?;
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
+    m.add_function(wrap_pyfunction!(recombinations, m)?)?;
     Ok(())
 }
