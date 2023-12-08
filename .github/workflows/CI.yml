@@ -43,40 +43,41 @@ jobs:
         run: |
           set -e
           pip install magicsoup --find-links dist --force-reinstall
-          pip install -r python/requirements.txt
           pip install pytest
           pytest tests/fast
 
-  windows:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        target: [x64, x86]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-          architecture: ${{ matrix.target }}
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
-          sccache: 'true'
-      - name: Upload wheels
-        uses: actions/upload-artifact@v3
-        with:
-          name: wheels
-          path: dist
-      - name: pytest
-        if: ${{ startsWith(matrix.target, 'x86') }}
-        shell: bash
-        run: |
-          set -e
-          pip install magicsoup --find-links dist --force-reinstall
-          pip install pytest
-          pytest tests/fast
+  # TODO: Windows doesnt build or install package correctly
+  #       https://github.com/PyO3/maturin-action/issues/235
+  # windows:
+  #   runs-on: windows-latest
+  #   strategy:
+  #     matrix:
+  #       target: [x64, x86]
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: actions/setup-python@v4
+  #       with:
+  #         python-version: '3.10'
+  #         architecture: ${{ matrix.target }}
+  #     - name: Build wheels
+  #       uses: PyO3/maturin-action@v1
+  #       with:
+  #         target: ${{ matrix.target }}
+  #         args: --release --out dist --find-interpreter
+  #         sccache: 'true'
+  #     - name: Upload wheels
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: wheels
+  #         path: dist
+  #     - name: pytest
+  #       if: ${{ startsWith(matrix.target, 'x86') }}
+  #       shell: bash
+  #       run: |
+  #         set -e
+  #         pip install magicsoup --find-links dist --force-reinstall
+  #         pip install pytest
+  #         pytest tests/fast
 
   macos:
     runs-on: macos-latest
@@ -126,7 +127,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [linux, windows, macos, sdist]
+    needs: [linux, macos, sdist]
     steps:
       - uses: actions/download-artifact@v3
         with:
