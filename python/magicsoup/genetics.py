@@ -150,7 +150,23 @@ class Genetics:
         If this would be projected onto the genome in forward direction,
         the CDS would start extend from `n - 2` to `n - 20` (where `n` is the length of the genome).
         """
+        if len(genomes) < 1:
+            return []
         return _lib.translate_genomes(
+            genomes,
+            self.start_codons,
+            self.stop_codons,
+            self.domain_map,
+            self.one_codon_map,
+            self.two_codon_map,
+            self.dom_size,
+            self.dom_type_size,
+        )
+
+    def translate_genomes_new(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
+        if len(genomes) < 1:
+            return []
+        return _lib.translate_genomes_new(
             genomes,
             self.start_codons,
             self.stop_codons,

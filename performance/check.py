@@ -17,6 +17,7 @@ import random
 from argparse import ArgumentParser
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup import _lib  # type: ignore
 
 R = 5
 
@@ -103,23 +104,38 @@ def get_point_mutations(w: int, n: int, s: int):
 
 
 def get_original(w: int, n: int, s: int):
+    genetics = ms.Genetics()
     tds = []
     for _ in range(R):
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
-        _ = ms.mutations.recombinations_old(
-            seq_pairs=list(zip(genomes, reversed(genomes)))
-        )
+        for seq in genomes:
+            _ = _lib.get_coding_regions(
+                seq=seq,
+                min_cds_size=genetics.dom_size,
+                start_codons=genetics.start_codons,
+                stop_codons=genetics.stop_codons,
+                is_fwd=True,
+            )
+        _ = genetics.translate_genomes(genomes=genomes)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
 
 def get_test(w: int, n: int, s: int):
+    genetics = ms.Genetics()
     tds = []
     for _ in range(R):
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
-        _ = ms.mutations.recombinations(seq_pairs=list(zip(genomes, reversed(genomes))))
+        for seq in genomes:
+            _ = _lib.get_coding_regions_new(
+                seq=seq,
+                min_cds_size=genetics.dom_size,
+                start_codons=genetics.start_codons,
+                stop_codons=genetics.stop_codons,
+                is_fwd=True,
+            )
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -155,8 +171,8 @@ def main(parts: list, n: int, s: int, w: int):
     if "test" in parts:
         smry = get_test(w=w, n=n, s=s)
         print(f"{smry} - test")
-        smry = get_original(w=w, n=n, s=s)
-        print(f"{smry} - original")
+        # smry = get_original(w=w, n=n, s=s)
+        # print(f"{smry} - original")
 
 
 if __name__ == "__main__":

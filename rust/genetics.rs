@@ -88,6 +88,45 @@ pub fn get_coding_regions(
     res
 }
 
+/// Find all CDSs in genome using start and stop codons.
+/// Each CDS has a minimum size of min_cds_size.
+/// Returns each CDS with start and stop indices on genome and is_fwd.
+pub fn get_coding_regions_new(
+    seq: &str,
+    min_cds_size: &usize,
+    start_codons: &Vec<String>,
+    stop_codons: &Vec<String>,
+    is_fwd: bool,
+) -> Vec<(String, usize, usize, bool)> {
+    let mut res: Vec<(String, usize, usize, bool)> = Vec::new();
+    let n = seq.len();
+    if n < *min_cds_size {
+        return res;
+    }
+
+    let mut starts: [Vec<usize>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+
+    let min_cds_size = *min_cds_size + CODON_SIZE;
+    for i in 0..min_cds_size {
+        let frame = i % CODON_SIZE;
+        let j = i + CODON_SIZE;
+        let codon = seq[i..j].to_string();
+        if start_codons.contains(&codon) {
+            starts[frame].push(i);
+        }
+        if stop_codons.contains(&codon) {
+            loop {
+                match starts[frame].pop() {
+                    Some(d) => res.push((seq[d..j].to_string(), i, j, is_fwd)),
+                    None => break,
+                }
+            }
+        }
+    }
+
+    res
+}
+
 /// Extract domain specification from a list of CDSs.
 /// Domains are defined by DNA regions which map to domain type and indices.
 /// Mappings are defined by HashMaps, sizes by ints.
@@ -186,6 +225,35 @@ pub fn translate_genome(
     )
 }
 
+/// For a genome, extract CDSs on forward and reverse-complement,
+/// then extract protein specification for each CDS and return them.
+pub fn translate_genome_new(
+    genome: &str,
+    start_codons: &Vec<String>,
+    stop_codons: &Vec<String>,
+    domain_map: &HashMap<String, usize>,
+    one_codon_map: &HashMap<String, usize>,
+    two_codon_map: &HashMap<String, usize>,
+    dom_size: &usize,
+    dom_type_size: &usize,
+) -> Vec<ProteinSpecType> {
+    let mut cdsf = get_coding_regions(genome, dom_size, start_codons, stop_codons, true);
+
+    let bwd = reverse_complement(genome);
+    let mut cdsb = get_coding_regions(&bwd, dom_size, start_codons, stop_codons, false);
+
+    cdsf.append(&mut cdsb);
+
+    extract_domains(
+        &cdsf,
+        dom_size,
+        dom_type_size,
+        domain_map,
+        one_codon_map,
+        two_codon_map,
+    )
+}
+
 // Threaded version of translate_genome() for multiple genomes
 pub fn translate_genomes(
     genomes: &Vec<String>,
@@ -201,6 +269,34 @@ pub fn translate_genomes(
         .into_par_iter()
         .map(|d| {
             translate_genome(
+                &d,
+                start_codons,
+                stop_codons,
+                domain_map,
+                one_codon_map,
+                two_codon_map,
+                dom_size,
+                &dom_type_size,
+            )
+        })
+        .collect()
+}
+
+// Threaded version of translate_genome() for multiple genomes
+pub fn translate_genomes_new(
+    genomes: &Vec<String>,
+    start_codons: &Vec<String>,
+    stop_codons: &Vec<String>,
+    domain_map: &HashMap<String, usize>,
+    one_codon_map: &HashMap<String, usize>,
+    two_codon_map: &HashMap<String, usize>,
+    dom_size: &usize,
+    dom_type_size: &usize,
+) -> Vec<Vec<ProteinSpecType>> {
+    genomes
+        .into_par_iter()
+        .map(|d| {
+            translate_genome_new(
                 &d,
                 start_codons,
                 stop_codons,

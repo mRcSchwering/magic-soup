@@ -1,5 +1,3 @@
-import random
-import torch
 from magicsoup import _lib  # type: ignore
 
 
@@ -27,43 +25,6 @@ def point_mutations(
     in the tuple.
     """
     return _lib.point_mutations(seqs, p, p_indel, p_del)
-
-
-def recombinations_old(
-    seq_pairs: list[tuple[str, str]], p: float = 1e-8
-) -> list[tuple[str, str, int]]:
-    n = len(seq_pairs)
-    if n == 0:
-        return []
-
-    combined_seqs = [(a + b, len(a)) for a, b in seq_pairs]
-    lens = [len(d[0]) for d in combined_seqs]
-    s_max = max(lens)
-
-    mask = torch.zeros(n, s_max)
-    for i, s in enumerate(lens):
-        mask[i, :s] = True
-
-    probs = torch.full((n, s_max), p)
-    muts = torch.bernoulli(probs)
-    mut_idxs = torch.argwhere(muts * mask)
-    mut_rows = set(mut_idxs[:, 0].tolist())
-
-    tmps: list[tuple[str, str, int]] = []
-    for row_i in mut_rows:
-        seq, cut = combined_seqs[row_i]
-
-        cuts = mut_idxs[mut_idxs[:, 0] == row_i, 1].tolist()
-        l = [0] + sorted(cuts + [cut]) + [len(seq)]
-        parts = [seq[a:b] for a, b in zip(l, l[1:])]
-
-        random.shuffle(parts)
-        split = random.randint(0, len(parts))
-        lft_new = "".join(parts[:split])
-        rght_new = "".join(parts[split:])
-        tmps.append((lft_new, rght_new, row_i))
-
-    return tmps
 
 
 def recombinations(
