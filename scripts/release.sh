@@ -10,8 +10,8 @@
 set -e
 
 version=$(grep "^version = " pyproject.toml | sed 's/version = //g' | sed 's/"//g')
-read -p "Release as ${version}? (y/N)" confirm
+read -p "Release as v${version}? (y/N)" confirm
 [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
 
-git tag "$version"
-git push origin "$version"
+git tag "v$version"
+git push origin "v$version"
