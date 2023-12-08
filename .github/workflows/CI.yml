@@ -43,12 +43,9 @@ jobs:
         run: |
           set -e
           pip install magicsoup --find-links dist --force-reinstall
-        # TODO: fix tests (needs to install python/req.txt)
-        # run: |
-        #   set -e
-        #   pip install magicsoup --find-links dist --force-reinstall
-        #   pip install pytest
-        #   pytest
+          pip install -r python/requirements.txt
+          pip install pytest
+          pytest tests/fast
       # - name: pytest
       #   if: ${{ !startsWith(matrix.target, 'x86') && matrix.target != 'ppc64' }}
       #   uses: uraimo/run-on-arch-action@v2.5.0
