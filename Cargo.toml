@@ -1,6 +1,6 @@
 [package]
 name = "magicsoup"  # pyproject.toml has precedence
-version = "0.0.0"  # pyproject.toml has precedence
+version = "0.12.1"  # pyproject.toml has precedence
 
 [lib]
 name = "_lib"  # private module to be nested into Python package
@@ -11,5 +11,4 @@ path = "rust/lib.rs"
 rand_distr = { version = "*" }
 rayon = { version = "*" }
 rand = { version = "*" }
-regex = { version = "*" }
 pyo3 = { version = "0.20.0", features = ["extension-module"] }

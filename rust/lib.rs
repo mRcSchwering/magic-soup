@@ -2,7 +2,6 @@ extern crate pyo3;
 extern crate rand;
 extern crate rand_distr;
 extern crate rayon;
-extern crate regex;
 
 mod genetics;
 mod mutations;
