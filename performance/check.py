@@ -12,6 +12,7 @@ v0.9.0:
 (6.21+-0.13)s - get neighbors
 (0.25+-0.01)s - point mutations
 """
+import sys
 import time
 import random
 from argparse import ArgumentParser
@@ -118,29 +119,26 @@ def get_original(w: int, n: int, s: int):
 def get_test(w: int, n: int, s: int):
     genetics = ms.Genetics()
     tds = []
+
+    teststrs = ["ACTA", "TAGG", "TGGA", "TACA", "TTGA", "AAGA"]
+    testints = [
+        int.from_bytes(d.encode("utf-8"), byteorder=sys.byteorder) for d in teststrs
+    ]
+
     for _ in range(R):
-        genomes = _gen_genomes(n=n, s=s)
-        cap = []
-        for seq in genomes:
-            cdss = _lib.get_coding_regions(
-                seq=seq,
-                min_cds_size=genetics.dom_size,
-                start_codons=genetics.start_codons,
-                stop_codons=genetics.stop_codons,
-                is_fwd=True,
-            )
-            cap.append((seq, cdss))
+        # genomes = _gen_genomes(n=n, s=s)
+        # cap = []
+        # for seq in genomes:
+        #     cdss = _lib.get_coding_regions(
+        #         seq=seq,
+        #         min_cds_size=genetics.dom_size,
+        #         start_codons=genetics.start_codons,
+        #         stop_codons=genetics.stop_codons,
+        #         is_fwd=True,
+        #     )
+        #     cap.append((seq, cdss))
         t0 = time.time()
-        for seq, cdss in cap:
-            _lib.extract_domains(
-                seq,
-                cdss,
-                genetics.dom_size,
-                genetics.dom_type_size,
-                genetics.domain_map,
-                genetics.one_codon_map,
-                genetics.two_codon_map,
-            )
+        _lib.extract_domains2(list(zip(teststrs, testints)))
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 

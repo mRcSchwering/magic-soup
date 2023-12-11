@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::str;
 
 static CODON_SIZE: usize = 3;
 
@@ -109,6 +110,39 @@ pub fn extract_domains(
         }
     }
     res
+}
+
+// fmt: off
+#[rustfmt::skip]
+static CODONS: &[(&str, u8)] = &[
+    ("AAA", 1),  ("AAC", 2),  ("AAG", 3),  ("AAT", 4),
+    ("ACA", 5),  ("ACC", 6),  ("ACG", 7),  ("ACT", 8),
+    ("AGA", 9),  ("AGC", 10), ("AGG", 11), ("AGT", 12),
+    ("ATA", 13), ("ATC", 14), ("ATG", 15), ("ATT", 16),
+];
+
+pub fn get_codon_idx(key: &str) -> u8 {
+    CODONS
+        .binary_search_by(|(k, _)| k.cmp(&key))
+        .map(|x| CODONS[x].1)
+        .unwrap()
+}
+// fmt: on
+
+/// Extract domain specification from a list of CDSs.
+/// Domains are defined by DNA regions which map to domain type and indices.
+/// Mappings are defined by HashMaps, sizes by ints.
+/// Returns list of protein specifications, which are in turn each a list with
+/// domain specifications with each specification indices, start/stop indices,
+/// and strand direction information.
+///  release
+pub fn extract_domains2(pairs: &Vec<([char; 4], u32)>) {
+    for (pystr, pyint) in pairs {
+        let bytes = pystr.map(|d| d as u8);
+        let rsint = u32::from_ne_bytes(bytes);
+        let txt: String = pystr.iter().collect();
+        println!("{txt}: py {pyint} rs {rsint} = {}", rsint == *pyint);
+    }
 }
 
 /// Reverse completemt of a DNA sequence (only 'A', 'C', 'T', 'G')

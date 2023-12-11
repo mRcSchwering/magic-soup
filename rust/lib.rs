@@ -45,6 +45,11 @@ fn extract_domains(
 }
 
 #[pyfunction]
+fn extract_domains2(pairs: Vec<([char; 4], u32)>) {
+    genetics::extract_domains2(&pairs)
+}
+
+#[pyfunction]
 fn reverse_complement(seq: String) -> String {
     genetics::reverse_complement(&seq)
 }
@@ -129,6 +134,7 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     //m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
     //m.add_function(wrap_pyfunction!(translate_genomes_new, m)?)?;
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_domains2, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     Ok(())
 }
