@@ -19,7 +19,7 @@ fn get_coding_regions(
     start_codons: Vec<String>,
     stop_codons: Vec<String>,
     is_fwd: bool,
-) -> Vec<(String, usize, usize, bool)> {
+) -> Vec<(usize, usize, bool)> {
     genetics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
 }
 
@@ -47,57 +47,57 @@ fn reverse_complement(seq: String) -> String {
     genetics::reverse_complement(&seq)
 }
 
-#[pyfunction]
-fn translate_genomes(
-    py: Python<'_>,
-    genomes: Vec<String>,
-    start_codons: Vec<String>,
-    stop_codons: Vec<String>,
-    domain_map: HashMap<String, usize>,
-    one_codon_map: HashMap<String, usize>,
-    two_codon_map: HashMap<String, usize>,
-    dom_size: usize,
-    dom_type_size: usize,
-) -> Vec<Vec<genetics::ProteinSpecType>> {
-    py.allow_threads(|| {
-        genetics::translate_genomes(
-            &genomes,
-            &start_codons,
-            &stop_codons,
-            &domain_map,
-            &one_codon_map,
-            &two_codon_map,
-            &dom_size,
-            &dom_type_size,
-        )
-    })
-}
+// #[pyfunction]
+// fn translate_genomes(
+//     py: Python<'_>,
+//     genomes: Vec<String>,
+//     start_codons: Vec<String>,
+//     stop_codons: Vec<String>,
+//     domain_map: HashMap<String, usize>,
+//     one_codon_map: HashMap<String, usize>,
+//     two_codon_map: HashMap<String, usize>,
+//     dom_size: usize,
+//     dom_type_size: usize,
+// ) -> Vec<Vec<genetics::ProteinSpecType>> {
+//     py.allow_threads(|| {
+//         genetics::translate_genomes(
+//             &genomes,
+//             &start_codons,
+//             &stop_codons,
+//             &domain_map,
+//             &one_codon_map,
+//             &two_codon_map,
+//             &dom_size,
+//             &dom_type_size,
+//         )
+//     })
+// }
 
-#[pyfunction]
-fn translate_genomes_new(
-    py: Python<'_>,
-    genomes: Vec<String>,
-    start_codons: Vec<String>,
-    stop_codons: Vec<String>,
-    domain_map: HashMap<String, usize>,
-    one_codon_map: HashMap<String, usize>,
-    two_codon_map: HashMap<String, usize>,
-    dom_size: usize,
-    dom_type_size: usize,
-) -> Vec<Vec<genetics::ProteinSpecType>> {
-    py.allow_threads(|| {
-        genetics::translate_genomes_new(
-            &genomes,
-            &start_codons,
-            &stop_codons,
-            &domain_map,
-            &one_codon_map,
-            &two_codon_map,
-            &dom_size,
-            &dom_type_size,
-        )
-    })
-}
+// #[pyfunction]
+// fn translate_genomes_new(
+//     py: Python<'_>,
+//     genomes: Vec<String>,
+//     start_codons: Vec<String>,
+//     stop_codons: Vec<String>,
+//     domain_map: HashMap<String, usize>,
+//     one_codon_map: HashMap<String, usize>,
+//     two_codon_map: HashMap<String, usize>,
+//     dom_size: usize,
+//     dom_type_size: usize,
+// ) -> Vec<Vec<genetics::ProteinSpecType>> {
+//     py.allow_threads(|| {
+//         genetics::translate_genomes_new(
+//             &genomes,
+//             &start_codons,
+//             &stop_codons,
+//             &domain_map,
+//             &one_codon_map,
+//             &two_codon_map,
+//             &dom_size,
+//             &dom_type_size,
+//         )
+//     })
+// }
 
 #[pyfunction]
 fn point_mutations(
@@ -124,8 +124,8 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
     m.add_function(wrap_pyfunction!(recombinations, m)?)?;
     m.add_function(wrap_pyfunction!(get_coding_regions, m)?)?;
-    m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
-    m.add_function(wrap_pyfunction!(translate_genomes_new, m)?)?;
+    //m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
+    //m.add_function(wrap_pyfunction!(translate_genomes_new, m)?)?;
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     Ok(())

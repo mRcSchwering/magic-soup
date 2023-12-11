@@ -4,11 +4,11 @@ from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup import _lib  # type: ignore
 
 
-# (genome, (cds, start))
+# (genome, (start, stop))
 # starts: "TTG", "GTG", "ATG"
 # stops: "TGA", "TAG", "TAA"
 # forward only
-_DATA: list[tuple[str, list[tuple[str, int]]]] = [
+_DATA: list[tuple[str, list[tuple[int, int]]]] = [
     (
         """
         TACCGGATA GCAGCTTTT CTTGGAATA GCCAAGGGT
@@ -18,7 +18,7 @@ _DATA: list[tuple[str, list[tuple[str, int]]]] = [
         GGGGCGATT GGCGATGGT
         """,
         # "TTGGAATAG" at 19 is too short
-        [("TTGGTAACAAAGGTTAAAACGCCAAACGAGTATCGGCCAATCCTGTCACTGTGA", 68)],
+        [(68, 122)],
     ),
     (
         """
@@ -34,38 +34,26 @@ _DATA: list[tuple[str, list[tuple[str, int]]]] = [
         [
             # "GTGTTACGTTATTGA" at 99 is too short
             # "GTGAAGTAA" at 220 is too short
-            (
-                "ATGAATTACGAAAGCGGGCGTACTACTTCTGGGGATACGATTAGTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGA",
-                27,
-            ),
-            (
-                "GTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGAAAGAGCAAATTGCGAGCTCCCCGTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
-                70,
-            ),
-            ("TTGAAAGAGCAAATTGCGAGCTCCCCGTGA", 110),
-            ("TTGCGAGCTCCCCGTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAA", 123),
-            (
-                "GTGACACTTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
-                136,
-            ),
-            ("TTGTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAG", 143),
-            (
-                "GTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
-                145,
-            ),
+            (27, 114),
+            (70, 229),
+            (110, 140),
+            (123, 177),
+            (136, 229),
+            (143, 185),
+            (145, 229),
         ],
     ),
     (
         # min CDS size from start to end
         "TTGAAAGA GCAAATTT GA",
-        [("TTGAAAGAGCAAATTTGA", 0)],
+        [(0, 18)],
     ),
     (
         # two overlapping start GTG, different stops
         "GTGTGCTCG AAAGAGAAC GCAAATTCG TAACCTAG",
         [
-            ("GTGTGCTCGAAAGAGAACGCAAATTCGTAA", 0),
-            ("GTGCTCGAAAGAGAACGCAAATTCGTAACCTAG", 2),
+            (0, 30),
+            (2, 35),
         ],
     ),
 ]
@@ -77,7 +65,7 @@ def _get_coding_regions_rs(
     start_codons: list[str],
     stop_codons: list[str],
     is_fwd: bool,
-) -> list[tuple[str, int, int, bool]]:
+) -> list[tuple[int, int, bool]]:
     return _lib.get_coding_regions(seq, min_cds_size, start_codons, stop_codons, is_fwd)
 
 
@@ -119,15 +107,16 @@ def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]):
 
     seq = "".join(seq.replace("\n", "").split())
     res = _get_coding_regions_rs(seq, **kwargs)  # type: ignore
-    exp_cdss, exp_starts = map(list, zip(*exp))
+    exp_starts, exp_stops = map(list, zip(*exp))
 
     assert len(res) == len(exp)
-    assert set(d[0] for d in res) == set(exp_cdss)
+    assert set(d[0] for d in res) == set(exp_starts)
+    assert set(d[1] for d in res) == set(exp_stops)
 
-    for cds, start, stop, is_fwd in res:
-        idx = exp_cdss.index(cds)  # type: ignore
+    for start, stop, is_fwd in res:
+        idx = exp_starts.index(start)  # type: ignore
         assert start == exp_starts[idx]
-        assert stop == exp_starts[idx] + len(exp_cdss[idx])  # type: ignore
+        assert stop == exp_stops[idx]
         assert not is_fwd
 
 
