@@ -102,18 +102,6 @@ def get_point_mutations(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
-def get_original(w: int, n: int, s: int):
-    genetics = ms.Genetics()
-    tds = []
-    for _ in range(R):
-        genomes = _gen_genomes(n=n, s=s)
-        t0 = time.time()
-        for seq in genomes:
-            pass
-        tds.append(time.time() - t0)
-    return _summary(tds=tds)
-
-
 def get_test(w: int, n: int, s: int):
     genetics = ms.Genetics()
     tds = []
@@ -156,8 +144,6 @@ def main(parts: list, n: int, s: int, w: int):
     if "test" in parts:
         smry = get_test(w=w, n=n, s=s)
         print(f"{smry} - test")
-        # smry = get_original(w=w, n=n, s=s)
-        # print(f"{smry} - original")
 
 
 if __name__ == "__main__":

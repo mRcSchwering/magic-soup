@@ -4,6 +4,9 @@ from magicsoup.util import nt_seqs
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup import _lib  # type: ignore
 
+# TODO: constant dom_type_size and dom_size
+#       in py and rs
+
 
 def _get_n(p: float, s: int, name: str) -> int:
     n = int(p * s)
@@ -153,20 +156,6 @@ class Genetics:
         if len(genomes) < 1:
             return []
         return _lib.translate_genomes(
-            genomes,
-            self.start_codons,
-            self.stop_codons,
-            self.domain_map,
-            self.one_codon_map,
-            self.two_codon_map,
-            self.dom_size,
-            self.dom_type_size,
-        )
-
-    def translate_genomes_new(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
-        if len(genomes) < 1:
-            return []
-        return _lib.translate_genomes_new(
             genomes,
             self.start_codons,
             self.stop_codons,
