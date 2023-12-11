@@ -9,7 +9,6 @@ pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 /// Find all CDSs in genome using start and stop codons.
 /// Each CDS has a minimum size of min_cds_size.
 /// Returns each CDS with start and stop indices on genome and is_fwd.
-/// 0.21s release
 pub fn get_coding_regions(
     seq: &str,
     min_cds_size: &usize,
@@ -54,40 +53,49 @@ pub fn get_coding_regions(
 /// Returns list of protein specifications, which are in turn each a list with
 /// domain specifications with each specification indices, start/stop indices,
 /// and strand direction information.
+/// 6.65s release
 pub fn extract_domains(
-    cdss: &Vec<(String, usize, usize, bool)>,
+    genome: &str,
+    cdss: &Vec<(usize, usize, bool)>,
     dom_size: &usize,
     dom_type_size: &usize,
     dom_type_map: &HashMap<String, usize>,
     one_codon_map: &HashMap<String, usize>,
     two_codon_map: &HashMap<String, usize>,
 ) -> Vec<ProteinSpecType> {
-    let i0s = 0..CODON_SIZE;
-    let i1s = CODON_SIZE..(2 * CODON_SIZE);
-    let i2s = (2 * CODON_SIZE)..(3 * CODON_SIZE);
-    let i3s = (3 * CODON_SIZE)..(5 * CODON_SIZE);
-    let mut prot_doms: Vec<ProteinSpecType> = Vec::new();
+    let n_cdss = cdss.len();
+    let mut res: Vec<ProteinSpecType> = Vec::with_capacity(n_cdss);
+    if n_cdss == 0 {
+        return res;
+    }
 
-    for (cds, cds_start, cds_stop, is_fwd) in cdss {
-        let n: usize = cds.len();
+    let i0e = CODON_SIZE;
+    let i1e = 2 * CODON_SIZE;
+    let i2e = 3 * CODON_SIZE;
+    let i3e = 5 * CODON_SIZE;
+
+    for (cds_start, cds_stop, is_fwd) in cdss {
+        let n: usize = cds_stop - cds_start;
         let mut i: usize = 0;
         let mut is_useful_prot = false;
-        let mut doms: Vec<DomainSpecType> = Vec::new();
+
+        // >99% < 3 with 3 start and 3 stop codons
+        let mut doms: Vec<DomainSpecType> = Vec::with_capacity(4);
 
         while i + dom_size <= n {
-            let dom_type_seq = cds[i..(i + *dom_type_size)].to_string();
-            let dom_type_opt = dom_type_map.get(&dom_type_seq);
+            let dom_start = cds_start + i;
+            let dom_type_seq = &genome[dom_start..(dom_start + *dom_type_size)];
 
-            if let Some(dom_type) = dom_type_opt {
+            if let Some(dom_type) = dom_type_map.get(dom_type_seq) {
                 // 1=catal, 2=trnsp, 3=reg
                 if *dom_type != (3 as usize) {
                     is_useful_prot = true;
                 }
-                let dom_spec_seq = cds[(i + dom_type_size)..(i + dom_size)].to_string();
-                let i0 = one_codon_map.get(&dom_spec_seq[i0s.clone()]).unwrap();
-                let i1 = one_codon_map.get(&dom_spec_seq[i1s.clone()]).unwrap();
-                let i2 = one_codon_map.get(&dom_spec_seq[i2s.clone()]).unwrap();
-                let i3 = two_codon_map.get(&dom_spec_seq[i3s.clone()]).unwrap();
+                let dom_spec_seq = &genome[(dom_start + dom_type_size)..(dom_start + dom_size)];
+                let i0 = one_codon_map.get(&dom_spec_seq[0..i0e]).unwrap();
+                let i1 = one_codon_map.get(&dom_spec_seq[i0e..i1e]).unwrap();
+                let i2 = one_codon_map.get(&dom_spec_seq[i1e..i2e]).unwrap();
+                let i3 = two_codon_map.get(&dom_spec_seq[i2e..i3e]).unwrap();
                 doms.push(([*dom_type, *i0, *i1, *i2, *i3], i, i + dom_size));
                 i += *dom_size;
             } else {
@@ -97,10 +105,10 @@ pub fn extract_domains(
 
         // protein should have at least 1 non-regulatory domain
         if is_useful_prot {
-            prot_doms.push((doms, *cds_start, *cds_stop, *is_fwd))
+            res.push((doms, *cds_start, *cds_stop, *is_fwd))
         }
     }
-    prot_doms
+    res
 }
 
 /// Reverse completemt of a DNA sequence (only 'A', 'C', 'T', 'G')

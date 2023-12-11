@@ -70,7 +70,8 @@ def _get_coding_regions_rs(
 
 
 def _extract_domains_rs(
-    cdss: list[tuple[str, int, int, bool]],
+    genome: str,
+    cdss: list[tuple[int, int, bool]],
     dom_size: int,
     dom_type_size: int,
     dom_type_map: dict[str, int],
@@ -78,7 +79,13 @@ def _extract_domains_rs(
     two_codon_map: dict[str, int],
 ) -> list[ProteinSpecType]:
     return _lib.extract_domains(
-        cdss, dom_size, dom_type_size, dom_type_map, one_codon_map, two_codon_map
+        genome,
+        cdss,
+        dom_size,
+        dom_type_size,
+        dom_type_map,
+        one_codon_map,
+        two_codon_map,
     )
 
 
@@ -128,12 +135,19 @@ def test_extract_domains():
     dom_size = dom_type_size + 5 * CODON_SIZE
 
     # fmt: off
-    cdss: list[tuple[str, int, int, bool]] = [
-        ("AGACAAAAACTGTGTACTCCGCGATAGACTAGACG", 1, 36, True),  # (1, 2, 5, 1, 3)
-        ("AGACTATAGCTAGAAGCCCCTGTACTCCGTGTCGATAGACG", 10, 51, False),  # (3, 5, 1, 3, 5)
-        ("AGACTAGGGCCGGGACTGCCGCGACTAGAAGCTAGACTAACG", 4, 47, True),  # (2, 3, 4, 2, 3)
-        ("AAACCGGGATGTCTGTAT", 17, 35, False),  # (1, 3, 4, 5, 2)
-        ("CCCCCGGGACTGCCGCGAGGGACTCTGCCGGGAATC", 12, 48, True),  # (3, 3, 4, 2, 3) (2, 1, 2, 3, 4)
+    genome = (
+        "AGACAAAAACTGTGTACTCCGCGATAGACTAGACG"
+        "AGACTATAGCTAGAAGCCCCTGTACTCCGTGTCGATAGACG"
+        "AGACTAGGGCCGGGACTGCCGCGACTAGAAGCTAGACTAACG"
+        "AAACCGGGATGTCTGTAT"
+        "CCCCCGGGACTGCCGCGAGGGACTCTGCCGGGAATC"
+    )
+    cdss: list[tuple[int, int, bool]] = [
+        (0, 35, True),  # (1, 2, 5, 1, 3)
+        (35, 76, False),  # (3, 5, 1, 3, 5)
+        (76, 118, True),  # (2, 3, 4, 2, 3)
+        (118, 136, False),  # (1, 3, 4, 5, 2)
+        (136, 172, True),  # (3, 3, 4, 2, 3) (2, 1, 2, 3, 4)
     ]
     # - cds 0: normal domain                                                    => 1 res[0]
     # - cds 1: single type 3 domain, so it is removed
@@ -143,6 +157,7 @@ def test_extract_domains():
     # fmt: on
 
     res = _extract_domains_rs(
+        genome=genome,
         cdss=cdss,
         dom_type_size=dom_type_size,
         dom_size=dom_size,
@@ -158,17 +173,17 @@ def test_extract_domains():
     assert len(res[1][0]) == 1
     assert len(res[2][0]) == 1
     assert len(res[3][0]) == 2
-    assert res[0][1] == 1
-    assert res[0][2] == 36
+    assert res[0][1] == 0
+    assert res[0][2] == 35
     assert res[0][3] is True
-    assert res[1][1] == 4
-    assert res[1][2] == 47
+    assert res[1][1] == 76
+    assert res[1][2] == 118
     assert res[1][3] is True
-    assert res[2][1] == 17
-    assert res[2][2] == 35
+    assert res[2][1] == 118
+    assert res[2][2] == 136
     assert res[2][3] is False
-    assert res[3][1] == 12
-    assert res[3][2] == 48
+    assert res[3][1] == 136
+    assert res[3][2] == 172
     assert res[3][3] is True
     assert res[0][0][0][0] == [1, 2, 5, 1, 3]
     assert res[0][0][0][1] == 6

@@ -120,14 +120,26 @@ def get_test(w: int, n: int, s: int):
     tds = []
     for _ in range(R):
         genomes = _gen_genomes(n=n, s=s)
-        t0 = time.time()
+        cap = []
         for seq in genomes:
-            _ = _lib.get_coding_regions(
+            cdss = _lib.get_coding_regions(
                 seq=seq,
                 min_cds_size=genetics.dom_size,
                 start_codons=genetics.start_codons,
                 stop_codons=genetics.stop_codons,
                 is_fwd=True,
+            )
+            cap.append((seq, cdss))
+        t0 = time.time()
+        for seq, cdss in cap:
+            _lib.extract_domains(
+                seq,
+                cdss,
+                genetics.dom_size,
+                genetics.dom_type_size,
+                genetics.domain_map,
+                genetics.one_codon_map,
+                genetics.two_codon_map,
             )
         tds.append(time.time() - t0)
     return _summary(tds=tds)

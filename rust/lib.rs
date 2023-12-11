@@ -25,7 +25,8 @@ fn get_coding_regions(
 
 #[pyfunction]
 fn extract_domains(
-    cdss: Vec<(String, usize, usize, bool)>,
+    genome: String,
+    cdss: Vec<(usize, usize, bool)>,
     dom_size: usize,
     dom_type_size: usize,
     dom_type_map: HashMap<String, usize>,
@@ -33,6 +34,7 @@ fn extract_domains(
     two_codon_map: HashMap<String, usize>,
 ) -> Vec<genetics::ProteinSpecType> {
     genetics::extract_domains(
+        &genome,
         &cdss,
         &dom_size,
         &dom_type_size,
