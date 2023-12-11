@@ -2,6 +2,7 @@ extern crate pyo3;
 extern crate rand;
 extern crate rand_distr;
 extern crate rayon;
+extern crate regex;
 
 mod genetics;
 mod mutations;
@@ -20,17 +21,6 @@ fn get_coding_regions(
     is_fwd: bool,
 ) -> Vec<(String, usize, usize, bool)> {
     genetics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
-}
-
-#[pyfunction]
-fn get_coding_regions_new(
-    seq: &str,
-    min_cds_size: usize,
-    start_codons: Vec<String>,
-    stop_codons: Vec<String>,
-    is_fwd: bool,
-) -> Vec<(String, usize, usize, bool)> {
-    genetics::get_coding_regions_new(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
 }
 
 #[pyfunction]
@@ -134,7 +124,6 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
     m.add_function(wrap_pyfunction!(recombinations, m)?)?;
     m.add_function(wrap_pyfunction!(get_coding_regions, m)?)?;
-    m.add_function(wrap_pyfunction!(get_coding_regions_new, m)?)?;
     m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
     m.add_function(wrap_pyfunction!(translate_genomes_new, m)?)?;
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;

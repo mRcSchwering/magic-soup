@@ -17,7 +17,7 @@ _DATA: list[tuple[str, list[tuple[str, int]]]] = [
         TCCTGTCAC TGTGAGAAG TTTCAATTA TAGATTCCT
         GGGGCGATT GGCGATGGT
         """,
-        # "TTGGAATAG" is too short
+        # "TTGGAATAG" at 19 is too short
         [("TTGGTAACAAAGGTTAAAACGCCAAACGAGTATCGGCCAATCCTGTCACTGTGA", 68)],
     ),
     (
@@ -32,8 +32,8 @@ _DATA: list[tuple[str, list[tuple[str, int]]]] = [
         CGTTTCCGT TCTCGT
         """,
         [
-            # "GTGTTACGTTATTGA" is too short
-            # "GTGAAGTAA" is too short
+            # "GTGTTACGTTATTGA" at 99 is too short
+            # "GTGAAGTAA" at 220 is too short
             (
                 "ATGAATTACGAAAGCGGGCGTACTACTTCTGGGGATACGATTAGTGTACTCGGTTCTCTTAACGACTACCCTGTGTTACGTTATTGA",
                 27,
@@ -53,6 +53,19 @@ _DATA: list[tuple[str, list[tuple[str, int]]]] = [
                 "GTGCGGCGCTATACACCCCTGCAGTTATTTAAGGGCTTAGGCGAGAAGTTCCGCCTGCTAAGGAGTCCCTGTTGGGTGAAGTAA",
                 145,
             ),
+        ],
+    ),
+    (
+        # min CDS size from start to end
+        "TTGAAAGA GCAAATTT GA",
+        [("TTGAAAGAGCAAATTTGA", 0)],
+    ),
+    (
+        # two overlapping start GTG, different stops
+        "GTGTGCTCG AAAGAGAAC GCAAATTCG TAACCTAG",
+        [
+            ("GTGTGCTCGAAAGAGAACGCAAATTCGTAA", 0),
+            ("GTGCTCGAAAGAGAACGCAAATTCGTAACCTAG", 2),
         ],
     ),
 ]

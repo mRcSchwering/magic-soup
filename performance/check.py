@@ -110,14 +110,7 @@ def get_original(w: int, n: int, s: int):
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
         for seq in genomes:
-            _ = _lib.get_coding_regions(
-                seq=seq,
-                min_cds_size=genetics.dom_size,
-                start_codons=genetics.start_codons,
-                stop_codons=genetics.stop_codons,
-                is_fwd=True,
-            )
-        _ = genetics.translate_genomes(genomes=genomes)
+            pass
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -129,7 +122,7 @@ def get_test(w: int, n: int, s: int):
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
         for seq in genomes:
-            _ = _lib.get_coding_regions_new(
+            _ = _lib.get_coding_regions(
                 seq=seq,
                 min_cds_size=genetics.dom_size,
                 start_codons=genetics.start_codons,

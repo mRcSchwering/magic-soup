@@ -15,7 +15,7 @@
   },
   "[python]": {
     "editor.codeActionsOnSave": {
-      "source.fixAll": true
+      "source.fixAll": "explicit"
     }
   },
   "[rust]": {

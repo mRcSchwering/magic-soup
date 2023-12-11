@@ -11,4 +11,5 @@ path = "rust/lib.rs"
 rand_distr = { version = "*" }
 rayon = { version = "*" }
 rand = { version = "*" }
+regex = { version = "*" }
 pyo3 = { version = "0.20.0", features = ["extension-module"] }

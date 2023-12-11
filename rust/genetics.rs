@@ -9,6 +9,7 @@ pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 /// Find all CDSs in genome using start and stop codons.
 /// Each CDS has a minimum size of min_cds_size.
 /// Returns each CDS with start and stop indices on genome and is_fwd.
+/// 0.21s release
 pub fn get_coding_regions(
     seq: &str,
     min_cds_size: &usize,
@@ -22,65 +23,24 @@ pub fn get_coding_regions(
         return res;
     }
 
-    let mut start_idxs: Vec<usize> = Vec::new();
-    for start_codon in start_codons {
-        let idxs: Vec<usize> = seq[..(n - *min_cds_size + CODON_SIZE)]
-            .match_indices(start_codon)
-            .map(|(i, _)| i)
-            .collect();
-        start_idxs.extend(idxs);
-    }
-
-    let mut stop_idxs: Vec<usize> = Vec::new();
-    for stop_codon in stop_codons {
-        let idxs: Vec<usize> = seq[..n].match_indices(stop_codon).map(|(i, _)| i).collect();
-        stop_idxs.extend(idxs);
-    }
-
-    start_idxs.sort();
-    stop_idxs.sort();
-
-    let mut f0_starts: Vec<usize> = Vec::new();
-    let mut f1_starts: Vec<usize> = Vec::new();
-    let mut f2_starts: Vec<usize> = Vec::new();
-    let mut f0_stops: Vec<usize> = Vec::new();
-    let mut f1_stops: Vec<usize> = Vec::new();
-    let mut f2_stops: Vec<usize> = Vec::new();
-    for start_idx in start_idxs {
-        match start_idx % 3 {
-            0 => f0_starts.push(start_idx),
-            1 => f1_starts.push(start_idx),
-            2 => f2_starts.push(start_idx),
-            _ => {}
-        }
-    }
-    for stop_idx in stop_idxs {
-        match stop_idx % 3 {
-            0 => f0_stops.push(stop_idx),
-            1 => f1_stops.push(stop_idx),
-            2 => f2_stops.push(stop_idx),
-            _ => {}
-        }
-    }
-
-    let frames = [
-        (&f0_starts, &mut f0_stops),
-        (&f1_starts, &mut f1_stops),
-        (&f2_starts, &mut f2_stops),
+    // >99% expected <10 with 3 start and 3 stop codons
+    let mut starts: [Vec<usize>; 3] = [
+        Vec::with_capacity(15),
+        Vec::with_capacity(15),
+        Vec::with_capacity(15),
     ];
 
-    for (f_starts, f_stops) in frames {
-        for f_start in f_starts {
-            f_stops.retain(|d| d > &(f_start + CODON_SIZE));
-            let stop0 = f_stops.iter().min();
-            if let Some(d) = stop0 {
-                let f_stop = d + CODON_SIZE;
-                if f_stop - f_start > *min_cds_size {
-                    let cds = seq[*f_start..f_stop].to_string();
-                    res.push((cds, *f_start, f_stop, is_fwd))
+    for i in 0..(n - CODON_SIZE + 1) {
+        let frame = i % CODON_SIZE;
+        let j = i + CODON_SIZE;
+        let codon = &seq[i..j];
+        if start_codons.iter().any(|d| d == codon) {
+            starts[frame].push(i);
+        } else if stop_codons.iter().any(|d| d == codon) {
+            while let Some(d) = starts[frame].pop() {
+                if j - d >= *min_cds_size {
+                    res.push((seq[d..j].to_string(), d, j, is_fwd))
                 }
-            } else {
-                break;
             }
         }
     }
@@ -88,10 +48,22 @@ pub fn get_coding_regions(
     res
 }
 
+// find all occurences of pat in seq (overlapping)
+fn find_all(seq: &str, pat: &str) -> Vec<usize> {
+    let mut res: Vec<usize> = Vec::with_capacity(250);
+    let mut j = 0;
+    while let Some(i) = seq[j..].find(pat) {
+        res.push(i + j);
+        j += i + 1;
+    }
+    res
+}
+
 /// Find all CDSs in genome using start and stop codons.
 /// Each CDS has a minimum size of min_cds_size.
 /// Returns each CDS with start and stop indices on genome and is_fwd.
-pub fn get_coding_regions_new(
+/// 0.49s release
+pub fn get_coding_regions2(
     seq: &str,
     min_cds_size: &usize,
     start_codons: &Vec<String>,
@@ -104,22 +76,42 @@ pub fn get_coding_regions_new(
         return res;
     }
 
-    let mut starts: [Vec<usize>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    // >99% expected < 500 with 3 start and 3 stop codons
+    let mut starts: Vec<usize> = Vec::with_capacity(750);
+    let mut stops: Vec<usize> = Vec::with_capacity(750);
 
-    let min_cds_size = *min_cds_size + CODON_SIZE;
-    for i in 0..min_cds_size {
-        let frame = i % CODON_SIZE;
-        let j = i + CODON_SIZE;
-        let codon = seq[i..j].to_string();
-        if start_codons.contains(&codon) {
-            starts[frame].push(i);
+    for codon in start_codons {
+        let idxs: Vec<usize> = find_all(seq, codon);
+        starts.extend(idxs);
+    }
+
+    for codon in stop_codons {
+        let idxs: Vec<usize> = find_all(seq, codon)
+            .iter()
+            .map(|d| d + CODON_SIZE)
+            .collect();
+        stops.extend(idxs);
+    }
+
+    if starts.len() == 0 || stops.len() == 0 {
+        return res;
+    }
+    stops.sort();
+    starts.sort();
+    starts.reverse();
+
+    while let Some(start) = starts.pop() {
+        stops.retain(|&d| d >= start);
+        if stops.len() < 1 {
+            break;
         }
-        if stop_codons.contains(&codon) {
-            loop {
-                match starts[frame].pop() {
-                    Some(d) => res.push((seq[d..j].to_string(), i, j, is_fwd)),
-                    None => break,
+        let frame = start % CODON_SIZE;
+        for stop in &stops {
+            if stop % CODON_SIZE == frame {
+                if stop - start >= *min_cds_size {
+                    res.push((seq[start..*stop].to_string(), start, *stop, is_fwd));
                 }
+                break;
             }
         }
     }
