@@ -424,7 +424,6 @@ def test_saving_and_loading_world_obj():
 
     assert world.abs_temp == 310.0
     assert world.map_size == 7
-    assert world.workers == 2
     assert world.device == "cpu"
     assert world.chemistry.molecules[0] is mi
     assert world.chemistry.molecules[1] is mj
@@ -445,8 +444,6 @@ def test_saving_and_loading_world_obj():
 
     assert world.abs_temp == 300.0
     assert world.map_size == 9
-    assert world.workers == 4
-    assert world.genetics.workers == 4
     assert world.device == "cpu"
     assert world.chemistry.molecules[0] is mi
     assert world.chemistry.molecules[1] is mj

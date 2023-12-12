@@ -3,7 +3,7 @@ Little helper script for checking the performance of some functions
 
     PYTHONPATH=./python python performance/check.py
 
-v0.9.0:
+v0.9.0 CPU:
 10,000 cells, 1,000 genome size, 4 workers
 (13.21+-0.50)s - add cells
 (11.85+-0.25)s - update cells
@@ -11,6 +11,15 @@ v0.9.0:
 (5.82+-0.79)s - enzymatic activity
 (6.21+-0.13)s - get neighbors
 (0.25+-0.01)s - point mutations
+
+v0.12.1:
+10,000 cells, 1,000 genome size, 4 workers
+(10.37+-0.77)s - add cells
+(11.53+-1.28)s - update cells
+(0.83+-0.19)s - replicate cells
+(6.63+-1.23)s - enzymatic activity
+(6.84+-0.65)s - get neighbors
+(0.01+-0.00)s - point mutations
 """
 import time
 import random
@@ -103,12 +112,20 @@ def get_point_mutations(w: int, n: int, s: int):
 
 
 def get_test(w: int, n: int, s: int):
-    genetics = ms.Genetics()
+    world = ms.World(chemistry=CHEMISTRY)
     tds = []
     for _ in range(R):
+        world.kill_cells(cell_idxs=list(range(world.n_cells)))
         genomes = _gen_genomes(n=n, s=s)
+        transcripts = world.genetics.translate_genomes(genomes=genomes)
+        proteomes = [[dd[0] for dd in d] for d in transcripts]
+        n_max_prots = max(len(d) for d in proteomes)
+        world.kinetics.increase_max_proteins(max_n=n_max_prots)
+        world.kinetics.increase_max_cells(by_n=n)
         t0 = time.time()
-        genetics.translate_genomes(genomes=genomes)
+        # world.kinetics.set_cell_params(cell_idxs=list(range(n)), proteomes=proteomes)
+        _ = world.kinetics._collect_proteome_idxs(proteomes=proteomes)
+        # _ = world.kinetics._collect_proteome_idxs_old(proteomes=proteomes)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 

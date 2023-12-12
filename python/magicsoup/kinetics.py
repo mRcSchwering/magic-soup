@@ -11,6 +11,7 @@ from magicsoup.containers import (
     RegulatoryDomain,
     Domain,
 )
+from magicsoup import _lib  # type: ignore
 
 # MAX,MIN should be at least x100 away from inf
 # EPS should be 1/MAX
@@ -1024,6 +1025,19 @@ class Kinetics:
 
         # mask (c,p) which proteins are active must be returned
         return xx, M.sum(2) > 0.0
+
+    def _collect_proteome_idxs_new(
+        self,
+        proteomes: list[list[list[DomainSpecType]]],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        n_prots = self.N.size(1)
+        doms, i0s, i1s, i2s, i3s = _lib.collect_proteome_idxs(proteomes, n_prots)
+        dom_types = self._tensor_from(doms)  # long (c,p,d)
+        idxs0 = self._tensor_from(i0s)  # long (c,p,d)
+        idxs1 = self._tensor_from(i1s)  # long (c,p,d)
+        idxs2 = self._tensor_from(i2s)  # long (c,p,d)
+        idxs3 = self._tensor_from(i3s)  # long (c,p,d)
+        return dom_types, idxs0, idxs1, idxs2, idxs3
 
     def _collect_proteome_idxs(
         self,

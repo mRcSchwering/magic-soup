@@ -3,7 +3,9 @@ extern crate rand;
 extern crate rand_distr;
 extern crate rayon;
 
+mod constants;
 mod genetics;
+mod kinetics;
 mod mutations;
 
 use pyo3::prelude::*;
@@ -53,7 +55,7 @@ fn extract_domains(
     dom_type_map: HashMap<String, usize>,
     one_codon_map: HashMap<String, usize>,
     two_codon_map: HashMap<String, usize>,
-) -> Vec<genetics::ProteinSpecType> {
+) -> Vec<constants::ProteinSpecType> {
     genetics::extract_domains(
         &genome,
         &cdss,
@@ -81,7 +83,7 @@ fn translate_genomes(
     two_codon_map: HashMap<String, usize>,
     dom_size: usize,
     dom_type_size: usize,
-) -> Vec<Vec<genetics::ProteinSpecType>> {
+) -> Vec<Vec<constants::ProteinSpecType>> {
     py.allow_threads(move || {
         genetics::translate_genomes(
             &genomes,
@@ -94,6 +96,17 @@ fn translate_genomes(
             &dom_type_size,
         )
     })
+}
+
+// kinetics
+
+#[pyfunction]
+fn collect_proteome_idxs(
+    py: Python<'_>,
+    proteomes: Vec<Vec<Vec<constants::DomainSpecType>>>,
+    n_prots: usize,
+) -> [Vec<Vec<Vec<usize>>>; 5] {
+    py.allow_threads(move || kinetics::collect_proteomes_idxs(&proteomes, &n_prots))
 }
 
 // lib
@@ -109,5 +122,9 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
+
+    // kinetics
+    m.add_function(wrap_pyfunction!(collect_proteome_idxs, m)?)?;
+
     Ok(())
 }

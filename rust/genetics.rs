@@ -1,11 +1,7 @@
+use crate::constants::{DomainSpecType, ProteinSpecType, CODON_SIZE};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::str;
-
-static CODON_SIZE: usize = 3;
-
-pub type DomainSpecType = ([usize; 5], usize, usize);
-pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 
 /// Find all CDSs in genome using start and stop codons.
 /// Each CDS has a minimum size of min_cds_size.
