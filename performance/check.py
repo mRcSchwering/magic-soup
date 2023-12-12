@@ -20,6 +20,8 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
 
+# TODO: device as param
+
 
 def _summary(tds: list[float]) -> str:
     mu = sum(tds) / R
