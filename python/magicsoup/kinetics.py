@@ -633,7 +633,7 @@ class Kinetics:
 
         return prots
 
-    def set_cell_params(
+    def set_cell_params_old(
         self,
         cell_idxs: list[int],
         proteomes: list[list[list[DomainSpecType]]],
@@ -1026,10 +1026,25 @@ class Kinetics:
         # mask (c,p) which proteins are active must be returned
         return xx, M.sum(2) > 0.0
 
-    def _collect_proteome_idxs_new(
+    def set_cell_params(
         self,
+        cell_idxs: list[int],
         proteomes: list[list[list[DomainSpecType]]],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ):
+        """
+        Calculate and set cell parameters for new proteomes
+
+        Arguments:
+            cell_idxs: Indexes of cells which proteomes belong to
+            proteomes: list of proteomes which should be calculated and set
+
+        Proteomes must be represented as a list (proteomes) of lists (proteins)
+        of lists (domains) which each carry tuples. These tuples are domain specifications
+        that are derived by [Genetics][magicsoup.genetics.Genetics].
+        These are indices which will be mapped to concrete values
+        (molecule species, Km, Vmax, reactions, ...).
+        """
+        # get proteome tensors
         n_prots = self.N.size(1)
         doms, i0s, i1s, i2s, i3s = _lib.collect_proteome_idxs(proteomes, n_prots)
         dom_types = self._tensor_from(doms)  # long (c,p,d)
@@ -1037,7 +1052,106 @@ class Kinetics:
         idxs1 = self._tensor_from(i1s)  # long (c,p,d)
         idxs2 = self._tensor_from(i2s)  # long (c,p,d)
         idxs3 = self._tensor_from(i3s)  # long (c,p,d)
-        return dom_types, idxs0, idxs1, idxs2, idxs3
+
+        # identify domain types
+        # 1=catalytic, 2=transporter, 3=regulatory
+        is_catal = dom_types == 1  # (c,p,d)
+        is_trnsp = dom_types == 2  # (c,p,d)
+        is_reg = dom_types == 3  # (c,p,d)
+
+        # map indices of domain specifications to concrete values
+        # idx0 is a 2-codon index specific for every domain type (n=4096)
+        # idx1-3 are 1-codon used for the floats (n=64)
+        # some values are not defined for certain domain types
+        # setting their indices to 0 lets them map to empty values (0-vector, NaN)
+        catal_lng = (is_catal).long()
+        trnsp_lng = (is_trnsp).long()
+        reg_lng = (is_reg).long()
+        not_reg_lng = (~is_reg).long()
+
+        # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
+        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # float (c,p,d)
+        Hills = self.hill_map(idxs0 * reg_lng)  # float (c,p,d)
+        Kms = self.km_map(idxs1)  # float (c,p,d)
+        signs = self.sign_map(idxs2)  # float (c,p,d)
+
+        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
+        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c,p,d,s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c,p,d,s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # float (c,p,d,s)
+
+        # aggregating over domains
+
+        # Vmax are averaged over domains
+        # undefined Vmax enries are NaN and are ignored by nanmean
+        Vmax_rdy = Vmaxs.nanmean(dim=2).nan_to_num(0.0)
+
+        # effector vectors are multiplied with signs and hill coefficients
+        # and summed up over domains
+        A_rdy = torch.einsum("cpds,cpd->cps", effectors, signs * Hills)
+
+        # Kms from other domains are ignored using NaNs
+        # their Kms must be seperated for each signal
+        Kmr_d = torch.where(is_reg, Kms, torch.nan)  # (c,p,d)
+        Kmr_ds = torch.einsum("cpds,cpd->cpds", effectors, Kmr_d)
+
+        # average Kmrs, ignored unused with nanmean
+        Kmr_ds[Kmr_ds == 0.0] = torch.nan  # effectors introduce 0s
+        Kmr = Kmr_ds.nanmean(dim=2).nan_to_num(0.0)  # (c,p,s)
+
+        # reaction stoichiometry N is derived from transporter and catalytic vectors
+        # vectors for regulatory domains or emptpy proteins are all 0s
+        N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
+        N_rdy = N_d.sum(dim=2)
+
+        # N for forward and backward reactions is distinguished
+        # to not loose molecules like co-facors whose net N would become 0
+        Nf_rdy = torch.where(N_d < 0.0, -N_d, 0.0).sum(dim=2)
+        Nb_rdy = torch.where(N_d > 0.0, N_d, 0.0).sum(dim=2)
+
+        # Kms of catalytic and transporter domains are aggregated
+        # Kms from other domains are ignored using NaNs and nanmean
+        Kmn = torch.where(~is_reg, Kms, torch.nan).nanmean(dim=2).nan_to_num(0.0)
+
+        # TODO: option 1: return from rust here
+        # domains are already out, following calculating are on (c,p)/(c,p,s)
+        # required values:
+        # Vmax_rdy, A_rdy, Kmr, N_rdy, Nf_rdy, Nb_rdy, Kmn
+
+        # Kms of regulatory domains are already multiplied with Hill coefficients
+        Kmr_rdy = torch.pow(Kmr, A_rdy)
+
+        # energies define Ke which defines Ke = Kmf/Kmb
+        # extreme energies can create Inf or 0.0, avoid them with clamp
+        E = torch.einsum("cps,s->cp", N_rdy, self.mol_energies)
+        Ke_rdy = torch.exp(-E / self.abs_temp / GAS_CONSTANT).clamp(_EPS, _MAX)
+
+        # Km is sampled between a defined range
+        # exessively small Km can create numerical instability
+        # thus, sampled Km should define the smaller Km of Ke = Kmf/Kmb
+        # Ke>=1  => Kmf=Km,         Kmb=Ke*Km
+        # Ke<1   => Kmf=Km/Ke,      Kmb=Km
+        # this operation can create again Inf or 0.0, avoided with clamp
+        # this effectively limits Ke around 1e38
+        is_fwd = Ke_rdy >= 1.0
+        Kmf_rdy = torch.where(is_fwd, Kmn, Kmn / Ke_rdy).clamp(_EPS, _MAX)
+        Kmb_rdy = torch.where(is_fwd, Kmn * Ke_rdy, Kmn).clamp(_EPS, _MAX)
+
+        # TODO: option 2: return from rust here
+        # fully calculates values, just write as tensors and set
+        # required values:
+        # Vmax_rdy, A_rdy, Kmr_rdy, N_rdy, Nf_rdy, Nb_rdy, Ke_rdy, Kmf_rdy, Kmb_rdy
+
+        # setting new params
+        self.Vmax[cell_idxs] = Vmax_rdy  # (c,p)
+        self.A[cell_idxs] = A_rdy  # (c,p,s)
+        self.Kmr[cell_idxs] = Kmr_rdy  # (c,p,s)
+        self.N[cell_idxs] = N_rdy  # (c,p,s)
+        self.Nf[cell_idxs] = Nf_rdy  # (c,p,s)
+        self.Nb[cell_idxs] = Nb_rdy  # (c,p,s)
+        self.Ke[cell_idxs] = Ke_rdy  # (c,p)
+        self.Kmf[cell_idxs] = Kmf_rdy  # (c,p)
+        self.Kmb[cell_idxs] = Kmb_rdy  # (c,p)
 
     def _collect_proteome_idxs(
         self,
