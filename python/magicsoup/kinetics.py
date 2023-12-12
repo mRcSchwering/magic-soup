@@ -1116,7 +1116,7 @@ class Kinetics:
         # TODO: option 1: return from rust here
         # domains are already out, following calculating are on (c,p)/(c,p,s)
         # required values:
-        # Vmax_rdy, A_rdy, Kmr, N_rdy, Nf_rdy, Nb_rdy, Kmn
+        # Vmax_rdy, Kmn, N_rdy, Nf_rdy, Nb_rdy, A_rdy, Kmr
 
         # Kms of regulatory domains are already multiplied with Hill coefficients
         Kmr_rdy = torch.pow(Kmr, A_rdy)

@@ -109,6 +109,43 @@ fn collect_proteome_idxs(
     py.allow_threads(move || kinetics::collect_proteomes_idxs(&proteomes, &n_prots))
 }
 
+/// return (Vmax_rdy, Kmn, N_rdy, Nf_rdy, Nb_rdy, A_rdy, Kmr)
+#[pyfunction]
+fn calculate_cell_params(
+    py: Python<'_>,
+    proteomes: Vec<Vec<Vec<constants::DomainSpecType>>>,
+    n_prots: usize,
+    vmax_map: HashMap<usize, f64>,
+    hill_map: HashMap<usize, usize>,
+    km_map: HashMap<usize, f64>,
+    sign_map: HashMap<usize, i8>,
+    react_map: HashMap<usize, Vec<isize>>,
+    transport_map: HashMap<usize, Vec<isize>>,
+    effector_map: HashMap<usize, Vec<isize>>,
+) -> (
+    Vec<Vec<f64>>,
+    Vec<Vec<f64>>,
+    Vec<Vec<Vec<usize>>>,
+    Vec<Vec<Vec<usize>>>,
+    Vec<Vec<Vec<usize>>>,
+    Vec<Vec<Vec<isize>>>,
+    Vec<Vec<Vec<f64>>>,
+) {
+    py.allow_threads(move || {
+        kinetics::calculate_cells_params(
+            &proteomes,
+            &n_prots,
+            &vmax_map,
+            &hill_map,
+            &km_map,
+            &sign_map,
+            &react_map,
+            &transport_map,
+            &effector_map,
+        )
+    })
+}
+
 // lib
 
 #[pymodule]
@@ -125,6 +162,7 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
     // kinetics
     m.add_function(wrap_pyfunction!(collect_proteome_idxs, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_cell_params, m)?)?;
 
     Ok(())
 }
