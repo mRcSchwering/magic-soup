@@ -9,6 +9,7 @@ Last runs:
 
 - 2023-06-08 EC2 GPU: 0.7s / 1k cells, 4.5s / 40k cells (0.9s activity, 1.2 mutate genomes, 2 replicate)
 - 2023-11-21 EC2 GPU: 0.05s / 1k cells, 1.2s / 40k cells (0.3s activity, 0.7 mutate genomes, 0.03 replicate)
+- 2023-11-21 EC2 GPU: 0.04s / 1k cells, 0.3s / 40k cells (0.3s activity, 0.02 mutate genomes, 0.00 replicate)
 """
 from argparse import ArgumentParser, Namespace
 from contextlib import contextmanager

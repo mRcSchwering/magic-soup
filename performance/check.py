@@ -12,13 +12,22 @@ v0.9.0 CPU:
 (6.21+-0.13)s - get neighbors
 (0.25+-0.01)s - point mutations
 
-v0.12.1:
+v0.12.1 CPU:
 10,000 cells, 1,000 genome size, 4 workers
 (10.37+-0.77)s - add cells
 (11.53+-1.28)s - update cells
 (0.83+-0.19)s - replicate cells
 (6.63+-1.23)s - enzymatic activity
 (6.84+-0.65)s - get neighbors
+(0.01+-0.00)s - point mutations
+
+v0.12.1 GPU (g4dn.xlarge):
+10,000 cells, 1,000 genome size, 4 workers
+(13.75+-0.72)s - add cells
+(9.60+-0.54)s - update cells
+(1.44+-0.03)s - replicate cells
+(0.19+-0.01)s - enzymatic activity
+(4.00+-0.01)s - get neighbors
 (0.01+-0.00)s - point mutations
 """
 import time
