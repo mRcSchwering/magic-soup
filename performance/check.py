@@ -22,6 +22,10 @@ R = 5
 
 # TODO: device as param
 
+# TODO: rs: use smallest possible types (u8, f32) for speed
+# TODO: rs: what about fastmath?
+# TODO: torch: try f32 for speed
+
 
 def _summary(tds: list[float]) -> str:
     mu = sum(tds) / R
