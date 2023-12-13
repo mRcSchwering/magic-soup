@@ -61,8 +61,6 @@ class World:
         stop_codons: stop codons which stop a coding sequence (translation only happens within coding sequences).
         device: Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
             This can be used to move most calculations to a GPU.
-        workers: Number of multiprocessing workers to use.
-            These are used to parallelize some calculations that can only be done on the CPU.
 
     Most attributes on this class describe the current state of molecules and cells.
     Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
@@ -143,13 +141,11 @@ class World:
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         device: str = "cpu",
-        workers: int = 2,
     ):
         if not torch.cuda.is_available():
             device = "cpu"
 
         self.device = device
-        self.workers = workers
         self.map_size = map_size
         self.abs_temp = abs_temp
         self.chemistry = chemistry
@@ -890,7 +886,6 @@ class World:
         rundir: Path,
         name: str = "world.pkl",
         device: str | None = None,
-        workers: int | None = None,
     ) -> "World":
         """
         Restore previously saved world from pickle file.
@@ -912,9 +907,6 @@ class World:
         if device is not None:
             obj.device = device
             obj.kinetics.device = device
-
-        if workers is not None:
-            obj.workers = workers
 
         return obj
 
@@ -1123,7 +1115,6 @@ class World:
             "map_size": self.map_size,
             "abs_temp": self.abs_temp,
             "device": self.device,
-            "workers": self.workers,
         }
         args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
