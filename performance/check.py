@@ -20,8 +20,7 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
 
-# TODO: device as param
-
+# TODO: mutation speed test (point and recomb)
 # TODO: rs: use smallest possible types (u8, f32) for speed
 # TODO: rs: what about fastmath?
 # TODO: torch: try f32 for speed
@@ -38,10 +37,10 @@ def _gen_genomes(n: int, s: int, d=0.1) -> list[str]:
     return [ms.random_genome(s + random.choice(pop)) for _ in range(n)]
 
 
-def add_cells(w: int, n: int, s: int):
+def add_cells(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        world = ms.World(chemistry=CHEMISTRY, device=device)
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
         world.spawn_cells(genomes=genomes)
@@ -49,10 +48,10 @@ def add_cells(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
-def update_cells(w: int, n: int, s: int):
+def update_cells(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        world = ms.World(chemistry=CHEMISTRY, device=device)
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()
@@ -62,10 +61,10 @@ def update_cells(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
-def replicate_cells(w: int, n: int, s: int):
+def replicate_cells(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        world = ms.World(chemistry=CHEMISTRY, device=device)
         genomes = _gen_genomes(n=n, s=s)
         idxs = world.spawn_cells(genomes=genomes)
         t0 = time.time()
@@ -74,10 +73,10 @@ def replicate_cells(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
-def enzymatic_activity(w: int, n: int, s: int):
+def enzymatic_activity(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        world = ms.World(chemistry=CHEMISTRY, device=device)
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()
@@ -86,10 +85,10 @@ def enzymatic_activity(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
-def get_neighbors(w: int, n: int, s: int):
+def get_neighbors(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, workers=w)
+        world = ms.World(chemistry=CHEMISTRY, device=device)
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()
@@ -98,7 +97,7 @@ def get_neighbors(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
-def get_point_mutations(w: int, n: int, s: int):
+def get_point_mutations(n: int, s: int):
     tds = []
     for _ in range(R):
         genomes = _gen_genomes(n=n, s=s)
@@ -108,7 +107,7 @@ def get_point_mutations(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
-def get_test(w: int, n: int, s: int):
+def get_test(n: int, s: int):
     genetics = ms.Genetics()
     tds = []
     for _ in range(R):
@@ -119,36 +118,36 @@ def get_test(w: int, n: int, s: int):
     return _summary(tds=tds)
 
 
-def main(parts: list, n: int, s: int, w: int):
+def main(parts: list, n: int, s: int, device: str):
     print(f"Running {', '.join(parts)}")
-    print(f"{n:,} cells, {s:,} genome size, {w} workers")
+    print(f"{n:,} cells, {s:,} genome size, on {device}")
 
     if "add_cells" in parts:
-        smry = add_cells(w=w, n=n, s=s)
+        smry = add_cells(device=device, n=n, s=s)
         print(f"{smry} - add cells")
 
     if "update_cells" in parts:
-        smry = update_cells(w=w, n=n, s=s)
+        smry = update_cells(device=device, n=n, s=s)
         print(f"{smry} - update cells")
 
     if "replicate_cells" in parts:
-        smry = replicate_cells(w=w, n=n, s=s)
+        smry = replicate_cells(device=device, n=n, s=s)
         print(f"{smry} - replicate cells")
 
     if "enzymatic_activity" in parts:
-        smry = enzymatic_activity(w=w, n=n, s=s)
+        smry = enzymatic_activity(device=device, n=n, s=s)
         print(f"{smry} - enzymatic activity")
 
     if "get_neighbors" in parts:
-        smry = get_neighbors(w=w, n=n, s=s)
+        smry = get_neighbors(device=device, n=n, s=s)
         print(f"{smry} - get neighbors")
 
     if "point_mutations" in parts:
-        smry = get_point_mutations(w=w, n=n, s=s)
+        smry = get_point_mutations(n=n, s=s)
         print(f"{smry} - point mutations")
 
     if "test" in parts:
-        smry = get_test(w=w, n=n, s=s)
+        smry = get_test(n=n, s=s)
         print(f"{smry} - test")
 
 
@@ -166,6 +165,6 @@ if __name__ == "__main__":
     parser.add_argument("--parts", default=default_parts, nargs="*", action="store")
     parser.add_argument("--n-cells", default=10_000, type=int)
     parser.add_argument("--genome-size", default=1_000, type=int)
-    parser.add_argument("--n-workers", default=4, type=int)
+    parser.add_argument("--device", default="cpu", type=str)
     args = parser.parse_args()
-    main(parts=args.parts, n=args.n_cells, s=args.genome_size, w=args.n_workers)
+    main(parts=args.parts, n=args.n_cells, s=args.genome_size, device=args.device)
