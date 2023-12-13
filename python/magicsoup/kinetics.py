@@ -525,24 +525,24 @@ class Kinetics:
             self.reaction_map_rs[i] = []
             v = self.reaction_map.M[i]
             for j, d in enumerate(v.tolist()):
-                if d != 0:
-                    self.reaction_map_rs[i].append((j, d))
+                if int(d) != 0:
+                    self.reaction_map_rs[i].append((j, int(d)))
 
         self.transport_map_rs: dict[int, list[tuple[int, int]]] = {}
         for i in range(len(self.transport_map.M)):
             self.transport_map_rs[i] = []
             v = self.transport_map.M[i]
             for j, d in enumerate(v.tolist()):
-                if d != 0:
-                    self.transport_map_rs[i].append((j, d))
+                if int(d) != 0:
+                    self.transport_map_rs[i].append((j, int(d)))
 
         self.effector_map_rs: dict[int, list[tuple[int, int]]] = {}
         for i in range(len(self.effector_map.M)):
             self.effector_map_rs[i] = []
             v = self.effector_map.M[i]
             for j, d in enumerate(v.tolist()):
-                if d != 0:
-                    self.effector_map_rs[i].append((j, d))
+                if d != int(0):
+                    self.effector_map_rs[i].append((j, int(d)))
 
     def get_proteome(
         self,
@@ -1100,13 +1100,13 @@ class Kinetics:
             self.effector_map_rs,
         )
 
-        Vmax = self._tensor_from(Vmax)
-        Kmn = self._tensor_from(Kmn)
-        N = self._tensor_from(N)
-        Nf = self._tensor_from(Nf)
-        Nb = self._tensor_from(Nb)
-        A = self._tensor_from(A)
-        Kmr = self._tensor_from(Kmr)
+        Vmax = self._tensor_from(Vmax).float()
+        Kmn = self._tensor_from(Kmn).float()
+        N = self._tensor_from(N).float()
+        Nf = self._tensor_from(Nf).float()
+        Nb = self._tensor_from(Nb).float()
+        A = self._tensor_from(A).float()
+        Kmr = self._tensor_from(Kmr).float()
 
         # Kms of regulatory domains are already multiplied with Hill coefficients
         Kmr_rdy = torch.pow(Kmr, A)

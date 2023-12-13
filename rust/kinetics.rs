@@ -245,6 +245,16 @@ pub fn calculate_cell_params(
         kmr_p.push(kmr_d);
     }
 
+    // fill up empty vectors
+    let rest = n_prots - proteome.len();
+    vmax_p.extend(vec![0.0; rest]);
+    kmn_p.extend(vec![0.0; rest]);
+    n_p.extend(vec![vec![0; n_signals]; rest]);
+    nf_p.extend(vec![vec![0; n_signals]; rest]);
+    nb_p.extend(vec![vec![0; n_signals]; rest]);
+    a_p.extend(vec![vec![0; n_signals]; rest]);
+    kmr_p.extend(vec![vec![0.0; n_signals]; rest]);
+
     (vmax_p, kmn_p, n_p, nf_p, nb_p, a_p, kmr_p)
 }
 

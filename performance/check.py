@@ -132,9 +132,7 @@ def get_test(w: int, n: int, s: int):
         world.kinetics.increase_max_proteins(max_n=n_max_prots)
         world.kinetics.increase_max_cells(by_n=n)
         t0 = time.time()
-        # world.kinetics.set_cell_params(cell_idxs=list(range(n)), proteomes=proteomes)
-        _ = world.kinetics._collect_proteome_idxs(proteomes=proteomes)
-        # _ = world.kinetics._collect_proteome_idxs_old(proteomes=proteomes)
+        world.kinetics.set_cell_params(cell_idxs=list(range(n)), proteomes=proteomes)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
