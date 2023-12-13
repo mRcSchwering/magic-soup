@@ -77,50 +77,59 @@ pub fn collect_proteomes_idxs(
     [c_dts, c_idxs0, c_idxs1, c_idxs2, c_idxs3]
 }
 
-fn mean(vals: &Vec<f64>, null: f64) -> f64 {
-    let n: usize = vals.len();
-    if n == 0 {
-        return null;
-    }
-    vals.iter().sum()
-}
-
+/// Calculate cell params for one cell
+/// return (Vmax_rdy, Kmn, N_rdy, Nf_rdy, Nb_rdy, A_rdy, Kmr)
 pub fn calculate_cell_params(
     proteome: &Vec<Vec<DomainSpecType>>,
     n_prots: &usize,
+    n_mols: &usize,
     vmax_map: &HashMap<usize, f64>,
     hill_map: &HashMap<usize, usize>,
     km_map: &HashMap<usize, f64>,
-    sign_map: &HashMap<usize, i8>,
-    react_map: &HashMap<usize, Vec<isize>>,
-    transport_map: &HashMap<usize, Vec<isize>>,
-    effector_map: &HashMap<usize, Vec<isize>>,
+    sign_map: &HashMap<usize, bool>,
+    react_map: &HashMap<usize, Vec<(usize, isize)>>,
+    transport_map: &HashMap<usize, Vec<(usize, isize)>>,
+    effector_map: &HashMap<usize, Vec<(usize, usize)>>,
 ) -> (
     Vec<f64>,
     Vec<f64>,
-    Vec<Vec<usize>>,
-    Vec<Vec<usize>>,
-    Vec<Vec<usize>>,
+    Vec<Vec<isize>>,
+    Vec<Vec<isize>>,
+    Vec<Vec<isize>>,
     Vec<Vec<isize>>,
     Vec<Vec<f64>>,
 ) {
+    let n_signals = 2 * n_mols;
     let mut vmax_p: Vec<f64> = Vec::with_capacity(*n_prots);
     let mut kmn_p: Vec<f64> = Vec::with_capacity(*n_prots);
-    let mut n_p: Vec<Vec<usize>> = Vec::with_capacity(*n_prots);
-    let mut nf_p: Vec<Vec<usize>> = Vec::with_capacity(*n_prots);
-    let mut nb_p: Vec<Vec<usize>> = Vec::with_capacity(*n_prots);
+    let mut n_p: Vec<Vec<isize>> = Vec::with_capacity(*n_prots);
+    let mut nf_p: Vec<Vec<isize>> = Vec::with_capacity(*n_prots);
+    let mut nb_p: Vec<Vec<isize>> = Vec::with_capacity(*n_prots);
     let mut a_p: Vec<Vec<isize>> = Vec::with_capacity(*n_prots);
     let mut kmr_p: Vec<Vec<f64>> = Vec::with_capacity(*n_prots);
 
     for protein in proteome {
         // >99% proteins have < 3 domains
-        let mut vmax_d: Vec<f64> = Vec::with_capacity(4);
-        let mut kmn_d: Vec<f64> = Vec::with_capacity(4);
-        let mut n_d: Vec<Vec<usize>> = Vec::with_capacity(4);
-        let mut nf_d: Vec<Vec<usize>> = Vec::with_capacity(4);
-        let mut nb_d: Vec<Vec<usize>> = Vec::with_capacity(4);
-        let mut a_d: Vec<Vec<isize>> = Vec::with_capacity(4);
-        let mut kmr_d: Vec<Vec<f64>> = Vec::with_capacity(4);
+
+        // running Vmax sum and Vmax couter
+        let mut vmax_d: f64 = 0.0;
+        let mut n_vmax_d: usize = 0;
+
+        // running Km sum and Km counter
+        let mut kmn_d: f64 = 0.0;
+        let mut n_kmn_d: usize = 0;
+
+        // running N, Nf and Nb sums
+        let mut n_d: Vec<isize> = vec![0; n_signals];
+        let mut nf_d: Vec<isize> = vec![0; n_signals];
+        let mut nb_d: Vec<isize> = vec![0; n_signals];
+
+        // running A
+        let mut a_d: Vec<isize> = vec![0; n_signals];
+
+        // running Kmr sum and counter for each signal
+        let mut kmr_d: Vec<f64> = vec![0.0; n_signals];
+        let mut n_effectors_d: Vec<(usize, usize)> = vec![];
 
         for ([dt, i0, i1, i2, i3], _, _) in protein {
             // domain types: 1=catalytic, 2=transporter, 3=regulatory
@@ -131,61 +140,142 @@ pub fn calculate_cell_params(
                 // Vmax, Km, sign, reacts
                 let vmax = vmax_map.get(i0).unwrap();
                 let km = km_map.get(i1).unwrap();
-                let sign = sign_map.get(i2).unwrap();
-                let react = react_map.get(i3).unwrap();
-                vmax_d.push(*vmax);
+                let is_fwd = sign_map.get(i2).unwrap();
+                let reacts = react_map.get(i3).unwrap();
+
+                // increment Vmax, Kmn
+                vmax_d += vmax;
+                n_vmax_d += 1;
+                kmn_d += km;
+                n_kmn_d += 1;
+
+                // increment N, Nf, Nb for each signal
+                if *is_fwd {
+                    for (mol, number) in reacts {
+                        n_d[*mol] += number;
+                        if number < &0 {
+                            nf_d[*mol] -= number;
+                        } else {
+                            nb_d[*mol] += number;
+                        }
+                    }
+                } else {
+                    for (mol, number) in reacts {
+                        n_d[*mol] -= number;
+                        if number < &0 {
+                            nb_d[*mol] -= number;
+                        } else {
+                            nf_d[*mol] += number;
+                        }
+                    }
+                }
             } else if dt == &2 {
                 // Vmax, Km, sign, transport
                 let vmax = vmax_map.get(i0).unwrap();
                 let km = km_map.get(i1).unwrap();
-                let sign = sign_map.get(i2).unwrap();
-                let transport = transport_map.get(i3).unwrap();
-                vmax_d.push(*vmax);
+                let is_fwd = sign_map.get(i2).unwrap();
+                let transports = transport_map.get(i3).unwrap();
+
+                // increment Vmax, Kmn
+                vmax_d += vmax;
+                n_vmax_d += 1;
+                kmn_d += km;
+                n_kmn_d += 1;
+
+                // increment N, Nf, Nb for each signal
+                if *is_fwd {
+                    for (mol, number) in transports {
+                        n_d[*mol] += number;
+                        if number < &0 {
+                            nf_d[*mol] -= number;
+                        } else {
+                            nb_d[*mol] += number;
+                        }
+                    }
+                } else {
+                    for (mol, number) in transports {
+                        n_d[*mol] -= number;
+                        if number < &0 {
+                            nb_d[*mol] -= number;
+                        } else {
+                            nf_d[*mol] += number;
+                        }
+                    }
+                }
             } else if dt == &3 {
                 // Hill, Km, sign, effector
-                let hill = hill_map.get(i0).unwrap();
-                let km = km_map.get(i1).unwrap();
-                let sign = sign_map.get(i2).unwrap();
-                let effector = effector_map.get(i3).unwrap();
-                let a: Vec<isize> = effector
-                    .iter()
-                    .map(|d| d * (*sign as isize) * (*hill as isize))
-                    .collect();
-                a_d.push(a);
+                let hill = hill_map.get(i0).unwrap(); // [1;5]
+                let km = km_map.get(i1).unwrap(); // [1e-2;100]
+                let is_fwd = sign_map.get(i2).unwrap(); // {-1;1}
+                let effectors = effector_map.get(i3).unwrap(); // {0;1} len n_signals
+
+                // increment Kmr, A for each signal
+                if *is_fwd {
+                    for (mol, number) in effectors {
+                        a_d[*mol] += (number * hill) as isize;
+                        kmr_d[*mol] += km;
+                        n_effectors_d.push((*mol, *number));
+                    }
+                } else {
+                    for (mol, number) in effectors {
+                        a_d[*mol] -= (number * hill) as isize;
+                        kmr_d[*mol] += km;
+                        n_effectors_d.push((*mol, *number));
+                    }
+                }
             }
         }
-        vmax_p.push(mean(&vmax_d, 0.0));
+
+        // divide Vmax and Km sum to get avg
+        vmax_d /= n_vmax_d as f64;
+        kmn_d /= n_kmn_d as f64;
+
+        // divide Kmr sum for each signal to get avgs
+        for (effector, number) in n_effectors_d {
+            kmr_d[effector] /= number as f64;
+        }
+
+        // push protein
+        vmax_p.push(vmax_d);
+        kmn_p.push(kmn_d);
+        n_p.push(n_d);
+        nf_p.push(nf_d);
+        nb_p.push(nb_d);
+        a_p.push(a_d);
+        kmr_p.push(kmr_d);
     }
 
     (vmax_p, kmn_p, n_p, nf_p, nb_p, a_p, kmr_p)
 }
 
+/// Calculate cell params for many cells
 /// return (Vmax_rdy, Kmn, N_rdy, Nf_rdy, Nb_rdy, A_rdy, Kmr)
-pub fn calculate_cells_params(
+pub fn calculate_cell_params_threaded(
     proteomes: &Vec<Vec<Vec<DomainSpecType>>>,
     n_prots: &usize,
+    n_mols: &usize,
     vmax_map: &HashMap<usize, f64>,
     hill_map: &HashMap<usize, usize>,
     km_map: &HashMap<usize, f64>,
-    sign_map: &HashMap<usize, i8>,
-    react_map: &HashMap<usize, Vec<isize>>,
-    transport_map: &HashMap<usize, Vec<isize>>,
-    effector_map: &HashMap<usize, Vec<isize>>,
+    sign_map: &HashMap<usize, bool>,
+    react_map: &HashMap<usize, Vec<(usize, isize)>>,
+    transport_map: &HashMap<usize, Vec<(usize, isize)>>,
+    effector_map: &HashMap<usize, Vec<(usize, usize)>>,
 ) -> (
     Vec<Vec<f64>>,
     Vec<Vec<f64>>,
-    Vec<Vec<Vec<usize>>>,
-    Vec<Vec<Vec<usize>>>,
-    Vec<Vec<Vec<usize>>>,
+    Vec<Vec<Vec<isize>>>,
+    Vec<Vec<Vec<isize>>>,
+    Vec<Vec<Vec<isize>>>,
     Vec<Vec<Vec<isize>>>,
     Vec<Vec<Vec<f64>>>,
 ) {
     let res: Vec<(
         Vec<f64>,
         Vec<f64>,
-        Vec<Vec<usize>>,
-        Vec<Vec<usize>>,
-        Vec<Vec<usize>>,
+        Vec<Vec<isize>>,
+        Vec<Vec<isize>>,
+        Vec<Vec<isize>>,
         Vec<Vec<isize>>,
         Vec<Vec<f64>>,
     )> = proteomes
@@ -194,6 +284,7 @@ pub fn calculate_cells_params(
             calculate_cell_params(
                 d,
                 n_prots,
+                n_mols,
                 vmax_map,
                 hill_map,
                 km_map,
@@ -206,21 +297,21 @@ pub fn calculate_cells_params(
         .collect();
 
     let n = res.len();
-    let mut Vmax_: Vec<Vec<f64>> = Vec::with_capacity(n);
-    let mut Kmn_: Vec<Vec<f64>> = Vec::with_capacity(n);
-    let mut N_: Vec<Vec<Vec<usize>>> = Vec::with_capacity(n);
-    let mut Nf_: Vec<Vec<Vec<usize>>> = Vec::with_capacity(n);
-    let mut Nb_: Vec<Vec<Vec<usize>>> = Vec::with_capacity(n);
-    let mut A_: Vec<Vec<Vec<isize>>> = Vec::with_capacity(n);
-    let mut Kmr_: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n);
-    for (Vmax, Kmn, N, Nf, Nb, A, Kmr) in res {
-        Vmax_.push(Vmax);
-        Kmn_.push(Kmn);
-        N_.push(N);
-        Nf_.push(Nf);
-        Nb_.push(Nb);
-        A_.push(A);
-        Kmr_.push(Kmr);
+    let mut vmax_c: Vec<Vec<f64>> = Vec::with_capacity(n);
+    let mut kmn_c: Vec<Vec<f64>> = Vec::with_capacity(n);
+    let mut n_c: Vec<Vec<Vec<isize>>> = Vec::with_capacity(n);
+    let mut nf_c: Vec<Vec<Vec<isize>>> = Vec::with_capacity(n);
+    let mut nb_c: Vec<Vec<Vec<isize>>> = Vec::with_capacity(n);
+    let mut a_c: Vec<Vec<Vec<isize>>> = Vec::with_capacity(n);
+    let mut kmr_c: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n);
+    for (vmax_p, kmn_p, n_p, nf_p, nb_p, a_p, kmr_p) in res {
+        vmax_c.push(vmax_p);
+        kmn_c.push(kmn_p);
+        n_c.push(n_p);
+        nf_c.push(nf_p);
+        nb_c.push(nb_p);
+        a_c.push(a_p);
+        kmr_c.push(kmr_p);
     }
-    (Vmax_, Kmn_, N_, Nf_, Nb_, A_, Kmr_)
+    (vmax_c, kmn_c, n_c, nf_c, nb_c, a_c, kmr_c)
 }

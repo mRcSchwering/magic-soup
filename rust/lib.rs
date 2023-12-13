@@ -109,32 +109,35 @@ fn collect_proteome_idxs(
     py.allow_threads(move || kinetics::collect_proteomes_idxs(&proteomes, &n_prots))
 }
 
-/// return (Vmax_rdy, Kmn, N_rdy, Nf_rdy, Nb_rdy, A_rdy, Kmr)
+// TODO: reduce variable types to minimum
+
 #[pyfunction]
 fn calculate_cell_params(
     py: Python<'_>,
     proteomes: Vec<Vec<Vec<constants::DomainSpecType>>>,
     n_prots: usize,
+    n_mols: usize,
     vmax_map: HashMap<usize, f64>,
     hill_map: HashMap<usize, usize>,
     km_map: HashMap<usize, f64>,
-    sign_map: HashMap<usize, i8>,
-    react_map: HashMap<usize, Vec<isize>>,
-    transport_map: HashMap<usize, Vec<isize>>,
-    effector_map: HashMap<usize, Vec<isize>>,
+    sign_map: HashMap<usize, bool>,
+    react_map: HashMap<usize, Vec<(usize, isize)>>,
+    transport_map: HashMap<usize, Vec<(usize, isize)>>,
+    effector_map: HashMap<usize, Vec<(usize, usize)>>,
 ) -> (
     Vec<Vec<f64>>,
     Vec<Vec<f64>>,
-    Vec<Vec<Vec<usize>>>,
-    Vec<Vec<Vec<usize>>>,
-    Vec<Vec<Vec<usize>>>,
+    Vec<Vec<Vec<isize>>>,
+    Vec<Vec<Vec<isize>>>,
+    Vec<Vec<Vec<isize>>>,
     Vec<Vec<Vec<isize>>>,
     Vec<Vec<Vec<f64>>>,
 ) {
     py.allow_threads(move || {
-        kinetics::calculate_cells_params(
+        kinetics::calculate_cell_params_threaded(
             &proteomes,
             &n_prots,
+            &n_mols,
             &vmax_map,
             &hill_map,
             &km_map,
