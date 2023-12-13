@@ -424,7 +424,6 @@ def test_saving_and_loading_world_obj():
 
     assert world.abs_temp == 310.0
     assert world.map_size == 7
-    assert world.workers == 2
     assert world.device == "cpu"
     assert world.chemistry.molecules[0] is mi
     assert world.chemistry.molecules[1] is mj
@@ -436,17 +435,15 @@ def test_saving_and_loading_world_obj():
 
     del world
 
-    world = ms.World(chemistry=chemistry, map_size=9, workers=2, abs_temp=300.0)
+    world = ms.World(chemistry=chemistry, map_size=9, abs_temp=300.0)
     with tempfile.TemporaryDirectory() as tmpdir:
         rundir = Path(tmpdir)
         world.save(rundir=rundir)
         del world
-        world = ms.World.from_file(rundir=rundir, workers=4)
+        world = ms.World.from_file(rundir=rundir)
 
     assert world.abs_temp == 300.0
     assert world.map_size == 9
-    assert world.workers == 4
-    assert world.genetics.workers == 4
     assert world.device == "cpu"
     assert world.chemistry.molecules[0] is mi
     assert world.chemistry.molecules[1] is mj
