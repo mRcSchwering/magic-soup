@@ -1,16 +1,29 @@
 """
-Little helper script for checking the performance of some functions
+Little helper script for checking the performance of some functions.
+For local python package:
 
     PYTHONPATH=./python python performance/check.py
 
-v0.9.0:
+For installed python package:
+
+    python check.py
+
+v0.12.1 CPU:
+10,000 cells, 1,000 genome size, on cpu
+(9.95+-0.33)s - spawn cells
+(10.36+-0.39)s - update cells
+(0.70+-0.01)s - replicate cells
+(5.08+-0.36)s - enzymatic activity
+(6.34+-0.25)s - mutations
+
+v0.12.1 GPU (g4dn.xlarge):
 10,000 cells, 1,000 genome size, 4 workers
-(13.21+-0.50)s - add cells
-(11.85+-0.25)s - update cells
-(0.81+-0.06)s - replicate cells
-(5.82+-0.79)s - enzymatic activity
-(6.21+-0.13)s - get neighbors
-(0.25+-0.01)s - point mutations
+(13.75+-0.72)s - add cells
+(9.60+-0.54)s - update cells
+(1.44+-0.03)s - replicate cells
+(0.19+-0.01)s - enzymatic activity
+(4.00+-0.01)s - get neighbors
+(0.01+-0.00)s - point mutations
 """
 import time
 import random
@@ -20,9 +33,7 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
 
-# TODO: mutation speed test (point and recomb)
 # TODO: rs: use smallest possible types (u8, f32) for speed
-# TODO: rs: what about fastmath?
 # TODO: torch: try f32 for speed
 
 
@@ -37,7 +48,7 @@ def _gen_genomes(n: int, s: int, d=0.1) -> list[str]:
     return [ms.random_genome(s + random.choice(pop)) for _ in range(n)]
 
 
-def add_cells(device: str, n: int, s: int):
+def spawn_cells(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, device=device)
@@ -85,24 +96,17 @@ def enzymatic_activity(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
-def get_neighbors(device: str, n: int, s: int):
+def mutations(device: str, n: int, s: int):
+    world = ms.World(chemistry=CHEMISTRY, device=device)
+    genomes = _gen_genomes(n=n, s=s)
+    world.spawn_cells(genomes=genomes)
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, device=device)
-        genomes = _gen_genomes(n=n, s=s)
-        world.spawn_cells(genomes=genomes)
-        t0 = time.time()
-        _ = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
-        tds.append(time.time() - t0)
-    return _summary(tds=tds)
-
-
-def get_point_mutations(n: int, s: int):
-    tds = []
-    for _ in range(R):
-        genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
         _ = ms.point_mutations(seqs=genomes)
+        nghbrs = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
+        nghbr_genomes = [(genomes[a], genomes[b]) for a, b in nghbrs]
+        _ = ms.recombinations(seq_pairs=nghbr_genomes)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -122,9 +126,9 @@ def main(parts: list, n: int, s: int, device: str):
     print(f"Running {', '.join(parts)}")
     print(f"{n:,} cells, {s:,} genome size, on {device}")
 
-    if "add_cells" in parts:
-        smry = add_cells(device=device, n=n, s=s)
-        print(f"{smry} - add cells")
+    if "spawn_cells" in parts:
+        smry = spawn_cells(device=device, n=n, s=s)
+        print(f"{smry} - spawn cells")
 
     if "update_cells" in parts:
         smry = update_cells(device=device, n=n, s=s)
@@ -138,13 +142,9 @@ def main(parts: list, n: int, s: int, device: str):
         smry = enzymatic_activity(device=device, n=n, s=s)
         print(f"{smry} - enzymatic activity")
 
-    if "get_neighbors" in parts:
-        smry = get_neighbors(device=device, n=n, s=s)
-        print(f"{smry} - get neighbors")
-
-    if "point_mutations" in parts:
-        smry = get_point_mutations(n=n, s=s)
-        print(f"{smry} - point mutations")
+    if "mutations" in parts:
+        smry = mutations(device=device, n=n, s=s)
+        print(f"{smry} - mutations")
 
     if "test" in parts:
         smry = get_test(n=n, s=s)
@@ -153,12 +153,11 @@ def main(parts: list, n: int, s: int, device: str):
 
 if __name__ == "__main__":
     default_parts: list[str] = [
-        "add_cells",
+        "spawn_cells",
         "update_cells",
         "replicate_cells",
         "enzymatic_activity",
-        "get_neighbors",
-        "point_mutations",
+        "mutations",
     ]
 
     parser = ArgumentParser()

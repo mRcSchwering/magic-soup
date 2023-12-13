@@ -131,6 +131,9 @@ class World:
     it makes sense to interpret them in mM, s, and J.
     """
 
+    # TODO: convenience function for point mutations and recombinations
+    #       with updating of parameters
+
     def __init__(
         self,
         chemistry: Chemistry,
@@ -259,7 +262,7 @@ class World:
         So, _e.g._ return value `[(1, 4)]` describes the neighbors cell A
         with index 1 and cell B with index 4. `(4, 1)` is not returned.
         """
-
+        # TODO: as rust function
         if len(cell_idxs) == 0:
             return []
 
@@ -459,6 +462,9 @@ class World:
         self.cell_molecules[new_idxs, :] += pickup.T
         self.molecule_map[:, xs, ys] -= pickup
 
+        # TODO: spawn cells seems to be consistently 10% faster than update cells
+        #       how can that be, if spawn is actually doing more?
+
         proteomes = self.genetics.translate_genomes(genomes=genomes)
 
         set_proteomes = []
@@ -654,6 +660,7 @@ class World:
         The indexes refer to the index of each cell that is changed.
         The genomes refer to the genome of each cell that is changed.
         """
+        # TODO: this is still slow
         if len(genome_idx_pairs) == 0:
             return
 
@@ -1152,6 +1159,9 @@ class Cell:
     The cell's `label` will be copied as well.
     This way you can track cells' origins.
     """
+
+    # TODO: with reference to world, then calculate attributes lazily
+    #       (e.g. proteome) when accessed
 
     def __init__(
         self,

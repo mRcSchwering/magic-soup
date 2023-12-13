@@ -28,7 +28,7 @@ def point_mutations(
 
 
 def recombinations(
-    seq_pairs: list[tuple[str, str]], p: float = 1e-8
+    seq_pairs: list[tuple[str, str]], p: float = 1e-7
 ) -> list[tuple[str, str, int]]:
     """
     Add random recombinations to pairs of nucleotide sequences.
