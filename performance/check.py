@@ -15,6 +15,7 @@ v0.12.1 CPU:
 (0.70+-0.01)s - replicate cells
 (5.08+-0.36)s - enzymatic activity
 (6.34+-0.25)s - mutations
+(5.68+-0.11)s - mutations (smaller types)
 
 v0.12.1 GPU (g4dn.xlarge):
 10,000 cells, 1,000 genome size, 4 workers
@@ -33,7 +34,6 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
 
-# TODO: rs: use smallest possible types (u8, f32) for speed
 # TODO: torch: try f32 for speed
 
 
@@ -117,7 +117,7 @@ def get_test(n: int, s: int):
     for _ in range(R):
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
-        genetics.translate_genomes(genomes=genomes)
+        _ = genetics.translate_genomes(genomes=genomes)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 

@@ -4,7 +4,7 @@ use std::str;
 
 static CODON_SIZE: usize = 3;
 
-pub type DomainSpecType = ([usize; 5], usize, usize);
+pub type DomainSpecType = ((u8, u8, u8, u8, u16), usize, usize);
 pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 
 /// Find all CDSs in genome using start and stop codons.
@@ -12,14 +12,14 @@ pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 /// Returns each CDS with start and stop indices on genome and is_fwd.
 pub fn get_coding_regions(
     seq: &str,
-    min_cds_size: &usize,
+    min_cds_size: &u8,
     start_codons: &Vec<String>,
     stop_codons: &Vec<String>,
     is_fwd: bool,
 ) -> Vec<(usize, usize, bool)> {
     let mut res: Vec<(usize, usize, bool)> = Vec::new();
     let n = seq.len();
-    if n < *min_cds_size {
+    if n < *min_cds_size as usize {
         return res;
     }
 
@@ -38,7 +38,7 @@ pub fn get_coding_regions(
             starts[frame].push(i);
         } else if stop_codons.iter().any(|d| d == codon) {
             while let Some(d) = starts[frame].pop() {
-                if j - d >= *min_cds_size {
+                if j - d >= *min_cds_size as usize {
                     res.push((d, j, is_fwd))
                 }
             }
@@ -57,11 +57,11 @@ pub fn get_coding_regions(
 pub fn extract_domains(
     genome: &str,
     cdss: &Vec<(usize, usize, bool)>,
-    dom_size: &usize,
-    dom_type_size: &usize,
-    dom_type_map: &HashMap<String, usize>,
-    one_codon_map: &HashMap<String, usize>,
-    two_codon_map: &HashMap<String, usize>,
+    dom_size: &u8,
+    dom_type_size: &u8,
+    dom_type_map: &HashMap<String, u8>,
+    one_codon_map: &HashMap<String, u8>,
+    two_codon_map: &HashMap<String, u16>,
 ) -> Vec<ProteinSpecType> {
     let n_cdss = cdss.len();
     let mut res: Vec<ProteinSpecType> = Vec::with_capacity(n_cdss);
@@ -82,23 +82,24 @@ pub fn extract_domains(
         // >99% < 3 with 3 start and 3 stop codons
         let mut doms: Vec<DomainSpecType> = Vec::with_capacity(4);
 
-        while i + dom_size <= n {
+        while i + *dom_size as usize <= n {
             let dom_start = cds_start + i;
-            let dom_type_end = dom_start + *dom_type_size;
+            let dom_type_end = dom_start + *dom_type_size as usize;
             let dom_type_seq = &genome[dom_start..dom_type_end];
 
             if let Some(dom_type) = dom_type_map.get(dom_type_seq) {
                 // 1=catal, 2=trnsp, 3=reg
-                if *dom_type != (3 as usize) {
+                if *dom_type != 3 {
                     is_useful_prot = true;
                 }
-                let dom_spec_seq = &genome[dom_type_end..(dom_start + dom_size)];
+                let dom_end = dom_start + *dom_size as usize;
+                let dom_spec_seq = &genome[dom_type_end..dom_end];
                 let i0 = one_codon_map.get(&dom_spec_seq[0..i0e]).unwrap();
                 let i1 = one_codon_map.get(&dom_spec_seq[i0e..i1e]).unwrap();
                 let i2 = one_codon_map.get(&dom_spec_seq[i1e..i2e]).unwrap();
                 let i3 = two_codon_map.get(&dom_spec_seq[i2e..i3e]).unwrap();
-                doms.push(([*dom_type, *i0, *i1, *i2, *i3], i, i + dom_size));
-                i += *dom_size;
+                doms.push(((*dom_type, *i0, *i1, *i2, *i3), i, i + *dom_size as usize));
+                i += *dom_size as usize;
             } else {
                 i += CODON_SIZE;
             }
@@ -132,11 +133,11 @@ fn translate_genome(
     genome: &str,
     start_codons: &Vec<String>,
     stop_codons: &Vec<String>,
-    domain_map: &HashMap<String, usize>,
-    one_codon_map: &HashMap<String, usize>,
-    two_codon_map: &HashMap<String, usize>,
-    dom_size: &usize,
-    dom_type_size: &usize,
+    domain_map: &HashMap<String, u8>,
+    one_codon_map: &HashMap<String, u8>,
+    two_codon_map: &HashMap<String, u16>,
+    dom_size: &u8,
+    dom_type_size: &u8,
 ) -> Vec<ProteinSpecType> {
     let cds_fwd = get_coding_regions(genome, dom_size, start_codons, stop_codons, true);
     let mut doms_fwd = extract_domains(
@@ -166,15 +167,15 @@ fn translate_genome(
 }
 
 // Threaded version of translate_genome() for multiple genomes
-pub fn translate_genomes(
+pub fn translate_genomes_threaded(
     genomes: &Vec<String>,
     start_codons: &Vec<String>,
     stop_codons: &Vec<String>,
-    domain_map: &HashMap<String, usize>,
-    one_codon_map: &HashMap<String, usize>,
-    two_codon_map: &HashMap<String, usize>,
-    dom_size: &usize,
-    dom_type_size: &usize,
+    domain_map: &HashMap<String, u8>,
+    one_codon_map: &HashMap<String, u8>,
+    two_codon_map: &HashMap<String, u16>,
+    dom_size: &u8,
+    dom_type_size: &u8,
 ) -> Vec<Vec<ProteinSpecType>> {
     genomes
         .into_par_iter()

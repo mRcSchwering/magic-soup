@@ -8,12 +8,12 @@ const NTS: [char; 4] = ['A', 'C', 'T', 'G'];
 /// Mutate string with point mutations
 /// p mutations per nucleotide, p_indel chance of indel (vs substitution), p_del chance of deletion (vs insertsion)
 /// Returns None if no mutation happened
-fn point_mutate_seq(
+fn point_mutations(
     mut seq: String,
     idx: usize,
-    p: f64,
-    p_indel: f64,
-    p_del: f64,
+    p: f32,
+    p_indel: f32,
+    p_del: f32,
 ) -> Option<(String, usize)> {
     let len = seq.len();
     if len < 1 {
@@ -21,7 +21,7 @@ fn point_mutate_seq(
     }
 
     let mut rng = thread_rng();
-    let poi = Poisson::new(p * len as f64).expect("Could not init Poisson distribution");
+    let poi = Poisson::new(p * len as f32).expect("Could not init Poisson distribution");
     let mut n_muts = poi.sample(&mut rand::thread_rng()) as usize;
     if n_muts < 1 {
         return None;
@@ -36,8 +36,8 @@ fn point_mutate_seq(
     let mut offset: isize = 0;
     for idx in mut_idxs.iter() {
         let rng_idx: usize = (*idx as isize + offset) as usize;
-        if rng.gen_bool(p_indel) {
-            if rng.gen_bool(p_del) {
+        if rng.gen_bool(p_indel as f64) {
+            if rng.gen_bool(p_del as f64) {
                 seq.remove(rng_idx);
                 offset -= 1;
             } else {
@@ -58,16 +58,16 @@ fn point_mutate_seq(
     Some((seq, idx))
 }
 
-/// Threaded version of point_mutate_seq for multiple sequences
-pub fn point_mutate_seqs(
+/// Threaded version of point_mutations for multiple sequences
+pub fn point_mutations_threaded(
     seqs: Vec<String>,
-    p: f64,
-    p_indel: f64,
-    p_del: f64,
+    p: f32,
+    p_indel: f32,
+    p_del: f32,
 ) -> Vec<(String, usize)> {
     seqs.into_par_iter()
         .enumerate()
-        .map(|(i, d)| point_mutate_seq(d, i, p, p_indel, p_del))
+        .map(|(i, d)| point_mutations(d, i, p, p_indel, p_del))
         .filter_map(std::convert::identity)
         .collect()
 }
@@ -75,11 +75,11 @@ pub fn point_mutate_seqs(
 /// Recombinate pair of 2 sequences by splitting it with likelihood p per char
 /// and rejoining it randomly into 2 sequences.
 /// Returns None if no mutation happened.
-fn recombinate_seq_pair(
+fn recombinations(
     seq0: String,
     seq1: String,
     idx: usize,
-    p: f64,
+    p: f32,
 ) -> Option<(String, String, usize)> {
     let n0 = seq0.len();
     let n1 = seq1.len();
@@ -88,7 +88,7 @@ fn recombinate_seq_pair(
         return None;
     }
 
-    let poi = Poisson::new(p * n_both as f64).expect("Could not init Poisson distribution");
+    let poi = Poisson::new(p * n_both as f32).expect("Could not init Poisson distribution");
     let mut n_muts = poi.sample(&mut rand::thread_rng()) as usize;
     if n_muts < 1 {
         return None;
@@ -134,15 +134,15 @@ fn recombinate_seq_pair(
     Some((new_0, new_1, idx))
 }
 
-/// Threaded version of recombinate_seq_pair for multiple sequence pairs
-pub fn recombinate_seq_pairs(
+/// Threaded version of recombinations for multiple sequence pairs
+pub fn recombinations_threaded(
     seq_pairs: Vec<(String, String)>,
-    p: f64,
+    p: f32,
 ) -> Vec<(String, String, usize)> {
     seq_pairs
         .into_par_iter()
         .enumerate()
-        .map(|(i, d)| recombinate_seq_pair(d.0, d.1, i, p))
+        .map(|(i, d)| recombinations(d.0, d.1, i, p))
         .filter_map(std::convert::identity)
         .collect()
 }

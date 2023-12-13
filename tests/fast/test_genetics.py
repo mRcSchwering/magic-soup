@@ -165,7 +165,6 @@ def test_extract_domains():
         one_codon_map=one_codon_map,
         two_codon_map=two_codon_map,
     )
-    # TODO: DomainTypeSpec is a list now
 
     # res[i]: (domain list, cds start, cds end, is fwd)
     # res[i][0][j]: (domain spec, dom start, dom end)
@@ -185,19 +184,19 @@ def test_extract_domains():
     assert res[3][1] == 136
     assert res[3][2] == 172
     assert res[3][3] is True
-    assert res[0][0][0][0] == [1, 2, 5, 1, 3]
+    assert res[0][0][0][0] == (1, 2, 5, 1, 3)
     assert res[0][0][0][1] == 6
     assert res[0][0][0][2] == 6 + dom_size
-    assert res[1][0][0][0] == [2, 3, 4, 2, 3]
+    assert res[1][0][0][0] == (2, 3, 4, 2, 3)
     assert res[1][0][0][1] == 6
     assert res[1][0][0][2] == 6 + dom_size
-    assert res[2][0][0][0] == [1, 3, 4, 5, 2]
+    assert res[2][0][0][0] == (1, 3, 4, 5, 2)
     assert res[2][0][0][1] == 0
     assert res[2][0][0][2] == 0 + dom_size
-    assert res[3][0][0][0] == [3, 3, 4, 2, 3]
+    assert res[3][0][0][0] == (3, 3, 4, 2, 3)
     assert res[3][0][0][1] == 0
     assert res[3][0][0][2] == 0 + dom_size
-    assert res[3][0][1][0] == [2, 1, 2, 3, 4]
+    assert res[3][0][1][0] == (2, 1, 2, 3, 4)
     assert res[3][0][1][1] == 18
     assert res[3][0][1][2] == 18 + dom_size
 

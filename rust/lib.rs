@@ -15,20 +15,20 @@ use std::collections::HashMap;
 fn point_mutations(
     py: Python<'_>,
     seqs: Vec<String>,
-    p: f64,
-    p_indel: f64,
-    p_del: f64,
+    p: f32,
+    p_indel: f32,
+    p_del: f32,
 ) -> Vec<(String, usize)> {
-    py.allow_threads(move || mutations::point_mutate_seqs(seqs, p, p_indel, p_del))
+    py.allow_threads(move || mutations::point_mutations_threaded(seqs, p, p_indel, p_del))
 }
 
 #[pyfunction]
 fn recombinations(
     py: Python<'_>,
     seq_pairs: Vec<(String, String)>,
-    p: f64,
+    p: f32,
 ) -> Vec<(String, String, usize)> {
-    py.allow_threads(move || mutations::recombinate_seq_pairs(seq_pairs, p))
+    py.allow_threads(move || mutations::recombinations_threaded(seq_pairs, p))
 }
 
 // genetics
@@ -36,7 +36,7 @@ fn recombinations(
 #[pyfunction]
 fn get_coding_regions(
     seq: &str,
-    min_cds_size: usize,
+    min_cds_size: u8,
     start_codons: Vec<String>,
     stop_codons: Vec<String>,
     is_fwd: bool,
@@ -48,11 +48,11 @@ fn get_coding_regions(
 fn extract_domains(
     genome: String,
     cdss: Vec<(usize, usize, bool)>,
-    dom_size: usize,
-    dom_type_size: usize,
-    dom_type_map: HashMap<String, usize>,
-    one_codon_map: HashMap<String, usize>,
-    two_codon_map: HashMap<String, usize>,
+    dom_size: u8,
+    dom_type_size: u8,
+    dom_type_map: HashMap<String, u8>,
+    one_codon_map: HashMap<String, u8>,
+    two_codon_map: HashMap<String, u16>,
 ) -> Vec<genetics::ProteinSpecType> {
     genetics::extract_domains(
         &genome,
@@ -76,14 +76,14 @@ fn translate_genomes(
     genomes: Vec<String>,
     start_codons: Vec<String>,
     stop_codons: Vec<String>,
-    domain_map: HashMap<String, usize>,
-    one_codon_map: HashMap<String, usize>,
-    two_codon_map: HashMap<String, usize>,
-    dom_size: usize,
-    dom_type_size: usize,
+    domain_map: HashMap<String, u8>,
+    one_codon_map: HashMap<String, u8>,
+    two_codon_map: HashMap<String, u16>,
+    dom_size: u8,
+    dom_type_size: u8,
 ) -> Vec<Vec<genetics::ProteinSpecType>> {
     py.allow_threads(move || {
-        genetics::translate_genomes(
+        genetics::translate_genomes_threaded(
             &genomes,
             &start_codons,
             &stop_codons,
@@ -109,5 +109,6 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
+
     Ok(())
 }
