@@ -9,8 +9,9 @@
 #
 set -e
 
-version=$(grep "^version = " pyproject.toml | sed 's/version = //g' | sed 's/"//g')
-read -p "Release as v${version}? (y/N)" confirm
+py_version=$(grep "^version = " pyproject.toml | sed 's/version = //g' | sed 's/"//g')
+rs_version=$(grep "^version = " Cargo.toml | sed 's/version = //g' | sed 's/"//g' | sed 's/#.*//g' | sed 's/[[:space:]]//g')
+read -p "Release as v${py_version} python (v${rs_version} rust binary)? (y/N)" confirm
 [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
 
 git tag "v$version"
