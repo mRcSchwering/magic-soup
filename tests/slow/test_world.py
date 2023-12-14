@@ -193,16 +193,19 @@ def test_genome_generation_consistency():
             ci = idxs[0]
             cell = world.get_cell(by_idx=ci)
             proteome = cell.get_proteome(world=world)
-            assert len(proteome) >= 1, proteome
-            p0 = proteome[0]
-            assert len(p0.domains) >= 2, p0.domains
+            assert len(proteome) > 0
 
-            i = 0 if isinstance(p0.domains[0], ms.RegulatoryDomain) else 1
-            assert isinstance(p0.domains[i], ms.RegulatoryDomain)
-            assert p0.domains[i].effector is mk
-            assert abs(p0.domains[i].km - 1.0) < km_tol
-            assert p0.domains[i].is_inhibiting
-            assert p0.domains[i].is_transmembrane
-            assert p0.domains[i].hill == 3
-            assert world.kinetics.A[ci, 0, 5] == -3, world.kinetics.A[ci]
-            assert abs(world.kinetics.Kmr[ci, 0, 5] ** (-3) - 1.0) < km_tol
+            pi = -1
+            for i, prot in enumerate(proteome):
+                for dom in prot.domains:
+                    if isinstance(dom, ms.RegulatoryDomain):
+                        assert dom.effector is mk
+                        assert abs(dom.km - 1.0) < km_tol
+                        assert dom.is_inhibiting
+                        assert dom.is_transmembrane
+                        assert dom.hill == 3
+                        pi = i
+
+            assert pi > -1
+            assert world.kinetics.A[ci, pi, 5] == -3, world.kinetics.A[ci]
+            assert abs(world.kinetics.Kmr[ci, pi, 5] ** (-3) - 1.0) < km_tol
