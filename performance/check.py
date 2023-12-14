@@ -8,7 +8,7 @@ For installed python package:
 
     python check.py
 
-v0.12.1 CPU:
+v0.13.0 CPU:
 10,000 cells, 1,000 genome size, on cpu
 (7.95+-0.25)s - spawn cells
 (7.84+-0.35)s - update cells
