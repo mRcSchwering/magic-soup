@@ -550,7 +550,6 @@ class World:
         the first descendant in each tuple is the cell that still lives on the same pixel.
         The second descendant in that tuple is the cell that was newly created.
         """
-        # TODO: as rs function?
         if len(cell_idxs) == 0:
             return []
 
@@ -578,7 +577,7 @@ class World:
 
         # position new cells
         # cell_map was already set in loop before
-        self.cell_positions[child_idxs] = torch.stack(child_pos)
+        self.cell_positions[child_idxs] = torch.tensor(child_pos)  # TODO
 
         # cells share molecules and increment cell divisions
         descendant_idxs = parent_idxs + child_idxs
@@ -956,7 +955,24 @@ class World:
 
     def _divide_cells_if_possible(
         self, parent_idxs: list[int]
+    ) -> tuple[list[int], list[int], list[tuple[int, int]]]:
+        xs = self.cell_positions[:, 0].tolist()
+        ys = self.cell_positions[:, 1].tolist()
+        positions = [(x, y) for x, y in zip(xs, ys)]
+        (
+            successful_parent_idxs,
+            child_idxs,
+            new_positions,
+        ) = _lib.divide_cells_if_possible(
+            parent_idxs, positions, self.n_cells, self.map_size
+        )
+
+        return successful_parent_idxs, child_idxs, new_positions
+
+    def _divide_cells_if_possible_old(
+        self, parent_idxs: list[int]
     ) -> tuple[list[int], list[int], list[torch.Tensor]]:
+        # TODO: as rust function?
         run_idx = self.n_cells
         child_idxs = []
         successful_parent_idxs = []

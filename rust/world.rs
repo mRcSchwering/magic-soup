@@ -79,3 +79,32 @@ pub fn get_neighbors_threaded(
 
     unique(res)
 }
+
+fn moores_nghbhd(x: &u16, y: &u16, size: &u16) -> [(u16, u16); 8] {
+    let cardinals: [(i16, i16); 8] = [
+        (-1, -1),
+        (-1, 0),
+        (-1, 1),
+        (0, -1),
+        (0, 1),
+        (1, -1),
+        (1, 0),
+        (1, 1),
+    ];
+
+    cardinals.map(|(dx, dy)| ((*x as i16 + dx) as u16, (*y as i16 + dy) as u16))
+}
+
+pub fn divide_cells_if_possible(
+    cell_idxs: &Vec<usize>,
+    positions: &Vec<(u16, u16)>,
+    n_cells: &usize,
+    map_size: &u16,
+) -> (Vec<usize>, Vec<usize>, Vec<(u16, u16)>) {
+    let mut rng_idx = n_cells;
+    let mut succ_idxs: Vec<usize> = vec![];
+    let mut child_idxs: Vec<usize> = vec![];
+    let mut child_poss: Vec<(u16, u16)> = vec![];
+
+    (succ_idxs, child_idxs, child_poss)
+}

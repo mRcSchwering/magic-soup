@@ -112,6 +112,19 @@ fn get_neighbors(
     })
 }
 
+#[pyfunction]
+fn divide_cells_if_possible(
+    py: Python<'_>,
+    cell_idxs: Vec<usize>,
+    positions: Vec<(u16, u16)>,
+    n_cells: usize,
+    map_size: u16,
+) -> (Vec<usize>, Vec<usize>, Vec<(u16, u16)>) {
+    py.allow_threads(move || {
+        world::divide_cells_if_possible(&cell_idxs, &positions, &n_cells, &map_size)
+    })
+}
+
 // lib
 
 #[pymodule]
