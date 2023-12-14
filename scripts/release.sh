@@ -14,5 +14,5 @@ rs_version=$(grep "^version = " Cargo.toml | sed 's/version = //g' | sed 's/"//g
 read -p "Release as v${py_version} python (v${rs_version} rust binary)? (y/N)" confirm
 [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]] || exit 1
 
-git tag "v$version"
-git push origin "v$version"
+git tag "v$py_version"
+git push origin "v$py_version"
