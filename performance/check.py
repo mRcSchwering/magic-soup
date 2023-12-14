@@ -10,12 +10,11 @@ For installed python package:
 
 v0.12.1 CPU:
 10,000 cells, 1,000 genome size, on cpu
-(9.95+-0.33)s - spawn cells
-(10.36+-0.39)s - update cells
-(0.70+-0.01)s - replicate cells
-(5.08+-0.36)s - enzymatic activity
-(6.34+-0.25)s - mutations
-(5.68+-0.11)s - mutations (smaller types)
+(7.95+-0.25)s - spawn cells
+(7.84+-0.35)s - update cells
+(0.75+-0.02)s - replicate cells
+(4.72+-0.27)s - enzymatic activity
+(5.91+-0.07)s - mutations
 
 v0.12.1 GPU (g4dn.xlarge):
 10,000 cells, 1,000 genome size, 4 workers

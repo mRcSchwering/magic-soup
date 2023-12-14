@@ -38,45 +38,45 @@ _VMAX_WEIGHTS = torch.tensor([
     2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9,  # idxs 10-19
 ])
 
-_SIGNS = torch.tensor([0.0, 1.0, -1.0])  # idxs 0-2
+_SIGNS = torch.tensor([0, 1, -1], dtype=torch.int32)  # idxs 0-2
 
-_HILLS = torch.tensor([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])  # idxs 0-5
+_HILLS = torch.tensor([0, 1, 2, 3, 4, 5], dtype=torch.int32)  # idxs 0-5
 
 _TRANSPORT_M = torch.tensor([
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 0: none
-    [-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 1: a in->out
-    [0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 2: b in->out
-    [0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0], # idx 3: c in->out
-    [0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0], # idx 4: d in->out
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-])
+    [0, 0, 0, 0, 0, 0, 0, 0],  # idx 0: none
+    [-1, 0, 0, 0, 1, 0, 0, 0], # idx 1: a in->out
+    [0, -1, 0, 0, 0, 1, 0, 0], # idx 2: b in->out
+    [0, 0, -1, 0, 0, 0, 1, 0], # idx 3: c in->out
+    [0, 0, 0, -1, 0, 0, 0, 1], # idx 4: d in->out
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+], dtype=torch.int32)
 
 _EFFECTOR_M = torch.tensor([
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 0: none
-    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 1: a in
-    [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 2: b in
-    [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0], # idx 3: c in
-    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0], # idx 4: d in
-    [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], # idx 5: a out
-    [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], # idx 6: b out
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0], # idx 7: c out
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], # idx 8: d out
-])
+    [0, 0, 0, 0, 0, 0, 0, 0], # idx 0: none
+    [1, 0, 0, 0, 0, 0, 0, 0], # idx 1: a in
+    [0, 1, 0, 0, 0, 0, 0, 0], # idx 2: b in
+    [0, 0, 1, 0, 0, 0, 0, 0], # idx 3: c in
+    [0, 0, 0, 1, 0, 0, 0, 0], # idx 4: d in
+    [0, 0, 0, 0, 1, 0, 0, 0], # idx 5: a out
+    [0, 0, 0, 0, 0, 1, 0, 0], # idx 6: b out
+    [0, 0, 0, 0, 0, 0, 1, 0], # idx 7: c out
+    [0, 0, 0, 0, 0, 0, 0, 1], # idx 8: d out
+], dtype=torch.int32)
 
 _REACTION_M = torch.tensor([
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],   # idx 0: none
-    [-1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 1: a -> b
-    [0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # idx 2: b -> c
-    [0.0, -1.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0], # idx 3: b,c -> d
-    [0.0, 2.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0],  # idx 4: d -> 2b
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-])
+    [0, 0, 0, 0, 0, 0, 0, 0],   # idx 0: none
+    [-1, 1, 0, 0, 0, 0, 0, 0],  # idx 1: a -> b
+    [0, -1, 1, 0, 0, 0, 0, 0],  # idx 2: b -> c
+    [0, -1, -1, 1, 0, 0, 0, 0], # idx 3: b,c -> d
+    [0, 2, 0, -1, 0, 0, 0, 0],  # idx 4: d -> 2b
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+], dtype=torch.int32)
 
 # fmt: on
 
@@ -188,15 +188,15 @@ def test_cell_params_with_transporter_domains():
     ]
     # fmt: on
 
-    Kmf = torch.zeros(2, 3)
-    Kmb = torch.zeros(2, 3)
-    Ke = torch.zeros(2, 3)
-    Kmr = torch.zeros(2, 3, 8)
-    Vmax = torch.zeros(2, 3)
-    N = torch.zeros(2, 3, 8)
-    Nf = torch.zeros(2, 3, 8)
-    Nb = torch.zeros(2, 3, 8)
-    A = torch.zeros(2, 3, 8)
+    Kmf = torch.zeros(2, 3, dtype=torch.float32)
+    Kmb = torch.zeros(2, 3, dtype=torch.float32)
+    Ke = torch.zeros(2, 3, dtype=torch.float32)
+    Kmr = torch.zeros(2, 3, 8, dtype=torch.float32)
+    Vmax = torch.zeros(2, 3, dtype=torch.float32)
+    N = torch.zeros(2, 3, 8, dtype=torch.int32)
+    Nf = torch.zeros(2, 3, 8, dtype=torch.int32)
+    Nb = torch.zeros(2, 3, 8, dtype=torch.int32)
+    A = torch.zeros(2, 3, 8, dtype=torch.int32)
 
     # test
     kinetics = _get_kinetics()
@@ -439,15 +439,15 @@ def test_cell_params_with_regulatory_domains():
     ]
     # fmt: on
 
-    Ke = torch.zeros(2, 3)
-    Kmf = torch.zeros(2, 3)
-    Kmb = torch.zeros(2, 3)
-    Kmr = torch.zeros(2, 3, 8)
-    Vmax = torch.zeros(2, 3)
-    N = torch.zeros(2, 3, 8)
-    Nf = torch.zeros(2, 3, 8)
-    Nb = torch.zeros(2, 3, 8)
-    A = torch.zeros(2, 3, 8)
+    Ke = torch.zeros(2, 3, dtype=torch.float32)
+    Kmf = torch.zeros(2, 3, dtype=torch.float32)
+    Kmb = torch.zeros(2, 3, dtype=torch.float32)
+    Kmr = torch.zeros(2, 3, 8, dtype=torch.float32)
+    Vmax = torch.zeros(2, 3, dtype=torch.float32)
+    N = torch.zeros(2, 3, 8, dtype=torch.int32)
+    Nf = torch.zeros(2, 3, 8, dtype=torch.int32)
+    Nb = torch.zeros(2, 3, 8, dtype=torch.int32)
+    A = torch.zeros(2, 3, 8, dtype=torch.int32)
 
     # test
     kinetics = _get_kinetics()
@@ -741,15 +741,15 @@ def test_cell_params_with_catalytic_domains():
     ]
     # fmt: on
 
-    Ke = torch.zeros(2, 3)
-    Kmf = torch.zeros(2, 3)
-    Kmb = torch.zeros(2, 3)
-    Kmr = torch.zeros(2, 3, 8)
-    Vmax = torch.zeros(2, 3)
-    N = torch.zeros(2, 3, 8)
-    Nf = torch.zeros(2, 3, 8)
-    Nb = torch.zeros(2, 3, 8)
-    A = torch.zeros(2, 3, 8)
+    Ke = torch.zeros(2, 3, dtype=torch.float32)
+    Kmf = torch.zeros(2, 3, dtype=torch.float32)
+    Kmb = torch.zeros(2, 3, dtype=torch.float32)
+    Kmr = torch.zeros(2, 3, 8, dtype=torch.float32)
+    Vmax = torch.zeros(2, 3, dtype=torch.float32)
+    N = torch.zeros(2, 3, 8, dtype=torch.int32)
+    Nf = torch.zeros(2, 3, 8, dtype=torch.int32)
+    Nb = torch.zeros(2, 3, 8, dtype=torch.int32)
+    A = torch.zeros(2, 3, 8, dtype=torch.int32)
 
     # test
     kinetics = _get_kinetics()
@@ -968,15 +968,15 @@ def test_simple_mm_kinetic():
 
     # reactions (c, p, s)
     N = torch.tensor([
-        [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [0.0, 0.0, -1.0, 1.0],
-            [-1.0, 0.0, 0.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+        [   [-1, 1, 0, 0],
+            [0, -1, 0, 1],
+            [0, 0, 0, 0]    ],
+        [   [0, 0, -1, 1],
+            [-1, 0, 0, 1],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # affinities (c, p)
     Kmf = torch.tensor([
@@ -996,7 +996,7 @@ def test_simple_mm_kinetic():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    A = torch.zeros(2, 3, 4, dtype=torch.int32)
 
     # fmt: on
 
@@ -1059,15 +1059,15 @@ def test_mm_kinetic_with_proportions():
 
     # reactions (c, p, s)
     N = torch.tensor([
-        [   [-1.0, 2.0, 0.0, 0.0],
-            [0.0, 0.0, -2.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [0.0, -3.0, 2.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+        [   [-1, 2, 0, 0],
+            [0, 0, -2, 1],
+            [0, 0, 0, 0]    ],
+        [   [0, -3, 2, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -1087,7 +1087,7 @@ def test_mm_kinetic_with_proportions():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    A = torch.zeros(2, 3, 4, dtype=torch.int32)
 
     # fmt: on
 
@@ -1160,15 +1160,15 @@ def test_mm_kinetic_with_multiple_substrates():
 
     # reactions (c, p, s)
     N = torch.tensor([
-        [   [-1.0, -1.0, 1.0, 0.0],
-            [2.0, -1.0, 1.0, -1.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [-1.0, 1.0, 0.0, -1.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+        [   [-1, -1, 1, 0],
+            [2, -1, 1, -1],
+            [0, 0, 0, 0]    ],
+        [   [-1, 1, 0, -1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -1188,7 +1188,7 @@ def test_mm_kinetic_with_multiple_substrates():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    A = torch.zeros(2, 3, 4, dtype=torch.int32)
 
     # fmt: on
 
@@ -1259,29 +1259,29 @@ def test_mm_kinetic_with_cofactors():
 
     # reactions (c, p, s)
     N = torch.tensor([
-        [   [-1.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
+        [   [-1, 0, 1, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+        [   [-1, 1, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
     Nf = torch.tensor([
-        [   [1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [1.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
+        [   [1, 1, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+        [   [1, 0, 1, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
     Nb = torch.tensor([
-        [   [0.0, 1.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [0.0, 1.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
+        [   [0, 1, 1, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+        [   [0, 1, 1, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
 
     # affinities (c, p)
     Kmf = torch.tensor([
@@ -1301,7 +1301,7 @@ def test_mm_kinetic_with_cofactors():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    A = torch.zeros(2, 3, 4, dtype=torch.int32)
 
     # fmt: on
 
@@ -1366,15 +1366,15 @@ def test_mm_kinetic_with_allosteric_action():
 
     # reactions (c, p, s)
     N = torch.tensor([
-        [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0, 1.0],
-            [-1.0, 1.0, 0.0, 0.0]   ],
-        [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0]   ],
-    ])
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+        [   [-1, 1, 0, 0],
+            [0, 0, -1, 1],
+            [-1, 1, 0, 0]   ],
+        [   [-1, 1, 0, 0],
+            [0, 0, -1, 1],
+            [0, 0, 0, 0]   ],
+    ], dtype=torch.int32)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -1402,13 +1402,13 @@ def test_mm_kinetic_with_allosteric_action():
 
     # allosterics (c, p, s)
     A = torch.tensor([
-        [   [0.0, 0.0, -1.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0, 1.0]   ],
-        [   [0.0, 0.0, -1.0, -1.0],
-            [1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]   ],
-    ])
+        [   [0, 0, -1, 0],
+            [1, 0, 0, 0],
+            [0, 0, -1, 1]   ],
+        [   [0, 0, -1, -1],
+            [1, 1, 0, 0],
+            [0, 0, 0, 0]   ],
+    ], dtype=torch.int32)
 
     def mm(s, p, kf, kb, v):
         vf = v * (s / kf - p / kb) / (1 + s / kf + p / kb)
@@ -1492,15 +1492,15 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
 
     # reactions (c, p, s)
     N = torch.tensor([
-        [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [0.0, 0.0, -2.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+        [   [-1, 1, 0, 0],
+            [0, -1, 0, 1],
+            [0, 0, 0, 0]    ],
+        [   [0, 0, -2, 1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -1520,7 +1520,7 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    A = torch.zeros(2, 3, 4, dtype=torch.int32)
 
     # fmt: on
 
@@ -1602,15 +1602,15 @@ def test_reduce_velocity_in_multiple_proteins():
 
     # reactions (c, p, s)
     N = torch.tensor([
-        [   [-1.0, 1.0, 0.0, 0.0],
-            [-2.0, 0.0, 0.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+        [   [-1, 1, 0, 0],
+            [-2, 0, 0, 1],
+            [0, 0, 0, 0]    ],
+        [   [-1, 1, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # affinities (c, p, s)
     Kmf = torch.tensor([
@@ -1630,7 +1630,7 @@ def test_reduce_velocity_in_multiple_proteins():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    A = torch.zeros(2, 3, 4, dtype=torch.int32)
 
     # fmt: on
 
@@ -1712,26 +1712,26 @@ def test_multiply_signals():
     # one side of stoichiometry (c, p, s)
     N = torch.tensor([
         [
-            [0.0, 1.0, 2.0, 0.0],  # B + 2C
-            [3.0, 0.0, 0.0, 0.0],  # 3A
-            [0.0, 0.0, 0.0, 0.0]
+            [0, 1, 2, 0],  # B + 2C
+            [3, 0, 0, 0],  # 3A
+            [0, 0, 0, 0]
         ],
         [
-            [10.0, 10.0, 5.0, 0.0],  # 10A + 10B + 5C
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]
+            [10, 10, 5, 0],  # 10A + 10B + 5C
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]
         ],
         [
-            [2.0, 1.0, 2.0, 0.0],  # 2A + B + 2C
-            [0.0, 0.0, 1.0, 2.0],  # 2D + C
-            [0.0, 0.0, 0.0, 0.0]
+            [2, 1, 2, 0],  # 2A + B + 2C
+            [0, 0, 1, 2],  # 2D + C
+            [0, 0, 0, 0]
         ],
         [
-            [1.0, 1.0, 1.0, 1.0],  # A + B + C + D
-            [1.0, 2.0, 0.0, 0.0],  # A + 2B
-            [0.0, 0.0, 0.0, 0.0]
+            [1, 1, 1, 1],  # A + B + C + D
+            [1, 2, 0, 0],  # A + 2B
+            [0, 0, 0, 0]
         ],
-    ])
+    ], dtype=torch.int32)
 
     # fmt: on
 
@@ -1794,38 +1794,38 @@ def test_get_quotient():
     # stoichiometry (c, p, s)
     Nf = torch.tensor([
         [
-            [1.0, 0.0, 0.0, 0.0],  # A -> B
-            [0.0, 1.0, 0.0, 1.0],  # D + B -> C
-            [0.0, 2.0, 1.0, 0.0]   # 2B + C -> 3A
+            [1, 0, 0, 0],  # A -> B
+            [0, 1, 0, 1],  # D + B -> C
+            [0, 2, 1, 0]   # 2B + C -> 3A
         ],
         [
-            [5.0, 7.0, 0.0, 0.0],  # 5A + 7B -> 10C
-            [0.0, 0.0, 20.0, 0.0], # 20C -> 30D
-            [1.0, 0.0, 0.0, 0.0]
+            [5, 7, 0, 0],  # 5A + 7B -> 10C
+            [0, 0, 20, 0], # 20C -> 30D
+            [1, 0, 0, 0]
         ],
         [
-            [1.0, 0.0, 3.0, 0.0],  # A + 3C -> 2D
-            [0.0, 0.0, 1.0, 0.0],  # C -> 2A
-            [1.0, 0.0, 0.0, 0.0]   # A -> B 
+            [1, 0, 3, 0],  # A + 3C -> 2D
+            [0, 0, 1, 0],  # C -> 2A
+            [1, 0, 0, 0]   # A -> B 
         ],
-    ])
+    ], dtype=torch.int32)
     Nb = torch.tensor([
         [
-            [0.0, 1.0, 0.0, 0.0],  # A -> B
-            [0.0, 0.0, 1.0, 0.0],  # D + B -> C
-            [3.0, 0.0, 0.0, 0.0]   # 2B + C -> 3A
+            [0, 1, 0, 0],  # A -> B
+            [0, 0, 1, 0],  # D + B -> C
+            [3, 0, 0, 0]   # 2B + C -> 3A
         ],
         [
-            [0.0, 0.0, 10.0, 0.0],  # 5A + 7B -> 10C
-            [0.0, 0.0, 0.0, 30.0],  # 20C -> 30D
-            [0.0, 0.0, 0.0, 0.0]
+            [0, 0, 10, 0],  # 5A + 7B -> 10C
+            [0, 0, 0, 30],  # 20C -> 30D
+            [0, 0, 0, 0]
         ],
         [
-            [0.0, 0.0, 0.0, 2.0],  # A + 3C -> 2D
-            [2.0, 0.0, 0.0, 0.0],  # C -> 2A
-            [0.0, 1.0, 0.0, 0.0]   # A -> B 
+            [0, 0, 0, 2],  # A + 3C -> 2D
+            [2, 0, 0, 0],  # C -> 2A
+            [0, 1, 0, 0]   # A -> B 
         ],
-    ])
+    ], dtype=torch.int32)
 
     # fmt: on
 
@@ -1872,11 +1872,11 @@ def test_zeros_dont_stop_reactions():
 
     # reactions (c, p, s)
     N = torch.tensor([[
-        [-1., -1.,  1.,  0.,  0.,  0.],
-        [-3.,  0.,  1.,  0.,  0.,  0.]]])
+        [-1, -1,  1,  0,  0,  0],
+        [-3,  0,  1,  0,  0,  0]]], dtype=torch.int32)
     
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # affinities (c, p)
     Kmf = torch.tensor([[7.3328, 1.0539]])
@@ -1887,7 +1887,7 @@ def test_zeros_dont_stop_reactions():
     Vmax = torch.tensor([[0.3, 0.3]])
 
     # allosterics (c, p, s)
-    A = torch.zeros(1, 2, 6)
+    A = torch.zeros(1, 2, 6, dtype=torch.int32)
 
     # fmt: on
 
@@ -1933,15 +1933,15 @@ def test_equilibrium_is_quickly_reached():
 
     # reactions (c, p, s)
     N = torch.tensor([
-        [   [-1.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [-5.0, -5.0, 5.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-    ])
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+        [   [-1, 1, 0, 0],
+            [0, 0, -1, 1],
+            [0, 0, 0, 0]    ],
+        [   [-5, -5, 5, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0]    ],
+    ], dtype=torch.int32)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # affinities (c, p)
     Ke = torch.tensor([
@@ -1959,7 +1959,7 @@ def test_equilibrium_is_quickly_reached():
     ])
 
     # allosterics (c, p, s)
-    A = torch.zeros(2, 3, 4)
+    A = torch.zeros(2, 3, 4, dtype=torch.int32)
 
     # fmt: on
 
@@ -2050,16 +2050,16 @@ def test_get_negative_adjusted_nv():
 
     # stoiciometric numbers x velocities (c, p, s)
     NV = torch.tensor([
-        [   [-100.0, 100.0, -10.0, 10.0],
-            [0.0, 0.0, -10.0, 10.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [-10.0, 10.0, 0.0, 0.0],
-            [0.0, 0.0, -100.0, 100.0],
-            [0.0, 0.0, 0.0, 0.0]    ],
-        [   [-5.0, 5.0, 0.0, 0.0],
-            [0.0, 0.0, -10.0, 10.0],
-            [0.0, 0.0, 10.0, -10.0]    ],
-    ])
+        [   [-100, 100, -10, 10],
+            [0, 0, -10, 10],
+            [0, 0, 0, 0]    ],
+        [   [-10, 10, 0, 0],
+            [0, 0, -100, 100],
+            [0, 0, 0, 0]    ],
+        [   [-5, 5, 0, 0],
+            [0, 0, -10, 10],
+            [0, 0, 10, -10]    ],
+    ], dtype=torch.int32)
     # fmt: on
 
     kinetics = _get_kinetics()
@@ -2157,22 +2157,23 @@ def test_get_equilibrium_adjusted_x():
     # reactions (c, p, s)
     N = torch.tensor(
         [
-            [   [-1.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, -1.0, 1.0],
-                [0.0, -1.0, 0.0, 1.0]    ],
-            [   [-1.0, 1.0, 0.0, 0.0],
-                [0.0, -1.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0]    ],
-            [   [-1.0, 1.0, 0.0, 0.0],
-                [1.0, -1.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0]    ],
-            [   [-1.0, 1.0, 0.0, 0.0],
-                [1.0, -1.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0]    ],
-        ]
+            [   [-1, 1, 0, 0],
+                [0, 0, -1, 1],
+                [0, -1, 0, 1]    ],
+            [   [-1, 1, 0, 0],
+                [0, -1, 1, 0],
+                [0, 0, 0, 0]    ],
+            [   [-1, 1, 0, 0],
+                [1, -1, 0, 0],
+                [0, 0, 0, 0]    ],
+            [   [-1, 1, 0, 0],
+                [1, -1, 0, 0],
+                [0, 0, 0, 0]    ],
+        ],
+        dtype=torch.int32
     )
-    Nf = torch.where(N < 0.0, -N, 0.0)
-    Nb = torch.where(N > 0.0, N, 0.0)
+    Nf = torch.where(N < 0, -N, 0)
+    Nb = torch.where(N > 0, N, 0)
 
     # max velocities (c, p)
     V = torch.tensor(

@@ -1,6 +1,7 @@
 import random
 from itertools import product
 import math
+from typing import Any
 from io import BytesIO
 import pickle
 from pathlib import Path
@@ -24,6 +25,9 @@ from magicsoup.containers import (
 )
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
+
+# TODO: torch.argwhere (cpu sync)
+# TODO: torch.argwhere vs torch.nonzero
 
 
 def _torch_load(map_loc: str | None = None):
@@ -177,7 +181,7 @@ class World:
         self._permeation = permeation
 
         self._nghbrhd_map = {
-            (x, y): torch.tensor(moore_nghbrhd(x, y, map_size)).to(self.device)
+            (x, y): self._i32_tensor(moore_nghbrhd(x, y, map_size))
             for x, y in product(range(map_size), range(map_size))
         }
 
@@ -185,10 +189,12 @@ class World:
         self.cell_genomes: list[str] = []
         self.cell_labels: list[str] = []
         self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
-        self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).long()
+        self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).int()
         self.cell_lifetimes: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_divisions: torch.Tensor = torch.zeros(0).to(device).int()
-        self.cell_molecules: torch.Tensor = torch.zeros(0, self.n_molecules).to(device)
+        self.cell_molecules: torch.Tensor = (
+            torch.zeros(0, self.n_molecules).to(device).float()
+        )
         self.molecule_map: torch.Tensor = self._get_molecule_map(
             n=self.n_molecules, size=map_size, init=mol_map_init
         )
@@ -217,7 +223,7 @@ class World:
         if by_idx is not None:
             idx = by_idx
         if by_position is not None:
-            pos = torch.tensor(by_position)
+            pos = self._i32_tensor(by_position)
             mask = (self.cell_positions == pos).all(dim=1)
             idxs = torch.argwhere(mask).flatten().tolist()
             if len(idxs) == 0:
@@ -549,8 +555,8 @@ class World:
             genomes.append(cell.genome)
 
         self.cell_molecules[new_idxs, :] = torch.stack(int_mols).to(self.device).float()
-        self.cell_lifetimes[new_idxs] = torch.tensor(lifetimes).to(self.device).int()
-        self.cell_divisions[new_idxs] = torch.tensor(divisions).to(self.device).int()
+        self.cell_lifetimes[new_idxs] = self._i32_tensor(lifetimes)
+        self.cell_divisions[new_idxs] = self._i32_tensor(divisions)
 
         proteomes = self.genetics.translate_genomes(genomes=genomes)
 
@@ -715,7 +721,7 @@ class World:
         self.molecule_map[:, xs, ys] += spillout.T
 
         n_cells = self.cell_lifetimes.size(0)
-        keep = torch.ones(n_cells, dtype=torch.bool).to(self.device)
+        keep = torch.ones(n_cells, dtype=torch.bool, device=self.device)
         keep[cell_idxs] = False
         self.cell_lifetimes = self.cell_lifetimes[keep]
         self.cell_positions = self.cell_positions[keep]
@@ -959,7 +965,7 @@ class World:
 
         self.cell_molecules = torch.load(
             statedir / "cell_molecules.pt", map_location=self.device
-        )
+        ).float()
         self.cell_map = torch.load(
             statedir / "cell_map.pt", map_location=self.device
         ).bool()
@@ -971,7 +977,7 @@ class World:
         ).int()
         self.cell_positions = torch.load(
             statedir / "cell_positions.pt", map_location=self.device
-        ).long()
+        ).int()
         self.cell_divisions = torch.load(
             statedir / "cell_divisions.pt", map_location=self.device
         ).int()
@@ -1033,7 +1039,7 @@ class World:
 
     def _find_free_random_positions(self, n_cells: int) -> torch.Tensor:
         # available spots on map
-        pxls = torch.argwhere(~self.cell_map)
+        pxls = torch.argwhere(~self.cell_map).int()  # host device sync
         n_pxls = pxls.size(0)
         if n_cells > n_pxls:
             n_cells = n_pxls
@@ -1046,9 +1052,11 @@ class World:
     def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
         args = [n, size, size]
         if init == "zeros":
-            return torch.zeros(*args).to(self.device)
+            return torch.zeros(*args, device=self.device, dtype=torch.float32)
         if init == "randn":
-            return torch.abs(torch.randn(*args) + 10.0).to(self.device)
+            return (
+                torch.randn(*args, dtype=torch.float32, device=self.device) + 10.0
+            ).abs()
         raise ValueError(
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."
@@ -1086,11 +1094,11 @@ class World:
             b = b + 1.0 - (8 * a + b)  # try correcting inaccuracy
 
         # fmt: off
-        kernel = torch.tensor([[[
+        kernel = self._f32_tensor([[[
             [a, a, a],
             [a, b, a],
             [a, a, a],
-        ]]]).to(self.device)
+        ]]])
         # fmt: on
 
         conv = torch.nn.Conv2d(
@@ -1107,8 +1115,14 @@ class World:
 
     def _expand_c(self, t: torch.Tensor, n: int) -> torch.Tensor:
         size = t.size()
-        zeros = torch.zeros(n, *size[1:], dtype=t.dtype).to(self.device)
+        zeros = torch.zeros(n, *size[1:], dtype=t.dtype, device=self.device)
         return torch.cat([t, zeros], dim=0)
+
+    def _i32_tensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=torch.int32)
+
+    def _f32_tensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=torch.float32)
 
     def __repr__(self) -> str:
         kwargs = {

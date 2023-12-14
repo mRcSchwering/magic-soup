@@ -25,10 +25,10 @@ class _HillMapFact:
     with chances 52%, 26%, 13%, 6%, 3% respectively.
     """
 
-    def __init__(self, max_token: int, device: str = "cpu", zero_value: float = 0.0):
+    def __init__(self, max_token: int, device: str = "cpu", zero_value: int = 0):
         choices = [5] + 2 * [4] + 4 * [3] + 8 * [2] + 16 * [1]
         numbers = torch.tensor([zero_value] + random.choices(choices, k=max_token))
-        self.numbers = numbers.to(device)
+        self.numbers = numbers.to(device=device, dtype=torch.int32)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
         """t: long (c, p, d)"""
@@ -68,7 +68,7 @@ class _CustomWeightMapFact:
         for _ in range(max_token):
             non_zero_weights.append(random.choice(pop))
         weights = torch.tensor([zero_value] + non_zero_weights)
-        self.weights = weights.to(device)
+        self.weights = weights.to(device=device, dtype=torch.float32)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
         """t: long (c, p, d)"""
@@ -111,7 +111,7 @@ class _LogNormWeightMapFact:
                 sample = math.exp(random.gauss(mu, sig))
             non_zero_weights.append(sample)
         weights = torch.tensor([zero_value] + non_zero_weights)
-        self.weights = weights.to(device)
+        self.weights = weights.to(device=device, dtype=torch.float32)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
         """t: long (c, p, d)"""
@@ -130,14 +130,14 @@ class _LogNormWeightMapFact:
 
 class _SignMapFact:
     """
-    Creates an object that maps tokens to 1.0 or -1.0
+    Creates an object that maps tokens to 1 or -1
     with 50% probability of each being mapped.
     """
 
-    def __init__(self, max_token: int, device: str = "cpu", zero_value: float = 0.0):
-        choices = [1.0, -1.0]
+    def __init__(self, max_token: int, device: str = "cpu", zero_value: int = 0):
+        choices = [1, -1]
         signs = torch.tensor([zero_value] + random.choices(choices, k=max_token))
-        self.signs = signs.to(device)
+        self.signs = signs.to(device=device, dtype=torch.int32)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
         """t: long (c, p, d)"""
@@ -146,8 +146,8 @@ class _SignMapFact:
     def inverse(self) -> dict[bool, list[int]]:
         sign_map = {}
         M = self.signs.to("cpu")
-        sign_map[True] = torch.argwhere(M == 1.0).flatten().tolist()
-        sign_map[False] = torch.argwhere(M == -1.0).flatten().tolist()
+        sign_map[True] = torch.argwhere(M == 1).flatten().tolist()
+        sign_map[False] = torch.argwhere(M == -1).flatten().tolist()
         return sign_map
 
 
@@ -162,15 +162,15 @@ class _VectorMapFact:
         self,
         max_token: int,
         n_signals: int,
-        vectors: list[list[float]],
+        vectors: list[list[int]],
         device: str = "cpu",
-        zero_value: float = 0.0,
+        zero_value: int = 0,
     ):
         n_vectors = len(vectors)
         M = torch.full((max_token + 1, n_signals), fill_value=zero_value)
 
         if n_vectors == 0:
-            self.M = M.to(device)
+            self.M = M.to(device=device, dtype=torch.int32)
             return
 
         if not all(len(d) == n_signals for d in vectors):
@@ -183,7 +183,7 @@ class _VectorMapFact:
             )
 
         for vector in vectors:
-            if all(d == 0.0 for d in vector):
+            if all(d == 0 for d in vector):
                 raise ValueError(
                     "At least one vector includes only zeros."
                     " Each vector should contain at least one non-zero value."
@@ -192,7 +192,7 @@ class _VectorMapFact:
         idxs = random.choices(list(range(n_vectors)), k=max_token)
         for row_i, idx in enumerate(idxs):
             M[row_i + 1] = torch.tensor(vectors[idx])
-        self.M = M.to(device)
+        self.M = M.to(device=device, dtype=torch.int32)
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
         """t: long (c, p, d)"""
@@ -212,13 +212,13 @@ class _ReactionMapFact(_VectorMapFact):
         reactions: list[tuple[list[Molecule], list[Molecule]]],
         max_token: int,
         device: str = "cpu",
-        zero_value: float = 0.0,
+        zero_value: int = 0,
     ):
         n_signals = 2 * len(molmap)
         n_reacts = len(reactions)
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_reacts)]
+        vectors = [[0] * n_signals for _ in range(n_reacts)]
         for ri, (lft, rgt) in enumerate(reactions):
             for mol in lft:
                 mol_i = molmap[mol]
@@ -266,12 +266,12 @@ class _TransporterMapFact(_VectorMapFact):
         n_molecules: int,
         max_token: int,
         device: str = "cpu",
-        zero_value: float = 0.0,
+        zero_value: int = 0,
     ):
         n_signals = 2 * n_molecules
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_molecules)]
+        vectors = [[0] * n_signals for _ in range(n_molecules)]
         for mi in range(n_molecules):
             vectors[mi][mi] = -1
             vectors[mi][mi + n_molecules] = 1
@@ -306,12 +306,12 @@ class _RegulatoryMapFact(_VectorMapFact):
         n_molecules: int,
         max_token: int,
         device: str = "cpu",
-        zero_value: float = 0.0,
+        zero_value: int = 0,
     ):
         n_signals = 2 * n_molecules
 
         # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0.0] * n_signals for _ in range(n_signals)]
+        vectors = [[0] * n_signals for _ in range(n_signals)]
         for mi in range(n_signals):
             vectors[mi][mi] = 1
 
@@ -439,22 +439,22 @@ class Kinetics:
         self.device = device
         self.abs_temp = abs_temp
 
-        self.mol_energies = self._tensor_from([d.energy for d in molecules] * 2)
+        self.mol_energies = self._f32_tensor([d.energy for d in molecules] * 2)
         self.mol_2_mi = {d: i for i, d in enumerate(molecules)}
         self.mi_2_mol = {v: k for k, v in self.mol_2_mi.items()}
         self.molecules = molecules
 
         # working cell params
         n_signals = 2 * len(molecules)
-        self.Ke = self._tensor(0, 0)
-        self.Kmf = self._tensor(0, 0)
-        self.Kmb = self._tensor(0, 0)
-        self.Kmr = self._tensor(0, 0, n_signals)
-        self.Vmax = self._tensor(0, 0)
-        self.N = self._tensor(0, 0, n_signals)
-        self.Nf = self._tensor(0, 0, n_signals)
-        self.Nb = self._tensor(0, 0, n_signals)
-        self.A = self._tensor(0, 0, n_signals)
+        self.Ke = self._zeros_f32_tensor(0, 0)
+        self.Kmf = self._zeros_f32_tensor(0, 0)
+        self.Kmb = self._zeros_f32_tensor(0, 0)
+        self.Kmr = self._zeros_f32_tensor(0, 0, n_signals)
+        self.Vmax = self._zeros_f32_tensor(0, 0)
+        self.N = self._zeros_i32_tensor(0, 0, n_signals)
+        self.Nf = self._zeros_i32_tensor(0, 0, n_signals)
+        self.Nb = self._zeros_i32_tensor(0, 0, n_signals)
+        self.A = self._zeros_i32_tensor(0, 0, n_signals)
 
         # the domain specifications return 4 indexes
         # idx 0-2 are 1-codon idxs for scalars (n=64)
@@ -533,10 +533,10 @@ class Kinetics:
         # idx1-3 are 1-codon used for the floats (n=64)
         # some values are not defined for certain domain types
         # setting their indices to 0 lets them map to empty values (0-vector, NaN)
-        catal_lng = (is_catal).long()
-        trnsp_lng = (is_trnsp).long()
-        reg_lng = (is_reg).long()
-        not_reg_lng = (~is_reg).long()
+        catal_lng = (is_catal).int()
+        trnsp_lng = (is_trnsp).int()
+        reg_lng = (is_reg).int()
+        not_reg_lng = (~is_reg).int()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
         Vmax_d = self.vmax_map(idxs0 * not_reg_lng)  # float (c,p,d)
@@ -555,8 +555,8 @@ class Kinetics:
         # A (c, p, d, s)
         A_d = torch.einsum("cpds,cpd->cpds", effectors, signs * Hills)
 
-        Nf_d = torch.where(N_d < 0.0, -N_d, 0.0)
-        Nb_d = torch.where(N_d > 0.0, N_d, 0.0)
+        Nf_d = torch.where(N_d < 0, -N_d, 0)
+        Nb_d = torch.where(N_d > 0, N_d, 0)
         mols = self.molecules
         n_mols = len(mols)
 
@@ -666,21 +666,21 @@ class Kinetics:
         # idx1-3 are 1-codon used for the floats (n=64)
         # some values are not defined for certain domain types
         # setting their indices to 0 lets them map to empty values (0-vector, NaN)
-        catal_lng = (is_catal).long()
-        trnsp_lng = (is_trnsp).long()
-        reg_lng = (is_reg).long()
-        not_reg_lng = (~is_reg).long()
+        catal_lng = (is_catal).int()
+        trnsp_lng = (is_trnsp).int()
+        reg_lng = (is_reg).int()
+        not_reg_lng = (~is_reg).int()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # float (c,p,d)
-        Hills = self.hill_map(idxs0 * reg_lng)  # float (c,p,d)
-        Kms = self.km_map(idxs1)  # float (c,p,d)
-        signs = self.sign_map(idxs2)  # float (c,p,d)
+        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # f32 (c,p,d)
+        Hills = self.hill_map(idxs0 * reg_lng)  # i32 (c,p,d)
+        Kms = self.km_map(idxs1)  # f32 (c,p,d)
+        signs = self.sign_map(idxs2)  # i32 (c,p,d)
 
         # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c,p,d,s)
-        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c,p,d,s)
-        effectors = self.effector_map(idxs3 * reg_lng)  # float (c,p,d,s)
+        reacts = self.reaction_map(idxs3 * catal_lng)  # i32 (c,p,d,s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # i32 (c,p,d,s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # i32 (c,p,d,s)
 
         # Vmax are averaged over domains
         # undefined Vmax enries are NaN and are ignored by nanmean
@@ -706,13 +706,13 @@ class Kinetics:
         # reaction stoichiometry N is derived from transporter and catalytic vectors
         # vectors for regulatory domains or emptpy proteins are all 0s
         N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
-        N = N_d.sum(dim=2)
+        N = N_d.sum(dim=2, dtype=torch.int32)
         self.N[cell_idxs] = N
 
         # N for forward and backward reactions is distinguished
         # to not loose molecules like co-facors whose net N would become 0
-        self.Nf[cell_idxs] = torch.where(N_d < 0.0, -N_d, 0.0).sum(dim=2)
-        self.Nb[cell_idxs] = torch.where(N_d > 0.0, N_d, 0.0).sum(dim=2)
+        self.Nf[cell_idxs] = torch.where(N_d < 0, -N_d, 0).sum(dim=2, dtype=torch.int32)
+        self.Nb[cell_idxs] = torch.where(N_d > 0, N_d, 0).sum(dim=2, dtype=torch.int32)
 
         # Kms of catalytic and transporter domains are aggregated
         # Kms from other domains are ignored using NaNs and nanmean
@@ -720,7 +720,7 @@ class Kinetics:
 
         # energies define Ke which defines Ke = Kmf/Kmb
         # extreme energies can create Inf or 0.0, avoid them with clamp
-        E = torch.einsum("cps,s->cp", N, self.mol_energies)
+        E = torch.einsum("cps,s->cp", N.float(), self.mol_energies)
         Ke = torch.exp(-E / self.abs_temp / GAS_CONSTANT).clamp(_EPS, _MAX)
         self.Ke[cell_idxs] = Ke
 
@@ -743,10 +743,10 @@ class Kinetics:
         Arguments:
             cell_idxs: Indexes of cells
         """
-        self.N[cell_idxs] = 0.0
-        self.Nf[cell_idxs] = 0.0
-        self.Nb[cell_idxs] = 0.0
-        self.A[cell_idxs] = 0.0
+        self.N[cell_idxs] = 0
+        self.Nf[cell_idxs] = 0
+        self.Nb[cell_idxs] = 0
+        self.A[cell_idxs] = 0
         self.Ke[cell_idxs] = 0.0
         self.Kmf[cell_idxs] = 0.0
         self.Kmb[cell_idxs] = 0.0
@@ -898,7 +898,7 @@ class Kinetics:
         # A=-1 => a=k/(k+x)=1-x/(x+k) is deactivating (0;1] (X=0 is undefined)
         # A=0 => a=1/2, so they have to be set back to 1.0
         # here each signal is considered with seperate Km
-        is_reg = self.A != 0.0
+        is_reg = self.A != 0
         x_reg = torch.einsum("cps,cs->cps", is_reg.float(), X)
         a_reg_s = torch.pow(x_reg, self.A)  # (c,p,s)
         a_reg_s = a_reg_s / (a_reg_s + self.Kmr)  # Kmr already has power
@@ -1023,7 +1023,7 @@ class Kinetics:
         xx[xx.isinf()] = _MAX
 
         # mask (c,p) which proteins are active must be returned
-        return xx, M.sum(2) > 0.0
+        return xx, M.sum(2, dtype=torch.int32) > 0
 
     def _collect_proteome_idxs(
         self,
@@ -1070,25 +1070,37 @@ class Kinetics:
             c_idxs2.append(p_idxs2 + [empty_seq] * p_pad)
             c_idxs3.append(p_idxs3 + [empty_seq] * p_pad)
 
-        dom_types = self._tensor_from(c_dts)  # long (c,p,d)
-        idxs0 = self._tensor_from(c_idxs0)  # long (c,p,d)
-        idxs1 = self._tensor_from(c_idxs1)  # long (c,p,d)
-        idxs2 = self._tensor_from(c_idxs2)  # long (c,p,d)
-        idxs3 = self._tensor_from(c_idxs3)  # long (c,p,d)
+        dom_types = self._i32_tensor(c_dts)  # (c,p,d)
+        idxs0 = self._i32_tensor(c_idxs0)  # (c,p,d)
+        idxs1 = self._i32_tensor(c_idxs1)  # (c,p,d)
+        idxs2 = self._i32_tensor(c_idxs2)  # (c,p,d)
+        idxs3 = self._i32_tensor(c_idxs3)  # (c,p,d)
         return dom_types, idxs0, idxs1, idxs2, idxs3
 
     def _expand_c(self, t: torch.Tensor, n: int) -> torch.Tensor:
         size = t.size()
-        zeros = self._tensor(n, *size[1:])
+        if t.dtype is torch.int32:
+            zeros = self._zeros_i32_tensor(n, *size[1:])
+        else:
+            zeros = self._zeros_f32_tensor(n, *size[1:])
         return torch.cat([t, zeros], dim=0)
 
     def _expand_p(self, t: torch.Tensor, n: int) -> torch.Tensor:
         size = t.size()
-        zeros = self._tensor(size[0], n, *size[2:])
+        if t.dtype is torch.int32:
+            zeros = self._zeros_i32_tensor(size[0], n, *size[2:])
+        else:
+            zeros = self._zeros_f32_tensor(size[0], n, *size[2:])
         return torch.cat([t, zeros], dim=1)
 
-    def _tensor(self, *args) -> torch.Tensor:
-        return torch.zeros(*args).to(self.device)
+    def _zeros_i32_tensor(self, *args) -> torch.Tensor:
+        return torch.zeros(*args, device=self.device, dtype=torch.int32)
 
-    def _tensor_from(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d).to(self.device)
+    def _zeros_f32_tensor(self, *args) -> torch.Tensor:
+        return torch.zeros(*args, device=self.device, dtype=torch.float32)
+
+    def _i32_tensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=torch.int32)
+
+    def _f32_tensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=torch.float32)
