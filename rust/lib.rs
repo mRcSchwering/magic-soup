@@ -5,6 +5,7 @@ extern crate rayon;
 
 mod genetics;
 mod mutations;
+mod world;
 
 use pyo3::prelude::*;
 use std::collections::HashMap;
@@ -96,6 +97,21 @@ fn translate_genomes(
     })
 }
 
+// world
+
+#[pyfunction]
+fn get_neighbors(
+    py: Python<'_>,
+    from_idxs: Vec<usize>,
+    to_idxs: Vec<usize>,
+    positions: Vec<(u16, u16)>,
+    map_size: u16,
+) -> Vec<(usize, usize)> {
+    py.allow_threads(move || {
+        world::get_neighbors_threaded(&from_idxs, &to_idxs, &positions, &map_size)
+    })
+}
+
 // lib
 
 #[pymodule]
@@ -109,6 +125,9 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
+
+    // world
+    m.add_function(wrap_pyfunction!(get_neighbors, m)?)?;
 
     Ok(())
 }

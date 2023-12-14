@@ -674,6 +674,7 @@ def test_change_genomes():
 def test_get_neighbours():
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=[])
     world = ms.World(chemistry=chemistry, map_size=9)
+    world.n_cells = 9
 
     # fmt: off
     world.cell_map = torch.tensor([

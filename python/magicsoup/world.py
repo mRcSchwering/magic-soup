@@ -25,6 +25,7 @@ from magicsoup.containers import (
 )
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
+from magicsoup import _lib  # type: ignore
 
 
 def _torch_load(map_loc: str | None = None):
@@ -261,36 +262,23 @@ class World:
         So, _e.g._ return value `[(1, 4)]` describes the neighbors cell A
         with index 1 and cell B with index 4. `(4, 1)` is not returned.
         """
-        # TODO: as rust function
         if len(cell_idxs) == 0:
             return []
 
-        # rm duplicates to avoid unnecessary compute
-        cell_idxs = list(set(cell_idxs))
-
+        from_idxs = list(set(cell_idxs))
         if nghbr_idxs is None:
-            nghbr_map = self.cell_map
+            to_idxs = list(set(range(self.n_cells)))
         else:
-            nghbr_idxs = list(set(nghbr_idxs))
-            nghbr_map = torch.zeros_like(self.cell_map).bool()
-            pos = self.cell_positions[nghbr_idxs]
-            nghbr_map[pos[:, 0], pos[:, 1]] = True
+            to_idxs = list(set(nghbr_idxs))
 
-        nghbrs: list[tuple[int, int]] = []
-        for c_idx in cell_idxs:
-            c_pos = self.cell_positions[c_idx]
-            nghbrhd = self._nghbrhd_map[tuple(c_pos.tolist())]  # type: ignore
-            pxls = nghbrhd[nghbr_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = pxls.size(0)
+        if to_idxs == 0:
+            return []
 
-            if n == 0:
-                continue
-
-            idx_ts = [(self.cell_positions == d).all(dim=1).argwhere() for d in pxls]
-            n_idxs: list[int] = torch.cat(idx_ts).flatten().tolist()
-            nghbrs.extend(tuple(sorted([c_idx, d])) for d in n_idxs)  # type:ignore
-
-        return list(set(nghbrs))
+        xs = self.cell_positions[:, 0].tolist()
+        ys = self.cell_positions[:, 1].tolist()
+        positions = [(x, y) for x, y in zip(xs, ys)]
+        nghbrs = _lib.get_neighbors(from_idxs, to_idxs, positions, self.map_size)
+        return nghbrs
 
     def generate_genome(self, proteome: list[ProteinFact], size: int = 500) -> str:
         """
@@ -616,7 +604,6 @@ class World:
         The indexes refer to the index of each cell that is changed.
         The genomes refer to the genome of each cell that is changed.
         """
-        # TODO: this is still slow
         if len(genome_idx_pairs) == 0:
             return
 

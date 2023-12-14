@@ -108,13 +108,14 @@ def mutations(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
-def get_test(n: int, s: int):
-    genetics = ms.Genetics()
+def get_test(device: str, n: int, s: int):
+    genomes = _gen_genomes(n=n, s=s)
     tds = []
     for _ in range(R):
-        genomes = _gen_genomes(n=n, s=s)
+        world = ms.World(chemistry=CHEMISTRY, device=device)
+        world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        _ = genetics.translate_genomes(genomes=genomes)
+        _ = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -144,7 +145,7 @@ def main(parts: list, n: int, s: int, device: str):
         print(f"{smry} - mutations")
 
     if "test" in parts:
-        smry = get_test(n=n, s=s)
+        smry = get_test(n=n, s=s, device=device)
         print(f"{smry} - test")
 
 
