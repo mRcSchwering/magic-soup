@@ -539,15 +539,15 @@ class Kinetics:
         not_reg_lng = (~is_reg).int()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        Vmax_d = self.vmax_map(idxs0 * not_reg_lng)  # float (c,p,d)
-        Hills = self.hill_map(idxs0 * reg_lng)  # float (c,p,d)
-        Km_d = self.km_map(idxs1)  # float (c,p,d)
-        signs = self.sign_map(idxs2)  # float (c,p,d)
+        Vmax_d = self.vmax_map(idxs0 * not_reg_lng)  # f32 (c,p,d)
+        Hills = self.hill_map(idxs0 * reg_lng)  # i32 (c,p,d)
+        Km_d = self.km_map(idxs1)  # f32 (c,p,d)
+        signs = self.sign_map(idxs2)  # i32 (c,p,d)
 
         # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        reacts = self.reaction_map(idxs3 * catal_lng)  # float (c,p,d,s)
-        trnspts = self.transport_map(idxs3 * trnsp_lng)  # float (c,p,d,s)
-        effectors = self.effector_map(idxs3 * reg_lng)  # float (c,p,d,s)
+        reacts = self.reaction_map(idxs3 * catal_lng)  # i32 (c,p,d,s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # i32 (c,p,d,s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # i32 (c,p,d,s)
 
         # N (c, p, d, s)
         N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
@@ -688,7 +688,10 @@ class Kinetics:
 
         # effector vectors are multiplied with signs and hill coefficients
         # and summed up over domains
-        A = torch.einsum("cpds,cpd->cps", effectors, signs * Hills)
+        # no Int matmul impl in torch CUDA (dimenion is not shared)
+        A = torch.einsum(
+            "cpds,cpd->cps", effectors.float(), (signs * Hills).float()
+        ).int()
 
         # Kms from other domains are ignored using NaNs
         # their Kms must be seperated for each signal
@@ -1079,18 +1082,12 @@ class Kinetics:
 
     def _expand_c(self, t: torch.Tensor, n: int) -> torch.Tensor:
         size = t.size()
-        if t.dtype is torch.int32:
-            zeros = self._zeros_i32_tensor(n, *size[1:])
-        else:
-            zeros = self._zeros_f32_tensor(n, *size[1:])
+        zeros = torch.zeros(n, *size[1:], device=self.device, dtype=t.dtype)
         return torch.cat([t, zeros], dim=0)
 
     def _expand_p(self, t: torch.Tensor, n: int) -> torch.Tensor:
         size = t.size()
-        if t.dtype is torch.int32:
-            zeros = self._zeros_i32_tensor(size[0], n, *size[2:])
-        else:
-            zeros = self._zeros_f32_tensor(size[0], n, *size[2:])
+        zeros = torch.zeros(size[0], n, *size[2:], device=self.device, dtype=t.dtype)
         return torch.cat([t, zeros], dim=1)
 
     def _zeros_i32_tensor(self, *args) -> torch.Tensor:

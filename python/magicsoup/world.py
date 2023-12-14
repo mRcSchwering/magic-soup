@@ -26,9 +26,6 @@ from magicsoup.containers import (
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
 
-# TODO: torch.argwhere (cpu sync)
-# TODO: torch.argwhere vs torch.nonzero
-
 
 def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
@@ -1039,7 +1036,7 @@ class World:
 
     def _find_free_random_positions(self, n_cells: int) -> torch.Tensor:
         # available spots on map
-        pxls = torch.argwhere(~self.cell_map).int()  # host device sync
+        pxls = torch.nonzero(~self.cell_map).int()
         n_pxls = pxls.size(0)
         if n_cells > n_pxls:
             n_cells = n_pxls

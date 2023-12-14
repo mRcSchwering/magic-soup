@@ -81,6 +81,13 @@ def test_exploding_molecules():
         assert 0.0 < cellmols.mean() < 50.0, i
         assert cellmols.max() < 500.0, i
 
+    assert world.molecule_map.dtype is torch.float32
+    assert world.cell_molecules.dtype is torch.float32
+    assert world.cell_divisions.dtype is torch.int32
+    assert world.cell_positions.dtype is torch.int32
+    assert world.cell_lifetimes.dtype is torch.int32
+    assert world.cell_map.dtype is torch.bool
+
 
 def test_genome_generation_consistency():
     n_tries = 6

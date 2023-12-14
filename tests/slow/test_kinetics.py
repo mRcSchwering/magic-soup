@@ -52,6 +52,7 @@ def test_cell_params_are_always_set_reproduceably():
         Kmb_orig = kinetics.Kmb.clone()
         Kmr_orig = kinetics.Kmr.clone()
         Vmax_orig = kinetics.Vmax.clone()
+        A_orig = kinetics.A.clone()
 
         kinetics.remove_cell_params(keep=torch.full((n_cells,), False))
         kinetics.increase_max_cells(by_n=n_cells)
@@ -66,6 +67,16 @@ def test_cell_params_are_always_set_reproduceably():
         assert torch.equal(kinetics.Kmb, Kmb_orig), i
         assert torch.equal(kinetics.Kmr, Kmr_orig), i
         assert torch.equal(kinetics.Vmax, Vmax_orig), i
+        assert torch.equal(kinetics.A, A_orig), i
+        assert kinetics.N.dtype is N_orig.dtype, i
+        assert kinetics.Nb.dtype is Nb_orig.dtype, i
+        assert kinetics.Nf.dtype is Nf_orig.dtype, i
+        assert kinetics.Ke.dtype is Ke_orig.dtype, i
+        assert kinetics.Kmf.dtype is Kmf_orig.dtype, i
+        assert kinetics.Kmb.dtype is Kmb_orig.dtype, i
+        assert kinetics.Kmr.dtype is Kmr_orig.dtype, i
+        assert kinetics.Vmax.dtype is Vmax_orig.dtype, i
+        assert kinetics.A.dtype is A_orig.dtype, i
 
 
 def test_random_kinetics_stay_zero():
@@ -83,15 +94,15 @@ def test_random_kinetics_stay_zero():
     X = torch.zeros(n_cells, n_mols).abs()
 
     # reactions (c, p, s)
-    kinetics.N = torch.randint(low=-8, high=9, size=(n_cells, n_prots, n_mols)).float()
-    kinetics.Nf = torch.where(kinetics.N < 0.0, -kinetics.N, 0.0)
-    kinetics.Nb = torch.where(kinetics.N > 0.0, kinetics.N, 0.0)
+    kinetics.N = torch.randint(low=-8, high=9, size=(n_cells, n_prots, n_mols)).int()
+    kinetics.Nf = torch.where(kinetics.N < 0, -kinetics.N, 0)
+    kinetics.Nb = torch.where(kinetics.N > 0, kinetics.N, 0)
 
     # max velocities (c, p)
     kinetics.Vmax = torch.randn(n_cells, n_prots).abs() * 100
 
     # allosterics (c, p, s)
-    kinetics.A = torch.randint(low=-5, high=5, size=(n_cells, n_prots, n_mols))
+    kinetics.A = torch.randint(low=-5, high=5, size=(n_cells, n_prots, n_mols)).int()
 
     # affinities (c, p)
     Ke = torch.randn(n_cells, n_prots) * 100
@@ -105,6 +116,16 @@ def test_random_kinetics_stay_zero():
         X = kinetics.integrate_signals(X=X)
         assert X.min() == 0.0
         assert X.max() == 0.0
+
+    assert kinetics.N.dtype is torch.int32
+    assert kinetics.Nb.dtype is torch.int32
+    assert kinetics.Nf.dtype is torch.int32
+    assert kinetics.Ke.dtype is torch.float32
+    assert kinetics.Kmf.dtype is torch.float32
+    assert kinetics.Kmb.dtype is torch.float32
+    assert kinetics.Kmr.dtype is torch.float32
+    assert kinetics.Vmax.dtype is torch.float32
+    assert kinetics.A.dtype is torch.int32
 
 
 def test_random_kinetics_dont_explode():
@@ -122,15 +143,15 @@ def test_random_kinetics_dont_explode():
     X = torch.randn(n_cells, n_mols).abs().clamp(max=1.0) * 100
 
     # reactions (c, p, s)
-    kinetics.N = torch.randint(low=-8, high=9, size=(n_cells, n_prots, n_mols)).float()
-    kinetics.Nf = torch.where(kinetics.N < 0.0, -kinetics.N, 0.0)
-    kinetics.Nb = torch.where(kinetics.N > 0.0, kinetics.N, 0.0)
+    kinetics.N = torch.randint(low=-8, high=9, size=(n_cells, n_prots, n_mols)).int()
+    kinetics.Nf = torch.where(kinetics.N < 0, -kinetics.N, 0)
+    kinetics.Nb = torch.where(kinetics.N > 0, kinetics.N, 0)
 
     # max velocities (c, p)
     kinetics.Vmax = torch.randn(n_cells, n_prots).abs().clamp(max=1.0) * 100
 
     # allosterics (c, p, s)
-    kinetics.A = torch.randint(low=-5, high=5, size=(n_cells, n_prots, n_mols))
+    kinetics.A = torch.randint(low=-5, high=5, size=(n_cells, n_prots, n_mols)).int()
 
     # affinities (c, p)
     Ke = torch.randn(n_cells, n_prots) * 100
@@ -146,3 +167,13 @@ def test_random_kinetics_dont_explode():
         assert not torch.any(X.isnan()), X.isnan().sum()
         assert torch.all(X.isfinite()), ~X.isfinite().sum()
         assert torch.all(X < 10_000), X[X >= 10_000]
+
+    assert kinetics.N.dtype is torch.int32
+    assert kinetics.Nb.dtype is torch.int32
+    assert kinetics.Nf.dtype is torch.int32
+    assert kinetics.Ke.dtype is torch.float32
+    assert kinetics.Kmf.dtype is torch.float32
+    assert kinetics.Kmb.dtype is torch.float32
+    assert kinetics.Kmr.dtype is torch.float32
+    assert kinetics.Vmax.dtype is torch.float32
+    assert kinetics.A.dtype is torch.int32

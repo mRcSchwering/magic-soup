@@ -16,14 +16,14 @@ v0.13.0 CPU:
 (4.72+-0.27)s - enzymatic activity
 (5.91+-0.07)s - mutations
 
-v0.12.1 GPU (g4dn.xlarge):
-10,000 cells, 1,000 genome size, 4 workers
-(13.75+-0.72)s - add cells
-(9.60+-0.54)s - update cells
-(1.44+-0.03)s - replicate cells
-(0.19+-0.01)s - enzymatic activity
-(4.00+-0.01)s - get neighbors
-(0.01+-0.00)s - point mutations
+v0.13.0 GPU (g4dn.xlarge):
+Running spawn_cells, update_cells, replicate_cells, enzymatic_activity, mutations
+10,000 cells, 1,000 genome size, on cuda
+(6.77+-0.80)s - spawn cells
+(6.27+-0.16)s - update cells
+(1.47+-0.03)s - replicate cells
+(0.17+-0.00)s - enzymatic activity
+(4.28+-0.01)s - mutations
 """
 import time
 import random
@@ -32,8 +32,6 @@ import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
-
-# TODO: torch: try f32 for speed
 
 
 def _summary(tds: list[float]) -> str:
