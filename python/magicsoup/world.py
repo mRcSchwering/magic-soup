@@ -461,31 +461,7 @@ class World:
         self.cell_molecules[new_idxs, :] += pickup.T
         self.molecule_map[:, xs, ys] -= pickup
 
-        # TODO: spawn cells seems to be consistently 10% faster than update cells
-        #       how can that be, if spawn is actually doing more?
-
-        proteomes = self.genetics.translate_genomes(genomes=genomes)
-
-        set_proteomes = []
-        set_idxs = []
-        for proteome, idx in zip(proteomes, new_idxs):
-            if len(proteome) > 0:
-                set_proteomes.append([d[0] for d in proteome])
-                set_idxs.append(idx)
-
-        n_new_proteomes = len(set_proteomes)
-        if n_new_proteomes == 0:
-            return []
-
-        n_max_prots = max(len(d) for d in set_proteomes)
-        self.kinetics.increase_max_proteins(max_n=n_max_prots)
-
-        for a in range(0, n_new_proteomes, batch_size):
-            b = a + batch_size
-            self.kinetics.set_cell_params(
-                cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
-            )
-
+        self._update_cell_params(genomes=genomes, idxs=new_idxs, batch_size=batch_size)
         return new_idxs
 
     def add_cells(self, cells: list["Cell"], batch_size: int = 1000) -> list[int]:
@@ -555,27 +531,7 @@ class World:
         self.cell_lifetimes[new_idxs] = self._i32_tensor(lifetimes)
         self.cell_divisions[new_idxs] = self._i32_tensor(divisions)
 
-        proteomes = self.genetics.translate_genomes(genomes=genomes)
-
-        set_proteomes = []
-        set_idxs = []
-        for proteome, idx in zip(proteomes, new_idxs):
-            if len(proteome) > 0:
-                set_proteomes.append([d[0] for d in proteome])
-                set_idxs.append(idx)
-
-        n_new_proteomes = len(set_proteomes)
-        if n_new_proteomes == 0:
-            return []
-
-        n_max_prots = max(len(d) for d in set_proteomes)
-        self.kinetics.increase_max_proteins(max_n=n_max_prots)
-
-        for a in range(0, n_new_proteomes, batch_size):
-            b = a + batch_size
-            self.kinetics.set_cell_params(
-                cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
-            )
+        self._update_cell_params(genomes=genomes, idxs=new_idxs, batch_size=batch_size)
 
         return new_idxs
 
@@ -606,6 +562,7 @@ class World:
         the first descendant in each tuple is the cell that still lives on the same pixel.
         The second descendant in that tuple is the cell that was newly created.
         """
+        # TODO: as rs function?
         if len(cell_idxs) == 0:
             return []
 
@@ -616,7 +573,7 @@ class World:
             parent_idxs,
             child_idxs,
             child_pos,
-        ) = self._divide_cells_as_possible(parent_idxs=cell_idxs)
+        ) = self._divide_cells_if_possible(parent_idxs=cell_idxs)
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
@@ -645,6 +602,8 @@ class World:
 
         return list(zip(parent_idxs, child_idxs))
 
+    # TODO: translate_genomes without indices of regions
+
     def update_cells(
         self, genome_idx_pairs: list[tuple[str, int]], batch_size: int = 1000
     ):
@@ -663,31 +622,11 @@ class World:
         if len(genome_idx_pairs) == 0:
             return
 
-        genomes = [d[0] for d in genome_idx_pairs]
-        proteomes = self.genetics.translate_genomes(genomes=genomes)
-
-        set_idxs: list[int] = []
-        unset_idxs: list[int] = []
-        set_proteomes: list[list[list[DomainSpecType]]] = []
-        for (genome, idx), proteome in zip(genome_idx_pairs, proteomes):
+        for genome, idx in genome_idx_pairs:
             self.cell_genomes[idx] = genome
-            if len(proteome) > 0:
-                set_idxs.append(idx)
-                set_proteomes.append([d[0] for d in proteome])
-            else:
-                unset_idxs.append(idx)
 
-        self.kinetics.unset_cell_params(cell_idxs=unset_idxs)
-
-        n_set_proteomes = len(set_proteomes)
-        if n_set_proteomes > 0:
-            max_prots = max(len(d) for d in set_proteomes)
-            self.kinetics.increase_max_proteins(max_n=max_prots)
-            for a in range(0, n_set_proteomes, batch_size):
-                b = a + batch_size
-                self.kinetics.set_cell_params(
-                    cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
-                )
+        genomes, idxs = list(map(list, zip(*genome_idx_pairs)))
+        self._update_cell_params(genomes=genomes, idxs=idxs, batch_size=batch_size)  # type: ignore
 
     def kill_cells(self, cell_idxs: list[int]):
         """
@@ -1002,7 +941,35 @@ class World:
             self.kinetics.increase_max_cells(by_n=self.n_cells)
             self.update_cells(genome_idx_pairs=genome_idx_pairs, batch_size=batch_size)
 
-    def _divide_cells_as_possible(
+    def _update_cell_params(self, genomes: list[str], idxs: list[int], batch_size: int):
+        proteomes = self.genetics.translate_genomes(genomes=genomes)
+
+        set_idxs: list[int] = []
+        unset_idxs: list[int] = []
+        set_proteomes: list[list[list[DomainSpecType]]] = []
+        for idx, proteome in zip(idxs, proteomes):
+            if len(proteome) > 0:
+                set_idxs.append(idx)
+                set_proteomes.append([d[0] for d in proteome])
+            else:
+                unset_idxs.append(idx)
+
+        self.kinetics.unset_cell_params(cell_idxs=unset_idxs)
+
+        n_set_proteomes = len(set_proteomes)
+        if n_set_proteomes == 0:
+            return
+
+        max_prots = max(len(d) for d in set_proteomes)
+        self.kinetics.increase_max_proteins(max_n=max_prots)
+
+        for a in range(0, n_set_proteomes, batch_size):
+            b = a + batch_size
+            self.kinetics.set_cell_params(
+                cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
+            )
+
+    def _divide_cells_if_possible(
         self, parent_idxs: list[int]
     ) -> tuple[list[int], list[int], list[torch.Tensor]]:
         run_idx = self.n_cells

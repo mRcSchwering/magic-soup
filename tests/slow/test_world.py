@@ -103,7 +103,7 @@ def test_genome_generation_consistency():
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry)
 
-    # early stopping should not be possible
+    # early stopping should not be possible but
     # there is always the possibility that another protein
     # is created on the reverse-complement
 
