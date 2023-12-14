@@ -33,7 +33,7 @@ def test_cell_params_are_always_set_reproduceably():
                     i2 = random.choice(list(range(61)))
                     i3 = random.choice(list(range(3904)))
                     domains.append(((domtype, i0, i1, i2, i3), 1, 2))
-                proteins.append(domains)
+                proteins.append((domains, 0, 0, True))
             proteomes.append(proteins)
 
         n_max_prots = max(len(d) for d in proteomes)

@@ -209,7 +209,7 @@ def test_cell_params_with_transporter_domains():
     kinetics.Nf = Nf
     kinetics.Nb = Nb
     kinetics.A = A
-    proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
+    proteomes = [c0, c1]
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
     assert Ke[0, 0] == pytest.approx(1.0, abs=_TOLERANCE)
@@ -460,7 +460,7 @@ def test_cell_params_with_regulatory_domains():
     kinetics.Nf = Nf
     kinetics.Nb = Nb
     kinetics.A = A
-    proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
+    proteomes = [c0, c1]
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
     ke_a_b = _ke([_ma], [_mb])
@@ -762,7 +762,7 @@ def test_cell_params_with_catalytic_domains():
     kinetics.Nf = Nf
     kinetics.Nb = Nb
     kinetics.A = A
-    proteomes = [[d[0] for d in c0], [d[0] for d in c1]]
+    proteomes = [c0, c1]
     kinetics.set_cell_params(cell_idxs=[0, 1], proteomes=proteomes)
 
     ke_c0_0 = _ke([_ma, _md], [_mb, _mb, _mc])

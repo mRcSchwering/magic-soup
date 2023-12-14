@@ -2,7 +2,7 @@ from typing import Any
 import math
 import random
 import torch
-from magicsoup.constants import GAS_CONSTANT, DomainSpecType, ProteinSpecType
+from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
 from magicsoup.containers import (
     Molecule,
     Protein,
@@ -519,7 +519,7 @@ class Kinetics:
         """
         # get proteome tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
-            proteomes=[[d[0] for d in proteome]]
+            proteomes=[proteome]
         )
 
         # identify domain types
@@ -635,7 +635,7 @@ class Kinetics:
     def set_cell_params(
         self,
         cell_idxs: list[int],
-        proteomes: list[list[list[DomainSpecType]]],
+        proteomes: list[list[ProteinSpecType]],
     ):
         """
         Calculate and set cell parameters for new proteomes
@@ -1030,10 +1030,10 @@ class Kinetics:
 
     def _collect_proteome_idxs(
         self,
-        proteomes: list[list[list[DomainSpecType]]],
+        proteomes: list[list[ProteinSpecType]],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         n_prots = self.N.size(1)
-        n_doms = max(len(dd) for d in proteomes for dd in d)
+        n_doms = max(len(dd[0]) for d in proteomes for dd in d)
         empty_seq = [0] * n_doms
 
         c_dts = []
@@ -1047,7 +1047,7 @@ class Kinetics:
             p_idxs1 = []
             p_idxs2 = []
             p_idxs3 = []
-            for doms in proteins:
+            for doms, *_ in proteins:
                 d_dts = []
                 d_idxs0 = []
                 d_idxs1 = []

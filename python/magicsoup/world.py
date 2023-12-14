@@ -6,7 +6,7 @@ from io import BytesIO
 import pickle
 from pathlib import Path
 import torch
-from magicsoup.constants import CODON_SIZE, DomainSpecType
+from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup.util import (
     moore_nghbrhd,
     round_down,
@@ -602,8 +602,6 @@ class World:
 
         return list(zip(parent_idxs, child_idxs))
 
-    # TODO: translate_genomes without indices of regions
-
     def update_cells(
         self, genome_idx_pairs: list[tuple[str, int]], batch_size: int = 1000
     ):
@@ -944,26 +942,26 @@ class World:
     def _update_cell_params(self, genomes: list[str], idxs: list[int], batch_size: int):
         proteomes = self.genetics.translate_genomes(genomes=genomes)
 
+        max_prots: int = 0
         set_idxs: list[int] = []
         unset_idxs: list[int] = []
-        set_proteomes: list[list[list[DomainSpecType]]] = []
+        set_proteomes: list[list[ProteinSpecType]] = []
         for idx, proteome in zip(idxs, proteomes):
-            if len(proteome) > 0:
+            n_prots = len(proteome)
+            if n_prots > 0:
                 set_idxs.append(idx)
-                set_proteomes.append([d[0] for d in proteome])
+                set_proteomes.append(proteome)
+                max_prots = max(max_prots, n_prots)
             else:
                 unset_idxs.append(idx)
 
         self.kinetics.unset_cell_params(cell_idxs=unset_idxs)
-
-        n_set_proteomes = len(set_proteomes)
-        if n_set_proteomes == 0:
+        if max_prots == 0:
             return
 
-        max_prots = max(len(d) for d in set_proteomes)
         self.kinetics.increase_max_proteins(max_n=max_prots)
 
-        for a in range(0, n_set_proteomes, batch_size):
+        for a in range(0, len(set_proteomes), batch_size):
             b = a + batch_size
             self.kinetics.set_cell_params(
                 cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
