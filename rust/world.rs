@@ -1,53 +1,6 @@
+use crate::util;
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
-use std::cmp::PartialEq;
-
-// Get vector with duplicates removed
-fn unique<T: PartialEq + Clone>(mut pairs: Vec<T>) -> Vec<T> {
-    let mut seen: Vec<T> = Vec::with_capacity(pairs.len());
-    pairs.retain(|d| match seen.contains(d) {
-        true => false,
-        _ => {
-            seen.push(d.clone());
-            true
-        }
-    });
-    pairs
-}
-
-// 1D distance between a and b on circular dimension with size m
-fn dist_1d(a: &u16, b: &u16, m: &u16) -> u16 {
-    let mut h = b;
-    let mut l = a;
-    if a > b {
-        h = a;
-        l = b;
-    }
-    let d0 = h - l;
-    let d1 = m - h + l;
-    if d0 < d1 {
-        return d0;
-    }
-    d1
-}
-
-// Return coordinates of Moore's neighbourhood in square circular map with size m
-fn moores_nghbhd(x: &u16, y: &u16, m: &u16) -> [(u16, u16); 8] {
-    let e: u16 = if x + 1 == *m { 0 } else { *x + 1 };
-    let w: u16 = if x == &0 { *m - 1 } else { *x - 1 };
-    let s: u16 = if y + 1 == *m { 0 } else { *y + 1 };
-    let n: u16 = if y == &0 { *m - 1 } else { *y - 1 };
-    [
-        (w, n),
-        (w, *y),
-        (w, s),
-        (*x, n),
-        (*x, s),
-        (e, n),
-        (e, *y),
-        (e, s),
-    ]
-}
 
 // get all neighbours of cell from_idx to cells to_idxs
 // on a square circular 2D map with size map_size
@@ -69,8 +22,8 @@ fn get_neighbors(
         }
 
         let (x1, y1) = positions[*to_idx];
-        let x_d = dist_1d(&x0, &x1, map_size);
-        let y_d = dist_1d(&y0, &y1, map_size);
+        let x_d = util::dist_1d(&x0, &x1, map_size);
+        let y_d = util::dist_1d(&y0, &y1, map_size);
         if x_d <= 1 && y_d <= 1 {
             if from_idx > to_idx {
                 res.push((*to_idx, *from_idx));
@@ -96,29 +49,12 @@ pub fn get_neighbors_threaded(
         .flatten()
         .collect();
 
-    unique(res)
-}
-
-// For a position (x,y) get positions in Moore's neighborhood which are not
-// already occupied as indicated by positions and a circular square 2D map of map_size
-pub fn get_unoccupied_nghbhd(
-    x: &u16,
-    y: &u16,
-    positions: &Vec<(u16, u16)>,
-    map_size: &u16,
-) -> Vec<(u16, u16)> {
-    let nghbhd = moores_nghbhd(&x, &y, map_size);
-    nghbhd
-        .iter()
-        .filter_map(|d| match positions.contains(d) {
-            true => None,
-            false => Some(*d),
-        })
-        .collect()
+    util::unique(res)
 }
 
 // Threaded function that finds possible cell divisions as of
-// get_unoccupied_nghbhd() for multiple cells as cell_idxs
+// free_moores_nghbhd() for multiple cells as cell_idxs
+// Returns divided cell idxs, their child idx, their child positions
 pub fn divide_cells_if_possible_threaded(
     cell_idxs: &Vec<usize>,
     positions: &Vec<(u16, u16)>,
@@ -129,7 +65,7 @@ pub fn divide_cells_if_possible_threaded(
         .into_par_iter()
         .map(|d| {
             let (x, y) = positions[*d];
-            get_unoccupied_nghbhd(&x, &y, positions, map_size)
+            util::free_moores_nghbhd(&x, &y, positions, map_size)
         })
         .collect();
 
@@ -157,7 +93,8 @@ pub fn divide_cells_if_possible_threaded(
 }
 
 // Threaded function that finds possible cell movements as of
-// get_unoccupied_nghbhd() for multiple cells as cell_idxs
+// free_moores_nghbhd() for multiple cells as cell_idxs
+// Returns new position tuples, moved cell idxs
 pub fn move_cells_threaded(
     cell_idxs: &Vec<usize>,
     positions: &Vec<(u16, u16)>,
@@ -175,7 +112,7 @@ pub fn move_cells_threaded(
         .into_par_iter()
         .map(|d| {
             let (x, y) = positions[*d];
-            get_unoccupied_nghbhd(&x, &y, &const_occ_pos, map_size)
+            util::free_moores_nghbhd(&x, &y, &const_occ_pos, map_size)
         })
         .collect();
 

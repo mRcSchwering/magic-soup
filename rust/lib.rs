@@ -5,10 +5,27 @@ extern crate rayon;
 
 mod genetics;
 mod mutations;
+mod util;
 mod world;
 
 use pyo3::prelude::*;
 use std::collections::HashMap;
+
+// util
+#[pyfunction]
+fn dist_1d(a: u16, b: u16, m: u16) -> u16 {
+    util::dist_1d(&a, &b, &m)
+}
+
+#[pyfunction]
+fn free_moores_nghbhd(
+    x: u16,
+    y: u16,
+    positions: Vec<(u16, u16)>,
+    map_size: u16,
+) -> Vec<(u16, u16)> {
+    util::free_moores_nghbhd(&x, &y, &positions, &map_size)
+}
 
 // mutations
 
@@ -139,6 +156,10 @@ fn move_cells(
 
 #[pymodule]
 fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // util
+    m.add_function(wrap_pyfunction!(dist_1d, m)?)?;
+    m.add_function(wrap_pyfunction!(free_moores_nghbhd, m)?)?;
+
     // mutations
     m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
     m.add_function(wrap_pyfunction!(recombinations, m)?)?;

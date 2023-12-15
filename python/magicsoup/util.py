@@ -4,6 +4,7 @@ import string
 import random
 import math
 from magicsoup.constants import ALL_NTS
+from magicsoup import _lib  # type:ignore
 
 
 def round_down(d: float, to: int = 3) -> int:
@@ -91,3 +92,19 @@ def variants(seq: str) -> list[str]:
 def nt_seqs(n: int) -> list[str]:
     """Return all possible nucleotide sequences of length `n`"""
     return variants("N" * n)
+
+
+def dist_1d(a: int, b: int, m: int) -> int:
+    """Distance between `a` and `b` on circular 1D line of size `m`"""
+    return _lib.dist_1d(a, b, m)
+
+
+def free_moores_nghbhd(
+    x: int, y: int, positions: list[tuple[int, int]], map_size: int
+) -> list[tuple[int, int]]:
+    """
+    For position `x, y` get positions in Moore's neighborhood
+    on circular 2D map of size `map_size`
+    which are not already occupied as indicated by `positions`
+    """
+    return _lib.free_moores_nghbhd(x, y, positions, map_size)

@@ -57,3 +57,40 @@ def test_random_genome(s, excl):
 def test_closest_value(vals: Iterable, key: float, exp: float):
     res = util.closest_value(values=vals, key=key)
     assert res == exp
+
+
+@pytest.mark.parametrize(
+    "a, b, exp",
+    [
+        (0, 1, 1),
+        (0, 2, 2),
+        (0, 3, 2),
+        (0, 4, 1),
+        (0, 0, 0),
+    ],
+)
+def test_dist_1d(a: int, b: int, exp: int):
+    res = util.dist_1d(a=a, b=b, m=5)
+    assert res == exp
+
+
+@pytest.mark.parametrize(
+    "x, y, exp",
+    [
+        (2, 2, [(1, 1), (1, 2), (1, 3), (3, 1), (3, 2), (3, 3), (2, 1), (2, 3)]),
+        (0, 0, [(4, 4), (4, 0), (4, 1), (1, 4), (1, 0), (1, 1), (0, 4), (0, 1)]),
+        (4, 4, [(3, 3), (3, 4), (3, 0), (0, 3), (0, 4), (0, 0), (4, 3), (4, 0)]),
+        (0, 4, [(4, 3), (4, 4), (4, 0), (1, 3), (1, 4), (1, 0), (0, 3), (0, 0)]),
+        (4, 0, [(3, 4), (4, 4), (0, 4), (3, 1), (4, 1), (0, 1), (3, 0), (0, 0)]),
+    ],
+)
+def test_free_moores_nghbhd(x: int, y: int, exp: list[tuple[int, int]]):
+    res = util.free_moores_nghbhd(x=x, y=y, positions=[], map_size=5)
+    assert set(res) == set(exp)
+
+    occ = res[0]
+    res1 = util.free_moores_nghbhd(x=x, y=y, positions=[occ], map_size=5)
+    assert set(res1) == set(exp) - {occ}
+
+    res2 = util.free_moores_nghbhd(x=x, y=y, positions=res, map_size=5)
+    assert len(res2) == 0
