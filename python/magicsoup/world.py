@@ -25,6 +25,9 @@ from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
 from magicsoup import _lib  # type: ignore
 
+# TODO: revice documentation
+#       and how to best describe cells, proteins, domains (in docstrings)
+
 
 def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
@@ -227,7 +230,6 @@ class World:
             idx=idx,
             genome=self.cell_genomes[idx],
             position=tuple(pos.tolist()),  # type: ignore
-            int_molecules=self.cell_molecules[idx, :],
             ext_molecules=self.molecule_map[:, pos[0], pos[1]],
             label=self.cell_labels[idx],
             n_steps_alive=int(self.cell_lifetimes[idx].item()),
@@ -1051,6 +1053,7 @@ class Cell:
     Object representing a cell with its environment.
 
     Arguments:
+        world: Reference to the cell's world object.
         genome: Full genome sequence of this cell.
         int_molecules: Intracellular molecules. A tensor with one dimension that represents
             each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
@@ -1064,11 +1067,11 @@ class Cell:
         n_divisions: Number of times this cell's ancestors already divided.
 
     Usually, you wouldn't instantiate this object.
-    You get it when calling [get_cell()][magicsoup.world.World.get_cell] after you have spawned some
-    cells to a world (via [spawn_cells()][magicsoup.world.World.spawn_cells]).
+    You get it when calling [get_cell()][magicsoup.world.World.get_cell].
     On the `world` object all cells are actually represented as a combination of lists and tensors.
     [get_cell()][magicsoup.world.World.get_cell] gathers all information for one cell and
     represents it in this `Cell` object.
+    Some attributes are gathered lazily just when you access them.
 
     When a cell replicates its genome and proteome are copied.
     Both descendants will recieve half of all molecules each.
@@ -1077,33 +1080,43 @@ class Cell:
     This way you can track cells' origins.
     """
 
-    # TODO: with reference to world, then calculate attributes lazily
-    #       (e.g. proteome) when accessed
-
     def __init__(
         self,
         world: World,
         genome: str,
-        int_molecules: torch.Tensor,
-        ext_molecules: torch.Tensor,
         position: tuple[int, int] = (-1, -1),
         idx: int = -1,
         label: str = "C",
         n_steps_alive: int = 0,
         n_divisions: int = 0,
         proteome: list[Protein] | None = None,
+        int_molecules: torch.Tensor | None = None,
+        ext_molecules: torch.Tensor | None = None,
     ):
         self.world = world
         self.genome = genome
         self.label = label
-        self.int_molecules = int_molecules
-        self.ext_molecules = ext_molecules
         self.position = position
         self.idx = idx
         self.n_steps_alive = n_steps_alive
         self.n_divisions = n_divisions
 
         self._proteome = proteome
+        self._int_molecules = int_molecules
+        self._ext_molecules = ext_molecules
+
+    @property
+    def int_molecules(self) -> torch.Tensor:
+        if self._int_molecules is None:
+            self._int_molecules = self.world.cell_molecules[self.idx, :]
+        return self._int_molecules
+
+    @property
+    def ext_molecules(self) -> torch.Tensor:
+        if self._ext_molecules is None:
+            pos = self.position
+            self._ext_molecules = self.world.molecule_map[:, pos[0], pos[1]]
+        return self._ext_molecules
 
     @property
     def proteome(self) -> list[Protein]:

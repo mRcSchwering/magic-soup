@@ -120,7 +120,7 @@ def test_genome_generation_consistency():
             assert len(idxs) == 1
             ci = idxs[0]
             cell = world.get_cell(by_idx=ci)
-            proteome = cell.get_proteome()
+            proteome = cell.proteome
             assert len(proteome) == 1, proteome
             p0 = proteome[0]
             assert len(p0.domains) == 1, p0.domains
@@ -152,7 +152,7 @@ def test_genome_generation_consistency():
             assert len(idxs) == 1
             ci = idxs[0]
             cell = world.get_cell(by_idx=ci)
-            proteome = cell.get_proteome()
+            proteome = cell.proteome
             assert len(proteome) == 1, proteome
             p0 = proteome[0]
             assert len(p0.domains) == 1
@@ -192,7 +192,7 @@ def test_genome_generation_consistency():
             assert len(idxs) == 1
             ci = idxs[0]
             cell = world.get_cell(by_idx=ci)
-            proteome = cell.get_proteome()
+            proteome = cell.proteome
             assert len(proteome) > 0
 
             pi = -1

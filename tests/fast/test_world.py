@@ -66,7 +66,7 @@ def test_degrade():
     chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=5)
 
-    world._mol_degrads = [0.8, 0.5]
+    world._mol_degrads = [0.8, 0.5]  # pylint: disable=protected-access
     world.molecule_map[0] = torch.tensor([layer0])
     world.molecule_map[1] = torch.tensor([layer0])
 
@@ -408,7 +408,7 @@ def test_generate_genome():
         cell = world.get_cell(by_idx=0)
         has_p0 = False
         has_p1 = False
-        proteome = cell.get_proteome()
+        proteome = cell.proteome
         for prot in proteome:
             has_cij = False
             has_ckij = False
@@ -835,9 +835,9 @@ def test_empty_proteome_and_genome_cells():
     assert world.n_cells == 3
 
     # get cells with empty proteomes
-    assert len(world.get_cell(by_idx=0).get_proteome()) == 0
-    assert len(world.get_cell(by_idx=1).get_proteome()) == 0
-    assert len(world.get_cell(by_idx=2).get_proteome()) == 0
+    assert len(world.get_cell(by_idx=0).proteome) == 0
+    assert len(world.get_cell(by_idx=1).proteome) == 0
+    assert len(world.get_cell(by_idx=2).proteome) == 0
 
     # load cells with empty fastAs
     with tempfile.TemporaryDirectory() as tmpdir:
