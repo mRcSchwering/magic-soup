@@ -121,7 +121,7 @@ fn divide_cells_if_possible(
     map_size: u16,
 ) -> (Vec<usize>, Vec<usize>, Vec<(u16, u16)>) {
     py.allow_threads(move || {
-        world::divide_cells_if_possible(&cell_idxs, &positions, &n_cells, &map_size)
+        world::divide_cells_if_possible_threaded(&cell_idxs, &positions, &n_cells, &map_size)
     })
 }
 
@@ -141,6 +141,7 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
     // world
     m.add_function(wrap_pyfunction!(get_neighbors, m)?)?;
+    m.add_function(wrap_pyfunction!(divide_cells_if_possible, m)?)?;
 
     Ok(())
 }

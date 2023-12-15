@@ -175,10 +175,34 @@ def test_divide_cells():
 
     genomes = [ms.random_genome(s=500) for _ in range(3)]
     cell_idxs = world.spawn_cells(genomes=genomes)
+    assert world.cell_map.sum() == 3
+
     parent_child_idxs = world.divide_cells(cell_idxs=cell_idxs)
+    assert len(parent_child_idxs) == 3
+    assert world.cell_map.sum() == 6
+    assert set(d[0] for d in parent_child_idxs) == {0, 1, 2}
+    assert set(d[1] for d in parent_child_idxs) == {3, 4, 5}
 
     parents, children = list(map(list, zip(*parent_child_idxs)))
     assert torch.all(world.cell_molecules[parents] == world.cell_molecules[children])
+    for parent, child in parent_child_idxs:
+        assert world.cell_genomes[parent] == world.cell_genomes[child]
+        assert world.cell_labels[parent] == world.cell_labels[child]
+
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry, map_size=2)
+
+    genomes = [ms.random_genome(s=500) for _ in range(2)]
+    cell_idxs = world.spawn_cells(genomes=genomes)
+    assert world.cell_map.sum() == 2
+
+    parent_child_idxs = world.divide_cells(cell_idxs=cell_idxs)
+    assert len(parent_child_idxs) == 2
+    assert world.cell_map.sum() == 4
+
+    parent_child_idxs = world.divide_cells(cell_idxs=cell_idxs)
+    assert len(parent_child_idxs) == 0
+    assert world.cell_map.sum() == 4
 
 
 def test_molecule_amount_integrity_when_changing_cells():

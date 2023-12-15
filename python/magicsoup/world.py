@@ -556,17 +556,21 @@ class World:
         # duplicates could lead to unexpected results
         cell_idxs = list(set(cell_idxs))
 
-        (
-            parent_idxs,
-            child_idxs,
-            child_pos,
-        ) = self._divide_cells_if_possible(parent_idxs=cell_idxs)
+        xs = self.cell_positions[:, 0].tolist()
+        ys = self.cell_positions[:, 1].tolist()
+        occupied_positions = [(x, y) for x, y in zip(xs, ys)]
+        (parent_idxs, child_idxs, child_pos) = _lib.divide_cells_if_possible(
+            cell_idxs, occupied_positions, self.n_cells, self.map_size
+        )
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
             return []
 
+        # increment cells, genomes, labels
         self.n_cells += n_new_cells
+        self.cell_genomes.extend([self.cell_genomes[d] for d in parent_idxs])
+        self.cell_labels.extend([self.cell_labels[d] for d in parent_idxs])
 
         self.cell_lifetimes = self._expand_c(t=self.cell_lifetimes, n=n_new_cells)
         self.cell_positions = self._expand_c(t=self.cell_positions, n=n_new_cells)
@@ -576,8 +580,9 @@ class World:
         self.kinetics.copy_cell_params(from_idxs=parent_idxs, to_idxs=child_idxs)
 
         # position new cells
-        # cell_map was already set in loop before
-        self.cell_positions[child_idxs] = torch.tensor(child_pos)  # TODO
+        child_pos = self._i32_tensor(child_pos)
+        self.cell_map[child_pos[:, 0], child_pos[:, 1]] = True
+        self.cell_positions[child_idxs] = child_pos
 
         # cells share molecules and increment cell divisions
         descendant_idxs = parent_idxs + child_idxs
@@ -664,6 +669,7 @@ class World:
         Parameters:
             cell_idxs: Indexes of cells that should be moved
         """
+        # TODO: as rs function? then remove _nghbrhd_map
         if len(cell_idxs) == 0:
             return
 
@@ -952,55 +958,6 @@ class World:
             self.kinetics.set_cell_params(
                 cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
             )
-
-    def _divide_cells_if_possible(
-        self, parent_idxs: list[int]
-    ) -> tuple[list[int], list[int], list[tuple[int, int]]]:
-        xs = self.cell_positions[:, 0].tolist()
-        ys = self.cell_positions[:, 1].tolist()
-        positions = [(x, y) for x, y in zip(xs, ys)]
-        (
-            successful_parent_idxs,
-            child_idxs,
-            new_positions,
-        ) = _lib.divide_cells_if_possible(
-            parent_idxs, positions, self.n_cells, self.map_size
-        )
-
-        return successful_parent_idxs, child_idxs, new_positions
-
-    def _divide_cells_if_possible_old(
-        self, parent_idxs: list[int]
-    ) -> tuple[list[int], list[int], list[torch.Tensor]]:
-        # TODO: as rust function?
-        run_idx = self.n_cells
-        child_idxs = []
-        successful_parent_idxs = []
-        new_positions = []
-        for parent_idx in parent_idxs:
-            pos = self.cell_positions[parent_idx]
-            nghbrhd = self._nghbrhd_map[tuple(pos.tolist())]  # type:ignore
-            pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-
-            n = pxls.size(0)
-            if n == 0:
-                continue
-
-            new_pos = pxls[random.randint(0, n - 1)]
-            new_positions.append(new_pos)
-
-            # immediately set, so that it is already
-            # True for the next iteration
-            self.cell_map[new_pos[0], new_pos[1]] = True
-
-            self.cell_genomes.append(self.cell_genomes[parent_idx])
-            self.cell_labels.append(self.cell_labels[parent_idx])
-
-            successful_parent_idxs.append(parent_idx)
-            child_idxs.append(run_idx)
-            run_idx += 1
-
-        return successful_parent_idxs, child_idxs, new_positions
 
     def _find_free_random_positions(self, n_cells: int) -> torch.Tensor:
         # available spots on map
