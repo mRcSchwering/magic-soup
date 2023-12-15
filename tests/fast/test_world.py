@@ -120,18 +120,21 @@ def test_add_cells():
     genomes = [ms.random_genome(s=d) for d in [500, 300, 100]]
     cells = [
         ms.Cell(
+            world=world,
             label="C0",
             genome=genomes[0],
             int_molecules=torch.tensor([0.5, 0.1]),
             ext_molecules=torch.tensor([1.0, 1.0]),
         ),
         ms.Cell(
+            world=world,
             label="C1",
             genome=genomes[1],
             int_molecules=torch.tensor([0.3, 0.4]),
             ext_molecules=torch.tensor([1.0, 1.0]),
         ),
         ms.Cell(
+            world=world,
             label="C2",
             genome=genomes[2],
             int_molecules=torch.tensor([0.9, 0.7]),
@@ -405,7 +408,7 @@ def test_generate_genome():
         cell = world.get_cell(by_idx=0)
         has_p0 = False
         has_p1 = False
-        proteome = cell.get_proteome(world=world)
+        proteome = cell.get_proteome()
         for prot in proteome:
             has_cij = False
             has_ckij = False
@@ -832,9 +835,9 @@ def test_empty_proteome_and_genome_cells():
     assert world.n_cells == 3
 
     # get cells with empty proteomes
-    assert len(world.get_cell(by_idx=0).get_proteome(world=world)) == 0
-    assert len(world.get_cell(by_idx=1).get_proteome(world=world)) == 0
-    assert len(world.get_cell(by_idx=2).get_proteome(world=world)) == 0
+    assert len(world.get_cell(by_idx=0).get_proteome()) == 0
+    assert len(world.get_cell(by_idx=1).get_proteome()) == 0
+    assert len(world.get_cell(by_idx=2).get_proteome()) == 0
 
     # load cells with empty fastAs
     with tempfile.TemporaryDirectory() as tmpdir:

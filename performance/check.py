@@ -117,7 +117,7 @@ def get_test(device: str, n: int, s: int):
         t0 = time.time()
         for idx in range(world.n_cells):
             cell = world.get_cell(by_idx=idx)
-            _ = cell.get_proteome(world=world)
+            _ = cell.proteome
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 

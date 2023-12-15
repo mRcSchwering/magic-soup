@@ -223,6 +223,7 @@ class World:
 
         pos = self.cell_positions[idx]
         return Cell(
+            world=self,
             idx=idx,
             genome=self.cell_genomes[idx],
             position=tuple(pos.tolist()),  # type: ignore
@@ -1081,6 +1082,7 @@ class Cell:
 
     def __init__(
         self,
+        world: World,
         genome: str,
         int_molecules: torch.Tensor,
         ext_molecules: torch.Tensor,
@@ -1089,7 +1091,9 @@ class Cell:
         label: str = "C",
         n_steps_alive: int = 0,
         n_divisions: int = 0,
+        proteome: list[Protein] | None = None,
     ):
+        self.world = world
         self.genome = genome
         self.label = label
         self.int_molecules = int_molecules
@@ -1099,21 +1103,28 @@ class Cell:
         self.n_steps_alive = n_steps_alive
         self.n_divisions = n_divisions
 
-    def get_proteome(self, world: World) -> list[Protein]:
-        """
-        Get a representation of the cell's proteome as a list of Protein objects
-        """
-        (cdss,) = world.genetics.translate_genomes(genomes=[self.genome])
-        return world.kinetics.get_proteome(proteome=cdss) if len(cdss) > 0 else []
+        self._proteome = proteome
+
+    @property
+    def proteome(self) -> list[Protein]:
+        if self._proteome is None:
+            (cdss,) = self.world.genetics.translate_genomes(genomes=[self.genome])
+            if len(cdss) > 0:
+                self._proteome = self.world.kinetics.get_proteome(proteome=cdss)
+            else:
+                self._proteome = []
+        return self._proteome
 
     def copy(self, **kwargs) -> "Cell":
         old_kwargs = {
+            "world": self.world,
             "genome": self.genome,
             "position": self.position,
             "idx": self.idx,
             "label": self.label,
             "n_steps_alive": self.n_steps_alive,
             "n_divisions": self.n_divisions,
+            "proteome": self._proteome,
         }
         return Cell(**{**old_kwargs, **kwargs})  # type: ignore
 
