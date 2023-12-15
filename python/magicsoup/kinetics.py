@@ -11,6 +11,7 @@ from magicsoup.containers import (
     RegulatoryDomain,
     Domain,
 )
+from magicsoup import _lib  # type: ignore
 
 # MAX,MIN should be at least x100 away from inf
 # EPS should be 1/MAX
@@ -539,9 +540,9 @@ class Kinetics:
         not_reg_lng = (~is_reg).int()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        Vmax_d = self.vmax_map(idxs0 * not_reg_lng)  # f32 (c,p,d)
+        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # f32 (c,p,d)
         Hills = self.hill_map(idxs0 * reg_lng)  # i32 (c,p,d)
-        Km_d = self.km_map(idxs1)  # f32 (c,p,d)
+        Kms = self.km_map(idxs1)  # f32 (c,p,d)
         signs = self.sign_map(idxs2)  # i32 (c,p,d)
 
         # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
@@ -549,11 +550,96 @@ class Kinetics:
         trnspts = self.transport_map(idxs3 * trnsp_lng)  # i32 (c,p,d,s)
         effectors = self.effector_map(idxs3 * reg_lng)  # i32 (c,p,d,s)
 
-        # N (c, p, d, s)
+        # effector vectors are multiplied with signs and hill coefficients
+        # no Int matmul impl in torch CUDA (dimenion is not shared)
+        A = torch.einsum(
+            "cpds,cpd->cpds", effectors.float(), (signs * Hills).float()
+        ).int()
+
+        # reaction stoichiometry N is derived from transporter and catalytic vectors
+        # vectors for regulatory domains or emptpy proteins are all 0s
         N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
 
-        # A (c, p, d, s)
-        A_d = torch.einsum("cpds,cpd->cpds", effectors, signs * Hills)
+        Nf_d = torch.where(N_d < 0, -N_d, 0)
+        Nb_d = torch.where(N_d > 0, N_d, 0)
+        mols = self.molecules
+        n_mols = len(mols)
+
+        prot_kwargs = _lib.get_proteome()
+
+        proteomes: list[Protein] = []
+        for dom_specs, start, stop, fwd in prot_kwargs:
+            prot_kwargs = {"cds_start": start, "cds_stop": stop, "is_fwd": fwd}
+            doms: list[Domain] = []
+            for dom_type, dom_kwargs in dom_specs:
+                if dom_type == 1:
+                    doms.append(CatalyticDomain(**dom_kwargs))
+                elif dom_type == 2:
+                    doms.append(TransporterDomain(**dom_kwargs))
+                elif dom_type == 3:
+                    doms.append(RegulatoryDomain(**dom_kwargs))
+
+            if len(doms) > 0:
+                proteomes.append(Protein(domains=doms, **prot_kwargs))
+
+        return proteomes
+
+    def get_proteome_old(
+        self,
+        proteome: list[ProteinSpecType],
+    ) -> list[Protein]:
+        """
+        Calculate cell parameters for a single proteome and return it as
+        a list of proteins
+
+        Arguments:
+            proteome: proteome which should be calculated
+
+        Retruns:
+            A list of objects that represent proteins with domains and their
+            specifications.
+        """
+        # get proteome tensors
+        dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
+            proteomes=[proteome]
+        )
+
+        # identify domain types
+        # 1=catalytic, 2=transporter, 3=regulatory
+        is_catal = dom_types == 1  # (c,p,d)
+        is_trnsp = dom_types == 2  # (c,p,d)
+        is_reg = dom_types == 3  # (c,p,d)
+
+        # map indices of domain specifications to concrete values
+        # idx0 is a 2-codon index specific for every domain type (n=4096)
+        # idx1-3 are 1-codon used for the floats (n=64)
+        # some values are not defined for certain domain types
+        # setting their indices to 0 lets them map to empty values (0-vector, NaN)
+        catal_lng = (is_catal).int()
+        trnsp_lng = (is_trnsp).int()
+        reg_lng = (is_reg).int()
+        not_reg_lng = (~is_reg).int()
+
+        # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
+        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # f32 (c,p,d)
+        Hills = self.hill_map(idxs0 * reg_lng)  # i32 (c,p,d)
+        Kms = self.km_map(idxs1)  # f32 (c,p,d)
+        signs = self.sign_map(idxs2)  # i32 (c,p,d)
+
+        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
+        reacts = self.reaction_map(idxs3 * catal_lng)  # i32 (c,p,d,s)
+        trnspts = self.transport_map(idxs3 * trnsp_lng)  # i32 (c,p,d,s)
+        effectors = self.effector_map(idxs3 * reg_lng)  # i32 (c,p,d,s)
+
+        # effector vectors are multiplied with signs and hill coefficients
+        # no Int matmul impl in torch CUDA (dimenion is not shared)
+        A = torch.einsum(
+            "cpds,cpd->cpds", effectors.float(), (signs * Hills).float()
+        ).int()
+
+        # reaction stoichiometry N is derived from transporter and catalytic vectors
+        # vectors for regulatory domains or emptpy proteins are all 0s
+        N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
 
         Nf_d = torch.where(N_d < 0, -N_d, 0)
         Nb_d = torch.where(N_d > 0, N_d, 0)
@@ -581,8 +667,8 @@ class Kinetics:
                         doms.append(
                             CatalyticDomain(
                                 reaction=(lfts, rgts),
-                                km=Km_d[0][pi][di].item(),
-                                vmax=Vmax_d[0][pi][di].item(),
+                                km=Kms[0][pi][di].item(),
+                                vmax=Vmaxs[0][pi][di].item(),
                                 **kwargs,
                             )
                         )
@@ -593,8 +679,8 @@ class Kinetics:
                     doms.append(
                         TransporterDomain(
                             molecule=self.mi_2_mol[min(mis)],
-                            km=Km_d[0][pi][di].item(),
-                            vmax=Vmax_d[0][pi][di].item(),
+                            km=Kms[0][pi][di].item(),
+                            vmax=Vmaxs[0][pi][di].item(),
                             is_exporter=bool(N_d[0][pi][di][min(mis)] < 0),
                             **kwargs,
                         )
@@ -602,7 +688,7 @@ class Kinetics:
 
                 # regulatory domain (A has one signal != 0)
                 if dom_types[0][pi][di].item() == 3:
-                    mi = int(torch.argwhere(A_d[0][pi][di] != 0)[0].item())
+                    mi = int(torch.argwhere(A[0][pi][di] != 0)[0].item())
                     if mi in self.mi_2_mol:
                         is_trnsm = False
                         mol = self.mi_2_mol[mi]
@@ -612,9 +698,9 @@ class Kinetics:
                     doms.append(
                         RegulatoryDomain(
                             effector=mol,
-                            km=Km_d[0][pi][di].item(),
-                            hill=int(A_d[0, pi, di, mi].abs()),
-                            is_inhibiting=bool((A_d[0][pi][di][mi] < 0).item()),
+                            km=Kms[0][pi][di].item(),
+                            hill=int(A[0, pi, di, mi].abs()),
+                            is_inhibiting=bool((A[0][pi][di][mi] < 0).item()),
                             is_transmembrane=is_trnsm,
                             **kwargs,
                         )

@@ -109,13 +109,16 @@ def mutations(device: str, n: int, s: int):
 
 
 def get_test(device: str, n: int, s: int):
+    # (3.67+-0.29)s - test
     genomes = _gen_genomes(n=n, s=s)
     tds = []
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, device=device)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        world.move_cells(cell_idxs=list(range(world.n_cells)))
+        for idx in range(world.n_cells):
+            cell = world.get_cell(by_idx=idx)
+            _ = cell.get_proteome(world=world)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 

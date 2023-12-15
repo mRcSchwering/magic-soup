@@ -32,3 +32,55 @@ def test_molecule_mappings():
     assert chem.mol_2_idx[_Y] == 1
     assert chem.molname_2_idx["X"] == 0
     assert chem.molname_2_idx["Y"] == 1
+
+
+def test_molecule_from_name():
+    X2 = cntnrs.Molecule.from_name(name="X")
+    Y2 = cntnrs.Molecule.from_name(name="Y")
+    assert X2 is _X
+    assert Y2 is _Y
+
+
+def test_domains_from_dict():
+    kwargs = {"reaction": (["X"], ["Y"]), "km": 1.0, "vmax": 2.0, "start": 1, "end": 2}
+    dom = cntnrs.CatalyticDomain.from_dict(kwargs)
+    assert dom.substrates == [_X]
+    assert dom.products == [_Y]
+    assert dom.km == 1.0
+    assert dom.vmax == 2.0
+    assert dom.start == 1
+    assert dom.end == 2
+
+    kwargs = {
+        "molecule": "X",
+        "km": 1.0,
+        "vmax": 2.0,
+        "is_exporter": True,
+        "start": 1,
+        "end": 2,
+    }
+    dom = cntnrs.TransporterDomain.from_dict(kwargs)
+    assert dom.molecule is _X
+    assert dom.is_exporter
+    assert dom.km == 1.0
+    assert dom.vmax == 2.0
+    assert dom.start == 1
+    assert dom.end == 2
+
+    kwargs = {
+        "effector": "X",
+        "km": 1.0,
+        "hill": 5,
+        "is_inhibiting": True,
+        "is_transmembrane": True,
+        "start": 1,
+        "end": 2,
+    }
+    dom = cntnrs.RegulatoryDomain.from_dict(kwargs)
+    assert dom.effector is _X
+    assert dom.is_inhibiting
+    assert dom.is_transmembrane
+    assert dom.hill == 5
+    assert dom.km == 1.0
+    assert dom.start == 1
+    assert dom.end == 2

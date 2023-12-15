@@ -4,9 +4,6 @@ from magicsoup.util import nt_seqs
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup import _lib  # type: ignore
 
-# TODO: constant dom_type_size and dom_size
-#       in py and rs
-
 
 def _get_n(p: float, s: int, name: str) -> int:
     n = int(p * s)

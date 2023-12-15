@@ -128,6 +128,13 @@ class Molecule:
             cls._instances[name] = super().__new__(cls)
         return cls._instances[name]
 
+    @classmethod
+    def from_name(cls, name: str) -> "Molecule":
+        """Get Molecule instance from its name (it is has already been defined)"""
+        if name not in Molecule._instances:
+            raise ValueError(f"Molecule {name} was not defined yet")
+        return Molecule._instances[name]
+
     def __getnewargs__(self):
         # so that pickle can load instances
         return (
@@ -341,6 +348,24 @@ class CatalyticDomain(Domain):
         self.km = km
         self.vmax = vmax
 
+    @classmethod
+    def from_dict(cls, kwargs: dict) -> "CatalyticDomain":
+        """
+        Convencience method for creating an instance from a dict.
+        All parameters must be present as keys.
+        Molecules are provided by their name.
+        """
+        lft, rgt = kwargs["reaction"]
+        reaction = (
+            [Molecule.from_name(name=d) for d in lft],
+            [Molecule.from_name(name=d) for d in rgt],
+        )
+        km = kwargs["km"]
+        vmax = kwargs["vmax"]
+        start = kwargs["start"]
+        end = kwargs["end"]
+        return cls(reaction=reaction, km=km, vmax=vmax, start=start, end=end)
+
     def __repr__(self) -> str:
         ins = ",".join(str(d) for d in self.substrates)
         outs = ",".join(str(d) for d in self.products)
@@ -412,6 +437,28 @@ class TransporterDomain(Domain):
         self.vmax = vmax
         self.is_exporter = is_exporter
 
+    @classmethod
+    def from_dict(cls, kwargs: dict) -> "TransporterDomain":
+        """
+        Convencience method for creating an instance from a dict.
+        All parameters must be present as keys.
+        Molecules are provided by their name.
+        """
+        molecule = Molecule.from_name(name=kwargs["molecule"])
+        km = kwargs["km"]
+        vmax = kwargs["vmax"]
+        is_exporter = kwargs["is_exporter"]
+        start = kwargs["start"]
+        end = kwargs["end"]
+        return cls(
+            molecule=molecule,
+            km=km,
+            vmax=vmax,
+            is_exporter=is_exporter,
+            start=start,
+            end=end,
+        )
+
     def __repr__(self) -> str:
         sign = "exporter" if self.is_exporter else "importer"
         return f"TransporterDomain({self.molecule},Km={self.km:.2e},Vmax={self.vmax:.2e},{sign})"
@@ -482,6 +529,30 @@ class RegulatoryDomain(Domain):
         self.hill = int(hill)
         self.is_transmembrane = is_transmembrane
         self.is_inhibiting = is_inhibiting
+
+    @classmethod
+    def from_dict(cls, kwargs: dict) -> "RegulatoryDomain":
+        """
+        Convencience method for creating an instance from a dict.
+        All parameters must be present as keys.
+        Molecules are provided by their name.
+        """
+        effector = Molecule.from_name(name=kwargs["effector"])
+        km = kwargs["km"]
+        hill = kwargs["hill"]
+        is_inhibiting = kwargs["is_inhibiting"]
+        is_transmembrane = kwargs["is_transmembrane"]
+        start = kwargs["start"]
+        end = kwargs["end"]
+        return cls(
+            effector=effector,
+            km=km,
+            hill=hill,
+            is_inhibiting=is_inhibiting,
+            is_transmembrane=is_transmembrane,
+            start=start,
+            end=end,
+        )
 
     def __repr__(self) -> str:
         loc = "transmembrane" if self.is_transmembrane else "cytosolic"
