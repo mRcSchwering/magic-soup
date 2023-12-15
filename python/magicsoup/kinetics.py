@@ -1,5 +1,6 @@
 from typing import Any
 import math
+import json
 import random
 import torch
 from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
@@ -552,21 +553,30 @@ class Kinetics:
 
         # effector vectors are multiplied with signs and hill coefficients
         # no Int matmul impl in torch CUDA (dimenion is not shared)
-        A = torch.einsum(
-            "cpds,cpd->cpds", effectors.float(), (signs * Hills).float()
-        ).int()
+        # A = torch.einsum(
+        #     "cpds,cpd->cpds", effectors.float(), (signs * Hills).float()
+        # ).int()
 
         # reaction stoichiometry N is derived from transporter and catalytic vectors
         # vectors for regulatory domains or emptpy proteins are all 0s
-        N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
+        # N = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
 
         # Nf_d = torch.where(N_d < 0, -N_d, 0)
         # Nb_d = torch.where(N_d > 0, N_d, 0)
-        mols = self.molecules
-        n_mols = len(mols)
 
-        proteome_kwargs = _lib.get_proteome(Vmaxs[0], Kms[0], A[0], N_d[0], n_mols)
-        return [Protein.from_dict(d) for d in proteome_kwargs]
+        data = _lib.get_proteome(
+            proteome,
+            Vmaxs[0].tolist(),
+            Kms[0].tolist(),
+            Hills[0].tolist(),
+            signs[0].tolist(),
+            reacts[0].tolist(),
+            trnspts[0].tolist(),
+            effectors[0].tolist(),
+            [d.name for d in self.molecules],
+        )
+        array = json.loads(data)["data"]
+        return [Protein.from_dict(d) for d in array]
 
     def get_proteome_old(
         self,

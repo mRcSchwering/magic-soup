@@ -639,6 +639,12 @@ class Protein:
 
     @classmethod
     def from_dict(cls, kwargs: dict) -> "Protein":
+        """
+        Create Protein instance from dict. Key must match arguments.
+        Domains are set as a list of tuples `(dom_type, dom_kwargs)` where
+        `dom_types` is domain type integer 1 (catalytic), 2 (transporter), or
+        3 (transporter) and `dom_kwargs` is a dict with kwargs for the domain's `from_dict()`.
+        """
         start = kwargs["cds_start"]
         end = kwargs["cds_end"]
         is_fwd = kwargs["is_fwd"]

@@ -4,6 +4,7 @@ extern crate rand_distr;
 extern crate rayon;
 
 mod genetics;
+mod kinetics;
 mod mutations;
 mod util;
 mod world;
@@ -152,6 +153,28 @@ fn move_cells(
     py.allow_threads(move || world::move_cells_threaded(&cell_idxs, &positions, &map_size))
 }
 
+// kinetics
+
+#[pyfunction]
+fn get_proteome(
+    py: Python<'_>,
+    proteome: Vec<kinetics::ProteinSpecType>,
+    vmaxs: Vec<Vec<f32>>,
+    kms: Vec<Vec<f32>>,
+    hills: Vec<Vec<u8>>,
+    signs: Vec<Vec<i8>>,
+    reacts: Vec<Vec<Vec<i8>>>,
+    trnspts: Vec<Vec<Vec<i8>>>,
+    effectors: Vec<Vec<Vec<i8>>>,
+    molecules: Vec<String>,
+) -> String {
+    py.allow_threads(move || {
+        kinetics::get_proteome_threaded(
+            &proteome, &vmaxs, &kms, &hills, &signs, &reacts, &trnspts, &effectors, &molecules,
+        )
+    })
+}
+
 // lib
 
 #[pymodule]
@@ -174,6 +197,9 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_neighbors, m)?)?;
     m.add_function(wrap_pyfunction!(divide_cells_if_possible, m)?)?;
     m.add_function(wrap_pyfunction!(move_cells, m)?)?;
+
+    // kinetics
+    m.add_function(wrap_pyfunction!(get_proteome, m)?)?;
 
     Ok(())
 }
