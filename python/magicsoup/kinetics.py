@@ -560,29 +560,13 @@ class Kinetics:
         # vectors for regulatory domains or emptpy proteins are all 0s
         N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
 
-        Nf_d = torch.where(N_d < 0, -N_d, 0)
-        Nb_d = torch.where(N_d > 0, N_d, 0)
+        # Nf_d = torch.where(N_d < 0, -N_d, 0)
+        # Nb_d = torch.where(N_d > 0, N_d, 0)
         mols = self.molecules
         n_mols = len(mols)
 
-        prot_kwargs = _lib.get_proteome()
-
-        proteomes: list[Protein] = []
-        for dom_specs, start, stop, fwd in prot_kwargs:
-            prot_kwargs = {"cds_start": start, "cds_stop": stop, "is_fwd": fwd}
-            doms: list[Domain] = []
-            for dom_type, dom_kwargs in dom_specs:
-                if dom_type == 1:
-                    doms.append(CatalyticDomain(**dom_kwargs))
-                elif dom_type == 2:
-                    doms.append(TransporterDomain(**dom_kwargs))
-                elif dom_type == 3:
-                    doms.append(RegulatoryDomain(**dom_kwargs))
-
-            if len(doms) > 0:
-                proteomes.append(Protein(domains=doms, **prot_kwargs))
-
-        return proteomes
+        proteome_kwargs = _lib.get_proteome(Vmaxs[0], Kms[0], A[0], N_d[0], n_mols)
+        return [Protein.from_dict(d) for d in proteome_kwargs]
 
     def get_proteome_old(
         self,

@@ -84,3 +84,75 @@ def test_domains_from_dict():
     assert dom.km == 1.0
     assert dom.start == 1
     assert dom.end == 2
+
+
+def test_protein_from_dict():
+    cat_kwargs = (
+        1,
+        {"reaction": (["X"], ["Y"]), "km": 1.0, "vmax": 2.0, "start": 1, "end": 2},
+    )
+    trnsp_kwargs = (
+        2,
+        {
+            "molecule": "X",
+            "km": 1.0,
+            "vmax": 2.0,
+            "is_exporter": True,
+            "start": 1,
+            "end": 2,
+        },
+    )
+    reg_kwargs = (
+        3,
+        {
+            "effector": "X",
+            "km": 1.0,
+            "hill": 5,
+            "is_inhibiting": True,
+            "is_transmembrane": True,
+            "start": 1,
+            "end": 2,
+        },
+    )
+
+    kwargs = {
+        "cds_start": 1,
+        "cds_end": 2,
+        "is_fwd": True,
+        "domains": [cat_kwargs, reg_kwargs, trnsp_kwargs],
+    }
+    prot = cntnrs.Protein.from_dict(kwargs)
+
+    assert prot.cds_start == 1
+    assert prot.cds_end == 2
+    assert prot.is_fwd
+    assert len(prot.domains) == 3
+    assert prot.n_domains == 3
+
+    dom = prot.domains[0]
+    assert isinstance(dom, cntnrs.CatalyticDomain)
+    assert dom.substrates == [_X]
+    assert dom.products == [_Y]
+    assert dom.km == 1.0
+    assert dom.vmax == 2.0
+    assert dom.start == 1
+    assert dom.end == 2
+
+    dom = prot.domains[2]
+    assert isinstance(dom, cntnrs.TransporterDomain)
+    assert dom.molecule is _X
+    assert dom.is_exporter
+    assert dom.km == 1.0
+    assert dom.vmax == 2.0
+    assert dom.start == 1
+    assert dom.end == 2
+
+    dom = prot.domains[1]
+    assert isinstance(dom, cntnrs.RegulatoryDomain)
+    assert dom.effector is _X
+    assert dom.is_inhibiting
+    assert dom.is_transmembrane
+    assert dom.hill == 5
+    assert dom.km == 1.0
+    assert dom.start == 1
+    assert dom.end == 2

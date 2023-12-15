@@ -637,6 +637,24 @@ class Protein:
         self.cds_end = cds_end
         self.is_fwd = is_fwd
 
+    @classmethod
+    def from_dict(cls, kwargs: dict) -> "Protein":
+        start = kwargs["cds_start"]
+        end = kwargs["cds_end"]
+        is_fwd = kwargs["is_fwd"]
+        dom_specs = kwargs["domains"]
+
+        doms: list[Domain] = []
+        for dom_type, dom_kwargs in dom_specs:
+            if dom_type == 1:
+                doms.append(CatalyticDomain.from_dict(dom_kwargs))
+            elif dom_type == 2:
+                doms.append(TransporterDomain.from_dict(dom_kwargs))
+            elif dom_type == 3:
+                doms.append(RegulatoryDomain.from_dict(dom_kwargs))
+
+        return Protein(cds_start=start, cds_end=end, is_fwd=is_fwd, domains=doms)
+
     def __repr__(self) -> str:
         kwargs = {
             "cds_start": self.cds_start,
