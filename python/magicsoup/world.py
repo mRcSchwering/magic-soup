@@ -1,5 +1,4 @@
 import random
-from itertools import product
 import math
 from typing import Any
 from io import BytesIO
@@ -8,7 +7,6 @@ from pathlib import Path
 import torch
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup.util import (
-    moore_nghbrhd,
     round_down,
     random_genome,
     randstr,
@@ -177,11 +175,6 @@ class World:
         self._mol_degrads = mol_degrads
         self._diffusion = diffusion
         self._permeation = permeation
-
-        self._nghbrhd_map = {
-            (x, y): self._i32_tensor(moore_nghbrhd(x, y, map_size))
-            for x, y in product(range(map_size), range(map_size))
-        }
 
         self.n_cells = 0
         self.cell_genomes: list[str] = []
@@ -669,27 +662,23 @@ class World:
         Parameters:
             cell_idxs: Indexes of cells that should be moved
         """
-        # TODO: as rs function? then remove _nghbrhd_map
         if len(cell_idxs) == 0:
             return
 
         # duplicates could lead to unexpected results
         cell_idxs = list(set(cell_idxs))
 
-        for cell_idx in cell_idxs:
-            old_pos = self.cell_positions[cell_idx]
-            nghbrhd = self._nghbrhd_map[tuple(old_pos.tolist())]  # type: ignore
-            pxls = nghbrhd[~self.cell_map[nghbrhd[:, 0], nghbrhd[:, 1]]]
-            n = pxls.size(0)
+        xs = self.cell_positions[:, 0].tolist()
+        ys = self.cell_positions[:, 1].tolist()
+        positions = [(x, y) for x, y in zip(xs, ys)]
+        new_pos, moved_idxs = _lib.move_cells(cell_idxs, positions, self.map_size)
 
-            if n == 0:
-                continue
-
-            # move cells
-            new_pos = pxls[random.randint(0, n - 1)]
-            self.cell_map[old_pos[0], old_pos[1]] = False
-            self.cell_map[new_pos[0], new_pos[1]] = True
-            self.cell_positions[cell_idx] = new_pos
+        # reposition cells
+        old_pos = self.cell_positions[moved_idxs]
+        self.cell_map[old_pos[:, 0], old_pos[:, 1]] = False
+        new_pos = self._i32_tensor(new_pos)
+        self.cell_map[new_pos[:, 0], new_pos[:, 1]] = True
+        self.cell_positions[moved_idxs] = new_pos
 
     def reposition_cells(self, cell_idxs: list[int]):
         """

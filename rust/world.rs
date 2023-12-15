@@ -99,15 +99,14 @@ pub fn get_neighbors_threaded(
     unique(res)
 }
 
-// For a cell with idx cell_idx get all possible positions
-// in Moore's neighborhood which are not already occupied
-// as indicated by positions and a circular square 2D map of map_size
-pub fn get_possible_cell_divisions(
-    cell_idx: &usize,
+// For a position (x,y) get positions in Moore's neighborhood which are not
+// already occupied as indicated by positions and a circular square 2D map of map_size
+pub fn get_unoccupied_nghbhd(
+    x: &u16,
+    y: &u16,
     positions: &Vec<(u16, u16)>,
     map_size: &u16,
 ) -> Vec<(u16, u16)> {
-    let (x, y) = positions[*cell_idx];
     let nghbhd = moores_nghbhd(&x, &y, map_size);
     nghbhd
         .iter()
@@ -118,8 +117,8 @@ pub fn get_possible_cell_divisions(
         .collect()
 }
 
-// Threaded function that finds possible cell divisions for cell_idxs
-// and divides them if they can as of get_possible_cell_divisions()
+// Threaded function that finds possible cell divisions as of
+// get_unoccupied_nghbhd() for multiple cells as cell_idxs
 pub fn divide_cells_if_possible_threaded(
     cell_idxs: &Vec<usize>,
     positions: &Vec<(u16, u16)>,
@@ -128,7 +127,10 @@ pub fn divide_cells_if_possible_threaded(
 ) -> (Vec<usize>, Vec<usize>, Vec<(u16, u16)>) {
     let opts: Vec<Vec<(u16, u16)>> = cell_idxs
         .into_par_iter()
-        .map(|d| get_possible_cell_divisions(d, positions, map_size))
+        .map(|d| {
+            let (x, y) = positions[*d];
+            get_unoccupied_nghbhd(&x, &y, positions, map_size)
+        })
         .collect();
 
     let mut rng = rand::thread_rng();
@@ -152,4 +154,49 @@ pub fn divide_cells_if_possible_threaded(
     }
 
     (succ_idxs, child_idxs, child_poss)
+}
+
+// Threaded function that finds possible cell movements as of
+// get_unoccupied_nghbhd() for multiple cells as cell_idxs
+pub fn move_cells_threaded(
+    cell_idxs: &Vec<usize>,
+    positions: &Vec<(u16, u16)>,
+    map_size: &u16,
+) -> (Vec<(u16, u16)>, Vec<usize>) {
+    let const_cell_idxs: Vec<usize> = (0..positions.len())
+        .filter_map(|d| match cell_idxs.binary_search(&d) {
+            Ok(_) => None,
+            _ => Some(d),
+        })
+        .collect();
+
+    let const_occ_pos: Vec<(u16, u16)> = const_cell_idxs.iter().map(|d| positions[*d]).collect();
+    let opts: Vec<Vec<(u16, u16)>> = cell_idxs
+        .into_par_iter()
+        .map(|d| {
+            let (x, y) = positions[*d];
+            get_unoccupied_nghbhd(&x, &y, &const_occ_pos, map_size)
+        })
+        .collect();
+
+    let mut rng = rand::thread_rng();
+    let mut moved_idxs: Vec<usize> = vec![];
+    let mut new_positions: Vec<(u16, u16)> = vec![];
+    let mut current_occ_pos: Vec<(u16, u16)> = cell_idxs.iter().map(|d| positions[*d]).collect();
+
+    for (idx, cell_idx) in cell_idxs.iter().enumerate() {
+        let cell_opts: Vec<&(u16, u16)> = opts[idx]
+            .iter()
+            .filter(|d| !current_occ_pos.contains(d))
+            .collect();
+
+        if let Some(&d) = cell_opts.choose(&mut rng) {
+            let new_pos = *d;
+            new_positions.push(new_pos);
+            moved_idxs.push(*cell_idx);
+            current_occ_pos[idx] = new_pos;
+        }
+    }
+
+    (new_positions, moved_idxs)
 }

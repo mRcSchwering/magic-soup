@@ -115,7 +115,7 @@ def get_test(device: str, n: int, s: int):
         world = ms.World(chemistry=CHEMISTRY, device=device)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        _ = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
+        world.move_cells(cell_idxs=list(range(world.n_cells)))
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 

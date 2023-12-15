@@ -205,6 +205,49 @@ def test_divide_cells():
     assert world.cell_map.sum() == 4
 
 
+def test_move_cells():
+    chemistry = ms.Chemistry(molecules=MOLECULES[:2], reactions=[])
+    world = ms.World(chemistry=chemistry)
+
+    genomes = [ms.random_genome(s=500) for _ in range(3)]
+    cell_idxs = world.spawn_cells(genomes=genomes)
+    assert world.cell_map.sum() == 3
+    orig_positions = world.cell_positions.clone()
+    orig_molecules = world.cell_molecules.clone()
+    orig_labels = [d for d in world.cell_labels]
+    orig_genomes = [d for d in world.cell_genomes]
+
+    world.move_cells(cell_idxs=cell_idxs)
+    assert world.cell_map.sum() == 3
+    assert (orig_molecules == world.cell_molecules).all()
+    assert orig_labels == world.cell_labels
+    assert orig_genomes == world.cell_genomes
+    for idx in cell_idxs:
+        new_pos = world.cell_positions[idx]
+        old_pos = orig_positions[idx]
+        assert not (new_pos == old_pos).all()
+        assert world.cell_map[new_pos[0], new_pos[1]]
+        assert not world.cell_map[old_pos[0], old_pos[1]], "unlikely"
+
+    world.move_cells(cell_idxs=cell_idxs)
+    assert world.cell_map.sum() == 3
+    assert (orig_molecules == world.cell_molecules).all()
+    assert orig_labels == world.cell_labels
+    assert orig_genomes == world.cell_genomes
+
+    world.move_cells(cell_idxs=cell_idxs)
+    assert world.cell_map.sum() == 3
+    assert (orig_molecules == world.cell_molecules).all()
+    assert orig_labels == world.cell_labels
+    assert orig_genomes == world.cell_genomes
+
+    world.move_cells(cell_idxs=cell_idxs)
+    assert world.cell_map.sum() == 3
+    assert (orig_molecules == world.cell_molecules).all()
+    assert orig_labels == world.cell_labels
+    assert orig_genomes == world.cell_genomes
+
+
 def test_molecule_amount_integrity_when_changing_cells():
     tolerance = 1e-1
 
