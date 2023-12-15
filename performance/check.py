@@ -109,7 +109,6 @@ def mutations(device: str, n: int, s: int):
 
 
 def get_test(device: str, n: int, s: int):
-    # (3.67+-0.29)s - test
     genomes = _gen_genomes(n=n, s=s)
     tds = []
     for _ in range(R):
