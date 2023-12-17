@@ -556,6 +556,8 @@ class Kinetics:
             effectors[0].tolist(),
             [d.name for d in self.molecules],
         )
+        res = _lib.test([d.name for d in self.molecules])
+        print(res)
         array = json.loads(data)["data"]
         return [Protein.from_dict(d) for d in array]
 
