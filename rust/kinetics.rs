@@ -93,10 +93,12 @@ fn get_protein<'py>(
         .iter()
         .enumerate()
         .map(|(dom_i, (idxs, start, end))| {
+            // idcs structure: domtype, idx0, idx1, idx2, idx3
+            // where domtype: 1=catalytical, 2=transporter, 3=regulatory
             let domtype = idxs.0;
             let kwargs = PyDict::new(py);
-            kwargs.set_item("start", start).expect("Couldnt set start");
-            kwargs.set_item("end", end).expect("Couldnt set end");
+            kwargs.set_item("start", start).unwrap();
+            kwargs.set_item("end", end).unwrap();
             if domtype == 1 {
                 set_catalytic_domain(
                     kwargs,
