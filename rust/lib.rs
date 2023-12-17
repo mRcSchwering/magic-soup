@@ -10,6 +10,7 @@ mod util;
 mod world;
 
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use std::collections::HashMap;
 
 // util
@@ -155,30 +156,6 @@ fn move_cells(
 
 // kinetics
 
-// TODO: entweder so oder https://github.com/PyO3/pyo3/discussions/3078
-fn f(res: &pyo3::types::PyDict, names: &Vec<String>) {
-    let py = res.py();
-    let vals: Vec<&pyo3::types::PyDict> = names
-        .iter()
-        .enumerate()
-        .map(|(i, d)| {
-            let dict = pyo3::types::PyDict::new(py);
-            dict.set_item(d, i).unwrap();
-            dict
-        })
-        .collect();
-    res.set_item("data", vals).unwrap();
-}
-
-#[pyfunction]
-fn test(py: Python<'_>, names: Vec<String>) -> &pyo3::types::PyDict {
-    let res = pyo3::types::PyDict::new(py);
-
-    f(res, &names);
-    res.set_item("asd", "anther").unwrap();
-    res
-}
-
 #[pyfunction]
 fn get_proteome(
     py: Python<'_>,
@@ -191,12 +168,10 @@ fn get_proteome(
     trnspts: Vec<Vec<Vec<i8>>>,
     effectors: Vec<Vec<Vec<i8>>>,
     molecules: Vec<String>,
-) -> String {
-    py.allow_threads(move || {
-        kinetics::get_proteome_threaded(
-            &proteome, &vmaxs, &kms, &hills, &signs, &reacts, &trnspts, &effectors, &molecules,
-        )
-    })
+) -> Vec<&PyDict> {
+    kinetics::get_proteome(
+        py, &proteome, &vmaxs, &kms, &hills, &signs, &reacts, &trnspts, &effectors, &molecules,
+    )
 }
 
 // lib
@@ -224,7 +199,6 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
     // kinetics
     m.add_function(wrap_pyfunction!(get_proteome, m)?)?;
-    m.add_function(wrap_pyfunction!(test, m)?)?;
 
     Ok(())
 }

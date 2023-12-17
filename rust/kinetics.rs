@@ -1,26 +1,11 @@
-use rayon::prelude::*;
+use pyo3::marker::Python;
+use pyo3::types::PyDict;
 
 pub type DomainSpecType = ((u8, u8, u8, u8, u16), usize, usize);
 pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 
-fn fmt_int_kwarg(key: &str, val: usize) -> String {
-    format!("\"{key}\":{val}")
-}
-
-fn fmt_float_kwarg(key: &str, val: f32) -> String {
-    format!("\"{key}\":{:.5}", val)
-}
-
-fn fmt_bool_kwarg(key: &str, val: bool) -> String {
-    format!("\"{key}\":{val}")
-}
-
-fn fmt_arr_kwarg(key: &str, val: Vec<String>) -> String {
-    format!("\"{key}\":[{}]", val.join(","))
-}
-
-fn push_catalytic_domain(
-    kwargs: &mut Vec<String>,
+fn set_catalytic_domain(
+    kwargs: &PyDict,
     km: &f32,
     vmax: &f32,
     sign: &i8,
@@ -35,21 +20,19 @@ fn push_catalytic_domain(
             continue;
         } else if signed_n > 0 {
             let mol = &molecules[mol_i];
-            rgts.extend((0..n.abs()).map(|_| format!("\"{}\"", mol.to_string())));
+            rgts.extend((0..n.abs()).map(|_| mol.to_string()));
         } else {
             let mol = &molecules[mol_i];
-            lfts.extend((0..n.abs()).map(|_| format!("\"{}\"", mol.to_string())));
+            lfts.extend((0..n.abs()).map(|_| mol.to_string()));
         }
     }
-    kwargs.extend([
-        fmt_float_kwarg("km", *km),
-        fmt_float_kwarg("vmax", *vmax),
-        format!("\"reaction\":[[{}],[{}]]", lfts.join(","), rgts.join(",")),
-    ])
+    kwargs.set_item("km", km).unwrap();
+    kwargs.set_item("vmax", vmax).unwrap();
+    kwargs.set_item("reaction", (lfts, rgts)).unwrap();
 }
 
-fn push_transporter_domain(
-    kwargs: &mut Vec<String>,
+fn set_transporter_domain(
+    kwargs: &PyDict,
     km: &f32,
     vmax: &f32,
     sign: &i8,
@@ -58,16 +41,15 @@ fn push_transporter_domain(
 ) {
     let mol_i = trnspts.iter().position(|d| *d != 0).unwrap();
     let signed_n = trnspts[mol_i] * sign;
-    kwargs.extend([
-        fmt_float_kwarg("km", *km),
-        fmt_float_kwarg("vmax", *vmax),
-        fmt_bool_kwarg("is_exporter", signed_n < 0),
-        format!("\"molecule\":\"{}\"", molecules[mol_i]),
-    ])
+    let molecule = &molecules[mol_i];
+    kwargs.set_item("km", km).unwrap();
+    kwargs.set_item("vmax", vmax).unwrap();
+    kwargs.set_item("is_exporter", signed_n < 0).unwrap();
+    kwargs.set_item("molecule", molecule.to_string()).unwrap();
 }
 
-fn push_regulatory_domain(
-    kwargs: &mut Vec<String>,
+fn set_regulatory_domain(
+    kwargs: &PyDict,
     km: &f32,
     hill: &u8,
     sign: &i8,
@@ -78,26 +60,24 @@ fn push_regulatory_domain(
     let i = effectors.iter().position(|d| *d != 0).unwrap();
     let signed_n = effectors[i] * sign;
     let mol_i: usize;
-    let is_transmembrane: bool;
+    let is_trns: bool;
     if i < *n_mols {
         mol_i = i;
-        is_transmembrane = false;
+        is_trns = false;
     } else {
         mol_i = i - n_mols;
-        is_transmembrane = true;
+        is_trns = true;
     }
-    kwargs.extend([
-        fmt_float_kwarg("km", *km),
-        fmt_int_kwarg("hill", *hill as usize),
-        fmt_bool_kwarg("is_transmembrane", is_transmembrane),
-        fmt_bool_kwarg("is_inhibiting", signed_n < 0),
-        format!("\"effector\":\"{}\"", molecules[mol_i]),
-    ])
+    let effector = &molecules[mol_i];
+    kwargs.set_item("km", km).unwrap();
+    kwargs.set_item("hill", hill).unwrap();
+    kwargs.set_item("is_transmembrane", is_trns).unwrap();
+    kwargs.set_item("is_inhibiting", signed_n < 0).unwrap();
+    kwargs.set_item("effector", effector.to_string()).unwrap();
 }
 
-// Get protein init kwargs as JSON parsable string
-// yes this is ridiculous
-fn get_protein(
+fn get_protein<'py>(
+    py: Python<'py>,
     protein: &ProteinSpecType,
     vmaxs: &Vec<f32>,
     kms: &Vec<f32>,
@@ -108,16 +88,18 @@ fn get_protein(
     effectors: &Vec<Vec<i8>>,
     molecules: &Vec<String>,
     n_mols: &usize,
-) -> String {
-    let domstrs: Vec<String> = (protein.0)
+) -> &'py PyDict {
+    let domains: Vec<(u8, &PyDict)> = (protein.0)
         .iter()
         .enumerate()
         .map(|(dom_i, (idxs, start, end))| {
             let domtype = idxs.0;
-            let mut kwargs = vec![fmt_int_kwarg("start", *start), fmt_int_kwarg("end", *end)];
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("start", start).expect("Couldnt set start");
+            kwargs.set_item("end", end).expect("Couldnt set end");
             if domtype == 1 {
-                push_catalytic_domain(
-                    &mut kwargs,
+                set_catalytic_domain(
+                    kwargs,
                     &kms[dom_i],
                     &vmaxs[dom_i],
                     &signs[dom_i],
@@ -125,8 +107,8 @@ fn get_protein(
                     molecules,
                 )
             } else if domtype == 2 {
-                push_transporter_domain(
-                    &mut kwargs,
+                set_transporter_domain(
+                    kwargs,
                     &kms[dom_i],
                     &vmaxs[dom_i],
                     &signs[dom_i],
@@ -134,8 +116,8 @@ fn get_protein(
                     molecules,
                 )
             } else if domtype == 3 {
-                push_regulatory_domain(
-                    &mut kwargs,
+                set_regulatory_domain(
+                    kwargs,
                     &kms[dom_i],
                     &hills[dom_i],
                     &signs[dom_i],
@@ -144,23 +126,20 @@ fn get_protein(
                     n_mols,
                 )
             }
-            format!("[{},{{{}}}]", domtype, kwargs.join(","))
+            (domtype, kwargs)
         })
         .collect();
 
-    let kwargs = [
-        fmt_int_kwarg("cds_start", protein.1),
-        fmt_int_kwarg("cds_end", protein.2),
-        fmt_bool_kwarg("is_fwd", protein.3),
-        fmt_arr_kwarg("domains", domstrs),
-    ];
-
-    format!("{{{}}}", kwargs.join(","))
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("cds_start", protein.1).unwrap();
+    kwargs.set_item("cds_end", protein.2).unwrap();
+    kwargs.set_item("is_fwd", protein.3).unwrap();
+    kwargs.set_item("domains", domains).unwrap();
+    kwargs
 }
 
-// Threaded version of get_protein() for multiple proteomes
-// returned in a JSON parsable string in {"data": [...]}
-pub fn get_proteome_threaded(
+pub fn get_proteome<'py>(
+    py: Python<'py>,
     proteome: &Vec<ProteinSpecType>,
     vmaxs: &Vec<Vec<f32>>,
     kms: &Vec<Vec<f32>>,
@@ -170,13 +149,14 @@ pub fn get_proteome_threaded(
     trnspts: &Vec<Vec<Vec<i8>>>,
     effectors: &Vec<Vec<Vec<i8>>>,
     molecules: &Vec<String>,
-) -> String {
+) -> Vec<&'py PyDict> {
     let n_mols = molecules.len();
-    let proteins: Vec<String> = proteome
-        .into_par_iter()
+    proteome
+        .iter()
         .enumerate()
         .map(|(i, d)| {
             get_protein(
+                py,
                 &d,
                 &vmaxs[i],
                 &kms[i],
@@ -189,7 +169,5 @@ pub fn get_proteome_threaded(
                 &n_mols,
             )
         })
-        .collect();
-
-    format!("{{\"data\":[{}]}}", proteins.join(","))
+        .collect()
 }

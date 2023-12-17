@@ -1,6 +1,5 @@
 from typing import Any
 import math
-import json
 import random
 import torch
 from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
@@ -545,7 +544,7 @@ class Kinetics:
         trnspts = self.transport_map(idxs3 * trnsp_lng)  # i32 (c,p,d,s)
         effectors = self.effector_map(idxs3 * reg_lng)  # i32 (c,p,d,s)
 
-        data = _lib.get_proteome(
+        proteome_kwargs = _lib.get_proteome(
             proteome,
             Vmaxs[0].tolist(),
             Kms[0].tolist(),
@@ -556,10 +555,7 @@ class Kinetics:
             effectors[0].tolist(),
             [d.name for d in self.molecules],
         )
-        res = _lib.test([d.name for d in self.molecules])
-        print(res)
-        array = json.loads(data)["data"]
-        return [Protein.from_dict(d) for d in array]
+        return [Protein.from_dict(d) for d in proteome_kwargs]
 
     def set_cell_params(
         self,
