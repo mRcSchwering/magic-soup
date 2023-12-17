@@ -501,15 +501,10 @@ class World:
         self.cell_positions[new_idxs] = new_pos
 
         # previous molecules, lifetimes, divisions are transfered
-        int_mols = []
-        lifetimes = []
-        divisions = []
-        genomes = []
-        for cell in cells:
-            int_mols.append(cell.int_molecules)
-            lifetimes.append(cell.n_steps_alive)
-            divisions.append(cell.n_divisions)
-            genomes.append(cell.genome)
+        int_mols = [d.int_molecules for d in cells]
+        lifetimes = [d.n_steps_alive for d in cells]
+        divisions = [d.n_divisions for d in cells]
+        genomes = [d.genome for d in cells]
 
         self.cell_molecules[new_idxs, :] = torch.stack(int_mols).to(self.device).float()
         self.cell_lifetimes[new_idxs] = self._i32_tensor(lifetimes)

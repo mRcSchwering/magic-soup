@@ -62,9 +62,7 @@ class _CustomWeightMapFact:
         pop.extend([1 / d for d in pop])
         pop = [d for d in pop if min_w <= d <= max_w]
 
-        non_zero_weights: list[float] = []
-        for _ in range(max_token):
-            non_zero_weights.append(random.choice(pop))
+        non_zero_weights = random.choices(pop, k=max_token)
         weights = torch.tensor([zero_value] + non_zero_weights)
         self.weights = weights.to(device=device, dtype=torch.float32)
 

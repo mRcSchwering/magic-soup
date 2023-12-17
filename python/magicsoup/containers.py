@@ -183,14 +183,6 @@ class Molecule:
     def __str__(self) -> str:
         return self.name
 
-    def to_dict(self) -> dict:
-        return {
-            "name": self.name,
-            "energy": self.energy,
-            "half_life": self.half_life,
-            "diffusivity": self.diffusivity,
-        }
-
 
 class Chemistry:
     """
@@ -254,25 +246,6 @@ class Chemistry:
             molecules=self.molecules + other.molecules,
             reactions=self.reactions + other.reactions,
         )
-
-    def to_dict(self) -> dict:
-        return {
-            "molecules": [d.to_dict() for d in self.molecules],
-            "reactions": [
-                ([d.name for d in a], [d.name for d in b]) for a, b in self.reactions
-            ],
-        }
-
-    @classmethod
-    def from_dict(cls, dct: dict) -> "Chemistry":
-        mols = [Molecule(**d) for d in dct["molecules"]]
-        name_2_mol = {d.name: d for d in mols}
-        reacts = []
-        for subs, prods in dct["reactions"]:
-            reacts.append(
-                ([name_2_mol[d] for d in subs], [name_2_mol[d] for d in prods])
-            )
-        return cls(molecules=mols, reactions=reacts)
 
     def __repr__(self) -> str:
         kwargs = {
@@ -360,11 +333,13 @@ class CatalyticDomain(Domain):
             [Molecule.from_name(name=d) for d in lft],
             [Molecule.from_name(name=d) for d in rgt],
         )
-        km = kwargs["km"]
-        vmax = kwargs["vmax"]
-        start = kwargs["start"]
-        end = kwargs["end"]
-        return cls(reaction=reaction, km=km, vmax=vmax, start=start, end=end)
+        return cls(
+            reaction=reaction,
+            km=kwargs["km"],
+            vmax=kwargs["vmax"],
+            start=kwargs["start"],
+            end=kwargs["end"],
+        )
 
     def __repr__(self) -> str:
         ins = ",".join(str(d) for d in self.substrates)
@@ -444,19 +419,13 @@ class TransporterDomain(Domain):
         All parameters must be present as keys.
         Molecules are provided by their name.
         """
-        molecule = Molecule.from_name(name=kwargs["molecule"])
-        km = kwargs["km"]
-        vmax = kwargs["vmax"]
-        is_exporter = kwargs["is_exporter"]
-        start = kwargs["start"]
-        end = kwargs["end"]
         return cls(
-            molecule=molecule,
-            km=km,
-            vmax=vmax,
-            is_exporter=is_exporter,
-            start=start,
-            end=end,
+            molecule=Molecule.from_name(name=kwargs["molecule"]),
+            km=kwargs["km"],
+            vmax=kwargs["vmax"],
+            is_exporter=kwargs["is_exporter"],
+            start=kwargs["start"],
+            end=kwargs["end"],
         )
 
     def __repr__(self) -> str:
@@ -537,21 +506,14 @@ class RegulatoryDomain(Domain):
         All parameters must be present as keys.
         Molecules are provided by their name.
         """
-        effector = Molecule.from_name(name=kwargs["effector"])
-        km = kwargs["km"]
-        hill = kwargs["hill"]
-        is_inhibiting = kwargs["is_inhibiting"]
-        is_transmembrane = kwargs["is_transmembrane"]
-        start = kwargs["start"]
-        end = kwargs["end"]
         return cls(
-            effector=effector,
-            km=km,
-            hill=hill,
-            is_inhibiting=is_inhibiting,
-            is_transmembrane=is_transmembrane,
-            start=start,
-            end=end,
+            effector=Molecule.from_name(name=kwargs["effector"]),
+            km=kwargs["km"],
+            hill=kwargs["hill"],
+            is_inhibiting=kwargs["is_inhibiting"],
+            is_transmembrane=kwargs["is_transmembrane"],
+            start=kwargs["start"],
+            end=kwargs["end"],
         )
 
     def __repr__(self) -> str:
@@ -645,13 +607,8 @@ class Protein:
         `dom_types` is domain type integer 1 (catalytic), 2 (transporter), or
         3 (transporter) and `dom_kwargs` is a dict with kwargs for the domain's `from_dict()`.
         """
-        start = kwargs["cds_start"]
-        end = kwargs["cds_end"]
-        is_fwd = kwargs["is_fwd"]
-        dom_specs = kwargs["domains"]
-
         doms: list[Domain] = []
-        for dom_type, dom_kwargs in dom_specs:
+        for dom_type, dom_kwargs in kwargs["domains"]:
             if dom_type == 1:
                 doms.append(CatalyticDomain.from_dict(dom_kwargs))
             elif dom_type == 2:
@@ -659,7 +616,12 @@ class Protein:
             elif dom_type == 3:
                 doms.append(RegulatoryDomain.from_dict(dom_kwargs))
 
-        return Protein(cds_start=start, cds_end=end, is_fwd=is_fwd, domains=doms)
+        return Protein(
+            cds_start=kwargs["cds_start"],
+            cds_end=kwargs["cds_end"],
+            is_fwd=kwargs["is_fwd"],
+            domains=doms,
+        )
 
     def __repr__(self) -> str:
         kwargs = {

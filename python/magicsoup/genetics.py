@@ -111,14 +111,10 @@ class Genetics:
         self.domain_map = {d: k for k, v in self.domain_types.items() for d in v}
 
         # pre-mature stop codons are excluded
-        self.one_codon_map: dict[str, int] = {}
-        for i, seq in enumerate(self._get_single_codons()):
-            self.one_codon_map[seq] = i + 1
+        self.one_codon_map = {d: i + 1 for i, d in enumerate(self._get_single_codons())}
 
         # the second codon is allowed to be a stop codon
-        self.two_codon_map: dict[str, int] = {}
-        for i, seq in enumerate(self._get_double_codons()):
-            self.two_codon_map[seq] = i + 1
+        self.two_codon_map = {d: i + 1 for i, d in enumerate(self._get_double_codons())}
 
         # inverse maps for genome generation
         self.idx_2_one_codon = {v: k for k, v in self.one_codon_map.items()}
@@ -164,6 +160,7 @@ class Genetics:
         )
 
     def _get_non_stop_seqs(self, n_codons: int) -> list[str]:
+        # TODO: util with test
         all_seqs = nt_seqs(n=n_codons * CODON_SIZE)
         seqs = []
         for seq in all_seqs:
