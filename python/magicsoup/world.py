@@ -1149,7 +1149,6 @@ class Cell:
         return f"{type(self).__name__}({','.join(args)})"
 
 
-# TODO: baseline check
 # TODO: to_dict for domainFacts
 #       to_dict for ProteinFact (with tuple (domtype, domkwargs))
 # TODO: below in rust
