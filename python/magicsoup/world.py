@@ -10,10 +10,8 @@ from magicsoup.util import randstr
 from magicsoup.containers import Chemistry, Cell
 from magicsoup.kinetics import Kinetics
 from magicsoup.genetics import Genetics
+from magicsoup.mutations import point_mutations, recombinations
 from magicsoup import _lib  # type: ignore
-
-# TODO: revice documentation
-#       and how to best describe cells, proteins, domains (in docstrings)
 
 
 def _torch_load(map_loc: str | None = None):
@@ -51,6 +49,9 @@ class World:
         stop_codons: stop codons which stop a coding sequence (translation only happens within coding sequences).
         device: Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
             This can be used to move most calculations to a GPU.
+        batch_size: Optional parameter for reducing memory peaks when cell parameters are updated.
+            By iteratively calculating cell paremeters of maximum `batch_size` cells at once,
+            one can reduce memory peaks during functions that update cell parameters.
 
     Most attributes on this class describe the current state of molecules and cells.
     Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
@@ -119,9 +120,6 @@ class World:
     it makes sense to interpret them in mM, s, and J.
     """
 
-    # TODO: convenience function for point mutations and recombinations
-    #       with updating of parameters
-
     def __init__(
         self,
         chemistry: Chemistry,
@@ -131,11 +129,13 @@ class World:
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         device: str = "cpu",
+        batch_size: int | None = None,
     ):
         if not torch.cuda.is_available():
             device = "cpu"
 
         self.device = device
+        self.batch_size = batch_size
         self.map_size = map_size
         self.abs_temp = abs_temp
         self.chemistry = chemistry
@@ -230,7 +230,7 @@ class World:
         For each cell from a list of cell indexes find all other cells that
         are in the Moore's neighborhood of this cell.
 
-        Parameters:
+        Arguments:
             cell_idxs: Indexes of cells for which to find neighbors
             nghbr_idxs: Optional list of cells regarded as neighbors.
                 If `None` (default) each cell in `cell_idxs` can form a pair
@@ -263,15 +263,13 @@ class World:
         nghbrs = _lib.get_neighbors(from_idxs, to_idxs, positions, self.map_size)
         return nghbrs
 
-    def spawn_cells(self, genomes: list[str], batch_size: int = 1000) -> list[int]:
+    def spawn_cells(self, genomes: list[str]) -> list[int]:
         """
         Create new cells and place them randomly on the map.
         All lists and tensors that reference cells will be updated.
 
         Parameters:
             genomes: List of genomes of the newly added cells
-            batch_size: Batch size used for updating cell kinetics. Reduce this number
-                to reduce memory required during update.
 
         Returns:
             The indexes of successfully added cells.
@@ -318,18 +316,16 @@ class World:
         self.cell_molecules[new_idxs, :] += pickup.T
         self.molecule_map[:, xs, ys] -= pickup
 
-        self._update_cell_params(genomes=genomes, idxs=new_idxs, batch_size=batch_size)
+        self._update_cell_params(genomes=genomes, idxs=new_idxs)
         return new_idxs
 
-    def add_cells(self, cells: list["Cell"], batch_size: int = 1000) -> list[int]:
+    def add_cells(self, cells: list["Cell"]) -> list[int]:
         """
         Place cells randomly on the map.
         All lists and tensors that reference cells will be updated.
 
         Parameters:
             cells: List of cells to be added
-            batch_size: Batch size used for updating cell kinetics. Reduce this number
-                to reduce memory required during update.
 
         Returns:
             The indexes of successfully added cells.
@@ -383,7 +379,7 @@ class World:
         self.cell_lifetimes[new_idxs] = self._i32_tensor(lifetimes)
         self.cell_divisions[new_idxs] = self._i32_tensor(divisions)
 
-        self._update_cell_params(genomes=genomes, idxs=new_idxs, batch_size=batch_size)
+        self._update_cell_params(genomes=genomes, idxs=new_idxs)
 
         return new_idxs
 
@@ -458,9 +454,7 @@ class World:
 
         return list(zip(parent_idxs, child_idxs))
 
-    def update_cells(
-        self, genome_idx_pairs: list[tuple[str, int]], batch_size: int = 1000
-    ):
+    def update_cells(self, genome_idx_pairs: list[tuple[str, int]]):
         """
         Update existing cells with new genomes.
 
@@ -479,7 +473,7 @@ class World:
             self.cell_genomes[idx] = genome
 
         genomes, idxs = list(map(list, zip(*genome_idx_pairs)))
-        self._update_cell_params(genomes=genomes, idxs=idxs, batch_size=batch_size)  # type: ignore
+        self._update_cell_params(genomes=genomes, idxs=idxs)  # type: ignore
 
     def kill_cells(self, cell_idxs: list[int]):
         """
@@ -655,6 +649,59 @@ class World:
         """
         self.cell_lifetimes += 1
 
+    def mutate_cells(self, p: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66):
+        """
+        Mutate cells with point mutations
+
+        Arguments:
+            p: Probability of a mutation per nucleotide
+            p_indel: Probability of any point mutation being an indel
+                    (inverse probability of it being a substitution)
+            p_del: Probability of any indel being a deletion
+                (inverse probability of it being an insertion)
+
+        Convenience function that uses [point_mutations][magicsoup.mutations.point_mutations]
+        to mutate genomes, then updates cell parameters for cells whose genomes were changed.
+        See [point_mutations][magicsoup.mutations.point_mutations] for details.
+        """
+        mutated = point_mutations(
+            seqs=self.cell_genomes, p=p, p_indel=p_indel, p_del=p_del
+        )
+        self.update_cells(genome_idx_pairs=mutated)
+
+    def recombinate_cells(
+        self, cell_idxs: list[int], nghbr_idxs: list[int] | None, p: float = 1e-7
+    ):
+        """
+        Recombinate neighbourig cells
+
+        Arguments:
+            cell_idxs: Indexes of cells for which to find neighbors
+            nghbr_idxs: Optional list of cells regarded as neighbors.
+                If `None` (default) each cell in `cell_idxs` can form a pair
+                with any other neighboring cell. With `nghbr_idxs` provided
+                each cell in `cell_idxs` can only form a pair with a neighboring
+                cell that is in `nghbr_idxs`.
+            p: Probability of a strand break per nucleotide during recombinataions
+
+        Convenience function that uses [recombinations][magicsoup.mutations.recombinations]
+        to recombinate genomes of neighbouring cells, then updates cell parameters for cells
+        whose genomes were changed.
+        [get_neighbors][magicsoup.world.World.get_neighbors] is used to identify neighbors.
+        See [recombinations][magicsoup.mutations.recombinations] and
+        [get_neighbors][magicsoup.world.World.get_neighbors] for details.
+        """
+        nghbrs = self.get_neighbors(cell_idxs=cell_idxs, nghbr_idxs=nghbr_idxs)
+        pairs = [(self.cell_genomes[a], self.cell_genomes[b]) for a, b in nghbrs]
+        mutated = recombinations(seq_pairs=pairs, p=p)
+
+        genome_idx_pairs = []
+        for c0, c1, idx in mutated:
+            c0_i, c1_i = nghbrs[idx]
+            genome_idx_pairs.append((c0, c0_i))
+            genome_idx_pairs.append((c1, c1_i))
+        self.update_cells(genome_idx_pairs=genome_idx_pairs)
+
     def save(self, rundir: Path, name: str = "world.pkl"):
         """
         Write whole world object to pickle file
@@ -731,9 +778,7 @@ class World:
         with open(statedir / "cells.fasta", "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines))
 
-    def load_state(
-        self, statedir: Path, ignore_cell_params: bool = False, batch_size: int = 1000
-    ):
+    def load_state(self, statedir: Path, ignore_cell_params: bool = False):
         """
         Load a saved world state.
         The state had to be saved with [save_state()][magicsoup.world.World.save_state] previously.
@@ -743,9 +788,6 @@ class World:
             ignore_cell_params: Whether to not update cell parameters as well.
                 If you are only interested in the cells' genomes and molecules
                 you can set this to `True` to make loading a lot faster.
-            batch_size: Batch size used for updating cell kinetics. Reduce this number
-                to reduce memory required during update. This is irrelevant with
-                `ignore_cell_params=True`.
         """
         self.kill_cells(cell_idxs=list(range(self.n_cells)))
 
@@ -789,9 +831,9 @@ class World:
 
         if not ignore_cell_params:
             self.kinetics.increase_max_cells(by_n=self.n_cells)
-            self.update_cells(genome_idx_pairs=genome_idx_pairs, batch_size=batch_size)
+            self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
-    def _update_cell_params(self, genomes: list[str], idxs: list[int], batch_size: int):
+    def _update_cell_params(self, genomes: list[str], idxs: list[int]):
         proteomes = self.genetics.translate_genomes(genomes=genomes)
 
         max_prots: int = 0
@@ -813,8 +855,10 @@ class World:
 
         self.kinetics.increase_max_proteins(max_n=max_prots)
 
-        for a in range(0, len(set_proteomes), batch_size):
-            b = a + batch_size
+        n = len(set_proteomes)
+        s = n if self.batch_size is None else n
+        for a in range(0, n, s):
+            b = a + s
             self.kinetics.set_cell_params(
                 cell_idxs=set_idxs[a:b], proteomes=set_proteomes[a:b]
             )
