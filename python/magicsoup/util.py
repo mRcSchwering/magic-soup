@@ -3,7 +3,7 @@ from itertools import product
 import string
 import random
 import math
-from magicsoup.constants import ALL_NTS
+from magicsoup.constants import ALL_NTS, CODON_SIZE
 from magicsoup import _lib  # type:ignore
 
 
@@ -89,9 +89,25 @@ def variants(seq: str) -> list[str]:
     return seqs3
 
 
-def nt_seqs(n: int) -> list[str]:
-    """Return all possible nucleotide sequences of length `n`"""
-    return variants("N" * n)
+def codons(n: int, excl_codons: list[str] | None = None) -> list[str]:
+    """
+    Return all possible nucleotide sequences of `n` codons,
+    optionally excluding codons in `excl_codons`.
+    """
+    all_seqs = variants("N" * n * CODON_SIZE)
+    if excl_codons is None:
+        return all_seqs
+    seqs = []
+    for seq in all_seqs:
+        has_stop = False
+        for i in range(n):
+            a = i * CODON_SIZE
+            b = (i + 1) * CODON_SIZE
+            if seq[a:b] in excl_codons:
+                has_stop = True
+        if not has_stop:
+            seqs.append(seq)
+    return seqs
 
 
 def dist_1d(a: int, b: int, m: int) -> int:

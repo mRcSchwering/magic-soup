@@ -1,6 +1,6 @@
 import warnings
 import random
-from magicsoup.util import nt_seqs
+from magicsoup.util import codons
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup import _lib  # type: ignore
 
@@ -91,7 +91,7 @@ class Genetics:
 
         # setup domain type definitions
         # sequences including stop codons are useless, since they would terminate the CDS
-        sets = self._get_non_stop_seqs(n_codons=n_dom_type_codons)
+        sets = codons(n=n_dom_type_codons, excl_codons=self.start_codons)
         random.shuffle(sets)
         n = len(sets)
 
@@ -159,28 +159,12 @@ class Genetics:
             self.dom_type_size,
         )
 
-    def _get_non_stop_seqs(self, n_codons: int) -> list[str]:
-        # TODO: util with test
-        # TODO: also use in factories
-        all_seqs = nt_seqs(n=n_codons * CODON_SIZE)
-        seqs = []
-        for seq in all_seqs:
-            has_stop = False
-            for i in range(n_codons):
-                a = i * CODON_SIZE
-                b = (i + 1) * CODON_SIZE
-                if seq[a:b] in self.stop_codons:
-                    has_stop = True
-            if not has_stop:
-                seqs.append(seq)
-        return seqs
-
     def _get_single_codons(self) -> list[str]:
-        seqs = nt_seqs(n=CODON_SIZE)
+        seqs = codons(n=1)
         seqs = [d for d in seqs if d not in self.stop_codons]
         return seqs
 
     def _get_double_codons(self) -> list[str]:
-        seqs = nt_seqs(n=2 * CODON_SIZE)
+        seqs = codons(n=2)
         seqs = [d for d in seqs if d[:CODON_SIZE] not in self.stop_codons]
         return seqs

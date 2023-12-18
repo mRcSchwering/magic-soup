@@ -1,6 +1,7 @@
 from typing import Iterable
 import pytest
 import magicsoup.util as util
+from magicsoup.constants import CODON_SIZE
 
 
 # fmt: off
@@ -19,6 +20,34 @@ def test_variants(tmp, exp):
     res = util.variants(seq=tmp)
     assert set(res) == set(exp)
 # fmt: on
+
+
+@pytest.mark.parametrize("n", [1, 2])
+def test_codons(n: int):
+    n_codons = 4**CODON_SIZE
+
+    res = util.codons(n=n)
+    assert len(set(res)) == len(res)
+    assert all(len(d) == n * CODON_SIZE for d in res)
+    assert len(res) == n_codons**n
+
+    excl_codons = ["TTT"]
+    res = util.codons(n=n, excl_codons=excl_codons)
+    assert len(set(res)) == len(res)
+    assert all(len(d) == n * CODON_SIZE for d in res)
+    assert len(res) == (n_codons - len(excl_codons)) ** n
+    for seq in res:
+        codons = set(seq[d : d + CODON_SIZE] for d in range(0, len(seq), CODON_SIZE))
+        assert len(set(codons) & set(excl_codons)) == 0
+
+    excl_codons.append("AAA")
+    res = util.codons(n=n, excl_codons=excl_codons)
+    assert len(set(res)) == len(res)
+    assert all(len(d) == n * CODON_SIZE for d in res)
+    assert len(res) == (n_codons - len(excl_codons)) ** n
+    for seq in res:
+        codons = set(seq[d : d + CODON_SIZE] for d in range(0, len(seq), CODON_SIZE))
+        assert len(set(codons) & set(excl_codons)) == 0
 
 
 @pytest.mark.parametrize(
