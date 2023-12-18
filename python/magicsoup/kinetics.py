@@ -3,10 +3,7 @@ import math
 import random
 import torch
 from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
-from magicsoup.containers import (
-    Molecule,
-    Protein,
-)
+from magicsoup.containers import Molecule, Protein
 from magicsoup import _lib  # type: ignore
 
 # MAX,MIN should be at least x100 away from inf

@@ -111,27 +111,25 @@ def mutations(device: str, n: int, s: int):
 def get_test(device: str, n: int, s: int):
     proteome = []
     for react in CHEMISTRY.reactions:
-        p = ms.ProteinFact(
-            domain_facts=[
-                ms.CatalyticDomainFact(reaction=react),
-                ms.RegulatoryDomainFact(effector=react[0][0], is_transmembrane=False),
-            ]
-        )
+        p = [
+            ms.CatalyticDomainFact(reaction=react),
+            ms.RegulatoryDomainFact(effector=react[0][0], is_transmembrane=False),
+        ]
         proteome.append(p)
     for mol in CHEMISTRY.molecules:
-        p = ms.ProteinFact(
-            domain_facts=[
-                ms.TransporterDomainFact(molecule=mol),
-                ms.RegulatoryDomainFact(effector=mol, is_transmembrane=True),
-            ]
-        )
+        p = [
+            ms.TransporterDomainFact(molecule=mol),
+            ms.RegulatoryDomainFact(effector=mol, is_transmembrane=True),
+        ]
         proteome.append(p)
+
+    world = ms.World(chemistry=CHEMISTRY, device=device)
+    genome_fact = ms.GenomeFact(world=world, proteome=proteome, target_size=s)
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, device=device)
         t0 = time.time()
         for _ in range(n):
-            _ = world.generate_genome(proteome=proteome, size=s)
+            _ = genome_fact.generate()
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 

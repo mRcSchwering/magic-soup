@@ -1,5 +1,10 @@
 import warnings
 from collections import Counter
+from typing import TYPE_CHECKING
+import torch
+
+if TYPE_CHECKING:
+    from magicsoup.world import World
 
 
 class Molecule:
@@ -186,7 +191,7 @@ class Molecule:
 
 class Chemistry:
     """
-    Container class that holds definition for the chemistry of the simulation.
+    Object holding definition for the chemistry of the simulation.
 
     Arguments:
         molecules: List of all molecules species that are part of this simulation
@@ -282,29 +287,18 @@ class Domain:
         self.end = end
 
 
-class DomainFact:
-    """
-    Domain factory base.
-    All domain factories should inherit from this class.
-
-    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
-    Use this factory to describe a domain that should eventually be encoded.
-    Domain factories can be stringed together into a protein in [ProteinFact][magicsoup.containers.ProteinFact]
-    """
-
-
 class CatalyticDomain(Domain):
     """
-    Container for describing a catalytic domain.
+    Object representing a catalytic domain.
 
     Arguments:
-        reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
-            For stoichiometric coefficients > 1, list the molecule species multiple times.
-        km: Michaelis Menten constant of the reaction (in mol).
-        vmax: Maximum velocity of the reaction (in mol per time step).
+        reaction: Tuple of substrate and product molecules which are involved in the reaction.
+        km: Michaelis Menten constant of the reaction (in mM).
+        vmax: Maximum velocity of the reaction (in mmol/s).
 
     The catalytic domain is described for the direction from substrates to products.
     For the reverse reaction, the reciprocal of Km applies. Vmax stays the same.
+    Stoichiometric coefficients > 1 are described by listing molecule species multiple times.
     """
 
     def __init__(
@@ -354,44 +348,14 @@ class CatalyticDomain(Domain):
         return f"{subs_str} <-> {prods_str} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
-class CatalyticDomainFact(DomainFact):
-    """
-    Container for generating a catalytic domain.
-
-    Arguments:
-        reaction: Tuple of substrate and product molecule species that describe the reaction catalyzed by this domain.
-            For stoichiometric coefficients > 1, list the molecule species multiple times.
-        km: Desired Michaelis Menten constant of the transport (in mol).
-        vmax: Desired Maximum velocity of the transport (in mol per time step).
-
-    `km` and `vmax` are target values.
-    Due to the way how codons are sampled for specific floats, the actual values for `km` and `vmax` might differ.
-    The closest available value to the given value will be used.
-
-    If any optional argument is left out (`None`) it will be sampled randomly.
-    """
-
-    def __init__(
-        self,
-        reaction: tuple[list[Molecule], list[Molecule]],
-        km: float | None = None,
-        vmax: float | None = None,
-    ):
-        substrates, products = reaction
-        self.substrates = sorted(substrates)
-        self.products = sorted(products)
-        self.km = km
-        self.vmax = vmax
-
-
 class TransporterDomain(Domain):
     """
-    Container for describing a transporter domain.
+    Object representing a transporter domain.
 
     Arguments:
-        molecule: The molecule species which can be transported into or out of the cell by this domain.
-        km: Michaelis Menten constant of the transport (in mol).
-        vmax: Maximum velocity of the transport (in mol per time step).
+        molecule: Molecule species which can be transported by this domain.
+        km: Michaelis Menten constant of the transport (in mM).
+        vmax: Maximum velocity of the transport (in mmol/s).
         is_exporter: Whether the transporter is exporting this molecule species out of the cell.
 
     `is_exporter` is only relevant in combination with other domains on the same protein.
@@ -437,47 +401,14 @@ class TransporterDomain(Domain):
         return f"{self.molecule} {sign} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
-class TransporterDomainFact(DomainFact):
-    """
-    Container for generating a transporter domain.
-
-    Arguments:
-        molecule: The molecule species which can be transported into or out of the cell by this domain.
-        km: Desired Michaelis Menten constant of the transport (in mol).
-        vmax: Desired Maximum velocity of the transport (in mol per time step).
-        is_exporter: Whether the transporter is exporting this molecule species out of the cell.
-
-    `is_exporter` is only relevant in combination with other domains on the same protein.
-    It defines in which transport direction this domain is energetically coupled with others.
-
-    `km` and `vmax` are target values.
-    Due to the way how codons are sampled for specific floats, the actual values for `km` and `vmax` might differ.
-    The closest available value to the given value will be used.
-
-    If any optional argument is left out (`None`) it will be sampled randomly.
-    """
-
-    def __init__(
-        self,
-        molecule: Molecule,
-        km: float | None = None,
-        vmax: float | None = None,
-        is_exporter: bool | None = None,
-    ):
-        self.molecule = molecule
-        self.km = km
-        self.vmax = vmax
-        self.is_exporter = is_exporter
-
-
 class RegulatoryDomain(Domain):
     """
-    Container for describing a regulatory domain.
+    Object representing a regulatory domain.
 
     Arguments:
-        effector: The molecule species which will be the effector molecule.
+        effector: Effector molecule species
         hill: Hill coefficient describing degree of cooperativity
-        km: ligand concentration producing half occupation
+        km: Ligand concentration producing half occupation (in mM)
         is_inhibiting: Whether this is an inhibiting regulatory domain (otherwise activating).
         is_transmembrane: Whether this is also a transmembrane domain.
             If true, the domain will react to extracellular molecules instead of intracellular ones.
@@ -527,44 +458,9 @@ class RegulatoryDomain(Domain):
         return f"{self.effector}{loc} {post} | Km {self.km:.2e} Hill {self.hill}"
 
 
-class RegulatoryDomainFact(DomainFact):
-    """
-    Container for generating a regulatory domain.
-
-    Arguments:
-        effector: The molecule species which will be the effector molecule.
-        is_transmembrane: Whether this is also a transmembrane domain.
-            If true, the domain will react to extracellular molecules instead of intracellular ones.
-        km: Desired Michaelis Menten constant of the transport (in mol).
-        hill: Hill coefficient describing degree of cooperativity (1, 3, or 5)
-        is_inhibiting: Whether the effector will have an activating or inhibiting effect.
-
-    `km` and `hill` are target values.
-    Due to the way how codons are sampled for specific values,
-    the final value for `km` and `hill` might differ.
-    The closest available value to the given value will be used.
-
-    If any optional argument is left out (`None`) it will be sampled randomly.
-    """
-
-    def __init__(
-        self,
-        effector: Molecule,
-        is_transmembrane: bool,
-        is_inhibiting: bool | None = None,
-        km: float | None = None,
-        hill: int | None = None,
-    ):
-        self.effector = effector
-        self.is_transmembrane = is_transmembrane
-        self.is_inhibiting = is_inhibiting
-        self.km = km
-        self.hill = hill
-
-
 class Protein:
     """
-    Container for describing a protein.
+    Object representing a protein.
 
     Arguments:
         domains: All domains of the protein
@@ -604,7 +500,7 @@ class Protein:
         """
         Create Protein instance from dict. Key must match arguments.
         Domains are set as a list of tuples `(dom_type, dom_kwargs)` where
-        `dom_types` is domain type integer 1 (catalytic), 2 (transporter), or
+        `dom_type` is domain type integer 1 (catalytic), 2 (transporter), or
         3 (transporter) and `dom_kwargs` is a dict with kwargs for the domain's `from_dict()`.
         """
         doms: list[Domain] = []
@@ -637,22 +533,106 @@ class Protein:
         return " | ".join(domstrs)
 
 
-class ProteinFact:
+class Cell:
     """
-    Container for generating a protein
+    Object representing a cell with its environment.
 
     Arguments:
-        domain_facts: List of all domains, each described by a domain factory.
+        world: Reference to the cell's world object.
+        genome: Full genome sequence of this cell.
+        int_molecules: Intracellular molecules. A tensor with one dimension that represents
+            each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+        ext_molecules: Extracellular molecules. A tensor with one dimension that represents
+            each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+            These are the molecules of the pixel the cell is currently living on.
+        position: Position on the cell map.
+        idx: The current index of this cell.
+        label: Label which can be used to track cells. Has no effect.
+        n_steps_alive: Number of time steps this cell has lived since last division.
+        n_divisions: Number of times this cell's ancestors already divided.
 
-    This is currently only used for [World.generate_genome()][magicsoup.world.World.generate_genome].
-    Use this factory to describe a protein that should eventually be encoded.
-    Domain factories can be [CatalyticDomainFact][magicsoup.containers.CatalyticDomainFact],
-    [TransporterDomainFact][magicsoup.containers.TransporterDomainFact],
-    [RegulatoryDomainFact][magicsoup.containers.RegulatoryDomainFact].
+    You get it when calling [get_cell()][magicsoup.world.World.get_cell].
+    On the `world` object all cells are actually represented as a combination of lists and tensors.
+    [get_cell()][magicsoup.world.World.get_cell] gathers all information for one cell and
+    represents it in this `Cell` object.
+    Some attributes are gathered lazily just when you access them.
+
+    When a cell replicates its genome and proteome are copied.
+    Both descendants will recieve half of all molecules each.
+    Both their `n_divisions` attributes are incremented.
+    The cell's `label` will be copied as well.
+    This way you can track cells' origins.
     """
 
-    def __init__(self, domain_facts: list[DomainFact] | DomainFact):
-        if not isinstance(domain_facts, list):
-            domain_facts = [domain_facts]
-        self.domain_facts = domain_facts
-        self.n_domains = len(domain_facts)
+    def __init__(
+        self,
+        world: "World",
+        genome: str,
+        position: tuple[int, int] = (-1, -1),
+        idx: int = -1,
+        label: str = "C",
+        n_steps_alive: int = 0,
+        n_divisions: int = 0,
+        proteome: list[Protein] | None = None,
+        int_molecules: torch.Tensor | None = None,
+        ext_molecules: torch.Tensor | None = None,
+    ):
+        self.world = world
+        self.genome = genome
+        self.label = label
+        self.position = position
+        self.idx = idx
+        self.n_steps_alive = n_steps_alive
+        self.n_divisions = n_divisions
+
+        self._proteome = proteome
+        self._int_molecules = int_molecules
+        self._ext_molecules = ext_molecules
+
+    @property
+    def int_molecules(self) -> torch.Tensor:
+        if self._int_molecules is None:
+            self._int_molecules = self.world.cell_molecules[self.idx, :]
+        return self._int_molecules
+
+    @property
+    def ext_molecules(self) -> torch.Tensor:
+        if self._ext_molecules is None:
+            pos = self.position
+            self._ext_molecules = self.world.molecule_map[:, pos[0], pos[1]]
+        return self._ext_molecules
+
+    @property
+    def proteome(self) -> list[Protein]:
+        if self._proteome is None:
+            (cdss,) = self.world.genetics.translate_genomes(genomes=[self.genome])
+            if len(cdss) > 0:
+                self._proteome = self.world.kinetics.get_proteome(proteome=cdss)
+            else:
+                self._proteome = []
+        return self._proteome
+
+    def copy(self, **kwargs) -> "Cell":
+        old_kwargs = {
+            "world": self.world,
+            "genome": self.genome,
+            "position": self.position,
+            "idx": self.idx,
+            "label": self.label,
+            "n_steps_alive": self.n_steps_alive,
+            "n_divisions": self.n_divisions,
+            "proteome": self._proteome,
+        }
+        return Cell(**{**old_kwargs, **kwargs})  # type: ignore
+
+    def __repr__(self) -> str:
+        kwargs = {
+            "genome": self.genome,
+            "position": self.position,
+            "idx": self.idx,
+            "label": self.label,
+            "n_steps_alive": self.n_steps_alive,
+            "n_divisions": self.n_divisions,
+        }
+        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"

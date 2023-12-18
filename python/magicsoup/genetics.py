@@ -161,6 +161,7 @@ class Genetics:
 
     def _get_non_stop_seqs(self, n_codons: int) -> list[str]:
         # TODO: util with test
+        # TODO: also use in factories
         all_seqs = nt_seqs(n=n_codons * CODON_SIZE)
         seqs = []
         for seq in all_seqs:
