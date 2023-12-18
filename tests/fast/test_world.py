@@ -1,6 +1,5 @@
 import tempfile
 from pathlib import Path
-import pytest
 import torch
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES
@@ -344,136 +343,29 @@ def test_get_cell_by_position():
     assert cell.position == pos
 
 
-def test_generate_genome():
+def test_saving_and_loading_state():
     mi = ms.Molecule("i", 10 * 1e3)
     mj = ms.Molecule("j", 20 * 1e3)
-    mk = ms.Molecule("k", 30 * 1e3)
-    molecules = [mi, mj, mk]
-    reactions = [([mi], [mj]), ([mi, mj], [mk])]
+    chemistry = ms.Chemistry(molecules=[mi, mj], reactions=[([mi], [mj])])
 
-    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
-    world = ms.World(chemistry=chemistry, map_size=128)
+    world = ms.World(chemistry=chemistry, map_size=7)
+    world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
 
-    g = world.generate_genome(proteome=[], size=10)
-    assert len(g) == 10
-    g = world.generate_genome(proteome=[], size=100)
-    assert len(g) == 100
+    cell_map = world.cell_map.clone()
+    molecule_map = world.molecule_map.clone()
+    assert cell_map.sum() == 3.0
+    assert molecule_map.mean() > 0.0
 
-    p0 = ms.ProteinFact(
-        domain_facts=[
-            ms.CatalyticDomainFact(reaction=([mi], [mj])),
-            ms.CatalyticDomainFact(reaction=([mk], [mi, mj])),
-        ]
-    )
-    with pytest.raises(ValueError):
-        g = world.generate_genome(proteome=[p0], size=10)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        statedir = Path(tmpdir)
+        world.save_state(statedir=statedir)
 
-    g = world.generate_genome(proteome=[p0], size=50)
-    assert len(g) == 50
+        del world
+        world = ms.World(chemistry=chemistry, map_size=7)
+        world.load_state(statedir=statedir)
 
-    g = world.generate_genome(proteome=[p0], size=100)
-    assert len(g) == 100
-
-    p0 = ms.ProteinFact(
-        domain_facts=[
-            ms.CatalyticDomainFact(reaction=([mi], [mj])),
-            ms.CatalyticDomainFact(reaction=([mk], [mi, mj])),
-        ]
-    )
-    p1 = ms.ProteinFact(
-        domain_facts=[
-            ms.TransporterDomainFact(molecule=mi),
-            ms.RegulatoryDomainFact(effector=mk, is_transmembrane=True, hill=3),
-        ]
-    )
-
-    # codon-to-indices mappings (1-codon/2-codon maps) can also map to
-    # stop codons, so there's a 4.6% chance per such codon that a domain
-    # is pre-maturely terminated by a stop codon. With 5 such domains
-    # in every domain, there's only a 78% chance that everything goes right
-    # with 4 domains in the proteome, theres only a 38% chance of succeeding
-    # (having 0 pre-mature terminations)
-    # repeating the genome generation 10 times, reduces the chance of 10 pre-mature
-    # terminations to below 1% (>95% chance that at least one proteome is correct)
-    success = False
-    max_i = 10
-    i = 0
-    p0_found = 0
-    p1_found = 0
-    while not success:
-        g = world.generate_genome(proteome=[p0, p1], size=100)
-        assert len(g) == 100
-
-        world.spawn_cells(genomes=[g])
-        cell = world.get_cell(by_idx=0)
-        has_p0 = False
-        has_p1 = False
-        proteome = cell.proteome
-        for prot in proteome:
-            has_cij = False
-            has_ckij = False
-            has_ti = False
-            has_rk = False
-
-            for dom in prot.domains:
-                if isinstance(dom, ms.CatalyticDomain):
-                    subs = dom.substrates
-                    prods = dom.products
-                    if subs == [mk] and prods == [mi, mj]:
-                        has_ckij = True
-                    elif subs == [mi] and prods == [mj]:
-                        has_cij = True
-                if isinstance(dom, ms.TransporterDomain):
-                    if dom.molecule == mi:
-                        has_ti = True
-                if isinstance(dom, ms.RegulatoryDomain):
-                    if dom.effector == mk and dom.is_inhibiting and dom.hill == 3:
-                        has_rk = True
-
-            if has_ckij and has_cij:
-                has_p0 = True
-                p0_found += 1
-            if has_ti and has_rk:
-                has_p1 = True
-                p1_found += 1
-
-        world.kill_cells(cell_idxs=list(range(world.n_cells)))
-        if has_p0 and has_p1:
-            success = True
-            break
-        else:
-            i += 1
-
-        if i > max_i:
-            raise AssertionError(
-                f"Was not able to recreate proteome from generated genome after {max_i} tries."
-                f" P0 was found {p0_found} times, P1 was found {p1_found} times."
-            )
-
-
-def test_generate_genome_with_different_reaction_sorting():
-    mi = ms.Molecule("i", 10 * 1e3)
-    mj = ms.Molecule("j", 20 * 1e3)
-    mk = ms.Molecule("k", 30 * 1e3)
-    molecules = [mi, mj, mk]
-    reactions = [([mj, mi], [mk])]
-
-    # reaction gets sorted to i + j <-> k
-    # when initializing chemistry object
-    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
-    world = ms.World(chemistry=chemistry, map_size=128)
-
-    # if reaction is not properly reordered
-    # it will fail
-    doms = [ms.CatalyticDomainFact(reaction=reactions[0])]
-    g = world.generate_genome(proteome=[ms.ProteinFact(domain_facts=doms)], size=100)
-    assert len(g) == 100
-
-    # in contrast this should fail,
-    # because the reaction wasnt defined
-    doms = [ms.CatalyticDomainFact(reaction=([mj], [mk]))]
-    with pytest.raises(ValueError):
-        world.generate_genome(proteome=[ms.ProteinFact(domain_facts=doms)], size=100)
+    assert (cell_map == world.cell_map).all()
+    assert (molecule_map == world.molecule_map).all()
 
 
 def test_saving_and_loading_world_obj():
@@ -524,31 +416,6 @@ def test_saving_and_loading_world_obj():
         assert world.chemistry.molname_2_idx[mol.name] == i
 
     del world
-
-
-def test_saving_and_loading_state():
-    mi = ms.Molecule("i", 10 * 1e3)
-    mj = ms.Molecule("j", 20 * 1e3)
-    chemistry = ms.Chemistry(molecules=[mi, mj], reactions=[([mi], [mj])])
-
-    world = ms.World(chemistry=chemistry, map_size=7)
-    world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
-
-    cell_map = world.cell_map.clone()
-    molecule_map = world.molecule_map.clone()
-    assert cell_map.sum() == 3.0
-    assert molecule_map.mean() > 0.0
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        statedir = Path(tmpdir)
-        world.save_state(statedir=statedir)
-
-        del world
-        world = ms.World(chemistry=chemistry, map_size=7)
-        world.load_state(statedir=statedir)
-
-    assert (cell_map == world.cell_map).all()
-    assert (molecule_map == world.molecule_map).all()
 
 
 def test_loading_multiple_states():

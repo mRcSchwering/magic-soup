@@ -305,15 +305,30 @@ class GenomeFact:
         self.world = world
         self.proteome = proteome
 
+        try:
+            _ = iter(proteome)
+        except TypeError as err:
+            raise ValueError(
+                "Proteome must be a list of lists representing domains in proteins."
+            ) from err
+
+        for pi, prot in enumerate(proteome):
+            try:
+                _ = iter(prot)
+            except TypeError as err:
+                raise ValueError(
+                    "Proteome must be a list of lists representing domains in proteins."
+                    f" Element {pi} of proteome is not iterable."
+                ) from err
+
         for prot in proteome:
             for dom in prot:
                 dom.validate(world=world)
 
         self.req_nts = sum(
-            2 * CODON_SIZE + self.world.genetics.dom_size * len(d)
+            self.world.genetics.dom_size * len(d) + 2 * CODON_SIZE
             for d in self.proteome
         )
-
         self.target_size = self.req_nts if target_size is None else target_size
         if self.req_nts > self.target_size:
             raise ValueError(
@@ -327,35 +342,24 @@ class GenomeFact:
         cdss = [
             [d.gen_coding_sequence(world=self.world) for d in p] for p in self.proteome
         ]
-        n_p_pads = len(cdss) + 1
-        n_d_pads = sum(len(d) + 1 for d in cdss)
-
+        n_pads = len(cdss) + 1
         n_pad_nts = self.target_size - self.req_nts
-        pad_size = n_pad_nts / (n_p_pads * 0.7 + n_d_pads * 0.3)
-        d_pad_size = round_down(pad_size * 0.3, to=3)
-        d_pad_total = n_d_pads * d_pad_size
-        p_pad_size = round_down((n_pad_nts - d_pad_total) / n_p_pads, to=1)
-        p_pad_total = n_p_pads * p_pad_size
-        remaining_nts = n_pad_nts - d_pad_total - p_pad_total
+        pad_size = round_down(n_pad_nts / n_pads, to=1)
+        remaining_nts = n_pad_nts - n_pads * pad_size
 
         start_codons = self.world.genetics.start_codons
         stop_codons = self.world.genetics.stop_codons
         excl_cdss = start_codons + stop_codons
-        excl_doms = excl_cdss + list(self.world.genetics.domain_map)
-        p_pads = [random_genome(s=p_pad_size, excl=excl_cdss) for _ in range(n_p_pads)]
-        d_pads = [random_genome(s=d_pad_size, excl=excl_doms) for _ in range(n_d_pads)]
+        pads = [random_genome(s=pad_size, excl=excl_cdss) for _ in range(n_pads)]
         tail = random_genome(s=remaining_nts, excl=excl_cdss)
 
         parts: list[str] = []
         for cds in cdss:
-            parts.append(p_pads.pop())
+            parts.append(pads.pop())
             parts.append(random.choice(start_codons))
-            for dom_seq in cds:
-                parts.append(d_pads.pop())
-                parts.append(dom_seq)
-            parts.append(d_pads.pop())
+            parts.extend([d for d in cds])
             parts.append(random.choice(stop_codons))
-        parts.append(p_pads.pop())
+        parts.append(pads.pop())
         parts.append(tail)
 
         return "".join(parts)
