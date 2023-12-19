@@ -7,48 +7,43 @@ if TYPE_CHECKING:
     from magicsoup.world import World
 
 
-# TODO: doublecheck init descriptions, attrbs, methods
-
-
 class Molecule:
     """
     Represents a molecule species which is part of the world, can diffuse, degrade,
     and be converted into other molecules.
 
-    Arguments:
+    Parameters:
         name: Used to uniquely identify this molecule species.
         energy: Energy for 1 mol of this molecule species (in J).
-            This amount of energy is released if the molecule would be deconstructed to nothing.
-        half_life: Half life of this molecule species in time steps (in s by default).
-            Molecules degrade by one step if you call `world.degrade_molecules()`.
+            The hypothetical amount of energy that is released if the molecule would be fully deconstructed.
+        half_life: Half life of this molecule species in time steps (s by default).
+            Molecules degrade by one step if you call [degrade_molecules()][magicsoup.world.World.degrade_molecules].
             Must be > 0.0.
-        diffusivity: A measure for how quick this molecule species diffuses over the molecule map during each time step (in s by default).
-            Molecules diffuse when calling `world.diffuse_molecules()`.
-            0.0 would mean it doesn't diffuse at all.
-            1.0 would mean it is spread out equally around its Moore's neighborhood within one time step.
-        permeability: A measure for how quick this molecule species permeates cell membranes during each time step (in s by default).
-            Molecules permeate cell membranes when calling `world.diffuse_molecules()`.
-            0.0 would mean it can't permeate cell membranes.
-            1.0 would mean it spreads equally between cell and molecule map pixel within one time step.
+        diffusivity: A measure for how quick this molecule species diffuses over the molecule map during each time step (s by default).
+            Molecules diffuse when calling [diffuse_molecules()][magicsoup.world.World.diffuse_molecules].
+            0.0 means it doesn't diffuse at all.
+            1.0 means it is spread out equally around its Moore's neighborhood within one time step.
+        permeability: A measure for how quick this molecule species permeates cell membranes during each time step (s by default).
+            Molecules permeate cell membranes when calling [diffuse_molecules()][magicsoup.world.World.diffuse_molecules].
+            0.0 means it can't permeate cell membranes.
+            1.0 means it spreads equally between cell and molecule map pixel within one time step.
 
     Each molecule species which is supposed to be unique should have a unique `name`.
     In fact, if you initialize a molecule with the same name multiple times,
     only one instance of this molecule will be created.
+    It allows you to define overlapping chemistries without creating multiple molecule instances of the same molecule species.
+    You can also get a molecule instance from its name alone ([Molecule.from_name()][magicsoup.containers.Molecule.from_name]).
+    However, this also means that if 2 molecules have the same name all attributes must match.
 
     ```
-        atp = Molecule("ATP", 10)
-        atp2 = Molecule("ATP", 10)
-        assert atp is atp2
-    ```
+    atp = Molecule("ATP", 10)
+    atp2 = Molecule("ATP", 10)
+    assert atp is atp2
 
-    This is used later on in the simulation to make efficient comparisons.
-    Additionally, it allows you to define overlapping chemistries without creating multiple molecule instances of the same molecule species.
+    atp3 = Molecule.from_name("ATP")
+    assert atp3 is atp
 
-    However, this also means that if 2 molecules have the same name, other attributes like e.g. energy must also match:
-
-    ```
-        atp = Molecule("ATP", 10)
-        Molecule("ATP", 20)  # raises error
+    Molecule("ATP", 20)  # error because energy is different
     ```
 
     By default in this simulation molecule numbers can be thought of as being in mM, time steps in s, energies in J/mol.
@@ -61,7 +56,7 @@ class Molecule:
     You can setup the simulation to always call [degrade_molecules()][magicsoup.world.World.degrade_molecules] whenever a time step is finished.
 
     Molecular diffusion in the 2D molecule map happens whenever you call [diffuse_molecules()][magicsoup.world.World.diffuse_molecules].
-    The molecule map is `world.molecule_map`.
+    The molecule map is `world.molecule_map` (see [World][magicsoup.world.World]).
     It is a 3D tensor where dimension 0 represents all molecule species of the simulation.
     They are ordered in the same way the attribute `molecules` is ordered in the [Chemistry][magicsoup.containers.Chemistry] you defined.
     Dimension 1 represents x-positions and dimension 2 y-positions.
@@ -70,27 +65,26 @@ class Molecule:
     So, it alters the Moore's neighborhood of each pixel.
     How much of the center pixel's molecules are allowed to diffuse to the surrounding 8 pixels is defined by `diffusivity`.
     `diffusivity` is the ratio `a/b` when `a` is the amount of molecules diffusing to each of the 8 surrounding pixels,
-    and `b` is the amount of molecules on the center pixel.
+    and `b` is the amount of molecules that stays on the center pixel.
     Thus, `diffusivity=1.0` means all molecules of the center pixel are spread equally across the 9 pixels.
 
     Molecules permeating cell membranes also happens with [diffuse_molecules()][magicsoup.world.World.diffuse_molecules].
-    Cell molecules are defined in `world.cell_molecules`.
+    Cell molecules are defined in `world.cell_molecules` (see [World][magicsoup.world.World]).
     It is a 2D tensor where dimension 0 represents all cells and dimension 1 represents all molecule species.
     Again, molecule species are ordered in the same way the attribute `molecules` is ordered in the [Chemistry][magicsoup.containers.Chemistry] you defined.
-    Dimension 0 always changes its length depedning on how cell replicate or die.
-    The cell index (`cell.idx`) for any cell equals the index in `world.cell_molecules`.
-    So, the amount of molecule species currently in cell with index 100 are defined in `world.cell_molecules[100]`.
+    Dimension 0 always changes its length depedning on how cells replicate or die.
+    The cell index (`cell.idx` of [Cell][magicsoup.containers.Cell]) for any cell equals the index in `world.cell_molecules`.
+    _E.g._ the amount of molecule species currently in cell with index 100 is defined as `world.cell_molecules[100]`.
     `permeability` defines how much molecules can permeate from `world.molecule_map` into `world.cell_molecules`.
     Each cell lives on a certain pixel with x- and y-position.
     And although there are already molecules on this pixel, the cell has its own molecules.
-    You could imagine the cell as a bag of molecule hovering over the pixel.
+    You could imagine the cell as a bag of molecule hovering over that pixel.
     `permeability` allows molecules from that pixel in the molecule map to permeate into the cell that lives on that pixel (and vice versa).
     So e.g. if cell 100 lives on pixel 12, 450
     Molecules would be allowed to move from `world.molecule_map[:, 12, 450]` to `world.cell_molecules[100, :]`.
-    Again, this happens separately for every molecule species depending on its `permeability` value.
+    Again, this happens separately for every molecule species depending on the `permeability` value.
     Specifically, `permeability` is the ratio of molecules that can permeate into the cell and the molecules that stay outside.
-    Thus, a value of 1.0 means within one call half the molecules permeate into the cell.
-    This permeation also happens the other way round, from inside the cell to the outside.
+    Thus, a value of 1.0 means within one time step this molecule species spreads evenly between molecule map and cell.
     """
 
     _instances: dict[str, "Molecule"] = {}
@@ -194,31 +188,36 @@ class Molecule:
 
 class Chemistry:
     """
-    Object holding definition for the chemistry of the simulation.
+    Represents the chemistry with molecules and reactions available in a simulation.
 
-    Arguments:
-        molecules: List of all molecules species that are part of this simulation
-        reactions: List of all possible reactions in this simulation as a list of tuples: `(substrates, products)`.
+    Parameters:
+        molecules: List of all [Molecules][magicsoup.containers.Molecule] that are part of this simulation
+        reactions: List of all possible reactions in this simulation as a list of tuples: `(substrates, products)`
+            where both `substrates` and `products` are lists of [Molecules][magicsoup.containers.Molecule].
             All reactions can happen in both directions (left to right or vice versa).
+            Stoichiometric coefficients > 1 are defined by listing molecules multiple times.
 
     `molecules` should include at least all molecule species that are mentioned in `reactions`.
-    But it is possible to define more molecule species. Cells can use any molecule species in transporer or regulatory domains.
+    But it is possible to define more molecule species.
+    Cells can use molecule species in transporer and regulatory domains, even if they are not included in any reaction.
 
     Duplicate reactions and molecules will be removed on initialization.
     As any reaction can take place in both directions, it is not necessary to define both directions.
-    To combine multiple chemistries you can do `both = chemistry1 & chemistry2` which will combine all molecules and reactions.
+    You can use `__and__` to combine multiple chemistries:
+
+    ```
+    both = chemistry1 & chemistry2  # union of molecules and reactions
+    ```
 
     The chemistry object is used by [World][magicsoup.world.World] to know what molecule species exist.
     Reactions and molecule species are used to set up the world and create mappings for domains.
     On the [world][magicsoup.world.World] object there are some tensors that refer to molecule species (e.g. `world.molecule_map`).
     The molecule ordering in such tensors is always the same as the ordering in `chemistry.molecules`.
-    So, e.g. if `chemistry.molecules[2]` is pyruvate, `world.molecule_map[2]` refers to the pyruvate concentration
-    of the world molecule map.
-    For convenience mappings are provided:
+    E.g. if `chemistry.molecules[2]` is pyruvate, `world.molecule_map[2]` refers to pyruvate concentrations on the world molecule map.
+    For convenience mappings are provided on this object:
 
-    - `chemistry.mol_2_idx` to map a [Molecule][magicsoup.containers.Molecule] object
-    - `chemistry.molname_2_idx` to map a [Molecule][magicsoup.containers.Molecule] name string to its index.
-
+    - `chemistry.mol_2_idx` to map a [Molecule][magicsoup.containers.Molecule] object to its index
+    - `chemistry.molname_2_idx` to map a [Molecule][magicsoup.containers.Molecule] name string to its index
     """
 
     def __init__(
@@ -264,46 +263,41 @@ class Chemistry:
         return f"{type(self).__name__}({','.join(args)})"
 
 
-# TODO: make it private? / or make _DomainFact public?
-# TODO: then have this generic explanation (with start/end) on each domain
-class Domain:
+class _Domain:
     """
     Base Domain. All Domains should inherit from this class.
-
-    Arguments:
-        start: domain start on the CDS
-        end: domain end on the CDS
-
-    In the simulation domains for all proteins and cells exist as a set of tensors.
-    This object is just a representation of a domain extracted from these tensors.
-    You shouldn't need to instantiate it.
-    These domain objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
-
-    Domain start and end are python indexes of the domain sequence.
-    They subset the domain sequence from the CDS string.
-    The index starts with 0, start is included, end is excluded.
-    So, _e.g._ a domain with `start=3` and `end=18` is a domain
-    that starts with the 4th nucleotide and ends with the 18th nucleotide
-    on the CDS.
     """
 
     def __init__(self, start: int, end: int):
         self.start = start
         self.end = end
 
+    @classmethod
+    def from_dict(cls, kwargs: dict) -> "_Domain":
+        raise NotImplementedError
 
-class CatalyticDomain(Domain):
+
+class CatalyticDomain(_Domain):
     """
-    Object representing a catalytic domain.
+    Object describing a catalytic domain.
 
-    Arguments:
-        reaction: Tuple of substrate and product molecules which are involved in the reaction.
+    Parameters:
+        reaction: Tuple `(substrates, products)` where both `substrates` and `products`
+            are lists of [Molecules][magicsoup.containers.Molecule] which are involved in the reaction.
+            Stoichiometric coefficients > 1 are defined by listing molecules multiple times.
         km: Michaelis Menten constant of the reaction (in mM).
         vmax: Maximum velocity of the reaction (in mmol/s).
+        start: Domain start on the CDS
+        end: Domain end on the CDS
 
-    The catalytic domain is described for the direction from substrates to products.
-    For the reverse reaction, the reciprocal of Km applies. Vmax stays the same.
-    Stoichiometric coefficients > 1 are described by listing molecule species multiple times.
+    The simulation works with tensor representations of cell proteomes.
+    This class is a helper which makes interpreting a cell's proteome easier.
+    You should not instantiate this class but instead get it from `cell.proteome`
+    (see [Cell][magicsoup.containers.Cell]).
+
+    Domain start and end describe the slice of the CDS python string.
+    _I.e._ the index starts with 0, start is included, end is excluded.
+    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th nucleotide on the CDS.
     """
 
     def __init__(
@@ -311,9 +305,10 @@ class CatalyticDomain(Domain):
         reaction: tuple[list[Molecule], list[Molecule]],
         km: float,
         vmax: float,
-        **kwargs: int,
+        start: int,
+        end: int,
     ):
-        super().__init__(**kwargs)
+        super().__init__(start=start, end=end)
         subs, prods = reaction
         self.substrates = subs
         self.products = prods
@@ -353,18 +348,29 @@ class CatalyticDomain(Domain):
         return f"{subs_str} <-> {prods_str} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
-class TransporterDomain(Domain):
+class TransporterDomain(_Domain):
     """
-    Object representing a transporter domain.
+    Object describing a transporter domain.
 
-    Arguments:
-        molecule: Molecule species which can be transported by this domain.
+    Parameters:
+        molecule: [Molecule][magicsoup.containers.Molecule] which can be transported by this domain.
         km: Michaelis Menten constant of the transport (in mM).
         vmax: Maximum velocity of the transport (in mmol/s).
         is_exporter: Whether the transporter is exporting this molecule species out of the cell.
+        start: Domain start on the CDS
+        end: Domain end on the CDS
+
+    The simulation works with tensor representations of cell proteomes.
+    This class is a helper which makes interpreting a cell's proteome easier.
+    You should not instantiate this class but instead get it from `cell.proteome`
+    (see [Cell][magicsoup.containers.Cell]).
 
     `is_exporter` is only relevant in combination with other domains on the same protein.
     It defines in which transport direction this domain is energetically coupled with others.
+
+    Domain start and end describe the slice of the CDS python string.
+    _I.e._ the index starts with 0, start is included, end is excluded.
+    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th nucleotide on the CDS.
     """
 
     def __init__(
@@ -373,9 +379,10 @@ class TransporterDomain(Domain):
         km: float,
         vmax: float,
         is_exporter: bool,
-        **kwargs: int,
+        start: int,
+        end: int,
     ):
-        super().__init__(**kwargs)
+        super().__init__(start=start, end=end)
         self.molecule = molecule
         self.km = km
         self.vmax = vmax
@@ -406,17 +413,28 @@ class TransporterDomain(Domain):
         return f"{self.molecule} {sign} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
-class RegulatoryDomain(Domain):
+class RegulatoryDomain(_Domain):
     """
-    Object representing a regulatory domain.
+    Object describing a regulatory domain.
 
-    Arguments:
-        effector: Effector molecule species
+    Parameters:
+        effector: Effector [Molecules][magicsoup.containers.Molecule]
         hill: Hill coefficient describing degree of cooperativity
         km: Ligand concentration producing half occupation (in mM)
         is_inhibiting: Whether this is an inhibiting regulatory domain (otherwise activating).
         is_transmembrane: Whether this is also a transmembrane domain.
             If true, the domain will react to extracellular molecules instead of intracellular ones.
+        start: Domain start on the CDS
+        end: Domain end on the CDS
+
+    The simulation works with tensor representations of cell proteomes.
+    This class is a helper which makes interpreting a cell's proteome easier.
+    You should not instantiate this class but instead get it from `cell.proteome`
+    (see [Cell][magicsoup.containers.Cell]).
+
+    Domain start and end describe the slice of the CDS python string.
+    _I.e._ the index starts with 0, start is included, end is excluded.
+    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th nucleotide on the CDS.
     """
 
     def __init__(
@@ -426,9 +444,10 @@ class RegulatoryDomain(Domain):
         km: float,
         is_inhibiting: bool,
         is_transmembrane: bool,
-        **kwargs: int,
+        start: int,
+        end: int,
     ):
-        super().__init__(**kwargs)
+        super().__init__(start=start, end=end)
         self.effector = effector
         self.km = km
         self.hill = int(hill)
@@ -465,34 +484,32 @@ class RegulatoryDomain(Domain):
 
 class Protein:
     """
-    Object representing a protein.
+    Object describing a protein.
 
-    Arguments:
+    Parameters:
         domains: All domains of the protein
         cds_start: Start coordinate of its coding region
         cds_end: End coordinate of its coding region
         is_fwd: Whether its CDS is in the forward or reverse-complement of the genome.
 
-    In the simulation proteins for all cells exist as a set of tensors.
-    This object is just a representation of a single protein.
-    You shouldn't need to instantiate it.
-    Protein objects are created when calling _e.g._ [get_cell()][magicsoup.world.World.get_cell].
+    The simulation works with tensor representations of cell proteomes.
+    This class is a helper which makes interpreting a cell's proteome easier.
+    You should not instantiate this class but instead get it from `cell.proteome`
+    (see [Cell][magicsoup.containers.Cell]).
 
-    CDS start and end are the indices that subset the CDS in the genome string.
-    The index starts with 0, `cds_start` is included in the CDS, `cds_end` is not included.
-    So, `cds_start=2` and `cds_end=31` describe a CDS whose first nucleotide is the 3rd basepair
-    on the genome, and whose last nucleotide is the 31st basepair on the genome.
+    CDS start and end describe the slice of the genome python string.
+    _I.e._ the index starts with 0, start is included, end is excluded.
+    _E.g._ `cds_start=2`, `cds_end=31` starts with the 3rd and ends with the 31st nucleotide on the genome.
 
     `is_fwd` describes whether the CDS is found on the forward (hypothetical 5'-3')
     or the reverse-complement (hypothetical 3'-5') side of the genome.
-    `cds_start` and `cds_end` always describe the parsing direction / the direction
-    of the hypothetical transcriptase.
+    `cds_start` and `cds_end` always describe the parsing direction / the direction of the hypothetical transcriptase.
     So, if you want to visualize a `is_fwd=False` CDS on the genome in 5'-3' direction
     you have to do `n - cds_start` and `n - cds_stop` if `n` is the genome length.
     """
 
     def __init__(
-        self, domains: list[Domain], cds_start: int, cds_end: int, is_fwd: bool
+        self, domains: list[_Domain], cds_start: int, cds_end: int, is_fwd: bool
     ):
         self.domains = domains
         self.n_domains = len(domains)
@@ -506,9 +523,9 @@ class Protein:
         Create Protein instance from dict. Key must match arguments.
         Domains are set as a list of tuples `(dom_type, dom_kwargs)` where
         `dom_type` is domain type integer 1 (catalytic), 2 (transporter), or
-        3 (transporter) and `dom_kwargs` is a dict with kwargs for the domain's `from_dict()`.
+        3 (transporter) and `dom_kwargs` is a dict with kwargs for each domain's `from_dict()`.
         """
-        doms: list[Domain] = []
+        doms: list[_Domain] = []
         for dom_type, dom_kwargs in kwargs["domains"]:
             if dom_type == 1:
                 doms.append(CatalyticDomain.from_dict(dom_kwargs))
@@ -538,38 +555,49 @@ class Protein:
         return " | ".join(domstrs)
 
 
-# TODO: refer to domain classes for proteome description
-
-
 class Cell:
     """
-    Object representing a cell with its environment.
+    Object describing a cell and its environment.
 
-    Arguments:
-        world: Reference to the cell's world object.
-        genome: Full genome sequence of this cell.
-        int_molecules: Intracellular molecules. A tensor with one dimension that represents
-            each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
-        ext_molecules: Extracellular molecules. A tensor with one dimension that represents
-            each molecule species in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
-            These are the molecules of the pixel the cell is currently living on.
-        position: Position on the cell map.
-        idx: The current index of this cell.
-        label: Label which can be used to track cells. Has no effect.
+    Parameters:
+        world: Reference to the origin [World][magicsoup.world.World] object.
+        genome: Genome sequence string of this cell.
+        position: Position on the cell map as tuple `(x, y)`.
+        idx: The current index of this cell in `world`.
+        label: Label of origin which can be used to track cells.
         n_steps_alive: Number of time steps this cell has lived since last division.
         n_divisions: Number of times this cell's ancestors already divided.
+        proteome: List of proteins with each protein being a list of domains,
+            which are made up of
+            [CatalyticDomains][magicsoup.containers.CatalyticDomain],
+            [TransporterDomains][magicsoup.containers.TransporterDomain],
+            [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
+        int_molecules: Intracellular molecule concentrations. A 1D tensor that describes
+            each [Molecule][magicsoup.containers.Molecule]
+            in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+        ext_molecules: Extracellular molecule concentrations. A 1D tensor that describes
+            each [Molecule][magicsoup.containers.Molecule]
+            in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+            These are the molecules in `world.molecule_map` of the pixel the cell is currently living on.
 
-    You get it when calling [get_cell()][magicsoup.world.World.get_cell].
-    On the `world` object all cells are actually represented as a combination of lists and tensors.
-    [get_cell()][magicsoup.world.World.get_cell] gathers all information for one cell and
-    represents it in this `Cell` object.
-    Some attributes are gathered lazily just when you access them.
+    The simulation works with tensor representations of cell proteomes and molecule concentrations.
+    This class is a helper which makes interpreting a cell easier.
+    You should not instantiate this class but instead get it from [get_cell()][magicsoup.world.World.get_cell].
 
-    When a cell replicates its genome and proteome are copied.
+    All parameters are exposed as attributes on the cell object.
+    Some are calculated lazily just when they are accessed.
+
+    ```
+    cell = world.get_cell(by_idx=3)
+    assert cell.idx == 5  # the cell's current index
+    cell.proteome  # proteome is calculated now
+    ```
+
+    When a cell divides its genome and proteome are copied.
     Both descendants will recieve half of all molecules each.
     Both their `n_divisions` attributes are incremented.
     The cell's `label` will be copied as well.
-    This way you can track cells' origins.
+    This way you can track how cells spread.
     """
 
     def __init__(
@@ -619,19 +647,6 @@ class Cell:
             else:
                 self._proteome = []
         return self._proteome
-
-    def copy(self, **kwargs) -> "Cell":
-        old_kwargs = {
-            "world": self.world,
-            "genome": self.genome,
-            "position": self.position,
-            "idx": self.idx,
-            "label": self.label,
-            "n_steps_alive": self.n_steps_alive,
-            "n_divisions": self.n_divisions,
-            "proteome": self._proteome,
-        }
-        return Cell(**{**old_kwargs, **kwargs})  # type: ignore
 
     def __repr__(self) -> str:
         kwargs = {
