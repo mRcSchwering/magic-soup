@@ -652,8 +652,9 @@ def test_get_neighbours():
     ]
     # fmt: on
 
+    all_cells = list(range(world.n_cells))
     for idx, exp in enumerate(nghbrs):
-        res = world.get_neighbors(cell_idxs=[idx])
+        res = world.get_neighbors(cell_idxs=[idx], nghbr_idxs=all_cells)
         assert len(res) == len(exp), idx
         assert set(res) == exp, idx
 
@@ -662,17 +663,17 @@ def test_get_neighbours():
         assert len(res) == len(exp), idx
         assert set(res) == exp, idx
 
-    res = world.get_neighbors(cell_idxs=[0, 1, 2])
+    res = world.get_neighbors(cell_idxs=[0, 1, 2], nghbr_idxs=all_cells)
     exp = nghbrs[0] | nghbrs[1] | nghbrs[2]
     assert len(res) == len(exp)
     assert set(res) == exp
 
-    res = world.get_neighbors(cell_idxs=[1, 4, 8])
+    res = world.get_neighbors(cell_idxs=[1, 4, 8], nghbr_idxs=all_cells)
     exp = nghbrs[1] | nghbrs[4] | nghbrs[8]
     assert len(res) == len(exp)
     assert set(res) == exp
 
-    res = world.get_neighbors(cell_idxs=[1, 4, 8])
+    res = world.get_neighbors(cell_idxs=[1, 4, 8], nghbr_idxs=all_cells)
     exp = nghbrs[1] | nghbrs[4] | nghbrs[8]
     assert len(res) == len(exp)
     assert set(res) == exp
