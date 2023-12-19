@@ -5,10 +5,6 @@ from magicsoup.util import closest_value, random_genome, round_down
 from magicsoup.world import World
 
 
-# TODO: doublecheck init descriptions, attrbs, methods
-# TODO: refer to container classes for info about domains
-
-
 class _DomainFact:
     """
     Domain factory base.
@@ -30,10 +26,11 @@ class _DomainFact:
 
 class CatalyticDomainFact(_DomainFact):
     """
-    Factory for generating catalytic domains.
+    Factory for generating nucleotide sequences with [CatalyticDomains][magicsoup.containers.CatalyticDomain].
 
     Arguments:
-        reaction: Tuple of substrate and product molecules which are involved in the reaction.
+        reaction: Tuple of `(substrates, products)` from [Chemistry][magicsoup.containers.Chemistry]
+            where both `substrates` and `products` are lists of [Molecules][magicsoup.containers.Molecule].
         km: Desired Michaelis Menten constant of the transport (in mM).
         vmax: Desired Maximum velocity of the transport (in mmol/s).
 
@@ -114,10 +111,10 @@ class CatalyticDomainFact(_DomainFact):
 
 class TransporterDomainFact(_DomainFact):
     """
-    Factory for generating transporter domains.
+    Factory for generating nucleotide sequences with [TransporterDomains][magicsoup.containers.TransporterDomain].
 
     Arguments:
-        molecule: Molecule species which can be transported into or out of the cell by this domain.
+        molecule: [Molecules][magicsoup.containers.Molecule] which can be transported into or out of the cell by this domain.
         km: Desired Michaelis Menten constant of the transport (in mM).
         vmax: Desired Maximum velocity of the transport (in mmol/s).
         is_exporter: Whether the transporter is exporting this molecule species out of the cell.
@@ -191,10 +188,10 @@ class TransporterDomainFact(_DomainFact):
 
 class RegulatoryDomainFact(_DomainFact):
     """
-    Factory for generating regulatory domains.
+    Factory for generating nucleotide sequences with [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
 
     Arguments:
-        effector: Molecule species which will be the effector molecule.
+        effector: Effector [Molecules][magicsoup.containers.Molecule]
         is_transmembrane: Whether this is also a transmembrane domain.
             If true, the domain will react to extracellular molecules instead of intracellular ones.
         km: Desired ligand concentration producing half occupation (in mM).
@@ -276,7 +273,7 @@ class GenomeFact:
     Factory for generating genomes that translate into a desired proteome.
 
     Arguments:
-        world: World object in which the genome will be used
+        world: [World][magicsoup.world.World] object in which the genome will be used
         proteome: Desired proteome as a list of lists of domain factories.
             Each list of domain factories represents a protein.
         target_size: Optional target size of generated genome.
@@ -288,7 +285,7 @@ class GenomeFact:
     As domain factories [CatalyticDomainFact][magicsoup.factories.CatalyticDomainFact],
     [TransporterDomainFact][magicsoup.factories.TransporterDomainFact],
     [RegulatoryDomainFact][magicsoup.factories.RegulatoryDomainFact] can be used.
-    Use `generate()` to sample and generate a genome.
+    Use [generate()][magicsoup.factories.GenomeFact.generate] to sample and generate a genome.
     There are always multiple nucleotide sequences which can encode the same proteome.
     Thus each generated genome might be different.
 

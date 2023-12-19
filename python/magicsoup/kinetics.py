@@ -337,7 +337,7 @@ class Kinetics:
 
     Parameters:
         chemistry: Simulation [Chemistry][magicsoup.containers.Chemistry]
-        abs_temp: Absolute temperature in Kelvin. Will influence the free Gibbs energy calculation of reactions.
+        abs_temp: Absolute temperature in Kelvin. Will influence reaction equilibriums.
             Higher temperatures give concentration gradients higher importance.
         km_range: The range from which to sample Michaelis Menten constants for domains (in mM).
             They are sampled from a uniform distribution with its reciprocal. All values must be > 0.

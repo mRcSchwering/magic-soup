@@ -33,87 +33,107 @@ class _CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
-# TODO: go through method docsstring again
-# TODO: doublecheck class description (with methods/attributes)
-
-
 class World:
     """
-    This is the main object for running the simulation.
-    It holds all information and includes all methods for advancing the simulation.
+    The object of this class is the main API for running the simulation.
+    It holds the state of a simulation and offers methods for advancing it.
 
     Parameters:
-        chemistry: The chemistry object that defines molecule species and reactions for this simulation.
-        map_size: Size of world map as number of pixels in x- and y-direction.
-        abs_temp: Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
-            Higher temperature will give the reaction quotient term higher importance.
-        mol_map_init: How to initialize molecule maps (`randn` or `zeros`).
+        chemistry: [Chemistry][magicsoup.containers.Chemistry] with [Molecules][magicsoup.containers.Molecule] and reactions.
+        map_size: Size of the 2D world map as number of pixels in x- and y-direction.
+        abs_temp: Absolute temperature in Kelvin. Will influence reaction equilibriums.
+            Higher temperatures give concentration gradients higher importance.
+        mol_map_init: How to give initial molecule concentrations to molecule maps (`randn` or `zeros`).
             `randn` is normally distributed N(10, 1), `zeros` is all zeros.
-        start_codons: start codons which start a coding sequence (translation only happens within coding sequences).
-        stop_codons: stop codons which stop a coding sequence (translation only happens within coding sequences).
+        start_codons: Codons which start a coding sequence
+        stop_codons: Codons which stop a coding sequence
         device: Device to use for tensors (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-            This can be used to move most calculations to a GPU.
+            Use this to move most calculations to a GPU.
         batch_size: Optional parameter for reducing memory peaks when cell parameters are updated.
             By iteratively calculating cell paremeters of maximum `batch_size` cells at once,
             one can reduce memory peaks during functions that update cell parameters.
 
     Most attributes on this class describe the current state of molecules and cells.
-    Whenever molecules are listed or represented in one dimension, they are ordered the same way as in `chemistry.molecules`.
-    Likewise, cells are always ordered the same way as in `world.cell_genomes` (see below).
-    The index of a certain cell is the index of that cell in `world.cell_genomes`.
-    It is the same index as `cell.idx` of a cell object you retrieved with `world.get_cell()`.
-    But whenever an operation modifies the number of cells (like `world.kill_cells()` or `world.divide_cells()`),
-    cells get new indexes. Here are the most important attributes:
+    Both cells and molecules are referred to by index.
+    Whenever cells are listed or represented in one dimension they are ordered consistently.
+    _E.g._ at any point in the simulation `world.cell_genomes[i]` and `world.cell_labels[i]`
+    refer to the genome and label of cell with index `i`.
+    As cell number grows and shrinks cell indexes are not constant throughout the simulation.
+    Whenever an operation modifies the number of cells
+    (like [kill_cells()][magicsoup.world.World.kill_cells] or [divide_cells()][magicsoup.world.World.divide_cells])
+    cell indexes are updated.
+    Likewise, molecules are always ordered as in [Chemistry][magicsoup.containers.Chemistry].
+    _E.g._ `world.chemistry.molecules[i]` refers to the ith [Molecule][magicsoup.containers.Molecule] object
+    and `world.molecule_map[i]` refers to a 2D map describing molecule concentrations of the ith molecule.
+    Molecule indexes stay constant throughout a simulation.
 
-    Attributes:
-        cell_genomes: A list of cell genomes. Each cell's index in this list is what is referred to as the cell index.
-            The cell index is used for the same cell in other orderings of cells (_e.g._ `labels`, `cell_divisions`, `cell_molecules`).
-        labels: List of cell labels. Cells are ordered as in `world.cell_genomes`. Labels are strings that can be used to
-            track cell origins. When spawning new cells (`world.spawn_cells()`) a random label is assigned to each cell.
-            If a cell divides, its descendants will have the same label.
-        cell_map: Boolean 2D tensor referencing which pixels are occupied by a cell.
-            Dimension 0 represents the x, dimension 1 y.
-        molecule_map: Float 3D tensor describing concentrations (in mM by default) for each molecule species on each pixel in this world.
-            Dimension 0 describes the molecule species. They are in the same order as `chemistry.molecules`.
-            Dimension 1 represents x, dimension 2 y.
-            So, `world.molecule_map[0, 1, 2]` is number of molecules of the 0th molecule species on pixel 1, 2.
-        cell_molecules: Float 2D tensor describing concentrations (in mM by default) for each molecule species in each cell.
-            Dimension 0 is the cell index. It is the same as in `world.cell_genomes` and the same as on a cell object (`cell.idx`).
-            Dimension 1 describes the molecule species. They are in the same order as `chemistry.molecules`.
-            So, `world.cell_molecules[0, 1]` represents concentration in mM of the 1st molecule species the 0th cell.
-        cell_lifetimes: Integer 1D tensor describing how many time steps each cell survived since the last division.
-            This tensor is for monitoring and doesn't have any other effect.
-            Cells are in the same as in `world.cell_genomes` and the same as on a cell object (`cell.idx`).
-        cell_divisions: Integer 1D tensor describing how many times each cell's ancestors divided.
-            This tensor is for monitoring and doesn't have any other effect.
-            Cells are in the same order as in `world.cell_genomes` and the same as on a cell object (`cell.idx`).
+    The simulation works with lists and [PyTorch Tensor](https://pytorch.org/docs/stable/tensors.html)
+    representations of cell proteomes and molecule concentrations.
+    You can get a [Cell][magicsoup.containers.Cell] object from [get_cell()][magicsoup.world.World.get_cell]
+    with easy-to-interpret attributes (see [Cell][magicsoup.containers.Cell] docs).
+    However, for performance reasons only the lists and tensor representations are updated during a simulation.
+    [get_cell()][magicsoup.world.World.get_cell] is intended for analyzing simulation results.
 
-    Methods for advancing the simulation and to use during a simulation:
+    For customizing a simulation one can interact with the working lists and tensors of the simulation.
+    They could be used for reading cell and molecule information, or for modifying it.
+    The following attributes are always updated during the simulation:
 
-    - [spawn_cells()][magicsoup.world.World.spawn_cells] spawn new cells and place them randomly on the map
-    - [add_cells()][magicsoup.world.World.add_cells] add previous cells and place them randomly on the map
-    - [divide_cells()][magicsoup.world.World.divide_cells] replicate existing cells
-    - [update_cells()][magicsoup.world.World.update_cells] update existing cells if their genome has changed
+    - `cell_genomes`: A list of strings representing cell genomes ordered by current cell index.
+    - `labels`: List of strings representing cell labels ordered by current cell index.
+        Labels are strings that can be used to track cell origins.
+        When spawning new cells ([spawn_cell()][magicsoup.world.World.spawn_cells]) a random label is assigned to each cell.
+        If a cell divides, its descendants get the same label.
+    - `cell_map`: Boolean 2D tensor describing which pixels on the map are occupied by a cell.
+        Dimension 0 represents the x, dimension 1 the y direction.
+    - `molecule_map`: Float 3D tensor describing concentrations (in mM by default) for each [Molecule][magicsoup.containers.Molecule].
+        Dimension 0 represents the [Molecule][magicsoup.containers.Molecule] ordered as in [Chemistry][magicsoup.containers.Chemistry].
+        Dimension 1 represents the x, dimension 2 the y direction.
+        So, `world.molecule_map[0, 1, 2]` is the concentration of the 0th [Molecule][magicsoup.containers.Molecule]
+        on pixel $(1, 2)$ of the world map.
+    - `cell_molecules`: Float 2D tensor describing intracellular concentrations (in mM by default) for each [Molecule][magicsoup.containers.Molecule].
+        Dimension 0 represents the cell ordered by current cell index.
+        Dimension 1 represents the [Molecule][magicsoup.containers.Molecule] ordered as in [Chemistry][magicsoup.containers.Chemistry].
+        So, `world.cell_molecules[0, 1]` represents the intracellular concentration in mM
+        of the 1st [Molecule][magicsoup.containers.Molecule] in the cell which currently has index 0.
+    - `cell_lifetimes`: Integer 1D tensor describing how many time steps each cell survived since it was spawned
+        or since its last division ordered by current cell index.
+    - `cell_divisions`: Integer 1D tensor describing how many times each cell's ancestors divided ordered by current cell index.
+
+    Some methods are provided to advance the simulation and interact with it:
+
+    - [spawn_cells()][magicsoup.world.World.spawn_cells] spawn new cells from genomes and place them randomly on the map
+    - [add_cells()][magicsoup.world.World.add_cells] add new cells from [Cell][magicsoup.containers.Cell] objects and place them randomly on the map
+    - [divide_cells()][magicsoup.world.World.divide_cells] divide existing cells
+    - [update_cells()][magicsoup.world.World.update_cells] update existing cells with a new genome and proteome
     - [kill_cells()][magicsoup.world.World.kill_cells] kill existing cells
     - [move_cells()][magicsoup.world.World.move_cells] move existing cells to a random position in their Moore's neighborhood
     - [diffuse_molecules()][magicsoup.world.World.diffuse_molecules] let molecules diffuse and permeate by one time step
     - [degrade_molecules()][magicsoup.world.World.degrade_molecules] let molecules degrade by one time step
     - [increment_cell_lifetimes()][magicsoup.world.World.increment_cell_lifetimes] increment `world.cell_lifetimes` by 1
     - [enzymatic_activity()][magicsoup.world.World.enzymatic_activity] let cell proteins work for one time step
-
-    If you want to get a cell with all information about its contents and its current environment use [get_cell()][magicsoup.world.World.get_cell].
-    The cell objects returned by this function can be added to a new map using [add_cells()][magicsoup.world.World.add_cells].
-    During the simulation you should however work directly with the tensors mentioned above for performance reasons.
+    - [get_cell()][magicsoup.world.World.get_cell] get a cell representation as a [Cell][magicsoup.containers.Cell] object
 
     Furthermore, there are methods for saving and loading a simulation.
-    For any new simulation use [save()][magicsoup.world.World.save] once to save the whole world object (with chemistry, genetics, kinetics)
-    to a pickle file. You can restore it with [from_file()][magicsoup.world.World.from_file] later on.
+    For any new simulation use [save()][magicsoup.world.World.save] once to save the whole world object to a pickle file
+    (including its [Chemistry][magicsoup.containers.Chemistry], [Genetics][magicsoup.genetics.Genetics], [Kinetics][magicsoup.kinetics.Kinetics]).
+    You can restore it with [from_file()][magicsoup.world.World.from_file] later on.
     Then, to save the world's state you can use [save_state()][magicsoup.world.World.save_state].
     This is a quick, lightweight save, but it only saves things that change during the simulation.
     Use [load_state()][magicsoup.world.World.load_state] to re-load a certain state.
 
-    The `world` object carries `world.genetics`, `world.kinetics`, and `world.chemistry`
-    (which is just a reference to the chemistry object that was used when initializing `world`).
+    [PyTorch](https://pytorch.org/) is heavily used in this simulation.
+    Some important attributes are [PyTorch Tensors](https://pytorch.org/docs/stable/tensors.html) (see above).
+    By setting the `device` parameter most calculations can be moved to a GPU.
+    This heavily increases performance and is recommended.
+    When working with tensors one should try to use [tensor methods](https://pytorch.org/docs/stable/torch.html).
+    That way computations and data stay on the GPU.
+    [Here](https://pytorch.org/tutorials/beginner/introyt/tensors_deeper_tutorial.html) is a tutorial for working with tensors.
+    Try to avoid sending data back and forth between CPU and GPU.
+
+    [World][magicsoup.world.World] object carries a [Genetics][magicsoup.genetics.Genetics] instance on `world.genetics`,
+    a [Kinetics][magicsoup.kinetics.Kinetics] instance on `world.kinetics`,
+    and a [Chemistry][magicsoup.containers.Chemistry] instance on `world.chemistry`
+    (which is just a reference to the [Chemistry][magicsoup.containers.Chemistry] object that was used when initializing [World][magicsoup.world.World]).
     Usually, you don't need to touch them.
     But, if you want to override them or look into some details, see the docstrings of their classes for more information.
 
@@ -189,21 +209,20 @@ class World:
         by_position: tuple[int, int] | None = None,
     ) -> "Cell":
         """
-        Get a cell with information about its current environment.
+        Get a [Cell][magicsoup.containers.Cell] object with information about its current environment.
         Raises `ValueError` if cell was not found.
 
         Parameters:
-            by_idx: get cell by cell index (`cell.idx`)
-            by_position: get cell by position (x, y)
+            by_idx: Get cell by current cell index in [World][magicsoup.world.World]
+            by_position: Get cell by position `(x, y)` on the world map.
 
         Returns:
-            The searched cell.
+            The searched cell described as [Cell][magicsoup.containers.Cell] object.
 
-        For performance reasons most cell attributes are maintained in tensors during the simulation.
-        When you call `world.get_cell()` all information about a cell is gathered in one object.
-        This is not very performant.
+        The simulation works with tensor representations of cell proteomes and molecule concentrations.
+        The return value of this function is a helper which makes interpreting a cell easier.
+        See the documentation of [Cell][magicsoup.containers.Cell] for more details.
         """
-        # TODO: refer to domain classes for proteome description
         idx = -1
         if by_idx is not None:
             idx = by_idx
@@ -215,13 +234,11 @@ class World:
                 raise ValueError(f"Cell at {by_position} not found")
             idx = idxs[0]
 
-        pos = self.cell_positions[idx]
         return Cell(
             world=self,
             idx=idx,
             genome=self.cell_genomes[idx],
-            position=tuple(pos.tolist()),  # type: ignore
-            ext_molecules=self.molecule_map[:, pos[0], pos[1]],
+            position=tuple(self.cell_positions[idx].tolist()),  # type: ignore
             label=self.cell_labels[idx],
             n_steps_alive=int(self.cell_lifetimes[idx].item()),
             n_divisions=int(self.cell_divisions[idx].item()),
@@ -273,15 +290,15 @@ class World:
         All lists and tensors that reference cells will be updated.
 
         Parameters:
-            genomes: List of genomes of the newly added cells
+            genomes: List of genome strings for newly added cells
 
         Returns:
-            The indexes of successfully added cells.
+            Cell indexes of successfully added cells.
 
-        Each cell will be placed randomly on the map and receive half the molecules of the pixel where it was added.
-        If there are less pixels left on the cell map than cells you want to add,
-        only the remaining pixels will be filled with new cells.
-        Each cell will also receive a random label.
+        Each cell is placed randomly on the map and receives half the molecules of the pixel where it is added.
+        If too few unoccupied pixels are left on the cell map only the remaining unoccupied pixels will be filled with new cells.
+        For each new cell all cell parameters are updated.
+        Each new cell recieves a lifetime of 0, 0 divisions, and a random label.
         """
         n_new_cells = len(genomes)
         if n_new_cells == 0:
@@ -325,20 +342,19 @@ class World:
 
     def add_cells(self, cells: list["Cell"]) -> list[int]:
         """
-        Place cells randomly on the map.
+        Place [Cells][magicsoup.containers.Cell] randomly on the map.
         All lists and tensors that reference cells will be updated.
 
         Parameters:
-            cells: List of cells to be added
+            cells: List of [Cell][magicsoup.containers.Cell] objects to be added
 
         Returns:
             The indexes of successfully added cells.
 
         Each cell will be placed randomly on the map.
-        If there are less pixels left on the cell map than cells you want to add,
-        only the remaining pixels will be filled with cells.
-        They keep their genomes, proteomes, intracellular molecule compositions, lifetimes, and divisions.
-        Cell indexes and positions will be new.
+        If too few unoccupied pixels are left on the cell map only the remaining unoccupied pixels will be filled with cells.
+        Added cells keep their genomes, proteomes, intracellular molecules, lifetimes, divisions, labels.
+        Their indexes and positions are updated.
         """
         n_new_cells = len(cells)
         if n_new_cells == 0:
@@ -396,19 +412,19 @@ class World:
             cell_idxs: Cell indexes of the cells that should divide.
 
         Returns:
-            A list of tuples of descendant cell indexes.
+            List of tuples `(anc_idx, new_idx)` of successfully divided cells
+            where `anc_idx` is the ancestor cell index and `new_idx`
+            is the newly created cell index.
 
         Each cell divides by creating a clone of itself on a random pixel next to itself (Moore's neighborhood).
-        If every pixel in its Moore's neighborhood is taken, it will not be able to divide.
-        Both, the original ancestor cell and the newly placed cell will become the descendants.
+        If every pixel in its Moore's neighborhood is already occupied, it will not be able to divide.
+        Both the original ancestor cell and the newly placed cell will become the descendants.
         They will have the same genome, proteome, and label.
-        Both descendants share all molecules equally.
-        So each descendant cell will get half the molecules of the ancestor cell.
+        Molecule of the ancestor cell are shared evenly among descendants.
 
-        Both descendants will share the same number of divisions.
-        It is incremented by 1 for both cells.
+        Both descendants get the ancestor's number of divisions + 1.
         So, _e.g._ if a cell with `n_divisions=2` divides, its descendants both have `n_divisions=3`.
-        For both of them the number of survived steps is 0 after the division.
+        Both descendants recieve a new lifetime of 0.
 
         Of the list of descendant index tuples,
         the first descendant in each tuple is the cell that still lives on the same pixel.
@@ -460,14 +476,12 @@ class World:
 
     def update_cells(self, genome_idx_pairs: list[tuple[str, int]]):
         """
-        Update existing cells with new genomes and calculate new cell
-        parameters for them.
+        Update existing cells with new genomes and derive cell
+        proteomes for them.
 
         Parameters:
-            genome_idx_pairs: List of tuples of genomes and cell indexes
-
-        Each element identifies the cell that is changed by index
-        and provides its new genome.
+            genome_idx_pairs: List of tuples `(genome, idx)` where
+                `genome` is the cells genome and `idx` is its current index.
         """
         if len(genome_idx_pairs) == 0:
             return
@@ -481,15 +495,15 @@ class World:
     def kill_cells(self, cell_idxs: list[int]):
         """
         Remove existing cells.
-        All lists and tensors referencing cells will be updated.
+        All lists and tensors referencing cells are updated.
 
         Parameters:
             cell_idxs: Indexes of the cells that should die
 
         Cells that are killed dump their molecule contents onto the pixel they used to live on.
 
-        Cells will be removed from all lists and tensors that reference cells.
-        Thus, after killing cells the index of some living cells will be updated.
+        Cells are removed from all lists and tensors that reference cells.
+        Thus, after killing cells the index of some living cells are updated.
         E.g. if there are 10 cells and you kill the cell with index 8 (the 9th cell),
         the cell that used to have index 9 (10th cell) will now have index 9.
         """
@@ -524,11 +538,13 @@ class World:
     def move_cells(self, cell_idxs: list[int]):
         """
         Move cells to a random position in their Moore's neighborhood.
-        If every pixel in the cells' Moore neighborhood is taken the cell will not be moved.
-        `world.cell_map` will be updated.
+        If every pixel in the cells' Moore neighborhood is occupied already
+        the cell will not be moved.
 
         Parameters:
             cell_idxs: Indexes of cells that should be moved
+
+        `world.cell_positions` and `world.cell_map` are updated.
         """
         if len(cell_idxs) == 0:
             return
@@ -557,7 +573,8 @@ class World:
 
         Cells are removed from their current pixels on the cell map
         and repositioned randomly on any free pixel on the cell map.
-        Only cell positions change (_e.g._ genomes, proteomes, cell molecules, cell indexes stay the same).
+        `world.cell_positions` and `world.cell_map` are updated.
+        _I.e._ genomes, proteomes, cell molecules stay the same.
         """
         if len(cell_idxs) == 0:
             return
@@ -569,6 +586,7 @@ class World:
         old_ys = self.cell_positions[cell_idxs, 1]
         self.cell_map[old_xs, old_ys] = False
 
+        # TODO: shouldn't I ignore the cells which are repositioned?
         new_pos = self._find_free_random_positions(n_cells=len(cell_idxs))
         new_xs = new_pos[:, 0]
         new_ys = new_pos[:, 1]
@@ -601,8 +619,8 @@ class World:
         `world.molecule_map` and `world.cell_molecules` are updated.
 
         By how much each molcule species diffuses around the world map and permeates
-        into or out of cells if defined on the `Molecule` objects itself.
-        See `Molecule` for more information.
+        into or out of cells is defined on [Molecule][magicsoup.containers.Molecule]
+        in [Chemistry][magicsoup.containers.Chemistry].
         """
         n_pxls = self.map_size**2
         for mol_i, diffuse in enumerate(self._diffusion):
@@ -639,7 +657,8 @@ class World:
         `world.molecule_map` and `world.cell_molecules` are updated.
 
         How quickly each molecule species degrades depends on its half life
-        which is defined on the `Molecule` object of that species.
+        which is defined on [Molecule][magicsoup.containers.Molecule]
+        in [Chemistry][magicsoup.containers.Chemistry].
         """
         for mol_i, degrad in enumerate(self._mol_degrads):
             self.molecule_map[mol_i] *= degrad
@@ -648,7 +667,9 @@ class World:
     def increment_cell_lifetimes(self):
         """
         Increment `world.cell_lifetimes` by 1.
-        This is for monitoring and doesn't have any other effect.
+        Cell lifetimes can be used to filter cells but,
+        apart from what you implement,
+        they don't have any effect in the simulation.
         """
         self.cell_lifetimes += 1
 
@@ -671,9 +692,8 @@ class World:
             p_del: Probability of any indel being a deletion
                 (inverse probability of it being an insertion)
 
-        Convenience function that uses [point_mutations][magicsoup.mutations.point_mutations]
+        Convenience function that uses [mutations.point_mutations()][magicsoup.mutations.point_mutations]
         to mutate genomes, then updates cell parameters for cells whose genomes were changed.
-        See [point_mutations][magicsoup.mutations.point_mutations] for details.
         """
         if cell_idxs is None:
             seqs = self.cell_genomes
@@ -694,12 +714,10 @@ class World:
                 Leave `None` to allow all cells to recombinate.
             p: Probability of a strand break per nucleotide during recombinataion.
 
-        Convenience function that uses [recombinations][magicsoup.mutations.recombinations]
+        Convenience function that uses [mutations.recombinations()][magicsoup.mutations.recombinations]
         to recombinate genomes of neighbouring cells, then updates cell parameters for cells
         whose genomes were changed.
-        [get_neighbors][magicsoup.world.World.get_neighbors] is used to identify neighbors.
-        See [recombinations][magicsoup.mutations.recombinations] and
-        [get_neighbors][magicsoup.world.World.get_neighbors] for details.
+        [get_neighbors()][magicsoup.world.World.get_neighbors] is used to identify neighbors.
         """
         idxs = list(range(self.n_cells)) if cell_idxs is None else cell_idxs
         nghbrs = self.get_neighbors(cell_idxs=idxs)
@@ -715,14 +733,14 @@ class World:
 
     def save(self, rundir: Path, name: str = "world.pkl"):
         """
-        Write whole world object to pickle file
+        Write `world` object to pickle file
 
         Parameters:
             rundir: Directory of the pickle file
             name: Name of the pickle file
 
         This is a big and slow save.
-        It saves everything needed to restore the world with its chemistry and genetics.
+        It saves everything needed to restore `world` with its chemistry and genetics.
         Use [from_file()][magicsoup.world.World.from_file] to restore it.
         For a small and quick save use [save_state()][magicsoup.world.World.save_state].
         """
@@ -738,17 +756,18 @@ class World:
         device: str | None = None,
     ) -> "World":
         """
-        Restore previously saved world from pickle file.
-        The file had to be saved with [save()][magicsoup.world.World.save].
+        Restore previously saved `world` object from pickle file.
+        It had to be saved with [save()][magicsoup.world.World.save].
 
         Parameters:
             rundir: Directory of the pickle file
             name: Name of the pickle file
             device: Optionally set device to which tensors should be loaded.
                 Default is the device they had when they were saved.
+                (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html))
 
         Returns:
-            A new `world` instance.
+            A new [World][magicsoup.world.World] instance.
         """
         with open(rundir / name, "rb") as fh:
             unpickler = _CPU_Unpickler(fh, map_location=device)
@@ -762,17 +781,17 @@ class World:
 
     def save_state(self, statedir: Path):
         """
-        Save current state only
+        Save current state
 
         Parameters:
             statedir: Directory to store files in (there are multiple files per state)
 
         This is a small and quick save.
         It only saves things which change during the simulation.
-        Restore a certain state with [load_state()][magicsoup.world.World.load_state].
+        Restore a state with [load_state()][magicsoup.world.World.load_state].
 
-        To restore a whole `world` object you need to save it at least once with [save()][magicsoup.world.World.save].
-        Then, `world.save_state()` can be used to save different states of that world object.
+        To restore a whole `world` object you need to save it once with [save()][magicsoup.world.World.save].
+        Then, `world.save_state()` can be used to save different states of that `world` object.
         """
         statedir.mkdir(parents=True, exist_ok=True)
         torch.save(self.cell_molecules, statedir / "cell_molecules.pt")
@@ -797,7 +816,7 @@ class World:
         Parameters:
             statedir: Directory that contains all files of that state
             ignore_cell_params: Whether to not update cell parameters as well.
-                If you are only interested in the cells' genomes and molecules
+                If you are only interested in the cells' genomes, molecules, or labels
                 you can set this to `True` to make loading a lot faster.
         """
         self.kill_cells(cell_idxs=list(range(self.n_cells)))

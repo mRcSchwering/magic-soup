@@ -563,7 +563,7 @@ class Cell:
         world: Reference to the origin [World][magicsoup.world.World] object.
         genome: Genome sequence string of this cell.
         position: Position on the cell map as tuple `(x, y)`.
-        idx: The current index of this cell in `world`.
+        idx: Current cell index in [World][magicsoup.world.World].
         label: Label of origin which can be used to track cells.
         n_steps_alive: Number of time steps this cell has lived since last division.
         n_divisions: Number of times this cell's ancestors already divided.

@@ -20,7 +20,7 @@ It describes [Molecules][magicsoup.containers.Molecule] and reactions of a simul
 
 ::: magicsoup.containers
 
-## Factories
+## factories
 
 This module defines classes for generating other objects.
 Most importantly it defines the [GenomeFact][magicsoup.factories.GenomeFact] class
