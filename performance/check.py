@@ -24,6 +24,15 @@ Running spawn_cells, update_cells, replicate_cells, enzymatic_activity, mutation
 (1.47+-0.03)s - replicate cells
 (0.17+-0.00)s - enzymatic activity
 (4.28+-0.01)s - mutations
+
+v0.14.1 GPU (g4dn.xlarge):
+Running spawn_cells, update_cells, replicate_cells, enzymatic_activity, mutations
+10,000 cells, 1,000 genome size, on cuda
+(6.64+-1.08)s - spawn cells
+(5.95+-0.22)s - update cells
+(0.28+-0.00)s - replicate cells
+(0.16+-0.00)s - enzymatic activity
+(0.46+-0.00)s - mutations
 """
 import time
 import random
