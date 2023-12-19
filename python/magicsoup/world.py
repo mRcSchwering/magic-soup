@@ -234,7 +234,7 @@ class World:
             cell_idxs: Indexes of cells for which to find neighbors
             nghbr_idxs: Optional list of cells regarded as neighbors.
                 If `None` (default) each cell in `cell_idxs` can form a pair
-                with any other neighboring cell. With `nghbr_idxs` provided
+                with any other neighboring cell in `cell_idxs`. With `nghbr_idxs` provided
                 each cell in `cell_idxs` can only form a pair with a neighboring
                 cell that is in `nghbr_idxs`.
 
@@ -242,15 +242,15 @@ class World:
             List of tuples of cell indexes for each unique neighboring pair.
 
         Returned neighbors are unique.
-        So, _e.g._ return value `[(1, 4)]` describes the neighbors cell A
-        with index 1 and cell B with index 4. `(4, 1)` is not returned.
+        So, _e.g._ return value `[(1, 4)]` describes the neighbors of a cell
+        with index 1 and a cell with index 4. `(4, 1)` is not returned.
         """
         if len(cell_idxs) == 0:
             return []
 
         from_idxs = list(set(cell_idxs))
         if nghbr_idxs is None:
-            to_idxs = list(set(range(self.n_cells)))
+            to_idxs = list(set(cell_idxs))
         else:
             to_idxs = list(set(nghbr_idxs))
 
@@ -649,11 +649,19 @@ class World:
         """
         self.cell_lifetimes += 1
 
-    def mutate_cells(self, p: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66):
+    def mutate_cells(
+        self,
+        cell_idxs: list[int] | None = None,
+        p: float = 1e-6,
+        p_indel: float = 0.4,
+        p_del: float = 0.66,
+    ):
         """
         Mutate cells with point mutations
 
         Arguments:
+            cell_idxs: Indexes of cells which are allowed to mutate.
+                Leave `None` to allow all cells to mutate.
             p: Probability of a mutation per nucleotide
             p_indel: Probability of any point mutation being an indel
                     (inverse probability of it being a substitution)
@@ -664,25 +672,24 @@ class World:
         to mutate genomes, then updates cell parameters for cells whose genomes were changed.
         See [point_mutations][magicsoup.mutations.point_mutations] for details.
         """
-        mutated = point_mutations(
-            seqs=self.cell_genomes, p=p, p_indel=p_indel, p_del=p_del
-        )
-        self.update_cells(genome_idx_pairs=mutated)
+        if cell_idxs is None:
+            seqs = self.cell_genomes
+            mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
+            self.update_cells(genome_idx_pairs=mutated)
+        else:
+            seqs = [self.cell_genomes[d] for d in cell_idxs]
+            mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
+            pairs = [(d, cell_idxs[i]) for d, i in mutated]
+            self.update_cells(genome_idx_pairs=pairs)
 
-    def recombinate_cells(
-        self, cell_idxs: list[int], nghbr_idxs: list[int] | None, p: float = 1e-7
-    ):
+    def recombinate_cells(self, cell_idxs: list[int] | None = None, p: float = 1e-7):
         """
         Recombinate neighbourig cells
 
         Arguments:
-            cell_idxs: Indexes of cells for which to find neighbors
-            nghbr_idxs: Optional list of cells regarded as neighbors.
-                If `None` (default) each cell in `cell_idxs` can form a pair
-                with any other neighboring cell. With `nghbr_idxs` provided
-                each cell in `cell_idxs` can only form a pair with a neighboring
-                cell that is in `nghbr_idxs`.
-            p: Probability of a strand break per nucleotide during recombinataions
+            cell_idxs: Indexes of cells which are allowed to recombinate.
+                Leave `None` to allow all cells to recombinate.
+            p: Probability of a strand break per nucleotide during recombinataion.
 
         Convenience function that uses [recombinations][magicsoup.mutations.recombinations]
         to recombinate genomes of neighbouring cells, then updates cell parameters for cells
@@ -691,7 +698,8 @@ class World:
         See [recombinations][magicsoup.mutations.recombinations] and
         [get_neighbors][magicsoup.world.World.get_neighbors] for details.
         """
-        nghbrs = self.get_neighbors(cell_idxs=cell_idxs, nghbr_idxs=nghbr_idxs)
+        idxs = list(range(self.n_cells)) if cell_idxs is None else cell_idxs
+        nghbrs = self.get_neighbors(cell_idxs=idxs)
         pairs = [(self.cell_genomes[a], self.cell_genomes[b]) for a, b in nghbrs]
         mutated = recombinations(seq_pairs=pairs, p=p)
 

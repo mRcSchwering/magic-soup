@@ -77,26 +77,13 @@ def main(args: Namespace):
                     .tolist()
                 )
                 world.cell_molecules[repl, ATP_IDX] -= 4.0
-                replicated = world.divide_cells(cell_idxs=repl)
+                world.divide_cells(cell_idxs=repl)
 
-                genome_pairs = [
-                    (world.cell_genomes[p], world.cell_genomes[c])
-                    for p, c in replicated
-                ]
-                recombs = ms.recombinations(seq_pairs=genome_pairs)
-
-                genome_idx_pairs = []
-                for parent, child, idx in recombs:
-                    parent_i, child_i = replicated[idx]
-                    genome_idx_pairs.append((parent, parent_i))
-                    genome_idx_pairs.append((child, child_i))
-                world.update_cells(genome_idx_pairs=genome_idx_pairs)
+            with timeit("recombinateGenomes", step_i, writer):
+                world.recombinate_cells()
 
             with timeit("mutateGenomes", step_i, writer):
-                snps = ms.point_mutations(seqs=world.cell_genomes)
-
-            with timeit("getMutatedProteomes", step_i, writer):
-                world.update_cells(genome_idx_pairs=snps)
+                world.mutate_cells()
 
             with timeit("wrapUp", step_i, writer):
                 world.degrade_molecules()
