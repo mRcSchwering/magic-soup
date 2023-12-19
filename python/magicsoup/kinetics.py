@@ -329,17 +329,13 @@ class _RegulatoryMapFact(_VectorMapFact):
         return reg_map
 
 
-# TODO: go through method docsstring again
-# TODO: doublecheck class description (with methods/attributes)
-
-
 class Kinetics:
     """
     Class holding logic for simulating protein work.
     Usually this class is instantiated automatically when initializing [World][magicsoup.world.World].
     You can access it on `world.kinetics`.
 
-    Arguments:
+    Parameters:
         molecules: List of molecule species.
             They have to be in the same order as they are on `chemistry.molecules`.
         reactions: List of all possible reactions in this simulation as a list of tuples: `(substrates, products)`.
@@ -359,64 +355,68 @@ class Kinetics:
             This should be the output of `max(genetics.two_codon_map.values())`.
 
     There are `c` cells, `p` proteins, `s` signals.
-    Signals are basically molecule species, but we have to differentiate between intra- and extracellular molecule species.
-    So, there are twice as many signals as molecule species.
-    The order of molecule species is always the same as in `chemistry.molecules`.
-    First, all intracellular molecule species are listed, then all extracellular.
-    The order of cells is always the same as in `world.cell_genomes` and the order of proteins
-    for every cell is always the same as the order of proteins in a cell object `cell.get_proteome(world=world)`.
+    Signals are basically [Molecules][magicsoup.containers.Molecule],
+    but we have to differentiate between intra- and extracellular molecules.
+    So, there are twice as many signals as [Molecules][magicsoup.containers.Molecule].
+    Molecules are always ordered as in [Chemistry][magicsoup.containers.Chemistry]:
+    first, the intracellular ones, then the extracellular ones.
+    Cells are ordered as in [World][magicsoup.world.World]. Proteins are ordered
+    how they were found by [translate_genomes()][magicsoup.genetics.Genetics.translate_genomes] in each cell.
 
-    Attributes on this class describe cell parameters:
+    Attributes on an object of this class describe cell parameters:
 
-    - `Kmf`, `Kmb`, `Kmr` Affinities to all signals processed by each protein in each cell (c, p).
-      There are affinities for (f)orward and (b)ackward reactions.
-    - `Kmr` Affinity of each regulating signal for each protein and each cell (c, p, s).
-    - `Vmax` Maximum velocities of every protein in every cell (c, p).
-    - `E` Standard reaction Gibbs free energy of every protein in every cell (c, p).
-    - `N` Stoichiometric number for every signal that is processed by each protein in every cell (c, p, s).
-      Additionally, there are `Nf` and `Nb` which describe only forward and backward stoichiometric numbers.
-      This is needed in addition to `N` to properly describe reactions that involve molecules
-      which are not changed, _i.e._ where `n=0`.
-    - `A` Allosteric modulation for each signal in every protein in every cell (c, p, s).
+    - `Kmf`, `Kmb` Affinities to all signals processed by each protein in each cell (c, p).
+      Ratios of (f)orward and (b)ackward reaction affinities are their equilibrium constants.
+    - `Kmr` Affinity of each regulating signal for each protein and each cell (c, p, s)
+        exponentiated by their hill coefficients.
+    - `Vmax` Maximum velocities of each protein in each cell (c, p).
+    - `Ke` Equilibrium constants derived from standard reaction free energy for each protein in each cell (c, p).
+    - `N` Stoichiometric number for each signal that is processed by each protein in each cell (c, p, s).
+      Additionally, there are `Nf` and `Nb` which describe only forward and backward stoichiometric coefficients.
+      This is needed in addition to `N` to properly describe reactions that involve co-factors (_i.e._ `n=0`).
+    - `A` Allosteric modulation for each signal in each protein in each cell (c, p, s).
       The number represents the hill coefficient. Positive coefficients have an activating effect,
       negative have an inhibiting effect.
 
     The main method is [integrate_signals()][magicsoup.kinetics.Kinetics].
-    When calling [enzymatic_activity()][magicsoup.world.World.enzymatic_activity], a matrix `X` of signals (c, s) is prepared
-    and then [integrate_signals(X)][magicsoup.kinetics.Kinetics] is called.
-    Updated signals are returned and [World][magicsoup.world.World] writes them back to `world.cell_molecules` and `world.molecule_map`.
+    When calling [enzymatic_activity()][magicsoup.world.World.enzymatic_activity],
+    a matrix `X` of signals (c, s) is prepared and then [integrate_signals(X)][magicsoup.kinetics.Kinetics] is called.
+    Updated signals are returned and [enzymatic_activity()][magicsoup.world.World.enzymatic_activity]
+    writes them back to `world.cell_molecules` and `world.molecule_map`.
 
     Another method, which ended up here, is [set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params]
     which reads proteomes and updates cell parameters accordingly.
-    This is called whenever the proteomes of some cells changed.
+    This is called whenever the genomes of some cells have changed.
     Currently, this is also the main performance bottleneck.
 
-    When this class is initialized it generates the mappings from nucleotide sequences to domains by random sampling.
+    When this class is initialized it generates the mappings from indices to domain parameters by random sampling.
     These mappings are then used throughout the simulation.
     If you initialize this class again, these mappings will be different.
-    Initializing [World][magicsoup.world.World] will also create one `Kinetics` instance. It is on `world.kinetics`.
-    If you want to access nucleotide to domain mappings of your simulation, you should use `world.kinetics`.
+    Initializing [World][magicsoup.world.World] will also create one `Kinetics` instance on `world.kinetics`.
+    If you want to access indices to domain mappings in your simulation, you should use `world.kinetics`.
 
     Note: All default values are based on the assumption that energies are in J, a time step represents 1s,
-    and molecule numbers are in mM
+    and molecule numbers are in mM.
     If you change the defaults, you need to reconsider how these numbers should be interpreted.
 
-    The kinetics used here can never create negative molecule concentrations and make the reaction quotient move
-    towards to equilibrium constant at all times.
-    However, this simulation computes these things one step at a time
-    (with the premise that one step should be something similar to 1s).
+    The kinetics used here can theoretically never create negative molecule concentrations or
+    make a reaction overshoot its rquilibrium state.
+    However, this simulation computes these things one step at a time.
     This and the numerical limits of data types used here can create edge cases that need to be dealth with:
     reaction quotients overshooting the equilibrium state and negative concentrations.
     Both are caused by high $V_{max}$ with low $K_m$ values.
+    With the default $V_{max}$ and $K_m$ ranges and stoichiometric coefficients below 100,
+    the heuristics in [integrate_signals()][magicsoup.kinetics.Kinetics.integrate_signals]
+    are close enough for a meaningful simulation.
 
-    If an enzyme is far away from its equilibrium state $K_e$ and substrate concentrations are far above $K_M$ it
+    If an enzyme is far away from its equilibrium state $K_e$ and substrate concentrations are far above $K_m$ it
     will progress its reaction at full speed $V_{max}$. This rate can be so high that, within one step, $Q$ surpasses
-    $K_E$. In the next step it will move at full speed into the opposite direction, overshooting $K_E$ again, and so on.
-    Reactions with high stoichiometric numbers are more prone to this as their rate functions are sharper.
+    $K_e$. In the next step it will move at full speed into the opposite direction, overshooting $K_e$ again, and so on.
+    Reactions with high stoichiometric coefficients are more prone to this as their rate functions are sharper.
     To combat this [integrate_signals()][magicsoup.kinetics.Kinetics] works by iteratively approaching
     $V_{max}$ on multiple levels of the computation.
     The approach was tuned to compute fast and give satifisfying reults with certain conditions in mind.
-    $V_{max} \le 100$, $K_M \ge 0.01$, and concentrations $X$ generally not much higher than 100.
+    $V_{max} \le 100$, $K_m \ge 0.01$, and concentrations $X$ generally not much higher than 100.
     Violating these assumptions could lead to reaction quotients constantly overshooting their equilibrium.
     """
 
@@ -503,15 +503,14 @@ class Kinetics:
         proteome: list[ProteinSpecType],
     ) -> list[Protein]:
         """
-        Calculate cell parameters for a single proteome and return it as
-        a list of proteins
+        Translate and return cell parameters for a single proteome
 
-        Arguments:
-            proteome: proteome which should be calculated
+        Parameters:
+            proteome: proteome which should be translated and returned
 
         Retruns:
-            A list of objects that represent proteins with domains and their
-            specifications.
+            List [Proteins][magicsoup.containers.Protein] that describe
+            the cell's proteome.
         """
         # get proteome tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
@@ -564,17 +563,17 @@ class Kinetics:
         proteomes: list[list[ProteinSpecType]],
     ):
         """
-        Calculate and set cell parameters for new proteomes
+        Translate and set cell parameters for proteomes
 
-        Arguments:
+        Parameters:
             cell_idxs: Indexes of cells which proteomes belong to
-            proteomes: list of proteomes which should be calculated and set
+            proteomes: List of proteomes which should translated and set
 
-        Proteomes must be represented as a list (proteomes) of lists (proteins)
-        of lists (domains) which each carry tuples. These tuples are domain specifications
-        that are derived by [Genetics][magicsoup.genetics.Genetics].
-        These are indices which will be mapped to concrete values
+        `proteomes` is a a list (proteomes) of lists (proteins) of domain specifications.
+        It is derived from [translate_genomes()][magicsoup.genetics.Genetics].
+        The domain specification themself are tuples which are mapped to concrete values
         (molecule species, Km, Vmax, reactions, ...).
+        `cell_idxs` refer to the [World's][magicsoup.world.World] cell indexes.
         """
         # get proteome tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
@@ -666,11 +665,12 @@ class Kinetics:
 
     def unset_cell_params(self, cell_idxs: list[int]):
         """
-        Unset cell parameters (Vmax, Km, ...) for cells with empty
-        or non-viable proteomes.
+        Set cell parameters for cells to zero.
 
-        Arguments:
+        Parameters:
             cell_idxs: Indexes of cells
+
+        Indexes refer to the [World's][magicsoup.world.World] cell indexes.
         """
         self.N[cell_idxs] = 0
         self.Nf[cell_idxs] = 0
@@ -686,12 +686,12 @@ class Kinetics:
         """
         Copy paremeters from a list of cells to another list of cells
 
-        Arguments:
+        Parameters:
             from_idxs: List of cell indexes to copy from
             to_idxs: List of cell indexes to copy to
 
         `from_idxs` and `to_idxs` must have the same length.
-        They refer to the same cell indexes as in `world.cell_genomes`.
+        Indexes refer to the [World's][magicsoup.world.World] cell indexes.
         """
         self.Ke[to_idxs] = self.Ke[from_idxs]
         self.Kmf[to_idxs] = self.Kmf[from_idxs]
@@ -707,12 +707,12 @@ class Kinetics:
         """
         Remove cells from cell params
 
-        Arguments:
+        Parameters:
             keep: Bool tensor (c,) which is true for every cell that should not be removed
                 and false for every cell that should be removed.
 
-        `keep` must have the same length as `world.cell_genomes`.
-        The indexes on `keep` reflect the indexes in `world.cell_genomes`.
+        `keep` must have length `world.n_cells`.
+        Indexes of `keep` refer to the [World's][magicsoup.world.World] cell indexes.
         """
         self.Ke = self.Ke[keep]
         self.Kmf = self.Kmf[keep]
@@ -728,7 +728,7 @@ class Kinetics:
         """
         Increase the cell dimension of all cell parameters
 
-        Arguments:
+        Parameters:
             by_n: By how many rows to increase the cell dimension
         """
         self.Ke = self._expand_c(t=self.Ke, n=by_n)
@@ -745,7 +745,7 @@ class Kinetics:
         """
         Increase the protein dimension of all cell parameters
 
-        Arguments:
+        Parameters:
             max_n: The maximum number of rows required in the protein dimension
         """
         n_prots = int(self.N.size(1))
@@ -765,13 +765,15 @@ class Kinetics:
         """
         Simulate protein work by integrating all signals.
 
-        Arguments:
-            X: Tensor of every signal in every cell (c, s). Must all be >= 0.0.
+        Parameters:
+            X: 2D tensor of every signal in every cell (c,s). Must all be >= 0.0.
 
         Returns:
             New tensor of the same shape which represents the updated signals for every cell.
 
-        The order of cells in `X` is the same as in `world.cell_genomes`
+        Dimension 0 indexes of `X` refer to the [World's][magicsoup.world.World] cell indexes.
+        Dimension 1 indexes of `X` refer to [Molecule][magicsoup.containers.Molecule] indexes
+        on [Chemistry][magicsoup.containers.Chemistry].
         The order of signals is first all intracellular molecule species in the same order as `chemistry.molecules`,
         then again all molecule species in the same order but this time describing extracellular molecule species.
         The number of intracellular molecules comes from `world.cell_molecules` for any particular cell.
