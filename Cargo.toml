@@ -1,6 +1,6 @@
 [package]
 name = "magicsoup"  # pyproject.toml has precedence
-version = "0.13.0"  # pyproject.toml has precedence
+version = "0.14.0"  # pyproject.toml has precedence
 
 [lib]
 name = "_lib"  # private module to be nested into Python package
