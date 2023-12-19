@@ -15,47 +15,50 @@ def _get_n(p: float, s: int, name: str) -> int:
     return n
 
 
-# TODO: go through method docsstring again
-# TODO: doublecheck class description (with methods/attributes)
-
-
 class Genetics:
     """
-    Class holding logic about translating nucleotide sequences into proteomes.
+    Class holding logic about transcribing and translating nucleotide sequences.
 
     Arguments:
-        start_codons: Start codons which start a coding sequence
-        stop_codons: Stop codons which stop a coding sequence
-        p_catal_dom: Chance of encountering a catalytic domain in a random nucleotide sequence.
-        p_transp_dom: Chance of encountering a transporter domain in a random nucleotide sequence.
-        p_reg_dom: Chance of encountering a regulatory domain in a random nucleotide sequence.
-        n_dom_type_codons: Number of codons that encode the domain type (catalytic, transporter, regulatory).
+        start_codons: Codons which start a coding sequence
+        stop_codons: Codons which stop a coding sequence
+        p_catal_dom: Chance of encountering a [CatalyticDomain][magicsoup.containers.CatalyticDomain]
+            in a random nucleotide sequence.
+        p_transp_dom: Chance of encountering a [TransporterDomain][magicsoup.containers.TransporterDomain]
+            in a random nucleotide sequence.
+        p_reg_dom: Chance of encountering a [RegulatoryDomain][magicsoup.containers.RegulatoryDomain]
+            in a random nucleotide sequence.
+        n_dom_type_codons: Number of codons that encode the domain type:
+            [CatalyticDomain][magicsoup.containers.CatalyticDomain],
+            [TransporterDomain][magicsoup.containers.TransporterDomain], or
+            [RegulatoryDomain][magicsoup.containers.RegulatoryDomain].
 
-    During the simulation [World][magicsoup.world.World] uses [translate_genomes][magicsoup.genetics.Genetics.translate_genomes].
-    The return value of this method is a nested list of tokens.
-    These tokens are then mapped into concrete domain specifications (_e.g._ Km, Vmax, reactions, ...) by [Kinetics][magicsoup.kinetics.Kinetics].
+    During the simulation [translate_genomes()][magicsoup.genetics.Genetics.translate_genomes] is used.
+    Its return value can be used to update cell parameters using [Kinetics.set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params]
+    or to translate its abstract return value into a human readable [Proteins][magicsoup.containers.Protein]
+    description using [Kinetics.get_proteome()][magicsoup.kinetics.Kinetics.get_proteome].
 
     Translation happens only within coding sequences (CDSs).
-    A CDS starts wherever a start codon is found and ends with the first in-frame encountered stop codon.
+    A CDS starts at every start codon and ends with the first in-frame encountered stop codon.
     Un-stopped CDSs are discarded.
     Both the forward and reverse complement of the nucleotide sequence are considered.
-    Each CDS represents one protein.
+    Each CDS represents one [Protein][magicsoup.containers.Protein].
     All domains found within a CDS will be added as domains to that protein.
-    Unviable proteins, like proteins without domains or proteins with only regulatory domains, are discarded.
 
-    If you want to use your own `genetics` object for the simulation you can just assign it after creating [World][magicsoup.world.World]:
+    If you want to use your own `genetics` object for the simulation you can just assign it after creating [World][magicsoup.world.World].
+    _E.g._:
 
     ```
-        world = World(chemistry=chemistry)
-        my_genetics = Genetics(p_transp_dom=0.1, stop_codons=("TGA", ))
-        world.genetics = my_genetics
+    world = World(chemistry=chemistry)
+    my_genetics = Genetics(p_transp_dom=0.1, stop_codons=("TGA",))
+    world.genetics = my_genetics
     ```
 
     Changing these attributes has a large effect on the information content of genomes.
-    E.g. how many CDSs per nucleotide, i.e. how many proteins per nucleotide;
-    how long are the average CDSs, i.e. how many domains per protein; how likely is it to encounter a domain;
-    how many domains does each nucleotide encode, i.e. how likely is it for a single substitution to change the proteome,
-    how likely is it that this mutation will only slightly change a domain or completely change it.
+    How many coding nucleotides are there per nucleotide?
+    What percentage of coding regions refers to domain type and specification?
+    How likely is it that a point mutation completely changes a protein?
+    On average how many domains are there per protein?
     """
 
     def __init__(
@@ -132,23 +135,30 @@ class Genetics:
             genomes: list of nucleotide sequences
 
         Returns:
-            List of proteomes. This is a list (proteomes) of tuples (proteins)
-            where each tuple (protein) has a list of domains, the start, and stop
-            coordinate, and the direction of its CDS.
-            Domains are a list of tuples with indices which will be mapped to
-            specific domain specifications by [Kinetics][magicsoup.kinetics.Kinetics]
+            List of proteomes. This is a list (proteomes) of list (proteins)
+            where each protein is a tuple `(domains, cds_start, cds_end, is_fwd)`.
+            `domains` is a list of tuples `(indices, start, end)` with indices which
+            will be mapped to specific domain specifications by
+            [Kinetics][magicsoup.kinetics.Kinetics].
+
+        The result of this function can be used to update cell parameters
+        using [Kinetics.set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params]
+        or to translate this abstract return type into a human readable [Proteins][magicsoup.containers.Protein]
+        description using [Kinetics.get_proteome()][magicsoup.kinetics.Kinetics.get_proteome].
 
         Both forward and reverse-complement are considered.
         CDSs are extracted and a protein is translated for every CDS.
         Unviable proteins (no domains or only regulatory domains) are discarded.
 
-        Start and stop indices for each protein always describe the start and stop coordinates
-        of its CDS on the cell's genome (1st nucleotide has index 0) in the reported direction
-        (`True` for _forward_, `False` for _reverse-complement_).
-        So `(2, 20, False)` would be a CDS in the reverse-complement whose first nucleotide
-        has index 2 (the third nucleotide) and whose last nucleotide has index 19 (the 20th nucleotide).
-        If this would be projected onto the genome in forward direction,
-        the CDS would start extend from `n - 2` to `n - 20` (where `n` is the length of the genome).
+        CDS start and end describe the slice of the genome python string.
+        _I.e._ the index starts with 0, start is included, end is excluded.
+        _E.g._ `cds_start=2`, `cds_end=31` starts with the 3rd and ends with the 31st nucleotide on the genome.
+
+        `is_fwd` describes whether the CDS is found on the forward (hypothetical 5'-3')
+        or the reverse-complement (hypothetical 3'-5') side of the genome.
+        `cds_start` and `cds_end` always describe the parsing direction / the direction of the hypothetical transcriptase.
+        So, if you want to visualize a `is_fwd=False` CDS on the genome in 5'-3' direction
+        you have to do `n - cds_start` and `n - cds_stop` if `n` is the genome length.
         """
         if len(genomes) < 1:
             return []

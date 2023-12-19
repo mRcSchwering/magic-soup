@@ -3,7 +3,7 @@ import math
 import random
 import torch
 from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
-from magicsoup.containers import Molecule, Protein
+from magicsoup.containers import Molecule, Protein, Chemistry
 from magicsoup import _lib  # type: ignore
 
 # MAX,MIN should be at least x100 away from inf
@@ -336,23 +336,20 @@ class Kinetics:
     You can access it on `world.kinetics`.
 
     Parameters:
-        molecules: List of molecule species.
-            They have to be in the same order as they are on `chemistry.molecules`.
-        reactions: List of all possible reactions in this simulation as a list of tuples: `(substrates, products)`.
-            All reactions are reversible and happen in both directions (left to right or vice versa).
-        abs_temp: Absolute temperature in Kelvin will influence the free Gibbs energy calculation of reactions.
-            Higher temperature will give the reaction quotient term higher importance.
+        chemistry: Simulation [Chemistry][magicsoup.containers.Chemistry]
+        abs_temp: Absolute temperature in Kelvin. Will influence the free Gibbs energy calculation of reactions.
+            Higher temperatures give concentration gradients higher importance.
         km_range: The range from which to sample Michaelis Menten constants for domains (in mM).
-            They are sampled from a lognormal distribution, so all values must be > 0.
+            They are sampled from a uniform distribution with its reciprocal. All values must be > 0.
         vmax_range: The range from which to sample maximum velocities for domains (in mM/s).
             They are sampled from a lognormal distribution, so all values must be > 0.
         device: Device to use for tensors
             (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-            This has to be the same device that is used by `world`.
+            This has to be the same device that is used by [World][magicsoup.world.World].
         scalar_enc_size: Number of tokens that can be used to encode the scalars Vmax, Km, and sign.
-            This should be the output of `max(genetics.one_codon_map.values())`.
+            This should be the output of `max(genetics.one_codon_map.values())` ([Genetics][magicsoup.genetics.Genetics]).
         vector_enc_size: Number of tokens that can be used to encode the vectors for reactions and molecules.
-            This should be the output of `max(genetics.two_codon_map.values())`.
+            This should be the output of `max(genetics.two_codon_map.values())` ([Genetics][magicsoup.genetics.Genetics]).
 
     There are `c` cells, `p` proteins, `s` signals.
     Signals are basically [Molecules][magicsoup.containers.Molecule],
@@ -361,7 +358,7 @@ class Kinetics:
     Molecules are always ordered as in [Chemistry][magicsoup.containers.Chemistry]:
     first, the intracellular ones, then the extracellular ones.
     Cells are ordered as in [World][magicsoup.world.World]. Proteins are ordered
-    how they were found by [translate_genomes()][magicsoup.genetics.Genetics.translate_genomes] in each cell.
+    how they were found by [Genetics.translate_genomes()][magicsoup.genetics.Genetics.translate_genomes] in each cell.
 
     Attributes on an object of this class describe cell parameters:
 
@@ -379,9 +376,9 @@ class Kinetics:
       negative have an inhibiting effect.
 
     The main method is [integrate_signals()][magicsoup.kinetics.Kinetics].
-    When calling [enzymatic_activity()][magicsoup.world.World.enzymatic_activity],
+    When calling [World.enzymatic_activity()][magicsoup.world.World.enzymatic_activity],
     a matrix `X` of signals (c, s) is prepared and then [integrate_signals(X)][magicsoup.kinetics.Kinetics] is called.
-    Updated signals are returned and [enzymatic_activity()][magicsoup.world.World.enzymatic_activity]
+    Updated signals are returned and [World.enzymatic_activity()][magicsoup.world.World.enzymatic_activity]
     writes them back to `world.cell_molecules` and `world.molecule_map`.
 
     Another method, which ended up here, is [set_cell_params()][magicsoup.kinetics.Kinetics.set_cell_params]
@@ -422,8 +419,7 @@ class Kinetics:
 
     def __init__(
         self,
-        molecules: list[Molecule],
-        reactions: list[tuple[list[Molecule], list[Molecule]]],
+        chemistry: Chemistry,
         abs_temp: float = 310.0,
         km_range: tuple[float, float] = (1e-2, 100.0),
         vmax_range: tuple[float, float] = (1e-3, 100.0),
@@ -435,13 +431,13 @@ class Kinetics:
         self.device = device
         self.abs_temp = abs_temp
 
-        self.mol_energies = self._f32_tensor([d.energy for d in molecules] * 2)
-        self.mol_2_mi = {d: i for i, d in enumerate(molecules)}
-        self.mi_2_mol = {v: k for k, v in self.mol_2_mi.items()}
-        self.molecules = molecules
+        self.mol_names = [d.name for d in chemistry.molecules]
+        self.mol_energies = self._f32_tensor(
+            [d.energy for d in chemistry.molecules] * 2
+        )
 
         # working cell params
-        n_signals = 2 * len(molecules)
+        n_signals = 2 * len(chemistry.molecules)
         self.Ke = self._zeros_f32_tensor(0, 0)
         self.Kmf = self._zeros_f32_tensor(0, 0)
         self.Kmb = self._zeros_f32_tensor(0, 0)
@@ -455,6 +451,7 @@ class Kinetics:
         # the domain specifications return 4 indexes
         # idx 0-2 are 1-codon idxs for scalars (n=64)
         # idx3 is a 2-codon idx for vetors (n=4096)
+        mol_2_mi = {d: i for i, d in enumerate(chemistry.molecules)}
 
         self.km_map = _CustomWeightMapFact(
             max_token=scalar_enc_size,
@@ -473,18 +470,22 @@ class Kinetics:
         self.hill_map = _HillMapFact(max_token=scalar_enc_size, device=device)
 
         self.reaction_map = _ReactionMapFact(
-            molmap=self.mol_2_mi,
-            reactions=reactions,
+            molmap=mol_2_mi,
+            reactions=chemistry.reactions,
             max_token=vector_enc_size,
             device=device,
         )
 
         self.transport_map = _TransporterMapFact(
-            n_molecules=len(molecules), max_token=vector_enc_size, device=device
+            n_molecules=len(chemistry.molecules),
+            max_token=vector_enc_size,
+            device=device,
         )
 
         self.effector_map = _RegulatoryMapFact(
-            n_molecules=len(molecules), max_token=vector_enc_size, device=device
+            n_molecules=len(chemistry.molecules),
+            max_token=vector_enc_size,
+            device=device,
         )
 
         # derive inverse maps for genome generation
@@ -492,10 +493,10 @@ class Kinetics:
         self.vmax_2_idxs = self.vmax_map.inverse()
         self.sign_2_idxs = self.sign_map.inverse()
         self.hill_2_idxs = self.hill_map.inverse()
-        self.trnsp_2_idxs = self.transport_map.inverse(molecules=molecules)
-        self.regul_2_idxs = self.effector_map.inverse(molecules=molecules)
+        self.trnsp_2_idxs = self.transport_map.inverse(molecules=chemistry.molecules)
+        self.regul_2_idxs = self.effector_map.inverse(molecules=chemistry.molecules)
         self.catal_2_idxs = self.reaction_map.inverse(
-            molmap=self.mol_2_mi, reactions=reactions, n_signals=n_signals
+            molmap=mol_2_mi, reactions=chemistry.reactions, n_signals=n_signals
         )
 
     def get_proteome(
@@ -553,7 +554,7 @@ class Kinetics:
             reacts[0].tolist(),
             trnspts[0].tolist(),
             effectors[0].tolist(),
-            [d.name for d in self.molecules],
+            self.mol_names,
         )
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
@@ -570,7 +571,7 @@ class Kinetics:
             proteomes: List of proteomes which should translated and set
 
         `proteomes` is a a list (proteomes) of lists (proteins) of domain specifications.
-        It is derived from [translate_genomes()][magicsoup.genetics.Genetics].
+        It is derived from [Genetics.translate_genomes()][magicsoup.genetics.Genetics].
         The domain specification themself are tuples which are mapped to concrete values
         (molecule species, Km, Vmax, reactions, ...).
         `cell_idxs` refer to the [World's][magicsoup.world.World] cell indexes.

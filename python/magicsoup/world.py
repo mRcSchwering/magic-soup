@@ -147,8 +147,7 @@ class World:
         self.genetics = Genetics(start_codons=start_codons, stop_codons=stop_codons)
 
         self.kinetics = Kinetics(
-            molecules=chemistry.molecules,
-            reactions=chemistry.reactions,
+            chemistry=chemistry,
             abs_temp=abs_temp,
             device=self.device,
             scalar_enc_size=max(self.genetics.one_codon_map.values()),

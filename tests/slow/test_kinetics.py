@@ -7,8 +7,7 @@ from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 def _get_kinetics() -> ms.Kinetics:
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=REACTIONS)
     kinetics = ms.Kinetics(
-        molecules=chemistry.molecules,
-        reactions=chemistry.reactions,
+        chemistry=chemistry,
         abs_temp=310,
         scalar_enc_size=61,
         vector_enc_size=3904,

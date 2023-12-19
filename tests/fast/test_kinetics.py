@@ -2,6 +2,7 @@ import pytest
 import math
 import torch
 from magicsoup.containers import (
+    Chemistry,
     Molecule,
     CatalyticDomain,
     RegulatoryDomain,
@@ -25,6 +26,8 @@ _r_b_c = ([_mb], [_mc])
 _r_bc_d = ([_mb, _mc], [_md])
 _r_d_bb = ([_md], [_mb, _mb])
 _REACTIONS = [_r_a_b, _r_b_c, _r_bc_d, _r_d_bb]
+
+_CHEMISTRY = Chemistry(molecules=_MOLECULES, reactions=_REACTIONS)
 
 # fmt: off
 _KM_WEIGHTS = torch.tensor([
@@ -96,11 +99,7 @@ class _MockedKinetics(Kinetics):
 def _get_kinetics(use_original_class=False) -> Kinetics:
     """use_original_class=False to switch off iterative corrections"""
     cls = Kinetics if use_original_class else _MockedKinetics
-    kinetics = cls(
-        molecules=_MOLECULES,
-        reactions=_REACTIONS,
-        abs_temp=310,
-    )
+    kinetics = cls(chemistry=_CHEMISTRY, abs_temp=310)
     kinetics.km_map.weights = _KM_WEIGHTS.clone()
     kinetics.vmax_map.weights = _VMAX_WEIGHTS.clone()
     kinetics.sign_map.signs = _SIGNS.clone()
