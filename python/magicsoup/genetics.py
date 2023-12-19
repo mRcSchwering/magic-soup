@@ -15,6 +15,10 @@ def _get_n(p: float, s: int, name: str) -> int:
     return n
 
 
+# TODO: go through method docsstring again
+# TODO: doublecheck class description (with methods/attributes)
+
+
 class Genetics:
     """
     Class holding logic about translating nucleotide sequences into proteomes.

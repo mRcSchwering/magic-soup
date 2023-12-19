@@ -33,6 +33,10 @@ class _CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
+# TODO: go through method docsstring again
+# TODO: doublecheck class description (with methods/attributes)
+
+
 class World:
     """
     This is the main object for running the simulation.
@@ -200,6 +204,7 @@ class World:
         When you call `world.get_cell()` all information about a cell is gathered in one object.
         This is not very performant.
         """
+        # TODO: refer to domain classes for proteome description
         idx = -1
         if by_idx is not None:
             idx = by_idx
@@ -456,15 +461,14 @@ class World:
 
     def update_cells(self, genome_idx_pairs: list[tuple[str, int]]):
         """
-        Update existing cells with new genomes.
+        Update existing cells with new genomes and calculate new cell
+        parameters for them.
 
         Parameters:
             genome_idx_pairs: List of tuples of genomes and cell indexes
-            batch_size: Batch size used for updating cell kinetics. Reduce this number
-                to reduce memory required during update.
 
-        The indexes refer to the index of each cell that is changed.
-        The genomes refer to the genome of each cell that is changed.
+        Each element identifies the cell that is changed by index
+        and provides its new genome.
         """
         if len(genome_idx_pairs) == 0:
             return

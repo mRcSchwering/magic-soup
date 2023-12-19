@@ -5,6 +5,10 @@ from magicsoup.util import closest_value, random_genome, round_down
 from magicsoup.world import World
 
 
+# TODO: doublecheck init descriptions, attrbs, methods
+# TODO: refer to container classes for info about domains
+
+
 class _DomainFact:
     """
     Domain factory base.

@@ -7,6 +7,9 @@ if TYPE_CHECKING:
     from magicsoup.world import World
 
 
+# TODO: doublecheck init descriptions, attrbs, methods
+
+
 class Molecule:
     """
     Represents a molecule species which is part of the world, can diffuse, degrade,
@@ -261,6 +264,8 @@ class Chemistry:
         return f"{type(self).__name__}({','.join(args)})"
 
 
+# TODO: make it private? / or make _DomainFact public?
+# TODO: then have this generic explanation (with start/end) on each domain
 class Domain:
     """
     Base Domain. All Domains should inherit from this class.
@@ -531,6 +536,9 @@ class Protein:
     def __str__(self) -> str:
         domstrs = [str(d).split(" | ")[0] for d in self.domains]
         return " | ".join(domstrs)
+
+
+# TODO: refer to domain classes for proteome description
 
 
 class Cell:

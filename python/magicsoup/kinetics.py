@@ -329,6 +329,10 @@ class _RegulatoryMapFact(_VectorMapFact):
         return reg_map
 
 
+# TODO: go through method docsstring again
+# TODO: doublecheck class description (with methods/attributes)
+
+
 class Kinetics:
     """
     Class holding logic for simulating protein work.
