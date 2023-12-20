@@ -35,7 +35,7 @@ class CatalyticDomainFact(_DomainFact):
         vmax: Desired Maximum velocity of the transport (in mmol/s).
 
     For stoichiometric coefficients > 1, list the molecule species multiple times.
-    E.g. for $2A + B \rightleftharpoons C$ use `reaction=([A, A, B], [C])`
+    E.g. for `2A + B <-> C` use `reaction=([A, A, B], [C])`
     when `A,B,C` are molecule A, B, C instances.
 
     `km` and `vmax` are target values.

@@ -132,7 +132,7 @@ class Molecule:
 
     @classmethod
     def from_name(cls, name: str) -> "Molecule":
-        """Get Molecule instance from its name (it is has already been defined)"""
+        """Get Molecule instance from its name (if it has already been defined)"""
         if name not in Molecule._instances:
             raise ValueError(f"Molecule {name} was not defined yet")
         return Molecule._instances[name]
@@ -195,11 +195,13 @@ class Chemistry:
         reactions: List of all possible reactions in this simulation as a list of tuples: `(substrates, products)`
             where both `substrates` and `products` are lists of [Molecules][magicsoup.containers.Molecule].
             All reactions can happen in both directions (left to right or vice versa).
-            Stoichiometric coefficients > 1 are defined by listing molecules multiple times.
 
     `molecules` should include at least all molecule species that are mentioned in `reactions`.
     But it is possible to define more molecule species.
     Cells can use molecule species in transporer and regulatory domains, even if they are not included in any reaction.
+    For stoichiometric coefficients > 1, list the molecule species multiple times.
+    E.g. for `2A + B <-> C` use `reaction=([A, A, B], [C])`
+    when `A,B,C` are molecule A, B, C instances.
 
     Duplicate reactions and molecules will be removed on initialization.
     As any reaction can take place in both directions, it is not necessary to define both directions.
