@@ -16,6 +16,12 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY  # pylint: disable=E0401
 _this_dir = Path(__file__).parent
 _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
 
+# TODO: fix this
+# TODO: images of all cells dying, overgorwing, wave
+# TODO: update tutorial
+# TODO: tutorial section: analyzing cell
+# TODO: tutorial section: editing genomes
+
 
 def _log_scalars(
     step_i: int, writer: SummaryWriter, world: ms.World, mol_2_idx: dict[str, int]

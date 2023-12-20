@@ -28,19 +28,18 @@ pip install magicsoup
 ```
 
 This simulation relies on [PyTorch](https://pytorch.org/).
-To increase performance you can move calculations to a GPU.
-In this case you should setup PyTorch first before installing MagicSoup.
-To setup pytorch correctly for your GPU see [Get Started (pytorch.org)](https://pytorch.org/get-started/locally/).
+You can move almost all calculations to a GPU.
+This increases performance a lot and is recommended.
+In this case first setup PyTorch with CUDA as described in [Get Started (pytorch.org)](https://pytorch.org/get-started/locally/),
+then install MagicSoup afterwards.
 
 ### Example
 
-The basic building blocks of what a cell can do are defined by the world's chemistry.
-There are molecules and reactions that can convert these molecules.
-Cells can develop proteins with domains that can transport these molecules,
-catalyze the reactions, and be regulated by molecules.
-Any reaction or transport happens only if energetically favourable.
-Below, I am defining the reaction $CO2 + NADPH \rightleftharpoons formiat + NADP$.
-Each molecule species is defined with a energy.
+The basic building blocks of what a cell can do are defined by the world's [chemistry](https://magic-soup.readthedocs.io/en/latest/reference/#magicsoup.containers.Chemistry).
+There are [molecules](https://magic-soup.readthedocs.io/en/latest/reference/#magicsoup.containers.Molecule) and reactions that can convert these molecules.
+Cells can develop proteins with domains that can catalyze reactions, transport molecules and be regulated by them.
+Reactions and transports always progress into the energetically favourable direction.
+Below, I am defining a chemistry with reaction $\text{CO2} + \text{NADPH} \rightleftharpoons \text{formiat} + \text{NADP} | -90 \text{kJ}$.
 
 ```python
 import torch
@@ -62,7 +61,7 @@ By coupling multiple domains within the same protein, energetically unfavourable
 can be powered with the energy of energetically favourable ones.
 These domains, their specifications, and how they are coupled in proteins, is all encoded in the cell's genome.
 Here, I am generating 100 cells with random genomes of 500 basepairs each and place them
-in random places on the 2D world map.
+randomly on the 2D world map.
 
 ```python
 genomes = [ms.random_genome(s=500) for _ in range(100)]
@@ -70,8 +69,8 @@ world.spawn_cells(genomes=genomes)
 ```
 
 Cells discover new proteins by chance through mutations.
-In the function below all cells experience 1E-3 random point mutations per nucleotide.
-10% of them will be indels.
+In the function below all cells experience 0.001 random point mutations per nucleotide.
+40% of them will be indels.
 
 ```python
 def mutate_cells(world: ms.World):
@@ -100,9 +99,9 @@ def replicate_cells(world: ms.World):
 ```
 
 Finally, the simulation itself is run in a python loop by repetitively calling the different steps.
-With `world.enzymatic_activity()` chemical reactions and molecule transport
+With [enzymatic_activity()](https://magic-soup.readthedocs.io/en/latest/reference/#magicsoup.world.World.enzymatic_activity) chemical reactions and molecule transport
 in cells advance by one time step.
-`world.diffuse_molecules()` lets molecules on the world map diffuse and permeate through cell membranes
+[diffuse_molecules()](https://magic-soup.readthedocs.io/en/latest/reference/#magicsoup.world.World.diffuse_molecules) lets molecules on the world map diffuse and permeate through cell membranes
 (if they can) by one time step.
 
 ```python
