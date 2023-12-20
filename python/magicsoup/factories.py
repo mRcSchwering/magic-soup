@@ -4,6 +4,11 @@ from magicsoup.containers import Molecule
 from magicsoup.util import closest_value, random_genome, round_down
 from magicsoup.world import World
 
+# TODO: Proteins/Domains should be able to export themself to dicts
+#       and Protein/Domain factories should be able to load them
+#       this way I can easily save a proteome as JSON and also load it later on
+#       even in a different world instance
+
 
 class _DomainFact:
     """

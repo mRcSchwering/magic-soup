@@ -2,19 +2,22 @@
 
 ## Simple Experiment
 
+_MagicSoup_ is trying to only provide the simulation engine.
+Everything else should be up to the user, so that any experimental setup can be created.
+However, this also means a lot of code has to be written by yourself.
 As an example let's try to teach cells to convert CO2 into acetyl-CoA.
 Cell survival will be based on intracellular acetyl-CoA concentrations and CO2 will be supplied in abundance.
 
 ### Chemistry
 
 The most important thing of our simulated world is the [Chemistry][magicsoup.containers.Chemistry] object.
-It defines which molecule species exist and how they move around, which reactions are possible and how much energy they need.
-With all the proteomes our cells will develop, they are always constrained by this chemistry.
+It defines which [Molecules][magicsoup.containers.Molecule] exist and how they move around,
+which reactions are possible and how much energy they release.
 
 Here, we will use the [Wood-Ljungdahl pathway](https://en.wikipedia.org/wiki/Wood%E2%80%93Ljungdahl_pathway) as inspiration.
 There are a few molecule species and reactions that eventually acetylate coenzyme A.
 Below, we create a file _chemistry.py_ in which we define all these molecules and reactions.
-For the sake of brevity some steps in the carbonyl branch were aggregated.
+For the sake of brevity some steps were aggregated.
 
 ```python
 # chemistry.py
@@ -74,15 +77,15 @@ For _CO2_ permeability and diffusivity is increased to account for the fact that
 it diffuses rapidly and can permeate through cell membranes.
 
 The reactions are tuples of lists of these molecule species.
-The first tuple entry defined all substrates, the second all products.
+The first tuple entry defines all substrates, the second all products.
 A stoichiometric number >1 can be expressed by listing the molecule species multiple times.
 All reactions are reversible, so it is not necessary to define the reverse reaction.
 In which direction a reaction will progress depends on its reaction energy and quotient.
 
 ### Setup
 
-Eventually, we want to create [Chemistry][magicsoup.containers.Chemistry]
-and [World][magicsoup.world.World] and then step through time by repetitively calling different functions.
+Eventually, we want to create a [Chemistry][magicsoup.containers.Chemistry]
+and a [World][magicsoup.world.World] object and then step through time by repetitively calling different functions.
 This is what our _main.py_ will look like:
 
 ```python
@@ -127,23 +130,23 @@ if __name__ == "__main__":
 Here, we prepare the medium, add some cells, and let the simulation run for 10k steps.
 In each step cells can catalyze reactions and molecules can diffuse.
 Then cells are selectively killed and replicated.
-Finally, all surviving cells can undergo mutations.
+Finally, all surviving cells can experience mutations which change their genomes and proteomes.
 
 ### Adding molecules
 
 When [World][magicsoup.world.World] is instantiated by default it fills the map with molecules
 of all molecule species to an average concentration of 10 mM.
 Here, we add extra CO2 and energy.
-Out cells don't really have a mechanism for restoring these energy carriers.
+Our cells don't have any mechanism for restoring these energy carriers.
 Sooner or later they will run out of energy.
 
 ```python
-def prepare_medium(world: ms.World, co2: int, atp: int, adp: int, nadph: int, nadp: int):
-    world.cell_molecules[:, atp] = 100.0
-    world.cell_molecules[:, adp] = 0.0
-    world.cell_molecules[:, nadph] = 100.0
-    world.cell_molecules[:, nadp] = 0.0
-    world.molecule_map[co2] = 100.0
+def prepare_medium(world: ms.World, i_co2: int, i_atp: int, i_adp: int, i_nadph: int, i_nadp: int):
+    world.molecule_map[i_atp] = 100.0
+    world.molecule_map[i_adp] = 0.0
+    world.molecule_map[i_nadph] = 100.0
+    world.molecule_map[i_nadp] = 0.0
+    world.molecule_map[i_co2] = 100.0
 ```
 
 ### Adding cells
@@ -156,27 +159,21 @@ that were on that position.
 There is a helper function `random_genome()` that can be used to generate genomes of a certain size.
 
 ```python
-def add_cells(world: ms.World):
-    genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.spawn_cells(genomes=genomes)  
+def add_cells(world: ms.World, size=500, n_cells=1000):
+    genomes = [ms.random_genome(s=size) for _ in range(n_cells)]
+    world.spawn_cells(genomes=genomes)
 ```
 
 ### Cell Activity
 
 This function essentially increments the world by one time step (1s).
-`world.enzymatic_activity()` lets cels catalyze reactions and transport molecules,
-`world.degrade_molecules()` degrades molecules everywhere,
-`world.diffuse_molecules()` lets molecules diffuse and permeate,
-`world.increment_cell_lifetimes()` increments cell lifetimes by 1.
-I also added a mechanism that slowly hydrolyzes ATP in all living cells.
-This makes inactive cells die over time (see below).
-Care has to be taken not to accidentally create negative concentrations.
+[enzymatic_activity()][magicsoup.world.World.enzymatic_activity] lets cels catalyze reactions and transport molecules,
+[degrade_molecules()][magicsoup.world.World.degrade_molecules] degrades molecules everywhere,
+[diffuse_molecules()][magicsoup.world.World.diffuse_molecules] lets molecules diffuse and permeate,
+[increment_cell_lifetimes()][magicsoup.world.World.increment_cell_lifetimes] increments cell lifetimes by 1.
 
 ```python
-def activity(world: ms.World, atp: int, adp: int):
-    world.cell_molecules[:, atp] -= 0.01
-    world.cell_molecules[:, adp] += 0.01
-    world.cell_molecules[world.cell_molecules[:, atp] < 0.0, atp] = 0.0
+def activity(world: ms.World):
     world.enzymatic_activity()
     world.degrade_molecules()
     world.diffuse_molecules()
@@ -192,82 +189,81 @@ Here, these variables will be intracellular molecule concentrations.
 For killing cells we can look at intracellular ATP concentrations.
 If they are low, chances of being killed are increased.
 Cells are killed with [kill_cells()][magicsoup.world.World.kill_cells] by providing their indexes.
+I am using a simple sigmoidal $f(x) = x^n/(x^n + c^n)$ to map likelihoods.
 
 ```python
 def sample(p: torch.Tensor) -> list[int]:
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
-def kill_cells(world: ms.World, atp: int):
-    x0 = world.cell_molecules[:, atp]
-    idxs = sample(1.0**7 / (1.0**7 + x0**7))
+def kill_cells(world: ms.World, i_atp: int):
+    x = world.cell_molecules[:, i_atp]
+    idxs = sample(1.0**7 / (1.0**7 + x**7))
     world.kill_cells(cell_idxs=idxs)
 ```
 
 Cell replication should be based on acetyl-CoA.
 Here, we could make the cell invest some energy in form of acetyl-CoA by converting it back to HS-CoA (taking away the acetyl group).
 That way a cell has to continuously produce acetyl-CoA in order to replicate.
-Cells can be replicated with [divide_cells()][magicsoup.world.World.divide_cells] by providing their indexes.
-The indexes of successfully replicated cells are returned (if the cell has no space to replicate, it will not do so).
+Cells can divide with [divide_cells()][magicsoup.world.World.divide_cells] by providing their indexes.
+The indexes of successfully replicated cells are returned.
 
 ```python
-def replicate_cells(world: ms.World, aca: int, hca: int):
-    x = world.cell_molecules[:, aca]
-    chosen = _sample(x**5 / (x**5 + 15.0**5))
+def replicate_cells(world: ms.World, i_aca: int, i_hca: int, cost=2.0):
+    x = world.cell_molecules[:, i_aca]
+    sampled_idxs = _sample(x**5 / (x**5 + 15.0**5))
 
-    allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
-    idxs = list(set(chosen) & set(allowed))
-
+    can_replicate = world.cell_molecules[:, i_aca] > cost
+    allowed_idxs = torch.argwhere(can_replicate).flatten().tolist()
+    
+    idxs = list(set(sampled_idxs) & set(allowed_idxs))
     replicated = world.divide_cells(cell_idxs=idxs)
+    
     if len(replicated) > 0:
-        parents, children = list(map(list, zip(*replicated)))
-        world.cell_molecules[parents + children, aca] -= 1.0
-        world.cell_molecules[parents + children, hca] += 1.0
+        descendants = [dd for d in replicated for dd in d]
+        world.cell_molecules[descendants, i_aca] -= cost / 2
+        world.cell_molecules[descendants, i_hca] += cost / 2
 ```
 
-As you can see I am using functions of the form $f(x) = x^n/(x^n + c^n)$
-to map molecule concentrations to likelihoods.
-It's a simple sigmoid.
+Here, I decided that the cost of dividing is 2 mol acetyl-CoA.
+Thus, I am also checking that only cells with at least 2 mol acetyl-CoA are allowed to divide.
+After division their descendants have half of the ancestor's molecules.
+To pay the price of dividing each descendant now has to hydrolyse 1 mol acetyl-CoA.
+Note, I am not doing this before the replication because a cell might not successfully replicate.
+If a cell has no space to replicate, it will not do so.
 
 ### Mutating cells
 
 To continously create variation among cells they are all mutated at every step.
-There are some functions for mutating genomes already provided in the `ms.mutations` module.
-Here, I am using [point_mutations()][magicsoup.mutations.point_mutations] to apply random
-point mutations with a rate of 1e-6 per nucleotide. 40% of them are InDels.
-
-This alone would only for vertical inheritance, which is very limiting.
-[recombinations()][magicsoup.mutations.recombinations] creates random recombinations
-between genome pairs.
-Here, we subject all neighbouring cells lateral gene transfer.
+On [World][magicsoup.world.World] there are some functions to efficiently create mutations
+and update the cells whose genomes have changed.
+Below, I am using [mutate_cells()][magicsoup.world.World.mutate_cells],
+which creates point mutations, with a rate of 1e-4 mutations per base pair.
+I also decided to let recombinate with other cells if they have already lived for more than 10 steps.
+[recombinate_cells()][magicsoup.world.World.recombinate_cells] works by creating random strand breaks.
+Here, it creates 1e-6 strand brakes per base pair.
 
 ```python
-def mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=world.cell_genomes)
-    world.update_cells(genome_idx_pairs=mutated)
-
-    nghbrs = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
-    nghbr_genomes = [(world.cell_genomes[a], world.cell_genomes[b]) for a, b in nghbrs]
-    
-    mutated = []
-    for sa, sb, idx in ms.recombinations(seq_pairs=nghbr_genomes):
-        a, b = nghbrs[idx]
-        mutated.append((sa, a))
-        mutated.append((sb, b))
-    world.update_cells(genome_idx_pairs=mutated)
+def mutate_cells(world: ms.World, old=10):
+    world.mutate_cells(p=1e-4)
+    is_old = torch.argwhere(world.cell_lifetimes > old)
+    world.recombinate_cells(cell_idxs=is_old.flatten().tolist(), p=1e-6)
 ```
 
-[update_cells()][magicsoup.world.World.update_cells] is used to update the cells whose genome was altered.
-This function derives each cell's new proteome and updates its parameters.
+[mutate_cells()][magicsoup.world.World.mutate_cells] and
+[recombinate_cells()][magicsoup.world.World.recombinate_cells] are really just convenience functions.
+You can also create mutations by yourself by just editing the strings in `world.cell_genomes`
+and then calling [update_cells()][magicsoup.world.World.update_cells] for the cells that have changed.
 
 ### Putting it all together
 
 Finally, we can combine everything in _main.py_.
 In the functions above I always used indexes to reference certain molecule species on
-`world.molecule_map` and `world.cell_molecules`. Those indexes are derived from [Chemistry][magicsoup.containers.Chemistry].
+`world.molecule_map` and `world.cell_molecules`.
+Those indexes are derived from [Chemistry][magicsoup.containers.Chemistry].
 Molecule species are always ordered in the same way as on `chemistry.molecules`.
-Below, I am creating a name-to-index mapping for these molecule with `mol_2_idx = {d.name: i for i, d in enumerate(chemistry.molecules)}`
-after [Chemistry][magicsoup.containers.Chemistry] is instantiated.
+For convenience there are 2 dictionaries `chemistry.molname_2_idx` and `chemistry.mol_2_idx`
+for getting molecule indexes for either molecule names or molecule objects.
 
 ```python
 # main.py
@@ -275,21 +271,18 @@ import torch
 import magicsoup as ms
 from .chemistry import REACTIONS, MOLECULES
 
-def prepare_medium(world: ms.World, co2: int, atp: int, adp: int, nadph: int, nadp: int):
-    world.cell_molecules[:, atp] = 100.0
-    world.cell_molecules[:, adp] = 0.0
-    world.cell_molecules[:, nadph] = 100.0
-    world.cell_molecules[:, nadp] = 0.0
-    world.molecule_map[co2] = 100.0
+def prepare_medium(world: ms.World, i_co2: int, i_atp: int, i_adp: int, i_nadph: int, i_nadp: int):
+    world.molecule_map[i_atp] = 100.0
+    world.molecule_map[i_adp] = 0.0
+    world.molecule_map[i_nadph] = 100.0
+    world.molecule_map[i_nadp] = 0.0
+    world.molecule_map[i_co2] = 100.0
 
-def add_cells(world: ms.World):
-    genomes = [ms.random_genome(s=500) for _ in range(1000)]
+def add_cells(world: ms.World, size=500, n_cells=1000):
+    genomes = [ms.random_genome(s=size) for _ in range(n_cells)]
     world.spawn_cells(genomes=genomes)
 
-def activity(world: ms.World, atp: int, adp: int):
-    world.cell_molecules[:, atp] -= 0.01
-    world.cell_molecules[:, adp] += 0.01
-    world.cell_molecules[world.cell_molecules[:, atp] < 0.0, atp] = 0.0
+def activity(world: ms.World):
     world.enzymatic_activity()
     world.degrade_molecules()
     world.diffuse_molecules()
@@ -299,37 +292,30 @@ def sample(p: torch.Tensor) -> list[int]:
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
-def kill_cells(world: ms.World, atp: int):
-    x0 = world.cell_molecules[:, atp]
-    idxs = sample(1.0**7 / (1.0**7 + x0**7))
+def kill_cells(world: ms.World, i_atp: int):
+    x = world.cell_molecules[:, i_atp]
+    idxs = sample(1.0**7 / (1.0**7 + x**7))
     world.kill_cells(cell_idxs=idxs)
 
-def replicate_cells(world: ms.World, aca: int, hca: int):
-    x = world.cell_molecules[:, aca]
-    chosen = _sample(x**5 / (x**5 + 15.0**5))
+def replicate_cells(world: ms.World, i_aca: int, i_hca: int, cost=2.0):
+    x = world.cell_molecules[:, i_aca]
+    sampled_idxs = _sample(x**5 / (x**5 + 15.0**5))
 
-    allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
-    idxs = list(set(chosen) & set(allowed))
-
-    replicated = world.divide_cells(cell_idxs=idxs)
-    if len(replicated) > 0:
-        parents, children = list(map(list, zip(*replicated)))
-        world.cell_molecules[parents + children, aca] -= 1.0
-        world.cell_molecules[parents + children, hca] += 1.0
-
-def mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=world.cell_genomes)
-    world.update_cells(genome_idx_pairs=mutated)
-
-    nghbrs = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
-    nghbr_genomes = [(world.cell_genomes[a], world.cell_genomes[b]) for a, b in nghbrs]
+    can_replicate = world.cell_molecules[:, i_aca] > cost
+    allowed_idxs = torch.argwhere(can_replicate).flatten().tolist()
     
-    mutated = []
-    for sa, sb, idx in ms.recombinations(seq_pairs=nghbr_genomes):
-        a, b = nghbrs[idx]
-        mutated.append((sa, a))
-        mutated.append((sb, b))
-    world.update_cells(genome_idx_pairs=mutated)
+    idxs = list(set(sampled_idxs) & set(allowed_idxs))
+    replicated = world.divide_cells(cell_idxs=idxs)
+    
+    if len(replicated) > 0:
+        descendants = [dd for d in replicated for dd in d]
+        world.cell_molecules[descendants, i_aca] -= cost / 2
+        world.cell_molecules[descendants, i_hca] += cost / 2
+
+def mutate_cells(world: ms.World, old=10):
+    world.mutate_cells(p=1e-4)
+    is_old = torch.argwhere(world.cell_lifetimes > old)
+    world.recombinate_cells(cell_idxs=is_old.flatten().tolist(), p=1e-6)
 
 def main():
     chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
@@ -345,16 +331,16 @@ def main():
 
     prepare_medium(
         world=world,
-        co2=i_co2,
-        atp=i_atp,
-        adp=i_adp,
-        nadph=i_nadph,
-        nadp=i_nadp,
+        i_co2=i_co2,
+        i_atp=i_atp,
+        i_adp=i_adp,
+        i_nadph=i_nadph,
+        i_nadp=i_nadp,
     )
     add_cells(world=world)
 
     for _ in range(10_000):
-        activity(world=world, atp=i_atp, adp=i_adp)
+        activity(world=world)
         kill_cells(world=world, atp=i_atp)
         replicate_cells(world=world, aca=i_aca, hca=i_hca)
         mutate_cells(world=world)
@@ -362,6 +348,40 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+## GPU and Tensors
+
+[PyTorch](https://pytorch.org/) is used a lot in this simulation.
+When initializing [World][magicsoup.world.World] parameter `device` can be used to move most calculations to a GPU.
+_E.g._ with `device="cuda"` the default CUDA device is used (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
+Using a GPU usually speeds up the simulation by more than 100 times.
+
+To achieve this performance cells and molecules are not represented as python objects.
+Instead [World][magicsoup.world.World] maintains python lists and [PyTorch Tensors](https://pytorch.org/docs/stable/tensors.html).
+Some of those tensors where used in the [example above](#simple-experiment): `world.molecule_map` and `world.cell_molecules`.
+All lists and tensors that can be used to interact with the simulation are listed in
+the [World][magicsoup.world.World] class documentation.
+To keep performance these tensors should not be moved back and forth between GPU and CPU during the simulation.
+
+```python
+# float tensors on GPU get modified (fast)
+world.molecule_map[0] = 10.0
+world.cell_molecules[0] += 1.0
+world.cell_molecules[world.cell_divisions > 10, 3] -= 1.0
+
+mask = world.cell_lifetimes > 10  # bool tensor on GPU (fast)
+idx_tensor = torch.argwhere(mask)  # long tensor on GPU (fast)
+idx_lst = idx_tensor.flatten().tolist()  # tolist() sends integers to CPU (slow)
+
+values = world.cell_divisions.float()  # convert integer to float tensor on GPU (fast)
+mean = values.mean()  # calculate mean as 1-item float tensor on GPU (fast)
+value = mean.item()  # item() sends value to CPU (slow)
+```
+
+There is a [PyTorch tutorial](https://pytorch.org/tutorials/beginner/introyt/tensors_deeper_tutorial.html)
+for working with tensors but in general you should try to use [tensor methods](https://pytorch.org/docs/stable/torch.html).
+If you are familiar with [NumPy](https://numpy.org/) this should come easy.
+Equivalents for most ndarray methods also exist on torch tensors.
 
 ## Boilerplate
 
@@ -391,10 +411,10 @@ if __name__ == "__main__":
 
 ### Monitoring
 
-One nice tool for monitoring an ongoing simulation run is [TensorBoard](https://www.tensorflow.org/tensorboard).
+One nice tool for monitoring an ongoing simulation is [TensorBoard](https://www.tensorflow.org/tensorboard).
 It's an app that watches a directory and displays logged data as line charts, histograms, images and more.
 It can be installed from [pipy](https://pypi.org/project/tensorboard/).
-_pytorch_ already includes a `SummaryWriter` that can be used for writing these logging files.
+_PyTorch_ already includes a `SummaryWriter` that can be used for writing these logging files.
 
 ```python
 # main.py
@@ -448,7 +468,7 @@ THIS_DIR = Path(__file__).parent
 ...
 
 def write_scalars(world: ms.World, writer: SummaryWriter, step: int):
-    writer.add_scalar("Cells/total[n]", world.n_cells, step)
+    writer.add_scalar("Cells/Total[n]", world.n_cells, step)
     writer.add_scalar("Cells/Survival[avg]", world.cell_lifetimes.mean(), step)
     writer.add_scalar("Cells/Divisions[avg]", world.cell_divisions.mean(), step)
 
@@ -492,23 +512,15 @@ I am going to stick to the standard library and use [argparse](https://docs.pyth
 
 ```python
 # main.py
-import json
 import datetime as dt
-from pathlib import Path
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 import torch
 import magicsoup as ms
 from .chemistry import REACTIONS, MOLECULES
 
-THIS_DIR = Path(__file__).parent
 ...
 
 def main(kwargs: dict):
-    outdir = THIS_DIR / "runs" / dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
-    outdir.mkdir(exist_ok=True, parents=True)
-    with open(outdir / "hparams.json", "w") as fh:
-        json.dump(vars(args), fh)
-
     chemistry = ms.Chemistry(reactions=REACTIONS, molecules=MOLECULES)
     world = ms.World(chemistry=chemistry)
     ...
@@ -520,7 +532,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--n-steps", default=10_000, type=int)
     parsed_args = parser.parse_args()
-    main(args=vars(parsed_args))
+    main(vars(parsed_args))
 ```
 
 ### Checkpoints
@@ -530,7 +542,7 @@ if __name__ == "__main__":
 It can be restored using [from_file()][magicsoup.world.World.from_file].
 However, during the simulation not everything on the world object changes.
 A smaller and quicker way to save is [save_state()][magicsoup.world.World.save_state].
-It only saves the parts which change when running the simulation (will write a few `.pt` files).
+It only saves the parts which change when running the simulation (will write a few `.pt` and `.fasta` files).
 A state can be restored with [load_state()][magicsoup.world.World.load_state].
 So, in the beginning one [save()][magicsoup.world.World.save] is needed to save the whole object.
 Then, [save_state()][magicsoup.world.World.save_state] can be used to save a certain time point.
@@ -579,43 +591,29 @@ def sample(p: torch.Tensor) -> list[int]:
     idxs = torch.argwhere(torch.bernoulli(p))
     return idxs.flatten().tolist()
 
-def kill_cells(world: ms.World, atp: int):
-    x0 = world.cell_molecules[:, atp]
-    idxs = sample(1.0**7 / (1.0**7 + x0**7))
+def kill_cells(world: ms.World, i_atp: int):
+    x = world.cell_molecules[:, i_atp]
+    idxs = sample(1.0**7 / (1.0**7 + x**7))
     world.kill_cells(cell_idxs=idxs)
 
-def replicate_cells(world: ms.World, aca: int, hca: int):
-    x = world.cell_molecules[:, aca]
-    chosen = _sample(x**5 / (x**5 + 15.0**5))
+def replicate_cells(world: ms.World, i_aca: int, i_hca: int, cost=2.0):
+    x = world.cell_molecules[:, i_aca]
+    sampled_idxs = _sample(x**5 / (x**5 + 15.0**5))
 
-    allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
-    idxs = list(set(chosen) & set(allowed))
-
+    can_replicate = world.cell_molecules[:, i_aca] > cost
+    allowed_idxs = torch.argwhere(can_replicate).flatten().tolist()
+    
+    idxs = list(set(sampled_idxs) & set(allowed_idxs))
     replicated = world.divide_cells(cell_idxs=idxs)
+    
     if len(replicated) > 0:
-        parents, children = list(map(list, zip(*replicated)))
-        world.cell_molecules[parents + children, aca] -= 1.0
-        world.cell_molecules[parents + children, hca] += 1.0
+        descendants = [dd for d in replicated for dd in d]
+        world.cell_molecules[descendants, i_aca] -= cost / 2
+        world.cell_molecules[descendants, i_hca] += cost / 2
 ```
 
-How to come up with useful numbers?
-If you just randomly pick some numbers, one of 2 things is likely to happen:
-
-- **All cells die** On average cells die before they have a chance to replicate.
-  If they die very slowly, it might mean it is too hard to replicate.
-  If they die very quickly, the kill-rate is too high.
-- **Cells overgrow the map, then nothing happens** The kill-rate is too low.
-  Only cells at the edge of the growing colony had a chance to adapt.
-  Once the map is fully overgrown adaption ceases.
-  There might be a better adapted cell somewhere but it cannot replicate anymore.
-
-Eventually you have to fine-tune these 2 rates.
-If the kill-rate is too low, it will not affect selection.
-Ideally, cells struggle a bit to survive but not so much as to go extinct.
-If the replication rate is too high, the map is quickly overgrown by even not-so-well adapted cells.
-The map will be full before better adapted cells can evolve.
-If both rates are high, a wavefront of replicating and dying cells can appear.
-This wavefront marches over the whole map and converts some molecule species before it disappears with all its cells dying.
+Here, I used $f_k(x) = 1^7 / (1^7 + x^7)$ and $f_r(x) = x^5 / (x^5 + 15^5)$.
+How to come up with useful functions and parameters?
 
 ### Estimating useful rates
 
@@ -636,16 +634,49 @@ We can simulate how cells with different X concentrations would grow given these
 ![](img/sim_cell_growth.png)
 _Simulated growth of cells with constant X concentrations when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
-(More examples in [figures 9](./figures.md#9-survival-and-replication-rate))
+Eventually, you still have to try out a bit by just running simulation.
+While trying to come up with a good set of parameters you might see one of these patterns:
+
+- **Cells die before forming a colony** 
+  If they immediately die, the kill rate is probably too high.
+  If it takes them many steps to die (with some cells lingering around for a while),
+  it is probably too hard to replicate.
+  In that case increase the replication rate.  
+- **Cells quickly overgrow the map**
+  The kill rate is probably too low.
+  Only cells at the edge of the growing colony had a chance to adapt.
+  Once the map is fully overgrown adaption ceases.
+  There might be a well adapted cell somewhere but it cannot replicate.
+- **Cells create wavefront, then die** If cells can replicate quickly,
+  but also die quickly, they generate a wavefront of dividing cells which walks
+  over the map in a few waves and then perishes.
+  They often don't have enough time to adapt before going extinct.
+
+![](./img/cell_growth.gif)
+
+_Example cell growth in 4 simulations over 1000 steps with different kill and replication rates. (Left) with moderately high kill rate and low replicaiton rate.(Middle-left) with high replication rate and low kill rate. (Middle-right) with high replication and kill rate. (Right) with moderate kill and replication rate. Cell map is black, cells are white._
+
+Ideally, cells struggle a bit to survive but not so much as to go extinct.
+They should have some time to adapt and space to grow.
+To keep cells in exponential growth phase indefinitely you can passage them.
 
 ### Passaging cells
 
-To keep cells in exponential growth phase indefinitely you can passage them.
-In this simulation passaging cells would equate to randomly selecting a few cells, creating a new world map,
-then placing these selected cells on the new world map.
+In this simulation passaging cells would equate to selecting a few cells, killing the others,
+creating fresh medium, then spreading the surviving cells.
 This way the cells have new molecules and open space to grow.
 
-The passage itself will select for cells which are most abundant during the time of the passage.
+```python
+def split_cells(world: ms.World, split_ratio=0.3):
+    keep_n = int(world.n_cells * split_ratio)
+    kill_n = max(world.n_cells - keep_n, 0)
+    idxs = random.sample(list(range(world.n_cells)), k=kill_n)
+    world.kill_cells(cell_idxs=idxs)
+    prepare_medium(world=world)
+    world.reposition_cells(cell_idxs=list(range(world.n_cells)))
+```
+
+Passaging itself selects for cells which are most abundant during the time of the passage.
 Let's take the example from above with kill and replication functions $p_k(X) =(X^7 + 1)^{-1}$ and $p_r(X) = X^5 / (X^5 + 15^5)$.
 The plot below shows simulated cell growth, where cells were passaged with different ratios whenever the total number of cells exeeded 7k.
 Gray areas represent the total number of cells, stacked bar charts show the cell type composition before the passage.
@@ -711,7 +742,7 @@ world.genetics = ms.Genetics(...)
 
 ## Molecule energies
 
-In the [experiment above](#simple-experiment) some molecule species were defined in _chemistry.py_ with energies.
+In the [experiment at the beginning](#simple-experiment) some molecule species were defined in _chemistry.py_ with energies.
 
 ```python
 formiat = Molecule("formiat", 20.0 * 1e3)
@@ -740,7 +771,7 @@ with an average concentration of 10.
 In the [experiment above](#simple-experiment) this made sense for most molecule species.
 We adjusted concentrations for energy carriers ATP/ADP and NADPH/NADP, and for the carbon source CO2.
 For adding CO2, one could also think of creating gradient like shown below.
-This could for example introduce a spatial dependence for cell growth or implement a ChemoStat.
+This could for example introduce a spatial dependence for cell growth or implement a [ChemoStat](https://en.wikipedia.org/wiki/Chemostat).
 
 ![](img/gradients.png)
 _Molecule species X is added to molecule map and allowed to diffuse  to create a 1D gradient (top) or 2D gradients (bottom)._

@@ -1,10 +1,3 @@
-"""
-Dummy run to test simulation performance in realistic environment
-
-    PYTHONPATH=./python python -m example --help
-    ...
-    tensorboard --host 0.0.0.0 --logdir=./example/runs
-"""
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
 import datetime as dt
@@ -16,11 +9,12 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY  # pylint: disable=E0401
 _this_dir = Path(__file__).parent
 _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
 
-# TODO: fix this
-# TODO: images of all cells dying, overgorwing, wave
 # TODO: update tutorial
 # TODO: tutorial section: analyzing cell
 # TODO: tutorial section: editing genomes
+# TODO: nicer cover GIF?
+# TODO: directory for visualizations (with READMEs?)
+# TODO: developer README (maturin devleop...)
 
 
 def _log_scalars(
@@ -49,35 +43,38 @@ def _sample(p: torch.Tensor) -> list[int]:
     return idxs.flatten().tolist()
 
 
-def _kill_cells(world: ms.World, atp: int):
-    x0 = world.cell_molecules[:, atp]
-    idxs = _sample(1.0**7 / (1.0**7 + x0**7))
+def _kill_cells(world: ms.World, i_atp: int, k: float):
+    x = world.cell_molecules[:, i_atp]
+    idxs = _sample(k**7 / (k**7 + x**7))
     world.kill_cells(cell_idxs=idxs)
 
 
-def _replicate_cells(world: ms.World, aca: int, hca: int):
-    x = world.cell_molecules[:, aca]
-    chosen = _sample(x**5 / (x**5 + 15.0**5))
+def _replicate_cells(world: ms.World, i_aca: int, i_hca: int, k: float, cost=2.0):
+    x = world.cell_molecules[:, i_aca]
+    sampled_idxs = _sample(x**5 / (x**5 + k**5))
 
-    allowed = torch.argwhere(world.cell_molecules[:, aca] > 2.0).flatten().tolist()
-    idxs = list(set(chosen) & set(allowed))
+    can_replicate = world.cell_molecules[:, i_aca] > cost
+    allowed_idxs = torch.argwhere(can_replicate).flatten().tolist()
 
+    idxs = list(set(sampled_idxs) & set(allowed_idxs))
     replicated = world.divide_cells(cell_idxs=idxs)
+
     if len(replicated) > 0:
-        parents, children = list(map(list, zip(*replicated)))
-        world.cell_molecules[parents + children, aca] -= 1.0
-        world.cell_molecules[parents + children, hca] += 1.0
+        descendants = [dd for d in replicated for dd in d]
+        world.cell_molecules[descendants, i_aca] -= cost / 2
+        world.cell_molecules[descendants, i_hca] += cost / 2
 
 
-def _mutate_cells(world: ms.World):
-    mutated = ms.point_mutations(seqs=world.cell_genomes)
-    world.update_cells(genome_idx_pairs=mutated)
+def _mutate_cells(world: ms.World, old=10):
+    world.mutate_cells()
+    is_old = torch.argwhere(world.cell_lifetimes > old)
+    world.recombinate_cells(cell_idxs=is_old.flatten().tolist())
 
 
-def _activity(world: ms.World, atp: int, adp: int):
-    world.cell_molecules[:, atp] -= 0.01
-    world.cell_molecules[:, adp] += 0.01
-    world.cell_molecules[world.cell_molecules[:, atp] < 0.0, atp] = 0.0
+def _activity(world: ms.World, i_atp: int, i_adp: int):
+    world.cell_molecules[:, i_atp] -= 0.01
+    world.cell_molecules[:, i_adp] += 0.01
+    world.cell_molecules[world.cell_molecules[:, i_atp] < 0.0, i_atp] = 0.0
     world.enzymatic_activity()
     world.degrade_molecules()
     world.diffuse_molecules()
@@ -85,7 +82,6 @@ def _activity(world: ms.World, atp: int, adp: int):
 
 
 def main(args: Namespace):
-    min_cells = int(args.init_n_cells * 0.01)
     writer = SummaryWriter(log_dir=_this_dir / "runs" / _now)
 
     world = ms.World(
@@ -96,11 +92,10 @@ def main(args: Namespace):
     )
     world.save(rundir=_this_dir / "runs" / _now)
 
-    mol_2_idx = {d.name: i for i, d in enumerate(CHEMISTRY.molecules)}
-    ATP_IDX = mol_2_idx["ATP"]
-    ADP_IDX = mol_2_idx["ADP"]
-    ACA_IDX = mol_2_idx["acetyl-CoA"]
-    HCA_IDX = mol_2_idx["HS-CoA"]
+    ATP_IDX = CHEMISTRY.molname_2_idx["ATP"]
+    ADP_IDX = CHEMISTRY.molname_2_idx["ADP"]
+    ACA_IDX = CHEMISTRY.molname_2_idx["acetyl-CoA"]
+    HCA_IDX = CHEMISTRY.molname_2_idx["HS-CoA"]
 
     genomes = [
         ms.random_genome(args.init_genome_size) for _ in range(args.init_n_cells)
@@ -108,19 +103,21 @@ def main(args: Namespace):
     world.spawn_cells(genomes=genomes)
 
     for step_i in range(args.n_steps):
-        _activity(world=world, atp=ATP_IDX, adp=ADP_IDX)
-        _kill_cells(world=world, atp=ATP_IDX)
-        _replicate_cells(world=world, aca=ACA_IDX, hca=HCA_IDX)
+        _activity(world=world, i_atp=ATP_IDX, i_adp=ADP_IDX)
+        _kill_cells(world=world, i_atp=ATP_IDX, k=args.k_kill)
+        _replicate_cells(world=world, i_aca=ACA_IDX, i_hca=HCA_IDX, k=args.k_replicate)
         _mutate_cells(world=world)
 
-        if step_i % 25 == 0:
-            world.save_state(statedir=_this_dir / "runs" / _now / f"step={step_i}")
+        if step_i % args.check_every_n == 0:
+            if args.save_state:
+                world.save_state(statedir=_this_dir / "runs" / _now / f"step={step_i}")
             _log_imgs(writer=writer, world=world, step_i=step_i)
-            _log_scalars(writer=writer, world=world, step_i=step_i, mol_2_idx=mol_2_idx)
-
-        if world.n_cells < min_cells:
-            print(f"Only {world.n_cells:,} cells left, stopping")
-            break
+            _log_scalars(
+                writer=writer,
+                world=world,
+                step_i=step_i,
+                mol_2_idx=CHEMISTRY.molname_2_idx,
+            )
 
     writer.close()
 
@@ -131,6 +128,10 @@ if __name__ == "__main__":
     parser.add_argument("--n-steps", default=10_000, type=int)
     parser.add_argument("--init-n-cells", default=1000, type=int)
     parser.add_argument("--init-genome-size", default=500, type=int)
+    parser.add_argument("--k-kill", default=1.0, type=float)
+    parser.add_argument("--k-replicate", default=15.0, type=float)
+    parser.add_argument("--check-every-n", default=25, type=int)
+    parser.add_argument("--save_state", action="store_true")
     parser.add_argument("--init-molmap", default="randn", type=str)
     parser.add_argument("--device", default="cpu", type=str)
     parsed_args = parser.parse_args()
