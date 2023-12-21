@@ -17,6 +17,10 @@ _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
 # TODO: developer README (maturin devleop...)
 
 
+# ggplot save:
+# fig.save("image.png", width=10, height=5, units="cm", dpi=300)
+
+
 def _log_scalars(
     step_i: int, writer: SummaryWriter, world: ms.World, mol_2_idx: dict[str, int]
 ):
@@ -131,7 +135,7 @@ if __name__ == "__main__":
     parser.add_argument("--k-kill", default=1.0, type=float)
     parser.add_argument("--k-replicate", default=15.0, type=float)
     parser.add_argument("--check-every-n", default=25, type=int)
-    parser.add_argument("--save_state", action="store_true")
+    parser.add_argument("--save-state", action="store_true")
     parser.add_argument("--init-molmap", default="randn", type=str)
     parser.add_argument("--device", default="cpu", type=str)
     parsed_args = parser.parse_args()

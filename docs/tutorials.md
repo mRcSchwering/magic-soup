@@ -652,9 +652,9 @@ While trying to come up with a good set of parameters you might see one of these
   over the map in a few waves and then perishes.
   They often don't have enough time to adapt before going extinct.
 
-![](./img/cell_growth.gif)
+![](./img/supporting/cell_growth.gif)
 
-_Example cell growth in 4 simulations over 1000 steps with different kill and replication rates. (Left) with moderately high kill rate and low replicaiton rate.(Middle-left) with high replication rate and low kill rate. (Middle-right) with high replication and kill rate. (Right) with moderate kill and replication rate. Cell map is black, cells are white._
+_Example cell growth in 4 simulations over 1000 steps with different kill and replication rates. (Left) with moderately high kill rate and low replicaiton rate.(Middle-left) with high replication rate and low kill rate. (Middle-right) with high replication and kill rate. (Right) with moderate kill and replication rate. Cell map is black, cells are white, every 5th step was captured._
 
 Ideally, cells struggle a bit to survive but not so much as to go extinct.
 They should have some time to adapt and space to grow.

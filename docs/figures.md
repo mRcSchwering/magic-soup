@@ -268,6 +268,10 @@ Probability of dying is calculated as $p_{die} = 1^7 / (x^7 + 1^7)$ at each step
 probability of dividing is calculated as $p_{divide} = x^5 / (x^5 + 15^5)$ at each step for each condition.
 Concentration x is always 3.0 (centered 1k-1r)._
 
+![](./img/supporting/cell_growth.gif)
+
+_**9.5** Example cell growth in 4 simulations over 1000 steps with different kill and replication rates. (Left) with moderately high kill rate and low replicaiton rate.(Middle-left) with high replication rate and low kill rate. (Middle-right) with high replication and kill rate. (Right) with moderate kill and replication rate. Cell map is black, cells are white, every 5th step was captured._
+
 ## 10. Passaging
 
 ![](./img/supporting/random_splits.png)
