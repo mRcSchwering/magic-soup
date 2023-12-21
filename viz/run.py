@@ -12,7 +12,6 @@ _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
 # TODO: update tutorial
 # TODO: tutorial section: analyzing cell
 # TODO: tutorial section: editing genomes
-# TODO: developer README (maturin devleop...)
 
 
 def _log_scalars(
