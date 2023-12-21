@@ -819,11 +819,6 @@ class World:
                 If you are only interested in the cells' genomes, molecules, or labels
                 you can set this to `True` to make loading a lot faster.
         """
-        # TODO: consistent behaviour?
-        #       what if I first load state with ignore_cell_params=True
-        #       (will give me world.n_cells > 0, kinetics.Ke.shape == (0,0))
-        #       then I load state with ignore_cell_params=False
-        #       now kill cells will fail because kinetics.Ke.shape doesn't fit
         if not ignore_cell_params:
             self.kill_cells(cell_idxs=list(range(self.n_cells)))
 
@@ -865,8 +860,8 @@ class World:
 
         self.n_cells = len(genome_idx_pairs)
 
+        self.kinetics.increase_max_cells(by_n=self.n_cells)
         if not ignore_cell_params:
-            self.kinetics.increase_max_cells(by_n=self.n_cells)
             self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
     def _update_cell_params(self, genomes: list[str], idxs: list[int]):

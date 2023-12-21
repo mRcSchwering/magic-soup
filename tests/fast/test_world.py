@@ -419,6 +419,8 @@ def test_saving_and_loading_world_obj():
 
 
 def test_loading_multiple_states():
+    # this can cause a problem if cells are not cleaned
+    # up before loading new cells
     mi = ms.Molecule("i", 10 * 1e3)
     mj = ms.Molecule("j", 20 * 1e3)
     chemistry = ms.Chemistry(molecules=[mi, mj], reactions=[([mi], [mj])])
@@ -464,6 +466,43 @@ def test_loading_multiple_states():
         assert world.n_cells == 2
         assert len(world.cell_genomes) == 2
         assert world.kinetics.N.size(0) == 2
+
+
+def test_loading_states_without_and_with_cell_params():
+    # this causes a problem if kinetics as a different number
+    # of cells than world is trying to clean up
+    mi = ms.Molecule("i", 10 * 1e3)
+    mj = ms.Molecule("j", 20 * 1e3)
+    chemistry = ms.Chemistry(molecules=[mi, mj], reactions=[([mi], [mj])])
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        world = ms.World(chemistry=chemistry, map_size=7)
+
+        state0 = Path(tmpdir) / "state0"
+        world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
+        world.save_state(statedir=state0)
+        assert world.n_cells == 3
+        assert len(world.cell_genomes) == 3
+        assert world.kinetics.N.size(0) == 3
+
+        state1 = Path(tmpdir) / "state1"
+        world.spawn_cells(genomes=[ms.random_genome(s=500) for _ in range(3)])
+        world.save_state(statedir=state1)
+        assert world.n_cells == 6
+        assert len(world.cell_genomes) == 6
+        assert world.kinetics.N.size(0) == 6
+
+        del world
+        world = ms.World(chemistry=chemistry, map_size=7)
+
+        world.load_state(statedir=state0, ignore_cell_params=True)
+        assert world.n_cells == 3
+        assert len(world.cell_genomes) == 3
+
+        world.load_state(statedir=state1)
+        assert world.n_cells == 6
+        assert len(world.cell_genomes) == 6
+        assert world.kinetics.N.size(0) == 6
 
 
 def test_divisions_and_survival_after_replication():
