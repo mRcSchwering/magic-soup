@@ -819,7 +819,13 @@ class World:
                 If you are only interested in the cells' genomes, molecules, or labels
                 you can set this to `True` to make loading a lot faster.
         """
-        self.kill_cells(cell_idxs=list(range(self.n_cells)))
+        # TODO: consistent behaviour?
+        #       what if I first load state with ignore_cell_params=True
+        #       (will give me world.n_cells > 0, kinetics.Ke.shape == (0,0))
+        #       then I load state with ignore_cell_params=False
+        #       now kill cells will fail because kinetics.Ke.shape doesn't fit
+        if not ignore_cell_params:
+            self.kill_cells(cell_idxs=list(range(self.n_cells)))
 
         self.cell_molecules = torch.load(
             statedir / "cell_molecules.pt", map_location=self.device
