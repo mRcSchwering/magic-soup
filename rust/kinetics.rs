@@ -4,6 +4,15 @@ use pyo3::types::PyDict;
 pub type DomainSpecType = ((u8, u8, u8, u8, u16), usize, usize);
 pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 
+fn get_domtype_char(domtype: &u8) -> char {
+    match domtype {
+        1 => 'C',
+        2 => 'T',
+        3 => 'R',
+        _ => ' ',
+    }
+}
+
 fn set_catalytic_domain(
     kwargs: &PyDict,
     km: &f32,
@@ -89,7 +98,7 @@ fn get_protein<'py>(
     molecules: &Vec<String>,
     n_mols: &usize,
 ) -> &'py PyDict {
-    let domains: Vec<(u8, &PyDict)> = (protein.0)
+    let domains: Vec<&PyDict> = (protein.0)
         .iter()
         .enumerate()
         .map(|(dom_i, (idxs, start, end))| {
@@ -128,7 +137,10 @@ fn get_protein<'py>(
                     n_mols,
                 )
             }
-            (domtype, kwargs)
+            let out = PyDict::new(py);
+            out.set_item("spec", kwargs).unwrap();
+            out.set_item("type", get_domtype_char(&domtype)).unwrap();
+            out
         })
         .collect();
 

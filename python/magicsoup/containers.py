@@ -274,8 +274,11 @@ class _Domain:
         self.start = start
         self.end = end
 
+    def to_dict(self) -> dict:
+        raise NotImplementedError
+
     @classmethod
-    def from_dict(cls, kwargs: dict) -> "_Domain":
+    def from_dict(cls, dct: dict) -> "_Domain":
         raise NotImplementedError
 
 
@@ -317,24 +320,39 @@ class CatalyticDomain(_Domain):
         self.km = km
         self.vmax = vmax
 
+    def to_dict(self) -> dict:
+        """Get dict representation of domain"""
+        reaction = (
+            [d.name for d in self.substrates],
+            [d.name for d in self.products],
+        )
+        kwargs = {
+            "reaction": reaction,
+            "km": self.km,
+            "vmax": self.vmax,
+            "start": self.start,
+            "end": self.end,
+        }
+        return {"type": "C", "spec": kwargs}
+
     @classmethod
-    def from_dict(cls, kwargs: dict) -> "CatalyticDomain":
+    def from_dict(cls, dct: dict) -> "CatalyticDomain":
         """
         Convencience method for creating an instance from a dict.
         All parameters must be present as keys.
         Molecules are provided by their name.
         """
-        lft, rgt = kwargs["reaction"]
+        lft, rgt = dct["reaction"]
         reaction = (
             [Molecule.from_name(name=d) for d in lft],
             [Molecule.from_name(name=d) for d in rgt],
         )
         return cls(
             reaction=reaction,
-            km=kwargs["km"],
-            vmax=kwargs["vmax"],
-            start=kwargs["start"],
-            end=kwargs["end"],
+            km=dct["km"],
+            vmax=dct["vmax"],
+            start=dct["start"],
+            end=dct["end"],
         )
 
     def __repr__(self) -> str:
@@ -390,20 +408,32 @@ class TransporterDomain(_Domain):
         self.vmax = vmax
         self.is_exporter = is_exporter
 
+    def to_dict(self) -> dict:
+        """Get dict representation of domain"""
+        kwargs = {
+            "molecule": self.molecule.name,
+            "km": self.km,
+            "vmax": self.vmax,
+            "is_exporter": self.is_exporter,
+            "start": self.start,
+            "end": self.end,
+        }
+        return {"type": "T", "spec": kwargs}
+
     @classmethod
-    def from_dict(cls, kwargs: dict) -> "TransporterDomain":
+    def from_dict(cls, dct: dict) -> "TransporterDomain":
         """
         Convencience method for creating an instance from a dict.
         All parameters must be present as keys.
         Molecules are provided by their name.
         """
         return cls(
-            molecule=Molecule.from_name(name=kwargs["molecule"]),
-            km=kwargs["km"],
-            vmax=kwargs["vmax"],
-            is_exporter=kwargs["is_exporter"],
-            start=kwargs["start"],
-            end=kwargs["end"],
+            molecule=Molecule.from_name(name=dct["molecule"]),
+            km=dct["km"],
+            vmax=dct["vmax"],
+            is_exporter=dct["is_exporter"],
+            start=dct["start"],
+            end=dct["end"],
         )
 
     def __repr__(self) -> str:
@@ -456,21 +486,34 @@ class RegulatoryDomain(_Domain):
         self.is_transmembrane = is_transmembrane
         self.is_inhibiting = is_inhibiting
 
+    def to_dict(self) -> dict:
+        """Get dict representation of domain"""
+        kwargs = {
+            "effector": self.effector.name,
+            "km": self.km,
+            "hill": self.hill,
+            "is_inhibiting": self.is_inhibiting,
+            "is_transmembrane": self.is_transmembrane,
+            "start": self.start,
+            "end": self.end,
+        }
+        return {"type": "R", "spec": kwargs}
+
     @classmethod
-    def from_dict(cls, kwargs: dict) -> "RegulatoryDomain":
+    def from_dict(cls, dct: dict) -> "RegulatoryDomain":
         """
         Convencience method for creating an instance from a dict.
         All parameters must be present as keys.
         Molecules are provided by their name.
         """
         return cls(
-            effector=Molecule.from_name(name=kwargs["effector"]),
-            km=kwargs["km"],
-            hill=kwargs["hill"],
-            is_inhibiting=kwargs["is_inhibiting"],
-            is_transmembrane=kwargs["is_transmembrane"],
-            start=kwargs["start"],
-            end=kwargs["end"],
+            effector=Molecule.from_name(name=dct["effector"]),
+            km=dct["km"],
+            hill=dct["hill"],
+            is_inhibiting=dct["is_inhibiting"],
+            is_transmembrane=dct["is_transmembrane"],
+            start=dct["start"],
+            end=dct["end"],
         )
 
     def __repr__(self) -> str:
@@ -519,27 +562,38 @@ class Protein:
         self.cds_end = cds_end
         self.is_fwd = is_fwd
 
+    def to_dict(self) -> dict:
+        """Get dict representation of protein"""
+        return {
+            "domains": [d.to_dict() for d in self.domains],
+            "cds_start": self.cds_start,
+            "cds_end": self.cds_end,
+            "is_fwd": self.is_fwd,
+        }
+
     @classmethod
-    def from_dict(cls, kwargs: dict) -> "Protein":
+    def from_dict(cls, dct: dict) -> "Protein":
         """
         Create Protein instance from dict. Key must match arguments.
-        Domains are set as a list of tuples `(dom_type, dom_kwargs)` where
-        `dom_type` is domain type integer 1 (catalytic), 2 (transporter), or
-        3 (transporter) and `dom_kwargs` is a dict with kwargs for each domain's `from_dict()`.
+        Domains are set as a list of dicts `{"type": ".", "spec": {})` where
+        `type` is domain type `"C"` (catalytic), `"T"` (transporter), or
+        `"R"` (regulatory) and `spec` is a dict with kwargs for each domain's `from_dict()`.
         """
         doms: list[_Domain] = []
-        for dom_type, dom_kwargs in kwargs["domains"]:
-            if dom_type == 1:
-                doms.append(CatalyticDomain.from_dict(dom_kwargs))
-            elif dom_type == 2:
-                doms.append(TransporterDomain.from_dict(dom_kwargs))
-            elif dom_type == 3:
-                doms.append(RegulatoryDomain.from_dict(dom_kwargs))
+        for dom in dct["domains"]:
+            dom_type = dom["type"]
+            dom_spec = dom["spec"]
+            if dom_type == "C":
+                doms.append(CatalyticDomain.from_dict(dom_spec))
+            elif dom_type == "T":
+                doms.append(TransporterDomain.from_dict(dom_spec))
+            elif dom_type == "R":
+                doms.append(RegulatoryDomain.from_dict(dom_spec))
 
         return Protein(
-            cds_start=kwargs["cds_start"],
-            cds_end=kwargs["cds_end"],
-            is_fwd=kwargs["is_fwd"],
+            cds_start=dct["cds_start"],
+            cds_end=dct["cds_end"],
+            is_fwd=dct["is_fwd"],
             domains=doms,
         )
 

@@ -4,11 +4,6 @@ from magicsoup.containers import Molecule
 from magicsoup.util import closest_value, random_genome, round_down
 from magicsoup.world import World
 
-# TODO: Proteins/Domains should be able to export themself to dicts
-#       and Protein/Domain factories should be able to load them
-#       this way I can easily save a proteome as JSON and also load it later on
-#       even in a different world instance
-
 
 class _DomainFact:
     """
@@ -26,6 +21,10 @@ class _DomainFact:
         self,
         world: World,  # pylint: disable=unused-argument
     ) -> str:
+        raise NotImplementedError
+
+    @classmethod
+    def from_dict(cls, dct: dict) -> "_DomainFact":
         raise NotImplementedError
 
 
@@ -113,6 +112,20 @@ class CatalyticDomainFact(_DomainFact):
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
 
+    @classmethod
+    def from_dict(cls, dct: dict) -> "CatalyticDomainFact":
+        """
+        Generate domain factory from dct representation of a domain.
+        A dct representation of this domain is returned by
+        [CatalyticDomain.to_dict()][magicsoup.containers.CatalyticDomain.to_dict].
+        """
+        subs, prods = dct["reaction"]
+        reaction = (
+            [Molecule.from_name(d) for d in subs],
+            [Molecule.from_name(d) for d in prods],
+        )
+        return cls(reaction=reaction, km=dct.get("km"), vmax=dct.get("vmax"))
+
 
 class TransporterDomainFact(_DomainFact):
     """
@@ -189,6 +202,20 @@ class TransporterDomainFact(_DomainFact):
         i3_seq = genetics.idx_2_two_codon[i3]
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
+
+    @classmethod
+    def from_dict(cls, dct: dict) -> "TransporterDomainFact":
+        """
+        Generate domain factory from dct representation of a domain.
+        A dct representation of this domain is returned by
+        [TransporterDomain.to_dict()][magicsoup.containers.TransporterDomain.to_dict].
+        """
+        return cls(
+            molecule=Molecule.from_name(dct["molecule"]),
+            km=dct.get("km"),
+            vmax=dct.get("vmax"),
+            is_exporter=dct.get("is_exporter"),
+        )
 
 
 class RegulatoryDomainFact(_DomainFact):
@@ -271,6 +298,21 @@ class RegulatoryDomainFact(_DomainFact):
         i3_seq = genetics.idx_2_two_codon[i3]
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
+
+    @classmethod
+    def from_dict(cls, dct: dict) -> "RegulatoryDomainFact":
+        """
+        Generate domain factory from dct representation of a domain.
+        A dct representation of this domain is returned by
+        [RegulatoryDomain.to_dict()][magicsoup.containers.RegulatoryDomain.to_dict].
+        """
+        return cls(
+            effector=Molecule.from_name(dct["effector"]),
+            km=dct["km"],
+            hill=dct.get("hill"),
+            is_inhibiting=dct.get("is_inhibiting"),
+            is_transmembrane=dct["is_transmembrane"],
+        )
 
 
 class GenomeFact:
@@ -369,3 +411,24 @@ class GenomeFact:
         parts.append(tail)
 
         return "".join(parts)
+
+    @classmethod
+    def from_dicts(cls, dcts: list[dict], world: World) -> "GenomeFact":
+        """
+        Create a genome factory from a list of protein dct representations.
+        A protein dct representation is returned by
+        [Protein.to_dict()][magicsoup.containers.Protein.to_dict].
+        """
+        prots: list[list[_DomainFact]] = []
+        for prot_dct in dcts:
+            doms: list[_DomainFact] = []
+            for dom_dct in prot_dct["domains"]:
+                dom_type = dom_dct["type"]
+                dom_spec = dom_dct["spec"]
+                if dom_type == "C":
+                    doms.append(CatalyticDomainFact.from_dict(dom_spec))
+                elif dom_type == "T":
+                    doms.append(TransporterDomainFact.from_dict(dom_spec))
+                elif dom_type == "R":
+                    doms.append(RegulatoryDomainFact.from_dict(dom_spec))
+        return GenomeFact(proteome=prots, world=world)

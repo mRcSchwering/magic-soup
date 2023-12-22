@@ -6,6 +6,13 @@ _X = cntnrs.Molecule(name="X", energy=10)
 _Y = cntnrs.Molecule(name="Y", energy=100)
 
 
+# TODO: Proteins/Domains should be able to export themself to dicts
+#       and Protein/Domain factories should be able to load them
+#       this way I can easily save a proteome as JSON and also load it later on
+#       even in a different world instance
+# TODO: tests
+
+
 def test_same_molecules_get_same_instance():
     X2 = cntnrs.Molecule(name="X", energy=10)
     Y2 = cntnrs.Molecule(name="Y", energy=100)
