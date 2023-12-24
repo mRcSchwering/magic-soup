@@ -556,7 +556,6 @@ class Kinetics:
             effectors[0].tolist(),
             self.mol_names,
         )
-        # TODO: changed rs to {"type": "T", "spec": kwargs}, test!
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
     def set_cell_params(

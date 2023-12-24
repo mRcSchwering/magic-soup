@@ -6,13 +6,6 @@ _X = cntnrs.Molecule(name="X", energy=10)
 _Y = cntnrs.Molecule(name="Y", energy=100)
 
 
-# TODO: Proteins/Domains should be able to export themself to dicts
-#       and Protein/Domain factories should be able to load them
-#       this way I can easily save a proteome as JSON and also load it later on
-#       even in a different world instance
-# TODO: tests
-
-
 def test_same_molecules_get_same_instance():
     X2 = cntnrs.Molecule(name="X", energy=10)
     Y2 = cntnrs.Molecule(name="Y", energy=100)
@@ -48,17 +41,20 @@ def test_molecule_from_name():
     assert Y2 is _Y
 
 
-def test_domains_from_dict():
-    kwargs = {"reaction": (["X"], ["Y"]), "km": 1.0, "vmax": 2.0, "start": 1, "end": 2}
-    dom = cntnrs.CatalyticDomain.from_dict(kwargs)
+def test_domains_from_to_dict():
+    dct = {"reaction": (["X"], ["Y"]), "km": 1.0, "vmax": 2.0, "start": 1, "end": 2}
+    dom = cntnrs.CatalyticDomain.from_dict(dct)
     assert dom.substrates == [_X]
     assert dom.products == [_Y]
     assert dom.km == 1.0
     assert dom.vmax == 2.0
     assert dom.start == 1
     assert dom.end == 2
+    dct2 = dom.to_dict()
+    assert dct2["spec"] == dct
+    assert dct2["type"] == "C"
 
-    kwargs = {
+    dct = {
         "molecule": "X",
         "km": 1.0,
         "vmax": 2.0,
@@ -66,15 +62,18 @@ def test_domains_from_dict():
         "start": 1,
         "end": 2,
     }
-    dom = cntnrs.TransporterDomain.from_dict(kwargs)
+    dom = cntnrs.TransporterDomain.from_dict(dct)
     assert dom.molecule is _X
     assert dom.is_exporter
     assert dom.km == 1.0
     assert dom.vmax == 2.0
     assert dom.start == 1
     assert dom.end == 2
+    dct2 = dom.to_dict()
+    assert dct2["spec"] == dct
+    assert dct2["type"] == "T"
 
-    kwargs = {
+    dct = {
         "effector": "X",
         "km": 1.0,
         "hill": 5,
@@ -83,7 +82,7 @@ def test_domains_from_dict():
         "start": 1,
         "end": 2,
     }
-    dom = cntnrs.RegulatoryDomain.from_dict(kwargs)
+    dom = cntnrs.RegulatoryDomain.from_dict(dct)
     assert dom.effector is _X
     assert dom.is_inhibiting
     assert dom.is_transmembrane
@@ -91,16 +90,25 @@ def test_domains_from_dict():
     assert dom.km == 1.0
     assert dom.start == 1
     assert dom.end == 2
+    dct2 = dom.to_dict()
+    assert dct2["spec"] == dct
+    assert dct2["type"] == "R"
 
 
-def test_protein_from_dict():
-    cat_kwargs = (
-        1,
-        {"reaction": (["X"], ["Y"]), "km": 1.0, "vmax": 2.0, "start": 1, "end": 2},
-    )
-    trnsp_kwargs = (
-        2,
-        {
+def test_protein_from_to_dict():
+    cat_dct = {
+        "type": "C",
+        "spec": {
+            "reaction": (["X"], ["Y"]),
+            "km": 1.0,
+            "vmax": 2.0,
+            "start": 1,
+            "end": 2,
+        },
+    }
+    trnsp_dct = {
+        "type": "T",
+        "spec": {
             "molecule": "X",
             "km": 1.0,
             "vmax": 2.0,
@@ -108,10 +116,10 @@ def test_protein_from_dict():
             "start": 1,
             "end": 2,
         },
-    )
-    reg_kwargs = (
-        3,
-        {
+    }
+    reg_dct = {
+        "type": "R",
+        "spec": {
             "effector": "X",
             "km": 1.0,
             "hill": 5,
@@ -120,15 +128,16 @@ def test_protein_from_dict():
             "start": 1,
             "end": 2,
         },
-    )
+    }
 
-    kwargs = {
+    dct = {
         "cds_start": 1,
         "cds_end": 2,
         "is_fwd": True,
-        "domains": [cat_kwargs, reg_kwargs, trnsp_kwargs],
+        "domains": [cat_dct, reg_dct, trnsp_dct],
     }
-    prot = cntnrs.Protein.from_dict(kwargs)
+    prot = cntnrs.Protein.from_dict(dct)
+    assert prot.to_dict() == dct
 
     assert prot.cds_start == 1
     assert prot.cds_end == 2

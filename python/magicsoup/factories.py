@@ -119,6 +119,7 @@ class CatalyticDomainFact(_DomainFact):
         A dct representation of this domain is returned by
         [CatalyticDomain.to_dict()][magicsoup.containers.CatalyticDomain.to_dict].
         """
+        dct = dct["spec"]
         subs, prods = dct["reaction"]
         reaction = (
             [Molecule.from_name(d) for d in subs],
@@ -210,6 +211,7 @@ class TransporterDomainFact(_DomainFact):
         A dct representation of this domain is returned by
         [TransporterDomain.to_dict()][magicsoup.containers.TransporterDomain.to_dict].
         """
+        dct = dct["spec"]
         return cls(
             molecule=Molecule.from_name(dct["molecule"]),
             km=dct.get("km"),
@@ -306,6 +308,7 @@ class RegulatoryDomainFact(_DomainFact):
         A dct representation of this domain is returned by
         [RegulatoryDomain.to_dict()][magicsoup.containers.RegulatoryDomain.to_dict].
         """
+        dct = dct["spec"]
         return cls(
             effector=Molecule.from_name(dct["effector"]),
             km=dct["km"],
@@ -424,11 +427,10 @@ class GenomeFact:
             doms: list[_DomainFact] = []
             for dom_dct in prot_dct["domains"]:
                 dom_type = dom_dct["type"]
-                dom_spec = dom_dct["spec"]
                 if dom_type == "C":
-                    doms.append(CatalyticDomainFact.from_dict(dom_spec))
+                    doms.append(CatalyticDomainFact.from_dict(dom_dct))
                 elif dom_type == "T":
-                    doms.append(TransporterDomainFact.from_dict(dom_spec))
+                    doms.append(TransporterDomainFact.from_dict(dom_dct))
                 elif dom_type == "R":
-                    doms.append(RegulatoryDomainFact.from_dict(dom_spec))
+                    doms.append(RegulatoryDomainFact.from_dict(dom_dct))
         return GenomeFact(proteome=prots, world=world)

@@ -2,10 +2,13 @@ import pytest
 from magicsoup.constants import CODON_SIZE
 import magicsoup as ms
 
+_MI = ms.Molecule("i", 10 * 1e3)
+_MJ = ms.Molecule("j", 20 * 1e3)
+_MK = ms.Molecule("k", 30 * 1e3)
+
 
 def test_generate_empty_genome():
-    mi = ms.Molecule("i", 10 * 1e3)
-    chemistry = ms.Chemistry(molecules=[mi], reactions=[])
+    chemistry = ms.Chemistry(molecules=[_MI], reactions=[])
     world = ms.World(chemistry=chemistry, map_size=128)
 
     ggen = ms.GenomeFact(world=world, proteome=[], target_size=10)
@@ -21,18 +24,15 @@ def test_generate_empty_genome():
 
 
 def test_generate_genome_different_sizes():
-    mi = ms.Molecule("i", 10 * 1e3)
-    mj = ms.Molecule("j", 20 * 1e3)
-    mk = ms.Molecule("k", 30 * 1e3)
-    molecules = [mi, mj, mk]
-    reactions = [([mi], [mj]), ([mi, mj], [mk])]
+    molecules = [_MI, _MJ, _MK]
+    reactions = [([_MI], [_MJ]), ([_MI, _MJ], [_MK])]
 
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry, map_size=128)
 
     p0 = [
-        ms.CatalyticDomainFact(reaction=([mi], [mj])),
-        ms.CatalyticDomainFact(reaction=([mk], [mi, mj])),
+        ms.CatalyticDomainFact(reaction=([_MI], [_MJ])),
+        ms.CatalyticDomainFact(reaction=([_MK], [_MI, _MJ])),
     ]
     with pytest.raises(ValueError):
         ggen = ms.GenomeFact(world=world, proteome=[p0], target_size=10)
@@ -47,22 +47,19 @@ def test_generate_genome_different_sizes():
 
 
 def test_generate_correct_genome():
-    mi = ms.Molecule("i", 10 * 1e3)
-    mj = ms.Molecule("j", 20 * 1e3)
-    mk = ms.Molecule("k", 30 * 1e3)
-    molecules = [mi, mj, mk]
-    reactions = [([mi], [mj]), ([mi, mj], [mk])]
+    molecules = [_MI, _MJ, _MK]
+    reactions = [([_MI], [_MJ]), ([_MI, _MJ], [_MK])]
 
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry, map_size=128)
 
     p0 = [
-        ms.CatalyticDomainFact(reaction=([mi], [mj])),
-        ms.CatalyticDomainFact(reaction=([mk], [mi, mj])),
+        ms.CatalyticDomainFact(reaction=([_MI], [_MJ])),
+        ms.CatalyticDomainFact(reaction=([_MK], [_MI, _MJ])),
     ]
     p1 = [
-        ms.TransporterDomainFact(molecule=mi),
-        ms.RegulatoryDomainFact(effector=mk, is_transmembrane=True, hill=3),
+        ms.TransporterDomainFact(molecule=_MI),
+        ms.RegulatoryDomainFact(effector=_MK, is_transmembrane=True, hill=3),
     ]
     ggen = ms.GenomeFact(world=world, proteome=[p0, p1], target_size=100)
 
@@ -98,15 +95,15 @@ def test_generate_correct_genome():
                 if isinstance(dom, ms.CatalyticDomain):
                     subs = dom.substrates
                     prods = dom.products
-                    if subs == [mk] and prods == [mi, mj]:
+                    if subs == [_MK] and prods == [_MI, _MJ]:
                         has_ckij = True
-                    elif subs == [mi] and prods == [mj]:
+                    elif subs == [_MI] and prods == [_MJ]:
                         has_cij = True
                 if isinstance(dom, ms.TransporterDomain):
-                    if dom.molecule == mi:
+                    if dom.molecule == _MI:
                         has_ti = True
                 if isinstance(dom, ms.RegulatoryDomain):
-                    if dom.effector == mk and dom.is_inhibiting and dom.hill == 3:
+                    if dom.effector == _MK and dom.is_inhibiting and dom.hill == 3:
                         has_rk = True
 
             if has_ckij and has_cij:
@@ -131,19 +128,15 @@ def test_generate_correct_genome():
 
 
 def test_generate_genome_with_different_reaction_sorting():
-    mi = ms.Molecule("i", 10 * 1e3)
-    mj = ms.Molecule("j", 20 * 1e3)
-    mk = ms.Molecule("k", 30 * 1e3)
-    molecules = [mi, mj, mk]
-    reactions = [([mj, mi], [mk])]
+    molecules = [_MI, _MJ, _MK]
+    reactions = [([_MJ, _MI], [_MK])]
 
     # reaction gets sorted to i + j <-> k
     # when initializing chemistry object
     chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     world = ms.World(chemistry=chemistry, map_size=128)
 
-    # if reaction is not properly reordered
-    # it will fail
+    # this should work because reaction was ordered
     doms = [ms.CatalyticDomainFact(reaction=reactions[0])]
     ggen = ms.GenomeFact(world=world, proteome=[doms], target_size=100)
     g = ggen.generate()
@@ -151,6 +144,39 @@ def test_generate_genome_with_different_reaction_sorting():
 
     # in contrast this should fail,
     # because the reaction wasnt defined
-    doms = [ms.CatalyticDomainFact(reaction=([mj], [mk]))]
+    doms = [ms.CatalyticDomainFact(reaction=([_MJ], [_MK]))]
     with pytest.raises(ValueError):
         ggen = ms.GenomeFact(world=world, proteome=[doms], target_size=100)
+
+
+def test_container_dcts_compatible_with_factories():
+    molecules = [_MI, _MJ, _MK]
+    reactions = [([_MJ, _MI], [_MK])]
+
+    # reaction gets sorted to i + j <-> k
+    # when initializing chemistry object
+    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
+    world = ms.World(chemistry=chemistry, map_size=128)
+
+    # this should work because reaction was ordered
+    cdom = ms.CatalyticDomain(reaction=reactions[0], km=0.5, vmax=1.0, start=0, end=1)
+    ms.CatalyticDomainFact.from_dict(cdom.to_dict())
+
+    tdom = ms.TransporterDomain(
+        molecule=molecules[0], km=0.5, vmax=1.0, is_exporter=True, start=2, end=3
+    )
+    ms.TransporterDomainFact.from_dict(tdom.to_dict())
+
+    rdom = ms.RegulatoryDomain(
+        effector=molecules[0],
+        hill=3,
+        km=0.5,
+        is_inhibiting=True,
+        is_transmembrane=True,
+        start=4,
+        end=5,
+    )
+    ms.RegulatoryDomainFact.from_dict(rdom.to_dict())
+
+    prot = ms.Protein(domains=[cdom, tdom, rdom], cds_start=0, cds_end=1, is_fwd=True)
+    ms.GenomeFact.from_dicts(dcts=[prot.to_dict()], world=world)
