@@ -40,6 +40,7 @@ from argparse import ArgumentParser
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
+# TODO: doublecheck replicate cells performance (after with_capacity changes)
 R = 5
 
 

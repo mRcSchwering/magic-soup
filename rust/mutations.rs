@@ -101,7 +101,12 @@ fn recombinations(
     let mut mut_idxs = rand::seq::index::sample(&mut rng, n_both, n_muts).into_vec();
     mut_idxs.sort();
 
-    let mut idxs: (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
+    // idxs are distributed according to seq lens
+    let total_len = n0 + n1;
+    let mut idxs: (Vec<usize>, Vec<usize>) = (
+        Vec::with_capacity(n_muts * n0 / total_len),
+        Vec::with_capacity(n_muts * n1 / total_len),
+    );
     for mut_idx in mut_idxs {
         if mut_idx >= n0 {
             idxs.1.push(mut_idx - n0);
@@ -110,7 +115,8 @@ fn recombinations(
         }
     }
 
-    let mut parts: Vec<&str> = Vec::new();
+    // for each strand: n strand breaks + 1
+    let mut parts: Vec<&str> = Vec::with_capacity(n_muts + 2);
 
     let mut i = 0;
     for j in idxs.0 {

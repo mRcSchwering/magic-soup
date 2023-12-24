@@ -12,7 +12,8 @@ fn get_neighbors(
     positions: &Vec<(u16, u16)>,
     map_size: &u16,
 ) -> Vec<(usize, usize)> {
-    let mut res: Vec<(usize, usize)> = Vec::new();
+    // maximum 8
+    let mut res: Vec<(usize, usize)> = Vec::with_capacity(8);
 
     let (x0, y0) = positions[*from_idx];
 
@@ -70,11 +71,14 @@ pub fn divide_cells_if_possible_threaded(
         .collect();
 
     let mut rng = rand::thread_rng();
-    let mut running_idx = *n_cells;
-    let mut succ_idxs: Vec<usize> = vec![];
-    let mut child_idxs: Vec<usize> = vec![];
-    let mut child_poss: Vec<(u16, u16)> = vec![];
 
+    // maximum n dividing cells
+    let n_dividing_cells = cell_idxs.len();
+    let mut succ_idxs: Vec<usize> = Vec::with_capacity(n_dividing_cells);
+    let mut child_idxs: Vec<usize> = Vec::with_capacity(n_dividing_cells);
+    let mut child_poss: Vec<(u16, u16)> = Vec::with_capacity(n_dividing_cells);
+
+    let mut running_idx = *n_cells;
     for (cell_idx, cell_opts) in cell_idxs.iter().zip(opts) {
         let cell_opts: Vec<&(u16, u16)> = cell_opts
             .iter()
@@ -117,8 +121,11 @@ pub fn move_cells_threaded(
         .collect();
 
     let mut rng = rand::thread_rng();
-    let mut moved_idxs: Vec<usize> = vec![];
-    let mut new_positions: Vec<(u16, u16)> = vec![];
+
+    // maximum n moving cells
+    let n_moving_cells = cell_idxs.len();
+    let mut moved_idxs: Vec<usize> = Vec::with_capacity(n_moving_cells);
+    let mut new_positions: Vec<(u16, u16)> = Vec::with_capacity(n_moving_cells);
     let mut current_occ_pos: Vec<(u16, u16)> = cell_idxs.iter().map(|d| positions[*d]).collect();
 
     for (idx, cell_idx) in cell_idxs.iter().enumerate() {

@@ -13,11 +13,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::collections::HashMap;
 
-// TODO: any unwraps?
-// TODO: any useful with_capacity?
-// TODO: better comments?
-
 // util
+
 #[pyfunction]
 fn dist_1d(a: u16, b: u16, m: u16) -> u16 {
     util::dist_1d(&a, &b, &m)

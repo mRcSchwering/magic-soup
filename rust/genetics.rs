@@ -17,7 +17,8 @@ pub fn get_coding_regions(
     stop_codons: &Vec<String>,
     is_fwd: bool,
 ) -> Vec<(usize, usize, bool)> {
-    let mut res: Vec<(usize, usize, bool)> = Vec::new();
+    // >80% expected <15 CDSs per 1000 base pairs in one direction
+    let mut res: Vec<(usize, usize, bool)> = Vec::with_capacity(15);
     let n = seq.len();
     if n < *min_cds_size as usize {
         return res;
@@ -25,9 +26,9 @@ pub fn get_coding_regions(
 
     // >99% expected <10 with 3 start and 3 stop codons
     let mut starts: [Vec<usize>; 3] = [
-        Vec::with_capacity(15),
-        Vec::with_capacity(15),
-        Vec::with_capacity(15),
+        Vec::with_capacity(12),
+        Vec::with_capacity(12),
+        Vec::with_capacity(12),
     ];
 
     for i in 0..(n - CODON_SIZE + 1) {
@@ -94,10 +95,18 @@ pub fn extract_domains(
                 }
                 let dom_end = dom_start + *dom_size as usize;
                 let dom_spec_seq = &genome[dom_type_end..dom_end];
-                let i0 = one_codon_map.get(&dom_spec_seq[0..i0e]).unwrap();
-                let i1 = one_codon_map.get(&dom_spec_seq[i0e..i1e]).unwrap();
-                let i2 = one_codon_map.get(&dom_spec_seq[i1e..i2e]).unwrap();
-                let i3 = two_codon_map.get(&dom_spec_seq[i2e..i3e]).unwrap();
+                let i0 = one_codon_map
+                    .get(&dom_spec_seq[0..i0e])
+                    .expect("Incomplete one_codon_map");
+                let i1 = one_codon_map
+                    .get(&dom_spec_seq[i0e..i1e])
+                    .expect("Incomplete one_codon_map");
+                let i2 = one_codon_map
+                    .get(&dom_spec_seq[i1e..i2e])
+                    .expect("Incomplete one_codon_map");
+                let i3 = two_codon_map
+                    .get(&dom_spec_seq[i2e..i3e])
+                    .expect("Incomplete two_codon_map");
                 doms.push(((*dom_type, *i0, *i1, *i2, *i3), i, i + *dom_size as usize));
                 i += *dom_size as usize;
             } else {

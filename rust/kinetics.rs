@@ -4,6 +4,7 @@ use pyo3::types::PyDict;
 pub type DomainSpecType = ((u8, u8, u8, u8, u16), usize, usize);
 pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
 
+// translate domain type int to char
 fn get_domtype_char(domtype: &u8) -> char {
     match domtype {
         1 => 'C',
@@ -13,6 +14,7 @@ fn get_domtype_char(domtype: &u8) -> char {
     }
 }
 
+// set domain specification for catalytic domain on PyDict
 fn set_catalytic_domain(
     kwargs: &PyDict,
     km: &f32,
@@ -21,8 +23,9 @@ fn set_catalytic_domain(
     react: &Vec<i8>,
     molecules: &Vec<String>,
 ) {
-    let mut lfts: Vec<String> = vec![];
-    let mut rgts: Vec<String> = vec![];
+    // must be at least 1 for each
+    let mut lfts: Vec<String> = Vec::with_capacity(2);
+    let mut rgts: Vec<String> = Vec::with_capacity(2);
     for (mol_i, n) in react.iter().enumerate() {
         let signed_n = *n * sign;
         if signed_n == 0 {
@@ -40,6 +43,7 @@ fn set_catalytic_domain(
     kwargs.set_item("reaction", (lfts, rgts)).unwrap();
 }
 
+// set domain specification for transporter domain on PyDict
 fn set_transporter_domain(
     kwargs: &PyDict,
     km: &f32,
@@ -48,7 +52,10 @@ fn set_transporter_domain(
     trnspts: &Vec<i8>,
     molecules: &Vec<String>,
 ) {
-    let mol_i = trnspts.iter().position(|d| *d != 0).unwrap();
+    let mol_i = trnspts
+        .iter()
+        .position(|d| *d != 0)
+        .expect("No transporter molecule identified");
     let signed_n = trnspts[mol_i] * sign;
     let molecule = &molecules[mol_i];
     kwargs.set_item("km", km).unwrap();
@@ -57,6 +64,7 @@ fn set_transporter_domain(
     kwargs.set_item("molecule", molecule.to_string()).unwrap();
 }
 
+// set domain specification for regulatory domain on PyDict
 fn set_regulatory_domain(
     kwargs: &PyDict,
     km: &f32,
@@ -66,7 +74,10 @@ fn set_regulatory_domain(
     molecules: &Vec<String>,
     n_mols: &usize,
 ) {
-    let i = effectors.iter().position(|d| *d != 0).unwrap();
+    let i = effectors
+        .iter()
+        .position(|d| *d != 0)
+        .expect("No effector molecule identified");
     let signed_n = effectors[i] * sign;
     let mol_i: usize;
     let is_trns: bool;
@@ -85,6 +96,8 @@ fn set_regulatory_domain(
     kwargs.set_item("effector", effector.to_string()).unwrap();
 }
 
+// Get protein specification for Protein class as PyDict from
+// indexes Protein specification using index mappings
 fn get_protein<'py>(
     py: Python<'py>,
     protein: &ProteinSpecType,
@@ -152,6 +165,8 @@ fn get_protein<'py>(
     kwargs
 }
 
+// Get proteome specification for many Protein classes as PyDicts from
+// indexes Proteome specification using index mappings
 pub fn get_proteome<'py>(
     py: Python<'py>,
     proteome: &Vec<ProteinSpecType>,

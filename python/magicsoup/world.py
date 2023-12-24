@@ -582,11 +582,12 @@ class World:
         # duplicates could lead to unexpected results
         cell_idxs = list(set(cell_idxs))
 
+        # unoccupy current positions
         old_xs = self.cell_positions[cell_idxs, 0]
         old_ys = self.cell_positions[cell_idxs, 1]
         self.cell_map[old_xs, old_ys] = False
 
-        # TODO: shouldn't I ignore the cells which are repositioned?
+        # find new unoccupied positions
         new_pos = self._find_free_random_positions(n_cells=len(cell_idxs))
         new_xs = new_pos[:, 0]
         new_ys = new_pos[:, 1]
