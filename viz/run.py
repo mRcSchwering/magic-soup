@@ -13,6 +13,8 @@ _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
 # TODO: tutorial section: analyzing cell
 # TODO: tutorial section: editing genomes
 
+# TODO: sometimes its base pair, not nucleotide
+
 
 def _log_scalars(
     step_i: int, writer: SummaryWriter, world: ms.World, mol_2_idx: dict[str, int]

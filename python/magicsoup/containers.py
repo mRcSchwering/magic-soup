@@ -532,7 +532,10 @@ class Protein:
     Object describing a protein.
 
     Parameters:
-        domains: All domains of the protein
+        domains: All domains of the protein as a list of
+            [CatalyticDomains][magicsoup.containers.CatalyticDomain],
+            [TransporterDomains][magicsoup.containers.TransporterDomain],
+            and [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
         cds_start: Start coordinate of its coding region
         cds_end: End coordinate of its coding region
         is_fwd: Whether its CDS is in the forward or reverse-complement of the genome.
@@ -623,11 +626,7 @@ class Cell:
         label: Label of origin which can be used to track cells.
         n_steps_alive: Number of time steps this cell has lived since last division.
         n_divisions: Number of times this cell's ancestors already divided.
-        proteome: List of proteins with each protein being a list of domains,
-            which are made up of
-            [CatalyticDomains][magicsoup.containers.CatalyticDomain],
-            [TransporterDomains][magicsoup.containers.TransporterDomain],
-            [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
+        proteome: List of [Protein][magicsoup.containers.Protein] objects.
         int_molecules: Intracellular molecule concentrations. A 1D tensor that describes
             each [Molecule][magicsoup.containers.Molecule]
             in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].

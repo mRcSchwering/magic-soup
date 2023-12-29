@@ -57,3 +57,10 @@ functions for efficiently creating mutations
 in nucleotide sequences.
 
 ::: magicsoup.mutations
+
+
+## magicsoup.util
+
+Some more helper functions
+
+::: magicsoup.util

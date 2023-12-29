@@ -3,7 +3,7 @@
 ## Simple Experiment
 
 _MagicSoup_ is trying to only provide the simulation engine.
-Everything else should be up to the user, so that any experimental setup can be created.
+Everything else should be up to the user so that any experimental setup can be created.
 However, this also means a lot of code has to be written by yourself.
 As an example let's try to teach cells to convert CO2 into acetyl-CoA.
 Cell survival will be based on intracellular acetyl-CoA concentrations and CO2 will be supplied in abundance.
@@ -141,11 +141,9 @@ Our cells don't have any mechanism for restoring these energy carriers.
 Sooner or later they will run out of energy.
 
 ```python
-def prepare_medium(world: ms.World, i_co2: int, i_atp: int, i_adp: int, i_nadph: int, i_nadp: int):
+def prepare_medium(world: ms.World, i_co2: int, i_atp: int, i_nadph: int):
     world.molecule_map[i_atp] = 100.0
-    world.molecule_map[i_adp] = 0.0
     world.molecule_map[i_nadph] = 100.0
-    world.molecule_map[i_nadp] = 0.0
     world.molecule_map[i_co2] = 100.0
 ```
 
@@ -156,7 +154,7 @@ Cells can be spawned with [spawn_cells()][magicsoup.world.World.spawn_cells]
 by providing genomes.
 They will be placed in random positions on the map and take up half the molecules
 that were on that position.
-There is a helper function `random_genome()` that can be used to generate genomes of a certain size.
+There is a helper function [random_genome()][magicsoup.util.random_genome] that can be used to generate genomes of a certain size.
 
 ```python
 def add_cells(world: ms.World, size=500, n_cells=1000):
@@ -167,7 +165,7 @@ def add_cells(world: ms.World, size=500, n_cells=1000):
 ### Cell Activity
 
 This function essentially increments the world by one time step (1s).
-[enzymatic_activity()][magicsoup.world.World.enzymatic_activity] lets cels catalyze reactions and transport molecules,
+[enzymatic_activity()][magicsoup.world.World.enzymatic_activity] lets cells catalyze reactions and transport molecules,
 [degrade_molecules()][magicsoup.world.World.degrade_molecules] degrades molecules everywhere,
 [diffuse_molecules()][magicsoup.world.World.diffuse_molecules] lets molecules diffuse and permeate,
 [increment_cell_lifetimes()][magicsoup.world.World.increment_cell_lifetimes] increments cell lifetimes by 1.
@@ -188,6 +186,7 @@ Here, these variables will be intracellular molecule concentrations.
 
 For killing cells we can look at intracellular ATP concentrations.
 If they are low, chances of being killed are increased.
+I also want to kill cells if their genomes get too big (details in [Genome size](#genome-size)).
 Cells are killed with [kill_cells()][magicsoup.world.World.kill_cells] by providing their indexes.
 I am using a simple sigmoidal $f(x) = x^n/(x^n + c^n)$ to map likelihoods.
 
@@ -199,13 +198,17 @@ def sample(p: torch.Tensor) -> list[int]:
 def kill_cells(world: ms.World, i_atp: int):
     x = world.cell_molecules[:, i_atp]
     idxs = sample(1.0**7 / (1.0**7 + x**7))
-    world.kill_cells(cell_idxs=idxs)
+
+    sizes = torch.tensor([len(d) for d in world.cell_genomes])
+    idxs1 = sample(sizes**7 / (sizes**7 + 3_000.0**7))
+
+    world.kill_cells(cell_idxs=list(set(idxs + idxs1)))
 ```
 
-Cell replication should be based on acetyl-CoA.
+Cell replication will be based on acetyl-CoA.
 Here, we could make the cell invest some energy in form of acetyl-CoA by converting it back to HS-CoA (taking away the acetyl group).
-That way a cell has to continuously produce acetyl-CoA in order to replicate.
-Cells can divide with [divide_cells()][magicsoup.world.World.divide_cells] by providing their indexes.
+That forces the cell to continuously produce acetyl-CoA.
+Cells can be divided with [divide_cells()][magicsoup.world.World.divide_cells] by providing their indexes.
 The indexes of successfully replicated cells are returned.
 
 ```python
@@ -271,11 +274,9 @@ import torch
 import magicsoup as ms
 from .chemistry import REACTIONS, MOLECULES
 
-def prepare_medium(world: ms.World, i_co2: int, i_atp: int, i_adp: int, i_nadph: int, i_nadp: int):
+def prepare_medium(world: ms.World, i_co2: int, i_atp: int, i_nadph: int):
     world.molecule_map[i_atp] = 100.0
-    world.molecule_map[i_adp] = 0.0
     world.molecule_map[i_nadph] = 100.0
-    world.molecule_map[i_nadp] = 0.0
     world.molecule_map[i_co2] = 100.0
 
 def add_cells(world: ms.World, size=500, n_cells=1000):
@@ -295,7 +296,11 @@ def sample(p: torch.Tensor) -> list[int]:
 def kill_cells(world: ms.World, i_atp: int):
     x = world.cell_molecules[:, i_atp]
     idxs = sample(1.0**7 / (1.0**7 + x**7))
-    world.kill_cells(cell_idxs=idxs)
+
+    sizes = torch.tensor([len(d) for d in world.cell_genomes])
+    idxs1 = sample(sizes**7 / (sizes**7 + 3_000.0**7))
+
+    world.kill_cells(cell_idxs=list(set(idxs + idxs1)))
 
 def replicate_cells(world: ms.World, i_aca: int, i_hca: int, cost=2.0):
     x = world.cell_molecules[:, i_aca]
@@ -333,9 +338,7 @@ def main():
         world=world,
         i_co2=i_co2,
         i_atp=i_atp,
-        i_adp=i_adp,
         i_nadph=i_nadph,
-        i_nadp=i_nadp,
     )
     add_cells(world=world)
 
@@ -349,6 +352,304 @@ if __name__ == "__main__":
     main()
 ```
 
+## Molecules
+
+As you can see from the [experiment above](#simple-experiment) the [Chemistry][magicsoup.containers.Chemistry]
+object is defined with molecules and reactions, both of which consist of [Molecule][magicsoup.containers.Molecule] objects.
+Each [Molecule][magicsoup.containers.Molecule] object has attributes which describes the molecule species.
+
+### Accessing molecules
+
+During the simulation molecule concentrations are maintained on tensors on the [World][magicsoup.world.World] object.
+`world.molecule_map` is a 3D tensor that defines molecule concentrations in the world map.
+Dimension 0 describes the molecule species, dimension 1 the x-, dimension 2 the y-position.
+`world.cell_molecules` is a 2D tensor that defines all intracellular molecule concentrations.
+Dimension 0 describes the cell index, dimension 1 the molecule species.
+Any tensor dimension or list describing molecule species is ordered according to the [Chemistry][magicsoup.containers.Chemistry]
+object on `world.chemistry`.
+So, if `world.chemistry.molecules[0]` is CO2,
+`world.molecule_map[0]` describes the world map's CO2 concentrations,
+and `world.cell_molecules[:, 0]` describes all intracellular CO2 concentrations.
+For convencience [Chemistry][magicsoup.containers.Chemistry] has 2 mappings `chemistry.mol_2_idx` and `chemistry.molname_2_idx`
+to map [Molecule][magicsoup.containers.Molecule] objects and molecule names to their indexes.
+
+```python
+i = world.chemistry.molname_2_idx["acetyl-CoA"]
+world.chemistry.molecules[i].energy  # acetyl-CoA energy
+world.molecule_map[i, 5, 6]  # acetyl-CoA concentration in world map at (5,6)
+world.cell_molecules[10, i]  # acetyl-CoA concentration in cell 10
+```
+
+### Manipulating concentrations
+
+You can manipulate these tensors to simulate certain conditions.
+In the [experiment above](#simple-experiment) this is done to prepare fresh medium.
+If cells should grow in batch culture, you would prepare fresh medium after passaging as described in [Passaging cells](#passaging-cells).
+By regularly adding and removing certain molecules you can simulate a [Chemostat](https://en.wikipedia.org/wiki/Chemostat).
+
+![](img/gradients.png)
+_Molecule species X is added to molecule map and allowed to diffuse  to create a 1D gradient (top) or 2D gradients (bottom)._
+
+Gradients can be created by adding and removing molecules in different places on the world map.
+_E.g._ in the above figure the 1D gradient is created by calling the following function
+and [diffuse_molecules()][magicsoup.world.World.diffuse_molecules] every step.
+
+```python
+def gradient1d(world: ms.World, mol_i: int):
+    s = int(world.map_size / 2)
+    world.molecule_map[mol_i, [s-1, s]] = 100.0
+    world.molecule_map[mol_i, [0, -1]] = 1.0
+```
+
+Care must be taken to never create negative concentrations.
+They would create NaNs and raise errors when calling [enzymatic_activity()][magicsoup.world.World.enzymatic_activity].
+Also see [GPU and Tensors](#gpu-and-tensors) for performance implications.
+
+## Genomes
+
+In the [experiment above](#simple-experiment) 1000 cells were initially added
+with random genomes of size 500 each.
+
+```python
+def add_cells(world: ms.World):
+    genomes = [ms.random_genome(s=500) for _ in range(1000)]
+    world.spawn_cells(genomes=genomes)
+```
+
+These genomes are maintained as a python list of strings on `world.cell_genomes`.
+You can change them as you like (_e.g._ `world.cell_genomes[0] += "ACTG`).
+But whenever you change a genome, you must also update the cell's parameters
+with [update_cells()][magicsoup.world.World.update_cells].
+This figuratively transcribes and translates the genome and updates the cell's proteome.
+[mutate_cells()][magicsoup.world.World.mutate_cells]
+and [recombinate_cells()][magicsoup.world.World.recombinate_cells]
+are convenience functions that first change `world.cell_genomes`
+and then call [update_cells()][magicsoup.world.World.update_cells] for the cells
+whose genomes have changed.
+
+### Generating genomes
+
+Instead of generating random genomes you might want to start with genomes
+that contain specific genes.
+Or maybe you want to introduce new genes at a certain step in the simulation.
+This is what the [magicsoup.factories](./reference.md#magicsoupfactories) module is for.
+With [CatalyticDomainFact][magicsoup.factories.CatalyticDomainFact],
+[TransporterDomainFact][magicsoup.factories.TransporterDomainFact],
+[RegulatoryDomainFact][magicsoup.factories.RegulatoryDomainFact],
+desired domains can be defined.
+These domain definitions can then be stringed together in a list to a protein definition,
+and these again in a list to a proteome definition.
+This is used with [GenomeFact][magicsoup.factories.GenomeFact] to generate genomes
+that encode these proteomes.
+
+```python
+from .chemistry import co2, formiat, atp
+
+p0 = [
+    CatalyticDomainFact(reaction=([co2], [formiat]), vmax=10.0),
+    RegulatoryDomainFact(effector=atp, is_transmembrane=False),
+]
+p1 = [
+  TransporterDomainFact(molecule=atp, vmax=10.0)
+]
+ggen = GenomeFact(world=world, proteome=[p0, p1])
+genomes = [ggen.generate() for _ in range(500)]
+```
+
+Here, I am generating 500 genomes that each translate into a proteome with 2 proteins.
+One protein will be an ATP transporter,
+the other will be an ATP-regulated catalytic domain with a cytosolic receptor that catalyzes $\text{CO2} \rightleftharpoons \text{formiat}$.
+With each call to [generate()][magicsoup.factories.GenomeFact.generate]
+a new sequence is generated that can encode the defined proteome.
+Some domain specifications were provided, _e.g._ both domains have $V_{max} = 10$.
+All undefined specifications are sampled, _e.g._ they all have random $K_m$.
+Which parameters can be defined is described the the domain factories
+[CatalyticDomainFact][magicsoup.factories.CatalyticDomainFact],
+[TransporterDomainFact][magicsoup.factories.TransporterDomainFact],
+[RegulatoryDomainFact][magicsoup.factories.RegulatoryDomainFact].
+This can also be used to give existing cells new genes:
+
+```python
+p0 = [CatalyticDomainFact(reaction=world.chemistry.reactions[0])]
+ggen = GenomeFact(world=world, proteome=[p0])
+for i in range(world.n_cells):
+    world.cell_genomes[i] += ggen.generate()
+```
+
+### Interpreting genomes
+
+Conversely, there are also helper classes for interpreting existing genomes.
+During the simulation world genomes are maintained on `world.cell_genomes`.
+Without any information on how genes and parameters are encoded,
+the raw genome strings cannot be interpreted.
+Cell proteomes and molecule concentrations however are actually maintained as a combination of tensors.
+[get_cell()][magicsoup.world.World.get_cell] is a helper function that
+creates a [Cell][magicsoup.containers.Cell] object which represents
+the cell with its genome, proteome, and molecule concentrations
+in a convenient way.
+
+```python
+cell = world.get_cell(by_idx=0)  # get 0th cell
+for i, protein in enumerate(cell.proteome):
+    print(f"P{i}: {protein}")  # protein summary
+```
+
+_E.g._ the proteome is a list of [Proteins][magicsoup.containers.Protein] on `cell.proteome`.
+Each protein contains information about its encoding CDS on the genome and its domains
+which are a list made up of [CatalyticDomains][magicsoup.containers.CatalyticDomain],
+[TransporterDomains][magicsoup.containers.TransporterDomain], and [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
+
+![](./img/supporting/transcriptome1.png)
+
+_[Cell][magicsoup.containers.Cell] information is used to visualize transcriptome with information.
+5'-3' shown above the genome, reverse-complement below.
+See [figures 2](./figures.md#2-transcriptomes) for more examples._
+
+### Genome size
+
+In the [experiment above](#simple-experiment) 1000 cells were initially added
+with random genomes of size 500 each.
+Mutations were intoduced and cells were killed and divided based on intracellular molecule concentrations.
+During the simulation cells can and will grow larger genomes.
+This means they can encode more proteins.
+
+![](img/genome_sizes.png)
+_Distributions for proteins per genome, domains per protein, and coding base pairs per base pair for different genome sizes._
+
+Some cells happen to duplicate their entire genome or parts of their genome every now and then.
+The longer the simulation goes on, the larger the maximum genome size grows.
+Without any penalty to genome size, maximum genome size will increase over time (steps).
+This can become a technical problem.
+While most cells might still have a small proteome, some cells already have huge proteomes.
+The tensors that maintain all cells' proteome information have to grow according to the cell with most proteins.
+This means memory consumption increases and performance decreases unnecessarily.
+
+It makes sense to add a selection function based on genome size (see [Selection](#selection));
+Not necessarily to enforce extremely small genomes, but to at least keep the maximum number of proteins at bay.
+
+```python
+def kill_cells(world: ms.World, i_atp: int):
+    x = world.cell_molecules[:, i_atp]
+    idxs = sample(1.0**7 / (1.0**7 + x**7))
+
+    sizes = torch.tensor([len(d) for d in world.cell_genomes])
+    idxs1 = sample(sizes**7 / (sizes**7 + 3_000.0**7))
+
+    world.kill_cells(cell_idxs=list(set(idxs + idxs1)))
+```
+
+Here, I assumed that for my experiment a genome size of 1000 (with around 20 proteins) should be large enough.
+With $f_{k,g} (s) = s^7 / (s^7 + 3000^7)$ cells should start dying quite rapidly once their genome size
+exceeds 3000 base pairs.
+
+## Selection
+
+As long as cells can replicate, they can evolve by natural selection.
+Better adapted cells will be able to replicate faster or die slower.
+Aside from genome size (see [Genome size](#genome-size)) we used intracellular
+ATP and acetyl-CoA concentrations to derive a probability for killing or replicating cells.
+
+```python
+def sample(p: torch.Tensor) -> list[int]:
+    idxs = torch.argwhere(torch.bernoulli(p))
+    return idxs.flatten().tolist()
+
+def kill_cells(world: ms.World, i_atp: int):
+    x = world.cell_molecules[:, i_atp]
+    idxs = sample(1.0**7 / (1.0**7 + x**7))
+
+    sizes = torch.tensor([len(d) for d in world.cell_genomes])
+    idxs1 = sample(sizes**7 / (sizes**7 + 3_000.0**7))
+
+    world.kill_cells(cell_idxs=list(set(idxs + idxs1)))
+
+def replicate_cells(world: ms.World, i_aca: int, i_hca: int, cost=2.0):
+    x = world.cell_molecules[:, i_aca]
+    sampled_idxs = _sample(x**5 / (x**5 + 15.0**5))
+
+    can_replicate = world.cell_molecules[:, i_aca] > cost
+    allowed_idxs = torch.argwhere(can_replicate).flatten().tolist()
+    
+    idxs = list(set(sampled_idxs) & set(allowed_idxs))
+    replicated = world.divide_cells(cell_idxs=idxs)
+    
+    if len(replicated) > 0:
+        descendants = [dd for d in replicated for dd in d]
+        world.cell_molecules[descendants, i_aca] -= cost / 2
+        world.cell_molecules[descendants, i_hca] += cost / 2
+```
+
+Here, I used $f_k(x) = 1^7 / (1^7 + x^7)$ and $f_r(x) = x^5 / (x^5 + 15^5)$.
+How to come up with useful functions and parameters?
+
+### Estimating useful rates
+
+It helps to guess some useful parameters to start with.
+Say we use functions of the form $f(x) = x^n/(x^n + c^n)$ to map molecule concentrations to likelihoods.
+We could try to set $c$ and $n$ in a way that that we have a good dynamic range for 0 to 5mM of $x$. 
+Below I modelled the chance of a cell being killed or replicated for particular sets of $n$ and $c$
+in cells with constant X concentrations.
+
+![](img/kill_repl_prob.png)
+_Probability of cells with constant X concentrations dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
+
+These events are not independent.
+If a cell replicates, there are more cells that can replicate.
+If it dies, it cannot replicate anymore.
+Eventually, you still have to try out a bit by just running simulations.
+While trying to come up with a good set of parameters you might see one of these patterns:
+
+- **Cells die before forming a colony** 
+  If they immediately die, the kill rate is probably too high.
+  If it takes them many steps to die (with some cells lingering around for a while),
+  it is probably too hard to replicate.
+  In that case increase the replication rate.  
+- **Cells quickly overgrow the map**
+  The kill rate is probably too low.
+  Only cells at the edge of the growing colony had a chance to adapt.
+  Once the map is fully overgrown adaption ceases.
+  There might be a well adapted cell somewhere but it cannot replicate.
+- **Cells create wavefront, then die** If cells can replicate quickly,
+  but also die quickly, they generate a wavefront of dividing cells which walks
+  over the map in a few waves and then perishes.
+  They often don't have enough time to adapt before going extinct.
+
+![](./img/supporting/cell_growth.gif)
+
+_Example cell growth in 4 simulations over 1000 steps with different kill and replication rates. (Left) with moderately high kill rate and low replicaiton rate.(Middle-left) with high replication rate and low kill rate. (Middle-right) with high replication and kill rate. (Right) with moderate kill and replication rate. Cell map is black, cells are white, every 5th step was captured._
+
+Ideally, cells struggle a bit to survive but not so much as to go extinct.
+They should have some time to adapt and space to grow.
+To keep cells in exponential growth phase indefinitely you can passage them.
+
+### Passaging cells
+
+In this simulation passaging cells would equate to selecting a few cells, killing the others,
+creating fresh medium, then spreading the surviving cells.
+This way the cells have new molecules and open space to grow.
+
+```python
+def split_cells(world: ms.World, split_ratio=0.3):
+    keep_n = int(world.n_cells * split_ratio)
+    kill_n = max(world.n_cells - keep_n, 0)
+    idxs = random.sample(list(range(world.n_cells)), k=kill_n)
+    world.kill_cells(cell_idxs=idxs)
+    prepare_medium(world=world)
+    world.reposition_cells(cell_idxs=list(range(world.n_cells)))
+```
+
+Passaging itself selects for fast growing cells.
+Let's take the example from above with kill and replication functions $p_k(X) =(X^7 + 1)^{-1}$ and $p_r(X) = X^5 / (X^5 + 15^5)$.
+The plot below shows simulated cell growth, where cells were passaged with different ratios whenever the total number of cells exeeded 7k.
+Gray areas represent the total number of cells, stacked bar charts show the cell type composition before the passage.
+We have cell types with X concentrations of 3, 4, 5, and 6.
+As you can see all cell types except the fastest growing cell type (with $X=6$) quickly disappear.
+
+![](img/splitting_cells.png)
+_Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split._
+
+
+
 ## GPU and Tensors
 
 [PyTorch](https://pytorch.org/) is used a lot in this simulation.
@@ -361,7 +662,7 @@ Instead [World][magicsoup.world.World] maintains python lists and [PyTorch Tenso
 Some of those tensors where used in the [example above](#simple-experiment): `world.molecule_map` and `world.cell_molecules`.
 All lists and tensors that can be used to interact with the simulation are listed in
 the [World][magicsoup.world.World] class documentation.
-To keep performance these tensors should not be moved back and forth between GPU and CPU during the simulation.
+To keep performance high these data should be moved back and forth between GPU and CPU as little as possible.
 
 ```python
 # float tensors on GPU get modified (fast)
@@ -413,7 +714,7 @@ if __name__ == "__main__":
 
 One nice tool for monitoring an ongoing simulation is [TensorBoard](https://www.tensorflow.org/tensorboard).
 It's an app that watches a directory and displays logged data as line charts, histograms, images and more.
-It can be installed from [pipy](https://pypi.org/project/tensorboard/).
+It can be installed from [PyPI](https://pypi.org/project/tensorboard/).
 _PyTorch_ already includes a `SummaryWriter` that can be used for writing these logging files.
 
 ```python
@@ -579,224 +880,3 @@ if __name__ == "__main__":
 As in the examples above I am creating a _runs_ directory with the current date and time.
 I am also not saving every step to reduce the time spend saving and the size of _runs/_.
 
-## Selection
-
-As long as cells can replicate, they can evolve by natural selection.
-Better adapted cells will be able to replicate faster or die slower.
-In the [experiment above](#simple-experiment) we used some functions to
-derive a probability for killing or replicating cells based on intracellular ATP and acetyl-CoA concentrations.
-
-```python
-def sample(p: torch.Tensor) -> list[int]:
-    idxs = torch.argwhere(torch.bernoulli(p))
-    return idxs.flatten().tolist()
-
-def kill_cells(world: ms.World, i_atp: int):
-    x = world.cell_molecules[:, i_atp]
-    idxs = sample(1.0**7 / (1.0**7 + x**7))
-    world.kill_cells(cell_idxs=idxs)
-
-def replicate_cells(world: ms.World, i_aca: int, i_hca: int, cost=2.0):
-    x = world.cell_molecules[:, i_aca]
-    sampled_idxs = _sample(x**5 / (x**5 + 15.0**5))
-
-    can_replicate = world.cell_molecules[:, i_aca] > cost
-    allowed_idxs = torch.argwhere(can_replicate).flatten().tolist()
-    
-    idxs = list(set(sampled_idxs) & set(allowed_idxs))
-    replicated = world.divide_cells(cell_idxs=idxs)
-    
-    if len(replicated) > 0:
-        descendants = [dd for d in replicated for dd in d]
-        world.cell_molecules[descendants, i_aca] -= cost / 2
-        world.cell_molecules[descendants, i_hca] += cost / 2
-```
-
-Here, I used $f_k(x) = 1^7 / (1^7 + x^7)$ and $f_r(x) = x^5 / (x^5 + 15^5)$.
-How to come up with useful functions and parameters?
-
-### Estimating useful rates
-
-It helps to guess some useful parameters to start with.
-Say we use functions of the form $f(x) = x^n/(x^n + c^n)$ to map molecule concentrations to likelihoods.
-We could try to set $c$ and $n$ in a way that that we have a good dynamic range for 0 to 5mM of $x$. 
-Below I modelled the chance of a cell being killed or replicated for particular sets of $n$ and $c$
-in cells with constant X concentrations.
-
-![](img/kill_repl_prob.png)
-_Probability of cells with constant X concentrations dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
-
-These events are not independent.
-If a cell replicates, there are more cells that can replicate.
-If it dies, it cannot replicate anymore.
-We can simulate how cells with different X concentrations would grow given these kill and replication probabilities:
-
-![](img/sim_cell_growth.png)
-_Simulated growth of cells with constant X concentrations when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
-
-Eventually, you still have to try out a bit by just running simulation.
-While trying to come up with a good set of parameters you might see one of these patterns:
-
-- **Cells die before forming a colony** 
-  If they immediately die, the kill rate is probably too high.
-  If it takes them many steps to die (with some cells lingering around for a while),
-  it is probably too hard to replicate.
-  In that case increase the replication rate.  
-- **Cells quickly overgrow the map**
-  The kill rate is probably too low.
-  Only cells at the edge of the growing colony had a chance to adapt.
-  Once the map is fully overgrown adaption ceases.
-  There might be a well adapted cell somewhere but it cannot replicate.
-- **Cells create wavefront, then die** If cells can replicate quickly,
-  but also die quickly, they generate a wavefront of dividing cells which walks
-  over the map in a few waves and then perishes.
-  They often don't have enough time to adapt before going extinct.
-
-![](./img/supporting/cell_growth.gif)
-
-_Example cell growth in 4 simulations over 1000 steps with different kill and replication rates. (Left) with moderately high kill rate and low replicaiton rate.(Middle-left) with high replication rate and low kill rate. (Middle-right) with high replication and kill rate. (Right) with moderate kill and replication rate. Cell map is black, cells are white, every 5th step was captured._
-
-Ideally, cells struggle a bit to survive but not so much as to go extinct.
-They should have some time to adapt and space to grow.
-To keep cells in exponential growth phase indefinitely you can passage them.
-
-### Passaging cells
-
-In this simulation passaging cells would equate to selecting a few cells, killing the others,
-creating fresh medium, then spreading the surviving cells.
-This way the cells have new molecules and open space to grow.
-
-```python
-def split_cells(world: ms.World, split_ratio=0.3):
-    keep_n = int(world.n_cells * split_ratio)
-    kill_n = max(world.n_cells - keep_n, 0)
-    idxs = random.sample(list(range(world.n_cells)), k=kill_n)
-    world.kill_cells(cell_idxs=idxs)
-    prepare_medium(world=world)
-    world.reposition_cells(cell_idxs=list(range(world.n_cells)))
-```
-
-Passaging itself selects for cells which are most abundant during the time of the passage.
-Let's take the example from above with kill and replication functions $p_k(X) =(X^7 + 1)^{-1}$ and $p_r(X) = X^5 / (X^5 + 15^5)$.
-The plot below shows simulated cell growth, where cells were passaged with different ratios whenever the total number of cells exeeded 7k.
-Gray areas represent the total number of cells, stacked bar charts show the cell type composition before the passage.
-We have cell types with X concentrations of 3, 4, 5, and 6.
-As you can see all cell types except the fastest growing cell type (with $X=6$) quickly disappear.
-
-![](img/splitting_cells.png)
-_Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split._
-
-(More examples in [figures 10](./figures.md#10-passaging))
-
-## Genomes
-
-### Genome size
-
-In the [experiment above](#simple-experiment) 1000 cells were initially added.
-They each had a random genome of 500 base pairs length.
-
-```python
-def add_cells(world: ms.World):
-    genomes = [ms.random_genome(s=500) for _ in range(1000)]
-    world.spawn_cells(genomes=genomes)
-```
-
-During the simulation these genomes can become shorter or longer due to random mutations.
-If the selection process works (see [Selection](#selection)) cells tend to accumulate new genes.
-On average the cell profits from gaining a new gene more than it does from losing a gene.
-It makes sense to introduce another selection function that will penalize cells with too large genomes.
-This could be done in `kill_cells`:
-
-```python
-def kill_cells(world: ms.World, atp: int):
-    x0 = world.cell_molecules[:, atp]
-    sizes = torch.tensor([len(d) for d in exp.world.cell_genomes])
-    idxs0 = sample(1.0**7 / (1.0**7 + x0**7))
-    idxs1 = sample(sizes**7 / (sizes**7 + 3_000.0**7))
-    world.kill_cells(cell_idxs=list(set(idxs0 + idxs1)))
-```
-
-Without it cell genomes will become exeecingly large over the course of thousands of steps.
-This will eventually slow down the simulation.
-The plot below shows how the genome size affects the cells proteome.
-
-![](img/genome_sizes.png)
-_Distributions for proteins per genome, domains per protein, and coding nucleotides per nucleotide for different genome sizes with domain probability 0.01_
-
-When [World][magicsoup.world.World] is initialized, it creates a [Genetics][magicsoup.genetics.Genetics] instance.
-This instances carries the logic of mapping nucleotide sequences to proteomes
-(see [Mechanics](./mechanics.md) and [Genetics][magicsoup.genetics.Genetics] for details).
-Changing the frequency by which nucleotide sequences can encode domains, changes the composition of genomes.
-By default all 3 domain types are encoded by 2 codons (6 nucleotides) and 1% of all 2-codon combinations encode for 1 of these domain types.
-
-These parameters can be changed.
-In [figures 1](./figures.md#1-genomes) there are some examples on how genome compositions
-change when these parameters are changed.
-If you want to change [Genetics][magicsoup.genetics.Genetics] for your simulation, you have to create your
-own instance and assign it to [World][magicsoup.world.World]:
-
-```python
-world = ms.World(...)
-world.genetics = ms.Genetics(...)
-```
-
-## Molecule energies
-
-In the [experiment at the beginning](#simple-experiment) some molecule species were defined in _chemistry.py_ with energies.
-
-```python
-formiat = Molecule("formiat", 20.0 * 1e3)
-co2 = Molecule("CO2", 10.0 * 1e3, diffusivity=1.0, permeability=1.0)
-```
-
-In this simulation a chemical reaction is regarded as the decomposition of substrates and the creation of products.
-In which direction the reaction will progress is defined by its energy (and the world's temperature) and the reaction quotient.
-There exists an equilibrium at which the reaction effectively stops (this is explained in detail in [Mechanics](./mechanics.md)).
-In the example above $CO2 \rightleftharpoons formiat$ has a reaction energy of 10 kJ/mol and would create a equilibrium constant of roughly 0.02.
-If the reaction energy would have been defined as only 10 J/mol, the equilibrium constant would be almost 1.0.
-
-![](img/equilibrium_constants.png)
-_Chemistries with energies of around 10 kJ/mol, 100 kJ/mol, and 200 kJ/mol were created and random proteins were generated. Log10 equilibrium constant distributions of reactions catalyzed by these proteins are shown_
-
-With lower reaction energies reactions are more dirven by reaction quotients.
-For energetically coupled transporter and catalytic domains this means transporters can power more reactions,
-_i.e._ cells can make more use of concentration gradients.
-
-(More examples in [figures 5](./figures.md#5-equilibrium-constants))
-
-## Molecule maps
-
-When instantiating [World][magicsoup.world.World] by default all molecule species will added to `world.molecule_map`, normally distributed,
-with an average concentration of 10.
-In the [experiment above](#simple-experiment) this made sense for most molecule species.
-We adjusted concentrations for energy carriers ATP/ADP and NADPH/NADP, and for the carbon source CO2.
-For adding CO2, one could also think of creating gradient like shown below.
-This could for example introduce a spatial dependence for cell growth or implement a [ChemoStat](https://en.wikipedia.org/wiki/Chemostat).
-
-![](img/gradients.png)
-_Molecule species X is added to molecule map and allowed to diffuse  to create a 1D gradient (top) or 2D gradients (bottom)._
-
-In the plot above, these gradients were created by adding CO2 to specific pixels on the map, and removing them from other other.
-The gradients emerge through diffusion.
-However, the gradient takes a few hundred steps to reach its equilibrium.
-Care must be taken to use the correct device.
-
-```python
-n = int(world.map_size / 2)
-device = world.molecule_map.device
-
-ones = torch.ones((world.map_size, world.map_size))
-linspace = torch.cat([
-    torch.linspace(1.0, 100.0, n),
-    torch.linspace(100.0, 1.0, n)
-])
-gradient = torch.einsum("xy,x->xy", ones, linspace)
-
-world.molecule_map[co2] = gradient.to(device)
-```
-
-The code above creates the 1D gradient that was shown in the plot for CO2.
-By effectively doing `gradient.to(world.molecule_map.device)` we make sure that
-the created tensor will be send to the same device that `world.molecule_map` was on.
-
-(More examples in [figures 4](./figures.md#4-molecule-diffusion-and-degradation))

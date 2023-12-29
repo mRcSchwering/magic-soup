@@ -8,23 +8,6 @@ For installed python package:
 
     python check.py
 
-v0.13.0 CPU:
-10,000 cells, 1,000 genome size, on cpu
-(7.95+-0.25)s - spawn cells
-(7.84+-0.35)s - update cells
-(0.75+-0.02)s - replicate cells
-(4.72+-0.27)s - enzymatic activity
-(5.91+-0.07)s - mutations
-
-v0.13.0 GPU (g4dn.xlarge):
-Running spawn_cells, update_cells, replicate_cells, enzymatic_activity, mutations
-10,000 cells, 1,000 genome size, on cuda
-(6.77+-0.80)s - spawn cells
-(6.27+-0.16)s - update cells
-(1.47+-0.03)s - replicate cells
-(0.17+-0.00)s - enzymatic activity
-(4.28+-0.01)s - mutations
-
 v0.14.1 GPU (g4dn.xlarge):
 Running spawn_cells, update_cells, replicate_cells, enzymatic_activity, mutations
 10,000 cells, 1,000 genome size, on cuda
@@ -33,6 +16,14 @@ Running spawn_cells, update_cells, replicate_cells, enzymatic_activity, mutation
 (0.28+-0.00)s - replicate cells
 (0.16+-0.00)s - enzymatic activity
 (0.46+-0.00)s - mutations
+
+v0.14.1 CPU (Intel Core i5-10210U):
+10,000 cells, 1,000 genome size, on cpu
+(7.66+-0.51)s - spawn cells
+(7.17+-0.10)s - update cells
+(0.37+-0.01)s - replicate cells
+(4.51+-0.12)s - enzymatic activity
+(0.40+-0.00)s - mutations
 """
 import time
 import random
@@ -40,7 +31,6 @@ from argparse import ArgumentParser
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
-# TODO: doublecheck replicate cells performance (after with_capacity changes)
 R = 5
 
 
