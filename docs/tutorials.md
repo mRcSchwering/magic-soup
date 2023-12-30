@@ -388,7 +388,7 @@ If cells should grow in batch culture, you would prepare fresh medium after pass
 By regularly adding and removing certain molecules you can simulate a [Chemostat](https://en.wikipedia.org/wiki/Chemostat).
 
 ![](img/gradients.png)
-_Molecule species X is added to molecule map and allowed to diffuse  to create a 1D gradient (top) or 2D gradients (bottom)._
+_1D gradient is created by manipulating and diffusing molecules each step. Molecules are added in the middle and removed at the edges._
 
 Gradients can be created by adding and removing molecules in different places on the world map.
 _E.g._ in the above figure the 1D gradient is created by calling the following function
@@ -417,7 +417,7 @@ def add_cells(world: ms.World):
 ```
 
 These genomes are maintained as a python list of strings on `world.cell_genomes`.
-You can change them as you like (_e.g._ `world.cell_genomes[0] += "ACTG`).
+You can change them as you like (_e.g._ `world.cell_genomes[0] += "ACTG"`).
 But whenever you change a genome, you must also update the cell's parameters
 with [update_cells()][magicsoup.world.World.update_cells].
 This figuratively transcribes and translates the genome and updates the cell's proteome.
@@ -499,9 +499,9 @@ Each protein contains information about its encoding CDS on the genome and its d
 which are a list made up of [CatalyticDomains][magicsoup.containers.CatalyticDomain],
 [TransporterDomains][magicsoup.containers.TransporterDomain], and [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
 
-![](./img/supporting/transcriptome1.png)
+![](./img/transcriptome.png)
 
-_[Cell][magicsoup.containers.Cell] information is used to visualize transcriptome with information.
+_[Cell][magicsoup.containers.Cell] information is used to visualize transcriptome with domains color labeled by domain type.
 5'-3' shown above the genome, reverse-complement below.
 See [figures 2](./figures.md#2-transcriptomes) for more examples._
 
@@ -513,7 +513,7 @@ Mutations were intoduced and cells were killed and divided based on intracellula
 During the simulation cells can and will grow larger genomes.
 This means they can encode more proteins.
 
-![](img/genome_sizes.png)
+![](img/supporting/different_genome_sizes.png)
 _Distributions for proteins per genome, domains per protein, and coding base pairs per base pair for different genome sizes._
 
 Some cells happen to duplicate their entire genome or parts of their genome every now and then.
@@ -538,7 +538,7 @@ def kill_cells(world: ms.World, i_atp: int):
     world.kill_cells(cell_idxs=list(set(idxs + idxs1)))
 ```
 
-Here, I assumed that for my experiment a genome size of 1000 (with around 20 proteins) should be large enough.
+Here, I assumed that for my experiment a genome size of 1000 (with around 16 proteins) should be large enough.
 With $f_{k,g} (s) = s^7 / (s^7 + 3000^7)$ cells should start dying quite rapidly once their genome size
 exceeds 3000 base pairs.
 
@@ -590,7 +590,7 @@ We could try to set $c$ and $n$ in a way that that we have a good dynamic range 
 Below I modelled the chance of a cell being killed or replicated for particular sets of $n$ and $c$
 in cells with constant X concentrations.
 
-![](img/kill_repl_prob.png)
+![](img/supporting/cell_dying_replicating.png)
 _Probability of cells with constant X concentrations dying or dividing at least once when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$._
 
 These events are not independent.
@@ -645,7 +645,7 @@ Gray areas represent the total number of cells, stacked bar charts show the cell
 We have cell types with X concentrations of 3, 4, 5, and 6.
 As you can see all cell types except the fastest growing cell type (with $X=6$) quickly disappear.
 
-![](img/splitting_cells.png)
+![](img/supporting/random_splits.png)
 _Simulated growth of cells with different molecule concentrations X when the chance to die depends on molecule concentration X with $p(X) =(X^7 + 1)^{-1}$ and the chance to replicate depends on it with $p(X) = X^5 / (X^5 + 15^5)$. Cells are split at different split ratios whenever they exceed a total count of 7000. Gray area represents total cell count, bars represent cell type composition before the split._
 
 

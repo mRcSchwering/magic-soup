@@ -19,6 +19,12 @@ nav:
 
 plugins:
   - search
+  - exclude:
+      glob:
+        - "*.py"
+        - "*.pyc"
+        - "*.txt"
+        - "runs/*"
   - mkdocstrings:
       handlers:
         python:

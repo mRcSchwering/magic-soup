@@ -1,3 +1,4 @@
 mkdocs>=1.5.0,<1.6.0
 python-markdown-math>=0.8,<0.9
 mkdocstrings[python]>=0.24.0,<0.25.0
+mkdocs-exclude>=1.0.0,<1.1.0
