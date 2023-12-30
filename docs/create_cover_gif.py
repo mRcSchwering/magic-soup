@@ -16,7 +16,7 @@ The cell maps show all cells, and the most abundant celllines only at a certain 
 7. Check how rendered gif looks in documentation
 
 ```
-PYTHONPATH=./python python viz/create_cover_gif.py viz/runs/2023-12-21_10-31 --top-step 1000
+PYTHONPATH=./python python docs/create_cover_gif.py docs/runs/2023-12-21_10-31 --top-step 1000
 gifsicle -i image.gif --optimize=3 --colors 32 -o image_o3_32.gif
 bash scripts/serve-docs.sh
 ```

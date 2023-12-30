@@ -14,8 +14,7 @@ A RTD documentation is built using [MkDocs](https://www.mkdocs.org/).
 - [tests/](./tests/) test suite
 - [scripts/](./scripts/) some bash scripts for development
 - [performance/](./performance/) measuring performance
-- [docs/](./docs/) markdown files for documentation
-- [viz/](./viz/) creating visualizations (mostly for docs)
+- [docs/](./docs/) markdown files and visualizations for documentation
 - [.github/](./.github/) workflow that builds, tests (fast), releases
 
 ### Developing in rust
@@ -32,7 +31,10 @@ bash scripts/test.sh tests/fast  # only quick tests
 bash scripts/test.sh tests/  # all tests
 ```
 
-There is [tests/check.ipynb](./tests/check.ipynb) which are visual tests.
+There is [docs/create_figures.py](./docs/create_figures.py) which creates a lot of plots.
+Some of those plots also serve as sanity checks.
+_E.g._ reaction kinetics and biochemical patterns should still make sense,
+overall energy has to eventually decrease during a simulation, etc.
 They should be checked before major updates.
 Also run [scripts/check-performance.sh](./scripts/check-performance.sh) for checking
 performance of all major simulation steps.
@@ -61,3 +63,4 @@ This is configured in [mkdocs.yml](./mkdocs.yml).
 Note that [docs/index.md](./docs/index.md) is the index for RTD
 and [README.md](./README.md) is the start page on PyPI.
 Docs are built for RTD on every push to main.
+See if [docs/create_figures.py](./docs/create_figures.py) or other plots should be recreated.

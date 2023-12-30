@@ -1,3 +1,9 @@
+"""
+Run simple simulation to create data for visualizations
+
+    PYTHONPATH=./python python docs/run.py --help
+
+"""
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
 import datetime as dt

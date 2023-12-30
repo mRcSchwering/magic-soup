@@ -2,7 +2,7 @@
 """
 Generate figures for docs/imgs/supporting
 
-    PYTHONPATH=./python python viz/create_figures.py --help
+    PYTHONPATH=./python python docs/create_figures.py --help
 """
 import math
 from typing import Callable
