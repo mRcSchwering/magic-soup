@@ -13,6 +13,9 @@ _MAX = 1e36
 _MIN = -1e36
 
 
+# TODO: Km distributions are odd
+
+
 class _HillMapFact:
     """
     Creates an object that maps tokens to 1, 2, 3, 4, 5
