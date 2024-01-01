@@ -2,10 +2,10 @@
 
 ## Simple Experiment
 
-_MagicSoup_ is trying to only provide the simulation engine.
+_MagicSoup_ is trying to only provide a simulation engine.
 Everything else should be up to the user so that any experimental setup can be created.
 However, this also means a lot of code has to be written by yourself.
-As an example let's try to teach cells to convert CO2 into acetyl-CoA.
+As a simple example let's try to teach cells to convert CO2 into acetyl-CoA.
 Cell survival will be based on intracellular acetyl-CoA concentrations and CO2 will be supplied in abundance.
 
 ### Chemistry
@@ -17,7 +17,7 @@ which reactions are possible and how much energy they release.
 Here, we will use the [Wood-Ljungdahl pathway](https://en.wikipedia.org/wiki/Wood%E2%80%93Ljungdahl_pathway) as inspiration.
 There are a few molecule species and reactions that eventually acetylate coenzyme A.
 Below, we create a file _chemistry.py_ in which we define all these molecules and reactions.
-For the sake of brevity some steps were aggregated.
+For the sake of brevity some steps were skipped.
 
 ```python
 # chemistry.py
@@ -70,17 +70,18 @@ REACTIONS = [
 ```
 
 Each molecule species was created with a unique name and an energy.
-This energy has effects on reaction energies (more on this in [Molecule energies](#molecule-energies)).
-So, here _ATP_ is defined with _100 kJ/mol_. Its hydrolysis to _ADP_ releases _30 kJ/mol_.
-Except for _CO2_ all defaults are kept.
-For _CO2_ permeability and diffusivity is increased to account for the fact that
+Except for CO2 all defaults are kept.
+For CO2 permeability and diffusivity is increased to account for the fact that
 it diffuses rapidly and can permeate through cell membranes.
 
-The reactions are tuples of lists of these molecule species.
-The first tuple entry defines all substrates, the second all products.
-A stoichiometric number >1 can be expressed by listing the molecule species multiple times.
+Reactions are defined as tuples of products and substrates.
+_E.g._ we defined a reaction ATP $\rightleftharpoons$ ADP as `([ATP], [ADP])`.
+Here, ATP is defined with 100 kJ/mol and ADP with 70 kJ/mol.
+Thus, ATP $\rightleftharpoons$ ADP releases 30 kJ/mol.
+A stoichiometric number greater 1 can be expressed by listing the molecule species multiple times.
 All reactions are reversible, so it is not necessary to define the reverse reaction.
-In which direction a reaction will progress depends on its reaction energy and quotient.
+See [Chemistry][magicsoup.containers.Chemistry] and [Molecule][magicsoup.containers.Molecule]
+docs for more information.
 
 ### Setup
 
@@ -136,9 +137,10 @@ Finally, all surviving cells can experience mutations which change their genomes
 
 When [World][magicsoup.world.World] is instantiated by default it fills the map with molecules
 of all molecule species to an average concentration of 10 mM.
-Here, we add extra CO2 and energy.
-Our cells don't have any mechanism for restoring these energy carriers.
-Sooner or later they will run out of energy.
+Here, we add extra CO2 and energy carriers.
+Our cells don't have any mechanism for restoring these molecules.
+Sooner or later they will run out of energy and CO2.
+I am using indices to refer to different molecule species (see [Molecules](#molecules)).
 
 ```python
 def prepare_medium(world: ms.World, i_co2: int, i_atp: int, i_nadph: int):
@@ -152,8 +154,8 @@ def prepare_medium(world: ms.World, i_co2: int, i_atp: int, i_nadph: int):
 So far, there are no cells yet.
 Cells can be spawned with [spawn_cells()][magicsoup.world.World.spawn_cells]
 by providing genomes.
-They will be placed in random positions on the map and take up half the molecules
-that were on that position.
+They will be placed in random pixels on the map and take up half the molecules
+that were on that pixel.
 There is a helper function [random_genome()][magicsoup.util.random_genome] that can be used to generate genomes of a certain size.
 
 ```python
@@ -186,7 +188,7 @@ Here, these variables will be intracellular molecule concentrations.
 
 For killing cells we can look at intracellular ATP concentrations.
 If they are low, chances of being killed are increased.
-I also want to kill cells if their genomes get too big (details in [Genome size](#genome-size)).
+I also want to kill cells if their genomes get too big (see [Genome size](#genome-size)).
 Cells are killed with [kill_cells()][magicsoup.world.World.kill_cells] by providing their indexes.
 I am using a simple sigmoidal $f(x) = x^n/(x^n + c^n)$ to map likelihoods.
 
@@ -254,9 +256,10 @@ def mutate_cells(world: ms.World, old=10):
 ```
 
 [mutate_cells()][magicsoup.world.World.mutate_cells] and
-[recombinate_cells()][magicsoup.world.World.recombinate_cells] are really just convenience functions.
+[recombinate_cells()][magicsoup.world.World.recombinate_cells] are convenience functions.
 You can also create mutations by yourself by just editing the strings in `world.cell_genomes`
 and then calling [update_cells()][magicsoup.world.World.update_cells] for the cells that have changed.
+More on that in [Genomes](#genomes).
 
 ### Putting it all together
 
@@ -461,7 +464,7 @@ One protein will be an ATP transporter,
 the other will be an ATP-regulated catalytic domain with a cytosolic receptor that catalyzes $\text{CO2} \rightleftharpoons \text{formiat}$.
 With each call to [generate()][magicsoup.factories.GenomeFact.generate]
 a new sequence is generated that can encode the defined proteome.
-Some domain specifications were provided, _e.g._ both domains have $V_{max} = 10$.
+Some domain specifications were provided, _e.g._ both domains have $v_{max} = 10$.
 All undefined specifications are sampled, _e.g._ they all have random $K_m$.
 Which parameters can be defined is described the the domain factories
 [CatalyticDomainFact][magicsoup.factories.CatalyticDomainFact],
@@ -498,12 +501,13 @@ _E.g._ the proteome is a list of [Proteins][magicsoup.containers.Protein] on `ce
 Each protein contains information about its encoding CDS on the genome and its domains
 which are a list made up of [CatalyticDomains][magicsoup.containers.CatalyticDomain],
 [TransporterDomains][magicsoup.containers.TransporterDomain], and [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
+See docs of [Cell][magicsoup.containers.Cell], [Proteins][magicsoup.containers.Protein] and domain object docs
+to see which attributes are available.
 
 ![](./img/transcriptome.png)
 
 _[Cell][magicsoup.containers.Cell] information is used to visualize transcriptome with domains color labeled by domain type.
-5'-3' shown above the genome, reverse-complement below.
-See [figures 2](./figures.md#2-transcriptomes) for more examples._
+5'-3' shown above the genome, reverse-complement below._
 
 ### Genome size
 
@@ -521,11 +525,11 @@ The longer the simulation goes on, the larger the maximum genome size grows.
 Without any penalty to genome size, maximum genome size will increase over time (steps).
 This can become a technical problem.
 While most cells might still have a small proteome, some cells already have huge proteomes.
-The tensors that maintain all cells' proteome information have to grow according to the cell with most proteins.
+The tensors that maintain all cell proteomes have to grow according to the cell with most proteins.
 This means memory consumption increases and performance decreases unnecessarily.
 
 It makes sense to add a selection function based on genome size (see [Selection](#selection));
-Not necessarily to enforce extremely small genomes, but to at least keep the maximum number of proteins at bay.
+Not necessarily to enforce extremely small genomes, but to keep the maximum number of proteins at bay.
 
 ```python
 def kill_cells(world: ms.World, i_atp: int):
@@ -650,41 +654,7 @@ _Simulated growth of cells with different molecule concentrations X when the cha
 
 
 
-## GPU and Tensors
-
-[PyTorch](https://pytorch.org/) is used a lot in this simulation.
-When initializing [World][magicsoup.world.World] parameter `device` can be used to move most calculations to a GPU.
-_E.g._ with `device="cuda"` the default CUDA device is used (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-Using a GPU usually speeds up the simulation by more than 100 times.
-
-To achieve this performance cells and molecules are not represented as python objects.
-Instead [World][magicsoup.world.World] maintains python lists and [PyTorch Tensors](https://pytorch.org/docs/stable/tensors.html).
-Some of those tensors where used in the [example above](#simple-experiment): `world.molecule_map` and `world.cell_molecules`.
-All lists and tensors that can be used to interact with the simulation are listed in
-the [World][magicsoup.world.World] class documentation.
-To keep performance high these data should be moved back and forth between GPU and CPU as little as possible.
-
-```python
-# float tensors on GPU get modified (fast)
-world.molecule_map[0] = 10.0
-world.cell_molecules[0] += 1.0
-world.cell_molecules[world.cell_divisions > 10, 3] -= 1.0
-
-mask = world.cell_lifetimes > 10  # bool tensor on GPU (fast)
-idx_tensor = torch.argwhere(mask)  # long tensor on GPU (fast)
-idx_lst = idx_tensor.flatten().tolist()  # tolist() sends integers to CPU (slow)
-
-values = world.cell_divisions.float()  # convert integer to float tensor on GPU (fast)
-mean = values.mean()  # calculate mean as 1-item float tensor on GPU (fast)
-value = mean.item()  # item() sends value to CPU (slow)
-```
-
-There is a [PyTorch tutorial](https://pytorch.org/tutorials/beginner/introyt/tensors_deeper_tutorial.html)
-for working with tensors but in general you should try to use [tensor methods](https://pytorch.org/docs/stable/torch.html).
-If you are familiar with [NumPy](https://numpy.org/) this should come easy.
-Equivalents for most ndarray methods also exist on torch tensors.
-
-## Boilerplate
+## Managing Simulation Runs
 
 These are some examples for monitoring, checkpointing, and parametrizing simulations.
 Let's assume a setup like described in the [experiment above](#simple-experiment).
@@ -880,3 +850,37 @@ if __name__ == "__main__":
 As in the examples above I am creating a _runs_ directory with the current date and time.
 I am also not saving every step to reduce the time spend saving and the size of _runs/_.
 
+
+## GPU and Tensors
+
+[PyTorch](https://pytorch.org/) is used a lot in this simulation.
+When initializing [World][magicsoup.world.World] parameter `device` can be used to move most calculations to a GPU.
+_E.g._ with `device="cuda"` the default CUDA device is used (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
+Using a GPU usually speeds up the simulation by more than 100 times.
+
+To achieve this performance cells and molecules are not represented as python objects.
+Instead [World][magicsoup.world.World] maintains python lists and [PyTorch Tensors](https://pytorch.org/docs/stable/tensors.html).
+Some of those tensors where used in the [example above](#simple-experiment): `world.molecule_map` and `world.cell_molecules`.
+All lists and tensors that can be used to interact with the simulation are listed in
+the [World][magicsoup.world.World] class documentation.
+To keep performance high these data should be moved back and forth between GPU and CPU as little as possible.
+
+```python
+# float tensors on GPU get modified (fast)
+world.molecule_map[0] = 10.0
+world.cell_molecules[0] += 1.0
+world.cell_molecules[world.cell_divisions > 10, 3] -= 1.0
+
+mask = world.cell_lifetimes > 10  # bool tensor on GPU (fast)
+idx_tensor = torch.argwhere(mask)  # long tensor on GPU (fast)
+idx_lst = idx_tensor.flatten().tolist()  # tolist() sends integers to CPU (slow)
+
+values = world.cell_divisions.float()  # convert integer to float tensor on GPU (fast)
+mean = values.mean()  # calculate mean as 1-item float tensor on GPU (fast)
+value = mean.item()  # item() sends value to CPU (slow)
+```
+
+There is a [PyTorch tutorial](https://pytorch.org/tutorials/beginner/introyt/tensors_deeper_tutorial.html)
+for working with tensors but in general you should try to use [tensor methods](https://pytorch.org/docs/stable/torch.html).
+If you are familiar with [NumPy](https://numpy.org/) this should come easy.
+Equivalents for most ndarray methods also exist on torch tensors.

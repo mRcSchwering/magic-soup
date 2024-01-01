@@ -6,7 +6,7 @@ For local python package:
     
 For installed python package:
 
-    python run.py --help
+    python run_simulation.py --help
 
 Check running simulation:
 

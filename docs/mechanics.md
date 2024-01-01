@@ -36,7 +36,6 @@ Currently, there are three domain types: _catalytic, transporter, regulatory_.
 Each domain consists of a region of genetic code that defines the domain type itself
 and several regions that define its further specifications.
 What these specifications are depends on the domain type.
-There are some example transcriptomes in [figures 2](./figures.md#2-transcriptomes).
 
 _Catalytic_ domains can catalyze one reaction each.
 All possible reactions are defined in the simulation's chemistry (see [Chemistry](#chemistry)).
@@ -67,8 +66,9 @@ The rules of this genetic setup are quite simple.
 _E.g._ there is no transcriptional and post-transcriptional regulation.
 Abundance, location, and efficiency of CDSs are not taken into consideration.
 Yet still this simple genetic setup can already create complex protein networks
-with hubs, feedback loops, oscillators, and cascades.
-(See some examples in [figures 7](./figures.md#7-biochemical-patterns))
+with hubs, feedback loops, and cascades.
+Some example transcriptomes and biochemical patterns are shown in 
+[figures 2](./figures.md#2-transcriptomes) and [figures 7](./figures.md#7-biochemical-patterns).
 
 
 ## Chemistry
@@ -101,7 +101,6 @@ As further described in [Kinetics](#kinetics) the [reaction quotient](https://en
 always moves towards $K_e$.
 So, reactions tend to be favourable into the direction which deconstructs high energy molecules
 and constructs low energy molecules.
-Some implications are shown in [figures 5](./figures.md#5-equilibrium-constants).
 
 However, all reactions catalyzed by the same protein are considered to be energetically coupled.
 All domains are considered when calculating $\Delta G_0$.
@@ -236,13 +235,14 @@ $h_l$ is the hill coefficient,
 and $K_{a,l}$ is the effector concentration producing half occupation.
 $h_l > 0$ for activating effectors, $h_l < 0$ for inhibiting effectors.
 Proteins without regulatory domains are always allowed to be active.
-There are some kinetics examples in [figures 6](./figures.md#6-simple-reaction-kinetics).
+Some kinetics examples are given in [figures 6](./figures.md#6-simple-reaction-kinetics).
 
 When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
 are created, they are sampled from distributions with user defined boundaries.
 For multiple domains specifications with overlapping
 values for $v_{max}$, $K_m$, $K_a$ are averaged.
-Resulting distributions are shown in [figures 11](./figures.md#11-kinetics-constants-distributions).
+The resulting distributions of these values are shown in
+[figures 11](./figures.md#11-kinetics-constants).
 All defaults were chosen with some assumptions in mind:
 (1) molecule numbers (such as in `world.molecule_map`) represent mM,
 (2) a time step represents 1 second,

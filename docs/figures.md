@@ -1,5 +1,16 @@
 # Figures
 
+These figures are re-generated with major _MagicSoup_ updates.
+On the one hand, they serve as sanity checks.
+There is a test suite with unit and integration tests.
+However, some things are hard to put into an automated test.
+Sometimes it's easier to create a figure and take a look at it.
+Some of the figures here are such kind of sanity checks
+(_e.g._ [6. Simple Reaction Kinetics](#6-simple-reaction-kinetics)).
+On the other hand, some plots were just created out of curiousity
+about how certain aspects play out
+(_e.g._ [9. Survival and Replication Rate](#9-survival-and-replication-rate)).
+
 ## 1. Genomes
 
 ![](./img/supporting/different_genome_sizes.png)
