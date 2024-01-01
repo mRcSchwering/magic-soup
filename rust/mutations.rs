@@ -6,7 +6,7 @@ use rayon::prelude::*;
 const NTS: [char; 4] = ['A', 'C', 'T', 'G'];
 
 /// Mutate string with point mutations
-/// p mutations per nucleotide, p_indel chance of indel (vs substitution), p_del chance of deletion (vs insertsion)
+/// p mutations per base pair, p_indel chance of indel (vs substitution), p_del chance of deletion (vs insertsion)
 /// Returns None if no mutation happened
 fn point_mutations(
     mut seq: String,

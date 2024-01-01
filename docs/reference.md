@@ -54,7 +54,7 @@ Usually, a user does't need to use this class directly.
 
 This is a supporting module with some
 functions for efficiently creating mutations
-in nucleotide sequences.
+in nucleotide sequence strings.
 
 ::: magicsoup.mutations
 

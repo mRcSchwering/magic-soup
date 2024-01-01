@@ -16,7 +16,7 @@ _this_dir = Path(__file__).parent
 _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
 
 
-# TODO: sometimes its base pair, not nucleotide
+# TODO: index, README docs
 
 
 def _log_scalars(

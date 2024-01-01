@@ -336,7 +336,7 @@ class GenomeFact:
     [TransporterDomainFact][magicsoup.factories.TransporterDomainFact],
     [RegulatoryDomainFact][magicsoup.factories.RegulatoryDomainFact] can be used.
     Use [generate()][magicsoup.factories.GenomeFact.generate] to sample and generate a genome.
-    There are always multiple nucleotide sequences which can encode the same proteome.
+    There are always multiple base pair sequences which can encode the same proteome.
     Thus each generated genome might be different.
 
     While the generated genome will always have the desired domains and proteins

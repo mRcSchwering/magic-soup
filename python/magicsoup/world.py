@@ -687,7 +687,7 @@ class World:
         Arguments:
             cell_idxs: Indexes of cells which are allowed to mutate.
                 Leave `None` to allow all cells to mutate.
-            p: Probability of a mutation per nucleotide
+            p: Probability of a mutation per base pair
             p_indel: Probability of any point mutation being an indel
                     (inverse probability of it being a substitution)
             p_del: Probability of any indel being a deletion
@@ -713,7 +713,7 @@ class World:
         Arguments:
             cell_idxs: Indexes of cells which are allowed to recombinate.
                 Leave `None` to allow all cells to recombinate.
-            p: Probability of a strand break per nucleotide during recombinataion.
+            p: Probability of a strand break per base pair during recombinataion.
 
         Convenience function that uses [mutations.recombinations()][magicsoup.mutations.recombinations]
         to recombinate genomes of neighbouring cells, then updates cell parameters for cells

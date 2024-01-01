@@ -64,7 +64,7 @@ world.spawn_cells(genomes=genomes)
 ```
 
 Cells discover new proteins by chance through mutations.
-In the function below all cells experience 0.001 random point mutations per nucleotide.
+In the function below all cells experience 0.001 random point mutations per base pair.
 40% of them will be indels.
 
 ```python
@@ -111,28 +111,27 @@ for _ in range(1000):
 
 ## Concepts
 
-In general, you create a [Chemistry][magicsoup.containers.Chemistry] object with molecules and reactions.
+You create a [Chemistry][magicsoup.containers.Chemistry] object with molecules and reactions.
 For molecules you can define things like energy, permeability, diffusivity.
-See the [Molecule][magicsoup.containers.Molecule] class for more info.
 Reactions are tuples of substrate and product molecule species.
+Then, a [World][magicsoup.world.World] object defines a world map with information about cells and molecule concentrations.
+By manipulating attributes and calling methods on [World][magicsoup.world.World] the simulation incrementally advances time.
+The [tutorials](./tutorials.md) section explains this with a simple simulation.
 
-Then, you create a [World][magicsoup.world.World] object which defines a world map.
-It carries all information about cells and molecule concentrations at a particular point in time.
-On this object there are some methods for advancing the simulation by one time step.
-By default molecule concentrations are in mM, energies are in J/mol, and a time step represents 1s.
+By manipulating [World][magicsoup.world.World] attributes different experimental setups can be simulated.
+These could be realistic like [batch culture](./tutorials.md#passaging-cells),
+a [Chemostat](./tutorials.md#manipulating-concentrations),
+[genetic engineering](./tutorials.md#generating-genomes), or completely fantastical.
+At any point in time any cell in the simulation can be [examined in detail](./tutorials.md#interpreting-genomes)
+inlcuding its heredity, genome, proteome, how its molecule contants and environment.
+Over time (steps) evolutionary processes can be analyzed in detail.
 
-For customizing a simulation you can interact with the working attributes of the [World][magicsoup.world.World] object.
-Like in the example above you could inspect the molecule concentrations in cells and
-base your decision to replicate or kill a cell on this information.
-You could also _e.g._ add molecules to the world by editing `world.molecule_map`,
-or edit cell genomes using [update_cells()][magicsoup.world.World.update_cells].
-The documentation of [World][magicsoup.world.World] describes all attributes that could be of interest.
-
-All major computations are done using [PyTorch](https://pytorch.org/) and can be moved to a GPU.
-[World][magicsoup.world.World] has an argument `device` to control that.
-Please see [CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html) on how to use it.
-And since this simulation already requires [PyTorch](https://pytorch.org/), it makes sense
-to use [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html) to interactively monitor your ongoing simulation.
+[Simulation mechanics](./mechanics.md) are inspired by procaryotes living in a 2D world.
+They try to be performant, yet meaningful, without posing any restrictions on how proteomes can evolve.
+All major computations are done using [PyTorch](https://pytorch.org/)
+and can be [moved to a GPU](./tutorials.md#gpu-and-tensors).
+Furthermore, [there are tools](./tutorials.md#managing-simulation-runs) for
+monitoring, checkpointing, managing simulations. 
 
 ## Installation
 

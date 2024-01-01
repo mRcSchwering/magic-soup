@@ -302,7 +302,7 @@ class CatalyticDomain(_Domain):
 
     Domain start and end describe the slice of the CDS python string.
     _I.e._ the index starts with 0, start is included, end is excluded.
-    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th nucleotide on the CDS.
+    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th base pair on the CDS.
     """
 
     def __init__(
@@ -390,7 +390,7 @@ class TransporterDomain(_Domain):
 
     Domain start and end describe the slice of the CDS python string.
     _I.e._ the index starts with 0, start is included, end is excluded.
-    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th nucleotide on the CDS.
+    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th base pair on the CDS.
     """
 
     def __init__(
@@ -466,7 +466,7 @@ class RegulatoryDomain(_Domain):
 
     Domain start and end describe the slice of the CDS python string.
     _I.e._ the index starts with 0, start is included, end is excluded.
-    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th nucleotide on the CDS.
+    _E.g._ `start=3`, `end=18` starts with the 4th and ends with the 18th base pair on the CDS.
     """
 
     def __init__(
@@ -547,7 +547,7 @@ class Protein:
 
     CDS start and end describe the slice of the genome python string.
     _I.e._ the index starts with 0, start is included, end is excluded.
-    _E.g._ `cds_start=2`, `cds_end=31` starts with the 3rd and ends with the 31st nucleotide on the genome.
+    _E.g._ `cds_start=2`, `cds_end=31` starts with the 3rd and ends with the 31st base pair on the genome.
 
     `is_fwd` describes whether the CDS is found on the forward (hypothetical 5'-3')
     or the reverse-complement (hypothetical 3'-5') side of the genome.

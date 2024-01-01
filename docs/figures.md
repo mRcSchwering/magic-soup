@@ -17,8 +17,8 @@ about how certain aspects play out
 
 _**1.1. Genome compositions at different genome sizes.**
 1000 random genomes of lengths 200, 500, 1000, or 2000 each were generated, transcribed, and translated.
-For every cell the number proteins per genome, domains per protein, and coding nucleotides per nucleotide were recorded.
-Coding nucleotides are nucleotides which are part of at least 1 domain.
+For every cell the number proteins per genome, domains per protein, and coding base pairs per base pair were recorded.
+Coding base pairs are base pairs which are part of at least 1 domain.
 Dashed lines with numbers describe medians.
 There were 3 start and 3 stop codons.
 Each domain type appeared with a frequency of 1% in all 2 codon tuples._
@@ -29,8 +29,8 @@ Each domain type appeared with a frequency of 1% in all 2 codon tuples._
 
 _**1.2. Genome compositions at different domain probabilities.**
 1000 random genomes of length 1000 with 2 codon domain type frequencies 0.1%, 1%, or 10% each were generated, transcribed, and translated.
-For every cell the number proteins per genome, domains per protein, and coding nucleotides per nucleotide were recorded.
-Coding nucleotides are nucleotides which are part of at least 1 domain.
+For every cell the number proteins per genome, domains per protein, and coding base pairs per base pair were recorded.
+Coding base pairs are base pairs which are part of at least 1 domain.
 Dashed lines with numbers describe medians.
 There were 3 start and 3 stop codons._
 
@@ -40,8 +40,8 @@ There were 3 start and 3 stop codons._
 
 _**1.3. Genome compositions at different start stop codon combinations.**
 1000 random genomes of length 1000 with combinations of 1 to 3 start and 1 to 3 stop codons each were generated, transcribed, and translated.
-For every cell the number proteins per genome, domains per protein, and coding nucleotides per nucleotide were recorded.
-Coding nucleotides are nucleotides which are part of at least 1 domain.
+For every cell the number proteins per genome, domains per protein, and coding base pairs per base pair were recorded.
+Coding base pairs are base pairs which are part of at least 1 domain.
 Dashed lines with numbers describe medians.
 Facetting labels on the right describe first the number of start codons, second the number of stop codons.
 Each domain type appeared with a frequency of 1% in all 2 codon tuples._
@@ -92,8 +92,8 @@ Upper row shows percentage of cells which experienced at least 1 mutation.
 Lower row shows similarity distributions of each cell to its unmutated genome.
 Similarity is based on the normalized Levenshtein distance.
 Rates are per base pair.
-Each point mutation has a 40% chance of creating an indel, a random single nucleotide substitution otherwise.
-Each indels indel has a 66.66% chance of being a deletion, a random single nucleotide insertion otherwise._
+Each point mutation has a 40% chance of creating an indel, a random single base pair substitution otherwise.
+Each indels indel has a 66.66% chance of being a deletion, a random single base pair insertion otherwise._
 
 <br/>
 

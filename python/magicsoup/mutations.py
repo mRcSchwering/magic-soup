@@ -5,12 +5,12 @@ def point_mutations(
     seqs: list[str], p: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66
 ) -> list[tuple[str, int]]:
     """
-    Add point mutations to a list of nucleotide sequences.
+    Add point mutations to a list of base pair sequences.
     Mutations are substitutions and indels.
 
     Arguments:
-        seqs: nucleotide sequences
-        p: probability of a mutation per nucleotide
+        seqs: base pair sequences
+        p: probability of a mutation per base pair
         p_indel: probability of any point mutation being an indel
                  (inverse probability of it being a substitution)
         p_del: probability of any indel being a deletion
@@ -31,13 +31,13 @@ def recombinations(
     seq_pairs: list[tuple[str, str]], p: float = 1e-7
 ) -> list[tuple[str, str, int]]:
     """
-    Add random recombinations to pairs of nucleotide sequences.
+    Add random recombinations to pairs of base pair sequences.
     The recombination happens by creating random strand breaks in the input sequence pairs
     and randomly re-joining them.
 
     Arguments:
-        seq_pairs: nucleotide sequence pairs
-        p: probability of a strand break per nucleotide
+        seq_pairs: base pair sequence pairs
+        p: probability of a strand break per base pair
 
     Returns:
         List of mutated sequence pairs and their indices.

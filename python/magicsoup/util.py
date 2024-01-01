@@ -34,7 +34,7 @@ def randstr(n: int = 12) -> str:
 
 def random_genome(s=500, excl: list[str] | None = None) -> str:
     """
-    Generate a random nucleotide sequence
+    Generate a random nucleotide sequence string
 
     Parameters:
         s: Length of genome in nucleotides or base pairs
@@ -43,7 +43,6 @@ def random_genome(s=500, excl: list[str] | None = None) -> str:
     Returns:
         Generated genome as string
 
-    The resulting genome is a string of all possible nucleotide letters.
     If `excl` is given, all sequences in `excl` will be removed.
     However, these sequences might still appear in the reverse-complement of
     the resulting genome.

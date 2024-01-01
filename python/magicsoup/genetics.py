@@ -17,7 +17,7 @@ def _get_n(p: float, s: int, name: str) -> int:
 
 class Genetics:
     """
-    Class holding logic about transcribing and translating nucleotide sequences.
+    Class holding logic about transcribing and translating nucleotide sequence pairs.
 
     Arguments:
         start_codons: Codons which start a coding sequence
@@ -53,12 +53,6 @@ class Genetics:
     my_genetics = Genetics(p_transp_dom=0.1, stop_codons=("TGA",))
     world.genetics = my_genetics
     ```
-
-    Changing these attributes has a large effect on the information content of genomes.
-    How many coding nucleotides are there per nucleotide?
-    What percentage of coding regions refers to domain type and specification?
-    How likely is it that a point mutation completely changes a protein?
-    On average how many domains are there per protein?
     """
 
     def __init__(
@@ -132,7 +126,7 @@ class Genetics:
         Translate all genomes into proteomes
 
         Arguments:
-            genomes: list of nucleotide sequences
+            genomes: list of base pair sequences
 
         Returns:
             List of proteomes. This is a list (proteomes) of list (proteins)
@@ -152,7 +146,7 @@ class Genetics:
 
         CDS start and end describe the slice of the genome python string.
         _I.e._ the index starts with 0, start is included, end is excluded.
-        _E.g._ `cds_start=2`, `cds_end=31` starts with the 3rd and ends with the 31st nucleotide on the genome.
+        _E.g._ `cds_start=2`, `cds_end=31` starts with the 3rd and ends with the 31st base pair on the genome.
 
         `is_fwd` describes whether the CDS is found on the forward (hypothetical 5'-3')
         or the reverse-complement (hypothetical 3'-5') side of the genome.

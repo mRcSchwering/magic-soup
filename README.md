@@ -69,7 +69,7 @@ world.spawn_cells(genomes=genomes)
 ```
 
 Cells discover new proteins by chance through mutations.
-In the function below all cells experience 0.001 random point mutations per nucleotide.
+In the function below all cells experience 0.001 random point mutations per base pair.
 40% of them will be indels.
 
 ```python
