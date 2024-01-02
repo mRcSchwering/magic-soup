@@ -16,9 +16,6 @@ _this_dir = Path(__file__).parent
 _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
 
 
-# TODO: index, README docs
-
-
 def _log_scalars(
     step_i: int, writer: SummaryWriter, world: ms.World, mol_2_idx: dict[str, int]
 ):

@@ -13,9 +13,6 @@ _MAX = 1e36
 _MIN = -1e36
 
 
-# TODO: Km distributions are odd
-
-
 class _HillMapFact:
     """
     Creates an object that maps tokens to 1, 2, 3, 4, 5
@@ -38,46 +35,6 @@ class _HillMapFact:
         numbers_map[3] = torch.argwhere(M == 3.0).flatten().tolist()
         numbers_map[5] = torch.argwhere(M == 5.0).flatten().tolist()
         return numbers_map
-
-
-class _CustomWeightMapFact:
-    """
-    Creates an object that maps tokens to a float
-    which is sampled from a population. The population is a
-    uniform [1,max_weight] distribution which is then extended
-    with its reciprocal
-    """
-
-    def __init__(
-        self,
-        max_token: int,
-        weight_range: tuple[float, float],
-        device: str = "cpu",
-        zero_value: float = torch.nan,
-    ):
-        min_w = min(weight_range)
-        max_w = max(weight_range)
-        pop = [random.uniform(1.0, max_w) for _ in range(max_token)]
-        pop.extend([1 / d for d in pop])
-        pop = [d for d in pop if min_w <= d <= max_w]
-
-        non_zero_weights = random.choices(pop, k=max_token)
-        weights = torch.tensor([zero_value] + non_zero_weights)
-        self.weights = weights.to(device=device, dtype=torch.float32)
-
-    def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        """t: long (c, p, d)"""
-        return self.weights[t]
-
-    def inverse(self) -> dict[float, list[int]]:
-        flt_map: dict[float, list[int]] = {}
-        M = self.weights.to("cpu")
-        for i in range(1, M.size(0)):
-            v = M[i].item()
-            if v not in flt_map:
-                flt_map[v] = []
-            flt_map[v].append(i)
-        return flt_map
 
 
 class _LogNormWeightMapFact:
@@ -456,7 +413,7 @@ class Kinetics:
         # idx3 is a 2-codon idx for vetors (n=4096)
         mol_2_mi = {d: i for i, d in enumerate(chemistry.molecules)}
 
-        self.km_map = _CustomWeightMapFact(
+        self.km_map = _LogNormWeightMapFact(
             max_token=scalar_enc_size,
             weight_range=km_range,
             device=device,
@@ -631,7 +588,7 @@ class Kinetics:
         Kmr_ds[Kmr_ds == 0.0] = torch.nan  # effectors introduce 0s
         Kmr = Kmr_ds.nanmean(dim=2).nan_to_num(0.0)  # (c,p,s)
 
-        # Kms of regulatory domains are already multiplied with Hill coefficients
+        # Kms of regulatory domains are already exponentiated with Hill coefficients
         self.Kmr[cell_idxs] = torch.pow(Kmr, A)
         self.A[cell_idxs] = A
 
