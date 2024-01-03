@@ -10,6 +10,8 @@ Some of the figures here are such kind of sanity checks
 On the other hand, some plots were just created out of curiousity
 about how certain aspects play out
 (_e.g._ [9. Survival and Replication Rate](#9-survival-and-replication-rate)).
+For details see the source code that generated each figure
+[here (github.com)](https://github.com/mRcSchwering/magic-soup/blob/main/docs/create_figures.py).
 
 ## 1. Genomes
 
