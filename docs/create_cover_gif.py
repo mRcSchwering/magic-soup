@@ -14,11 +14,15 @@ The cell maps show all cells, and the most abundant celllines only at a certain 
 5. Run for all steps
 6. Compress result gif using `gifsicle`
 7. Check how rendered gif looks in documentation
+8. (PyPI needs <5Mb, cut/compress further for PyPI)
 
 ```
 PYTHONPATH=./python python docs/create_cover_gif.py docs/runs/2023-12-21_10-31 --top-step 1000
-gifsicle -i image.gif --optimize=3 --colors 32 -o image_o3_32.gif
+gifsicle -i image.gif --optimize=3 --colors 32 -o animation.gif
 bash scripts/serve-docs.sh
+
+# optionally cut gif length
+gifsicle -U animation.gif `seq -f "#%g" 0 1 700` --optimize=3 -o 'animation[small].gif'
 ```
 """
 from pathlib import Path
