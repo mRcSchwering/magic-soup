@@ -15,7 +15,7 @@ Define a 2D world with molecules and reactions.
 Add a few cells and create evolutionary pressure by selectively replicating and killing them.
 Then run and see what random mutations can do.
 
-![random cells](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/docs/img/animation.gif)
+![random cells](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/docs/img/animation[small].gif)
 
 _Cell growth of 1000 cells with different genomes was simulated. Top row: Cell maps showing all cells (all) and the 3 fastest growing celllines (CL0-2). Middle and bottom rows: Development of total cell count and molecule concentrations over time._
 
