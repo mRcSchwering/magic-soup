@@ -492,13 +492,14 @@ class World:
         genomes, idxs = list(map(list, zip(*genome_idx_pairs)))
         self._update_cell_params(genomes=genomes, idxs=idxs)  # type: ignore
 
-    def kill_cells(self, cell_idxs: list[int]):
+    def kill_cells(self, cell_idxs: list[int] | None = None):
         """
         Remove existing cells.
         All lists and tensors referencing cells are updated.
 
         Parameters:
-            cell_idxs: Indexes of the cells that should die
+            cell_idxs: Indexes of the cells that should die.
+                `None` to kill all cells.
 
         Cells that are killed dump their molecule contents onto the pixel they used to live on.
 
@@ -507,6 +508,9 @@ class World:
         E.g. if there are 10 cells and you kill the cell with index 8 (the 9th cell),
         the cell that used to have index 9 (10th cell) will now have index 9.
         """
+        if cell_idxs is None:
+            cell_idxs = list(range(self.n_cells))
+
         if len(cell_idxs) == 0:
             return
 
@@ -535,17 +539,21 @@ class World:
 
         self.n_cells -= len(cell_idxs)
 
-    def move_cells(self, cell_idxs: list[int]):
+    def move_cells(self, cell_idxs: list[int] | None = None):
         """
         Move cells to a random position in their Moore's neighborhood.
         If every pixel in the cells' Moore neighborhood is occupied already
         the cell will not be moved.
 
         Parameters:
-            cell_idxs: Indexes of cells that should be moved
+            cell_idxs: Indexes of cells that should be moved.
+                `None` to move all cells.
 
         `world.cell_positions` and `world.cell_map` are updated.
         """
+        if cell_idxs is None:
+            cell_idxs = list(range(self.n_cells))
+
         if len(cell_idxs) == 0:
             return
 
@@ -564,18 +572,22 @@ class World:
         self.cell_map[new_pos[:, 0], new_pos[:, 1]] = True
         self.cell_positions[moved_idxs] = new_pos
 
-    def reposition_cells(self, cell_idxs: list[int]):
+    def reposition_cells(self, cell_idxs: list[int] | None = None):
         """
         Reposition cells randomly on cell map without changing them.
 
         Parameters:
-            cell_idxs: Indexes of cells that should be moved
+            cell_idxs: Indexes of cells that should be repositioned.
+                `None` to reposition all cells.
 
         Cells are removed from their current pixels on the cell map
         and repositioned randomly on any free pixel on the cell map.
         `world.cell_positions` and `world.cell_map` are updated.
         _I.e._ genomes, proteomes, cell molecules stay the same.
         """
+        if cell_idxs is None:
+            cell_idxs = list(range(self.n_cells))
+
         if len(cell_idxs) == 0:
             return
 
