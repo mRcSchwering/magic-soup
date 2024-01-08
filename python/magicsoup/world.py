@@ -166,7 +166,7 @@ class World:
 
         self.genetics = Genetics(start_codons=start_codons, stop_codons=stop_codons)
 
-        self.kinetics = Kinetics(
+        self.kinetics: Kinetics = Kinetics(
             chemistry=chemistry,
             abs_temp=abs_temp,
             device=self.device,

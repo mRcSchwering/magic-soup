@@ -1,34 +1,26 @@
 import random
+from typing import Protocol
 from magicsoup.constants import CODON_SIZE
 from magicsoup.containers import Molecule
 from magicsoup.util import closest_value, random_genome, round_down
 from magicsoup.world import World
 
 
-class _DomainFact:
-    """
-    Domain factory base.
-    All domain factories should inherit from this class.
-    """
+class DomainFactType(Protocol):
+    """Protocol for domain factories"""
 
-    def validate(
-        self,
-        world: World,  # pylint: disable=unused-argument
-    ):
-        raise NotImplementedError
+    def validate(self, world: World):
+        ...
 
-    def gen_coding_sequence(
-        self,
-        world: World,  # pylint: disable=unused-argument
-    ) -> str:
-        raise NotImplementedError
+    def gen_coding_sequence(self, world: World) -> str:
+        ...
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "_DomainFact":
-        raise NotImplementedError
+    def from_dict(cls, dct: dict) -> "DomainFactType":
+        ...
 
 
-class CatalyticDomainFact(_DomainFact):
+class CatalyticDomainFact:
     """
     Factory for generating nucleotide sequences with [CatalyticDomains][magicsoup.containers.CatalyticDomain].
 
@@ -128,7 +120,7 @@ class CatalyticDomainFact(_DomainFact):
         return cls(reaction=reaction, km=dct.get("km"), vmax=dct.get("vmax"))
 
 
-class TransporterDomainFact(_DomainFact):
+class TransporterDomainFact:
     """
     Factory for generating nucleotide sequences with [TransporterDomains][magicsoup.containers.TransporterDomain].
 
@@ -220,7 +212,7 @@ class TransporterDomainFact(_DomainFact):
         )
 
 
-class RegulatoryDomainFact(_DomainFact):
+class RegulatoryDomainFact:
     """
     Factory for generating nucleotide sequences with [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
 
@@ -350,7 +342,7 @@ class GenomeFact:
     def __init__(
         self,
         world: World,
-        proteome: list[list[_DomainFact]],
+        proteome: list[list[DomainFactType]],
         target_size: int | None = None,
     ):
         self.world = world
@@ -422,9 +414,9 @@ class GenomeFact:
         A protein dct representation is returned by
         [Protein.to_dict()][magicsoup.containers.Protein.to_dict].
         """
-        prots: list[list[_DomainFact]] = []
+        prots: list[list[DomainFactType]] = []
         for prot_dct in dcts:
-            doms: list[_DomainFact] = []
+            doms: list[DomainFactType] = []
             for dom_dct in prot_dct["domains"]:
                 dom_type = dom_dct["type"]
                 if dom_type == "C":

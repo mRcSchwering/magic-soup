@@ -1,4 +1,5 @@
 import warnings
+from typing import Protocol
 from collections import Counter
 from typing import TYPE_CHECKING
 import torch
@@ -265,24 +266,21 @@ class Chemistry:
         return f"{type(self).__name__}({','.join(args)})"
 
 
-class _Domain:
-    """
-    Base Domain. All Domains should inherit from this class.
-    """
+class DomainType(Protocol):
+    """Protocol for domains"""
 
-    def __init__(self, start: int, end: int):
-        self.start = start
-        self.end = end
+    start: int
+    end: int
 
     def to_dict(self) -> dict:
-        raise NotImplementedError
+        ...
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "_Domain":
-        raise NotImplementedError
+    def from_dict(cls, dct: dict) -> "DomainType":
+        ...
 
 
-class CatalyticDomain(_Domain):
+class CatalyticDomain:
     """
     Object describing a catalytic domain.
 
@@ -313,7 +311,8 @@ class CatalyticDomain(_Domain):
         start: int,
         end: int,
     ):
-        super().__init__(start=start, end=end)
+        self.start = start
+        self.end = end
         subs, prods = reaction
         self.substrates = subs
         self.products = prods
@@ -368,7 +367,7 @@ class CatalyticDomain(_Domain):
         return f"{subs_str} <-> {prods_str} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
-class TransporterDomain(_Domain):
+class TransporterDomain:
     """
     Object describing a transporter domain.
 
@@ -402,7 +401,8 @@ class TransporterDomain(_Domain):
         start: int,
         end: int,
     ):
-        super().__init__(start=start, end=end)
+        self.start = start
+        self.end = end
         self.molecule = molecule
         self.km = km
         self.vmax = vmax
@@ -445,7 +445,7 @@ class TransporterDomain(_Domain):
         return f"{self.molecule} {sign} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
-class RegulatoryDomain(_Domain):
+class RegulatoryDomain:
     """
     Object describing a regulatory domain.
 
@@ -479,7 +479,8 @@ class RegulatoryDomain(_Domain):
         start: int,
         end: int,
     ):
-        super().__init__(start=start, end=end)
+        self.start = start
+        self.end = end
         self.effector = effector
         self.km = km
         self.hill = int(hill)
@@ -557,7 +558,7 @@ class Protein:
     """
 
     def __init__(
-        self, domains: list[_Domain], cds_start: int, cds_end: int, is_fwd: bool
+        self, domains: list[DomainType], cds_start: int, cds_end: int, is_fwd: bool
     ):
         self.domains = domains
         self.n_domains = len(domains)
@@ -582,7 +583,7 @@ class Protein:
         `type` is domain type `"C"` (catalytic), `"T"` (transporter), or
         `"R"` (regulatory) and `spec` is a dict with kwargs for each domain's `from_dict()`.
         """
-        doms: list[_Domain] = []
+        doms: list[DomainType] = []
         for dom in dct["domains"]:
             dom_type = dom["type"]
             dom_spec = dom["spec"]

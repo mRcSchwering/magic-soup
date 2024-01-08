@@ -109,9 +109,9 @@ def mutations(device: str, n: int, s: int):
 
 
 def get_test(device: str, n: int, s: int):
-    proteome = []
+    proteome: list[list[ms.DomainFactType]] = []
     for react in CHEMISTRY.reactions:
-        p = [
+        p: list[ms.DomainFactType] = [
             ms.CatalyticDomainFact(reaction=react),
             ms.RegulatoryDomainFact(effector=react[0][0], is_transmembrane=False),
         ]
