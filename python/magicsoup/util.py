@@ -32,7 +32,7 @@ def randstr(n: int = 12) -> str:
     )
 
 
-def random_genome(s=500, excl: list[str] | None = None) -> str:
+def random_genome(s: int = 500, excl: list[str] | None = None) -> str:
     """
     Generate a random nucleotide sequence string
 

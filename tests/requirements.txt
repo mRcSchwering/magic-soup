@@ -1,7 +1,8 @@
 # necessary for development and testing
 maturin>=1.4.0,<2.0.0
-mkdocs>=1.4.2,<1.5.0
-mkdocstrings[python]>=0.9.0,<0.10.0
+mkdocstrings_python>=1.8.0,<2.0.0
+mkdocs>=1.5.3,<1.6.0
+mkdocstrings[python]>=0.24.0,<1.0.0
 Pygments>=2.14.0,<2.15.0
 python-markdown-math>=0.8,<0.9
 pytest>=7.2.0,<8.0.0
