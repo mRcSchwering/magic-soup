@@ -1,4 +1,5 @@
 import random
+from collections import Counter
 from typing import Protocol
 from magicsoup.constants import CODON_SIZE
 from magicsoup.containers import Molecule
@@ -119,6 +120,29 @@ class CatalyticDomainFact:
         )
         return cls(reaction=reaction, km=dct.get("km"), vmax=dct.get("vmax"))
 
+    def __repr__(self) -> str:
+        ins = ",".join(str(d) for d in self.substrates)
+        outs = ",".join(str(d) for d in self.products)
+        args = [f"{ins}<->{outs}"]
+        if self.km is not None:
+            args.append(f"Km={self.km:.2e}")
+        if self.vmax is not None:
+            args.append(f"Vmax={self.vmax:.2e}")
+        return f"CatalyticDomain({','.join(args)})"
+
+    def __str__(self) -> str:
+        subs_cnts = Counter(str(d) for d in self.substrates)
+        prods_cnts = Counter([str(d) for d in self.products])
+        subs_str = " + ".join([f"{d} {k}" for k, d in subs_cnts.items()])
+        prods_str = " + ".join([f"{d} {k}" for k, d in prods_cnts.items()])
+        optargs = []
+        if self.km is not None:
+            optargs.append(f"Km {self.km:.2e}")
+        if self.vmax is not None:
+            optargs.append(f"Vmax {self.vmax:.2e}")
+        args = f"{subs_str} <-> {prods_str}"
+        return args if len(optargs) == 0 else args + " | " + " ".join(optargs)
+
 
 class TransporterDomainFact:
     """
@@ -210,6 +234,28 @@ class TransporterDomainFact:
             vmax=dct.get("vmax"),
             is_exporter=dct.get("is_exporter"),
         )
+
+    def __repr__(self) -> str:
+        args = [str(self.molecule)]
+        if self.km is not None:
+            args.append(f"Km={self.km:.2e}")
+        if self.vmax is not None:
+            args.append(f"Vmax={self.vmax:.2e}")
+        if self.is_exporter is not None:
+            args.append("exporter" if self.is_exporter else "importer")
+        return f"TransporterDomain({','.join(args)})"
+
+    def __str__(self) -> str:
+        optargs = []
+        if self.km is not None:
+            optargs.append(f"Km {self.km:.2e}")
+        if self.vmax is not None:
+            optargs.append(f"Vmax {self.vmax:.2e}")
+        sign = "transporter"
+        if self.is_exporter is not None:
+            sign = "exporter" if self.is_exporter else "importer"
+        args = f"{self.molecule} {sign}"
+        return args if len(optargs) == 0 else args + " | " + " ".join(optargs)
 
 
 class RegulatoryDomainFact:
@@ -308,6 +354,30 @@ class RegulatoryDomainFact:
             is_inhibiting=dct.get("is_inhibiting"),
             is_transmembrane=dct["is_transmembrane"],
         )
+
+    def __repr__(self) -> str:
+        args = [f"{self.effector}"]
+        if self.km is not None:
+            args.append(f"Km={self.km:.2e}")
+        if self.hill is not None:
+            args.append(f"hill={self.hill}")
+        args.append("transmembrane" if self.is_transmembrane else "cytosolic")
+        if self.is_inhibiting is not None:
+            args.append("inhibiting" if self.is_inhibiting else "activating")
+        return f"ReceptorDomain({','.join(args)})"
+
+    def __str__(self) -> str:
+        loc = "[e]" if self.is_transmembrane else "[i]"
+        eff = "effector"
+        if self.is_inhibiting is not None:
+            eff = " inhibitor" if self.is_inhibiting else " activator"
+        args = f"{self.effector}{loc} {eff}"
+        optargs = []
+        if self.km is not None:
+            optargs.append(f"Km {self.km:.2e}")
+        if self.hill is not None:
+            optargs.append(f"Hill {self.hill}")
+        return args if len(optargs) == 0 else args + " | " + " ".join(optargs)
 
 
 class GenomeFact:
