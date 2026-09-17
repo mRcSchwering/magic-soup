@@ -1,41 +1,41 @@
-[build-system]
-requires = ["maturin>=1,<2"]
-build-backend = "maturin"
-
 [project]
 name = "magicsoup"
-version = "1.0.5"
-authors = [{ name="Marc", email="schweringmarc01@gmail.com" }]
-description = "Simulation for cell metabolic and transduction pathway evolution"
+version = "2.0.0"
+description = "MagicSoup is a game that simulates cell metabolic and transduction pathway evolution. Define a 2D world with certain molecules and reactions. Add a few cells and create evolutionary pressure by selectively replicating and killing them. Then run and see what random mutations can do."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
-  "numpy>=1.24.0,<1.27.0",
-  "torch>=2.0.0,<2.2.0"  # also noted in "Installation" docs
-]
-classifiers = [
-    "Environment :: Console",
-    "Environment :: GPU",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
-    "Natural Language :: English",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Topic :: Education",
-    "Topic :: Games/Entertainment",
-    "Topic :: Scientific/Engineering",
-    "Typing :: Typed",
+  "numpy>=1.24.0,<1.27.0", # CPU processing
+  "torch>=2.0.0,<2.2.0",   # GPU processing
 ]
 
-[project.urls]
-"Documentation" = "https://magic-soup.readthedocs.io/"
-"Homepage" = "https://github.com/mRcSchwering/magic-soup"
-"Bug Tracker" = "https://github.com/mRcSchwering/magic-soup/issues"
-
-[tool.maturin]
-python-source = "python"  # python source
-module-name = "magicsoup._lib"  # python module name
-sdist-include = ["LICENSE", "README.md"]  # source distro files
+[dependency-groups]
+tests = [
+  "maturin>=1.4.0,<2.0.0",               # build and test python-rust packages
+  "mkdocs>=1.5.3,<1.6.0",                # make documentation
+  "mkdocstrings_python>=1.8.0,<2.0.0",   # make documentation from docstrings
+  "mkdocstrings[python]>=0.24.0,<1.0.0", # documentation (necessary?)
+  "Pygments>=2.14.0,<2.15.0",            # syntax highlighting
+  "python-markdown-math>=0.8,<0.9",      # math in markdown
+  "pytest>=7.2.0,<8.0.0",                # testing
+  "plotnine>=0.10.0,<0.11.0",            # plotting
+  "ipykernel>=6.22.0,<7.0.0",            # ipynb
+  "tensorboard>=2.12.0,<3.0.0",          # watching simulation
+  "Levenshtein>=0.21.1,<0.22.0",         # distance
+]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+pythonpath = [
+  "./python", # Needed to resolve python package
+]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+
+[tool.pylint.main]
+init-hook = 'import sys; sys.path.append("python")'
+
+[tool.mypy]
+mypy_path = [
+  "./python", # Needed to resolve python package
+]
+namespace_packages = false
+disable_error_code = "import-untyped"
