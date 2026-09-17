@@ -150,10 +150,12 @@ $$
 
 with
 
+$$
 \begin{aligned}
 v_{max,f} &= k_2 [E_{total}]      && K_{m,f} = \frac{k_{-1} + k_2}{k_1}    \\
 v_{max,b} &= k_{-1} [E_{total}]   && K_{m,b} = \frac{k_{-1} + k_2}{k_{-2}}
 \end{aligned}
+$$
 
 where velocity $v$ is the change in $[P]$ over time,
 $[E_{total}]$ is the concentration of total enzyme ($E$ and $ES$),
