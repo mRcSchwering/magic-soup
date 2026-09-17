@@ -202,19 +202,17 @@ Actual values for $v_{max}$, $K_{m,f}$, $K_{m,b}$ are derived from the domain sp
 One part of of the domain specification encodes maximum velocity $v_{max}$.
 Another part encodes affinity $K_m$ from which $K_{m,f}$ and $K_{m,b}$ are derived.
 
-\[
-K_{m,f} =
-\begin{cases}
-K_m,             & \text{if $K_e \ge 1$} \\
-\frac{K_m}{K_e}, & \text{if $K_e < 1$}
+$$
+K_{m,f} = \begin{cases}
+K_m,             & \text{if } K_e \ge 1 \\
+\frac{K_m}{K_e}, & \text{if } K_e < 1
 \end{cases}
 \text{  ,  }
-K_{m,b} =
-\begin{cases}
-K_e K_m,  & \text{if $K_e \ge 1$} \\
-K_m,      & \text{if $K_e < 1$}
+K_{m,b} = \begin{cases}
+K_e K_m,  & \text{if } K_e \ge 1 \\
+K_m,      & \text{if } K_e < 1
 \end{cases}
-\]
+$$
 
 In addition, a protein can contain
 regulatory domains which regulate the protein [non-competitively](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
@@ -233,16 +231,11 @@ Proteins without regulatory domains are always active.
 With this, the final velocity of a protein in a cell is modeled as
 
 $$
-v = v_{cat} v_{reg} \text{ if any } h_l \ne 0 \text{ else } v = v_{cat}
-$$
-
-\[
-v =
-\begin{cases}
-v_{cat} v_{reg},  & \text{if any $h_l \ne 0$} \\
-\v_{cat},         & \text{otherwise}
+v = \begin{cases}
+  v_{cat} v_{reg},     & \text{any } h_l \ne 0 \\
+  v_{cat},             & \text{otherwise}
 \end{cases}
-\]
+$$
 
 Some kinetics examples are given in [figures 6](./figures.md#6-simple-reaction-kinetics).
 
