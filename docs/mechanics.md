@@ -67,7 +67,7 @@ _E.g._ there is no transcriptional and post-transcriptional regulation.
 Abundance, location, and efficiency of CDSs are not taken into consideration.
 Yet still this simple genetic setup can already create complex protein networks
 with hubs, feedback loops, and cascades.
-Some example transcriptomes and biochemical patterns are shown in 
+Some example transcriptomes and biochemical patterns are shown in
 [figures 2](./figures.md#2-transcriptomes) and [figures 7](./figures.md#7-biochemical-patterns).
 
 
@@ -83,7 +83,7 @@ They are all reversible (see [Kinetics](#kinetics) for details).
 Here, the simulation takes [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy) as an analogy:
 
 $$
-\Delta G_0 = \sum^{products}{E_{P,j}^{n_j}} - \sum^{substrates}{E_{S,i}^{n_i}}
+\Delta G_0 = \sum^{products}{n_j E_{P,j}} - \sum^{substrates}{n_i E_{S,i}}
 $$
 
 where $\Delta G_0$ is the standard Gibbs free energy of the reaction,
@@ -115,7 +115,7 @@ and $A + D \rightleftharpoons B + C$ if not.
 ![reaction equilibrium](./img/reaction_equilibrium.png)
 
 _Uncoupled and coupled catalysis over time.
-Molecule concentrations inside a cell while it catalyzes 3A $\rightleftharpoons$ C | -10 kJ 
+Molecule concentrations inside a cell while it catalyzes 3A $\rightleftharpoons$ C | -10 kJ
 and A + B $\rightleftharpoons$ C | 5 kJ each step.
 Left shows a cell with a single protein with 2 domains which are energetically coupled
 as 4A + B $\rightleftharpoons$ 2C | -5 kJ.
@@ -144,15 +144,15 @@ Where $k_1$, $k_{-1}$, $k_2$, $k_{-2}$ are the forward and reverse rates for the
 This can be described with the reversible Michaelis-Menten equation
 
 $$
-v = \frac{d[P]}{dt} =
-\frac{v_{max,f} \frac{[S]}{K_{m,1}} - v_{max,b} \frac{[P]}{K_{m,2}}}{1 + \frac{[S]}{K_{m,1}} + \frac{[P]}{K_{m,2}}}
+v_{\text{S} \rightleftharpoons \text{P}} = \frac{d[P]}{dt} =
+\frac{v_{max,f} \frac{[S]}{K_{m,f}} - v_{max,b} \frac{[P]}{K_{m,b}}}{1 + \frac{[S]}{K_{m,f}} + \frac{[P]}{K_{m,b}}}
 $$
 
 with
 
 \begin{aligned}
-v_{max,f} &= k_2 [E_{total}]      && K_{m,1} = \frac{k_{-1} + k_2}{k_1}    \\
-v_{max,b} &= k_{-1} [E_{total}]   && K_{m,2} = \frac{k_{-1} + k_2}{k_{-2}}
+v_{max,f} &= k_2 [E_{total}]      && K_{m,f} = \frac{k_{-1} + k_2}{k_1}    \\
+v_{max,b} &= k_{-1} [E_{total}]   && K_{m,b} = \frac{k_{-1} + k_2}{k_{-2}}
 \end{aligned}
 
 where velocity $v$ is the change in $[P]$ over time,
@@ -160,81 +160,90 @@ $[E_{total}]$ is the concentration of total enzyme ($E$ and $ES$),
 $[S]$ is the substrate concentration,
 $[P]$ is the product concentration.
 
-In the simulation S and P can be molecules, and the enzyme is a protein with some functional domains.
+In the simulation S and P can be molecules, and the enzyme is a protein with at least one functional domain.
 For simplification $[E_{total}]$ is assumed to be constant for all cells and proteins,
 and $v_{max,f} = v_{max,b} = v_{max}$.
 The reversible Michaelis-Menten equation can then be re-written as
 
 $$
-v = \frac{d[P]}{dt} =
-v_{max} \frac{\frac{[S]}{K_{m,1}} - \frac{[P]}{K_{m,2}}}{1 + \frac{[S]}{K_{m,1}} + \frac{[P]}{K_{m,2}}}
+v_{\text{S} \rightleftharpoons \text{P}} = \frac{d[P]}{dt} =
+v_{max} \frac{\frac{[S]}{K_{m,f}} - \frac{[P]}{K_{m,b}}}{1 + \frac{[S]}{K_{m,f}} + \frac{[P]}{K_{m,b}}}
 $$
 
-$v_{max}$ defines the maximum velocity of the protein.
-$K_{m,1}$ and $K_{m,2}$ describe reciprocal affinities to S and P.
-In general a protein can consist of catalytic, transporter, and regulatory domains (see [Genetics](#genetics)).
-Transporters are treated as catalytic domains which convert a molecule species from its intracellular version to its extracellular one and _vice versa_.
-Regulatory domains regulate the protein [non-competitively](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
-The final velocity of a protein is
+$v_{max}$ defines the maximum velocity of this protein.
+$K_{m,f}$ and $K_{m,b}$ describe reciprocal affinities to S and P.
+
+A protein can contain many functional domains catalyzing various reactions (see [Genetics](#genetics)). Transporters are treated as catalytic domains which convert a molecule species from its intracellular version to its extracellular one and _vice versa_. The catalytic velocity of one protein can be described as
 
 $$
-v_{final} = a_{reg} v_{max} \frac{X_S - X_P}{1 + X_S + X_P}
+v_{cat} = v_{max} \frac{a_f - a_b}{1 + a_f + a_b}
 $$
 
 with
 
 $$
-X_S = 
-\frac{1}{K_{m,1}} \prod^{\text{substrates}} [S]_i^{n_i}
+a_f = \frac{1}{K_{m,f}} \prod^{\text{substrates}} [S]_i^{n_i}
 \text{  ,  }
-X_P = \frac{1}{K_{m,2}} \prod^{\text{products}} [P]_j^{n_j}
+a_b = \frac{1}{K_{m,b}} \prod^{\text{products}} [P]_j^{n_j}
 $$
 
-where $a_{reg} \in [0;1]$ is allosteric regulation (details below),
-$[S]_i$ is the concentration of substrate $i$ with stoichiometric coefficient $n_i$,
-and $[P]_j$ is the concentration of product $j$ with stoichiometric coefficient $n_j$.
-Concentration change over time of any molecule species can be calculated by multiplying its 
-[stoichiometric number](https://en.wikipedia.org/wiki/Stoichiometry#Stoichiometric_coefficient_and_stoichiometric_number)
-(using IUPAC nomenclatur) with $v_{final}$.
+where $[S]_i$ is the concentration of substrate $i$ with stoichiometric coefficient $n_i$, and $[P]_j$ is the concentration of product $j$ with stoichiometric coefficient $n_j$.
 Over time the reaction will approach an equilibrium state
-where $v_{final} = 0$, and its [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) 
+where $v_{cat} = 0$, and its [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient)
 $Q = K_e$ (the [equilibirum constant](https://en.wikipedia.org/wiki/Equilibrium_constant)):
 
 $$
-\lim_{t \to \infty} Q = \frac{X_P}{X_S} = \frac{K_{m,1}}{K_{m,2}} = K_e
+\lim_{t \to \infty} Q = \frac{a_b}{a_f} = \frac{K_{m,f}}{K_{m,b}} = K_e
 $$
 
-Thus, $K_e = \frac{K_{m,1}}{K_{m,2}}$ defines in which direction the reaction will proceed.
+Thus, $K_e = \frac{K_{m,f}}{K_{m,b}}$ defines in which direction the reaction will proceed.
 As described in [Chemistry](#chemistry) $K_e$ is calculated from an analogy of the reaction's Gibbs free energy.
-Actual values for $v_{max}$, $K_{m,1}$, $K_{m,2}$ are derived from the domain specifications (see [Genetics](#genetics)).
+Actual values for $v_{max}$, $K_{m,f}$, $K_{m,b}$ are derived from the domain specifications (see [Genetics](#genetics)).
 One part of of the domain specification encodes maximum velocity $v_{max}$.
-Another part encodes affinity $K_m$ from which $K_{m,1}$ and $K_{m,2}$ are derived.
+Another part encodes affinity $K_m$ from which $K_{m,f}$ and $K_{m,b}$ are derived.
 
 \[
-K_{m,1} =
+K_{m,f} =
 \begin{cases}
 K_m,             & \text{if $K_e \ge 1$} \\
 \frac{K_m}{K_e}, & \text{if $K_e < 1$}
 \end{cases}
 \text{  ,  }
-K_{m,2} =
+K_{m,b} =
 \begin{cases}
 K_e K_m,  & \text{if $K_e \ge 1$} \\
 K_m,      & \text{if $K_e < 1$}
 \end{cases}
 \]
 
-Allosteric regulation $a_{reg}$ with effector molecules A is modeled as
+In addition, a protein can contain
+regulatory domains which regulate the protein [non-competitively](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
+Allosteric regulation $v_{reg}$ with effector molecules A is modeled as
 
 $$
-a_{reg} = \prod^{\text{effectors}} \frac{[A]_l^{h_l}}{[A]_l^{h_l} + K_{a,l}^{h_l}}
+v_{reg} = \prod^{\text{effectors}} \frac{[A]_l^{h_l}}{[A]_l^{h_l} + K_{a,l}^{h_l}}
 $$
 
 where $[A]_l$ is the concentration of effector molecule $l$,
 $h_l$ is the hill coefficient,
 and $K_{a,l}$ is the effector concentration producing half occupation.
 $h_l > 0$ for activating effectors, $h_l < 0$ for inhibiting effectors.
-Proteins without regulatory domains are always allowed to be active.
+Proteins without regulatory domains are always active.
+
+With this, the final velocity of a protein in a cell is modeled as
+
+$$
+v = v_{cat} v_{reg} \text{ if any } h_l \ne 0 \text{ else } v = v_{cat}
+$$
+
+\[
+v =
+\begin{cases}
+v_{cat} v_{reg},  & \text{if any $h_l \ne 0$} \\
+\v_{cat},         & \text{otherwise}
+\end{cases}
+\]
+
 Some kinetics examples are given in [figures 6](./figures.md#6-simple-reaction-kinetics).
 
 When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
@@ -247,5 +256,3 @@ All defaults were chosen with some assumptions in mind:
 (1) molecule numbers (such as in `world.molecule_map`) represent mM,
 (2) a time step represents 1 second,
 (3) molecule energies represent Joules.
-
-
