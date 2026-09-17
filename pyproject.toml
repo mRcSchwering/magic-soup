@@ -1,28 +1,45 @@
+[build-system]
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
+
 [project]
-name = "magicsoup"
+name = "magicsoup" # as shown on PyPI (https://pypi.org/project/magicsoup/)
 version = "2.0.0"
 description = "MagicSoup is a game that simulates cell metabolic and transduction pathway evolution. Define a 2D world with certain molecules and reactions. Add a few cells and create evolutionary pressure by selectively replicating and killing them. Then run and see what random mutations can do."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "numpy>=1.24.0,<1.27.0", # CPU processing
-  "torch>=2.0.0,<2.2.0",   # GPU processing
+  "numpy>=2,<3",    # CPU processing  (necessary?)
+  "torch>=2.11,<3", # CPU processing
 ]
 
 [dependency-groups]
 tests = [
-  "maturin>=1.4.0,<2.0.0",               # build and test python-rust packages
+  "maturin>=1,<2",                       # build and test python-rust packages
   "mkdocs>=1.5.3,<1.6.0",                # make documentation
   "mkdocstrings_python>=1.8.0,<2.0.0",   # make documentation from docstrings
   "mkdocstrings[python]>=0.24.0,<1.0.0", # documentation (necessary?)
   "Pygments>=2.14.0,<2.15.0",            # syntax highlighting
   "python-markdown-math>=0.8,<0.9",      # math in markdown
-  "pytest>=7.2.0,<8.0.0",                # testing
-  "plotnine>=0.10.0,<0.11.0",            # plotting
-  "ipykernel>=6.22.0,<7.0.0",            # ipynb
-  "tensorboard>=2.12.0,<3.0.0",          # watching simulation
-  "Levenshtein>=0.21.1,<0.22.0",         # distance
+  "pytest>=9,<10",                       # testing
+  "plotnine>=0,<1",                      # plotting
+  "tensorboard>=2,<3",                   # watching simulation in browser
+  "Levenshtein>=0,<1",                   # Levenshtein distance
+  "mypy>=2,<3",                          # static type checking
 ]
+
+[tool.maturin]
+module-name = "magicsoup._lib"       # extension as imported from python
+python-source = "python"             # source directory for python package
+features = ["pyo3/extension-module"] # build as python extension module
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = [

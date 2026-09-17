@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# installs all dependencies for local development and tests
+# Installs all dependencies for local development and tests
 # (project, dev, others)
 #
-uv sync --all-groups "$@"
+#   bash scripts/install.sh --no-install-project  # only install python deps
+#
+uv sync --all-groups "$@" 

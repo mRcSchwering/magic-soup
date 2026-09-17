@@ -1,9 +1,0 @@
-name: magicsoup_dev
-
-dependencies:
-  - python=3.10
-  - pip
-  - pip:
-      - mypy
-      - -r python/requirements.txt
-      - -r tests/requirements.txt
