@@ -99,12 +99,15 @@ def test_generate_correct_genome():
                         has_ckij = True
                     elif subs == [_MI] and prods == [_MJ]:
                         has_cij = True
-                if isinstance(dom, ms.TransporterDomain):
-                    if dom.molecule == _MI:
-                        has_ti = True
-                if isinstance(dom, ms.RegulatoryDomain):
-                    if dom.effector == _MK and dom.is_inhibiting and dom.hill == 3:
-                        has_rk = True
+                if isinstance(dom, ms.TransporterDomain) and dom.molecule == _MI:
+                    has_ti = True
+                if (
+                    isinstance(dom, ms.RegulatoryDomain)
+                    and dom.effector == _MK
+                    and dom.is_inhibiting
+                    and dom.hill == 3
+                ):
+                    has_rk = True
 
             if has_ckij and has_cij:
                 has_p0 = True

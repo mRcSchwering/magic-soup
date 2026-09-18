@@ -168,14 +168,14 @@ def _plot_random_splits(
 
         kwargs = {"step": 0, "split": split_ratio}
         for n_mol in n_mols:
-            records.append({**kwargs, "[X]": n_mol, "cells": len(X[X == n_mol])})
+            records.append({**kwargs, "[X]": n_mol, "cells": len(X[n_mol == X])})
 
         for step in range(nsteps):
             kwargs = {"step": step, "split": split_ratio}
             if len(X) > thresh:
                 for n_mol in n_mols:
                     records.append(
-                        {**kwargs, "[X]": n_mol, "cells": len(X[X == n_mol])}
+                        {**kwargs, "[X]": n_mol, "cells": len(X[n_mol == X])}
                     )
                 X = random_split(X, split_ratio)
 
@@ -224,14 +224,14 @@ def _plot_biased_splits(
 
         kwargs = {"step": 0, "bias": bias}
         for n_mol in n_mols:
-            records.append({**kwargs, "[X]": n_mol, "cells": len(X[X == n_mol])})
+            records.append({**kwargs, "[X]": n_mol, "cells": len(X[n_mol == X])})
 
         for step in range(nsteps):
             kwargs = {"step": step, "bias": bias}
             if len(X) > thresh:
                 for n_mol in n_mols:
                     records.append(
-                        {**kwargs, "[X]": n_mol, "cells": len(X[X == n_mol])}
+                        {**kwargs, "[X]": n_mol, "cells": len(X[n_mol == X])}
                     )
                 X = biased_split(X, bias)
 

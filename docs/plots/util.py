@@ -37,7 +37,7 @@ def generate_cell(
         found_prots = [False] * n_prots
         for i, dom_counts in enumerate(prot_dom_counts):
             for prot in cell.proteome:
-                found_doms = {d: False for d in dom_counts}
+                found_doms = dict.fromkeys(dom_counts, False)
                 for domtype, target in dom_counts.items():
                     if sum(isinstance(d, domtype) for d in prot.domains) == target:
                         found_doms[domtype] = True

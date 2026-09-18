@@ -22,14 +22,14 @@ def _plot_constant_distributions(gsize=1000, ncells=1000):
     records = []
     for d in vmaxs:
         records.append({"value": d, "variable": "Vmax", "scale": "linear"})
-        records.append({"value": math.log(d, 10), "variable": "Vmax", "scale": "log10"})
+        records.append({"value": math.log10(d), "variable": "Vmax", "scale": "log10"})
     for a, b in zip(kmfs, kmbs):
         d = min(a, b)
         records.append({"value": d, "variable": "Km", "scale": "linear"})
-        records.append({"value": math.log(d, 10), "variable": "Km", "scale": "log10"})
+        records.append({"value": math.log10(d), "variable": "Km", "scale": "log10"})
     for d in kmrs:
         records.append({"value": d, "variable": "Ka", "scale": "linear"})
-        records.append({"value": math.log(d, 10), "variable": "Ka", "scale": "log10"})
+        records.append({"value": math.log10(d), "variable": "Ka", "scale": "log10"})
     world.kill_cells(cell_idxs=list(range(world.n_cells)))
     df = pd.DataFrame.from_records(records)
 

@@ -88,7 +88,7 @@ class Molecule:
     Thus, a value of 1.0 means within one time step this molecule species spreads evenly between molecule map and cell.
     """
 
-    _instances: dict[str, "Molecule"] = {}
+    _instances: dict[str, "Molecule"] = {}  # noqa: RUF012
 
     def __new__(
         cls,
@@ -272,12 +272,10 @@ class DomainType(Protocol):
     start: int
     end: int
 
-    def to_dict(self) -> dict:
-        ...
+    def to_dict(self) -> dict: ...
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "DomainType":
-        ...
+    def from_dict(cls, dct: dict) -> "DomainType": ...
 
 
 class CatalyticDomain:

@@ -32,10 +32,11 @@ dev = [
   "maturin>=1,<2",     # build and test python-rust packages
   "pytest>=9,<10",     # testing
   "mypy>=2,<3",        # static type checking
+  "ruff>=0,<1",        # linting
+  "pylint>=4,<5",      # linting
   "plotnine>=0,<1",    # plotting
   "tensorboard>=2,<3", # watching simulation in browser
   "Levenshtein>=0,<1", # Levenshtein distance
-  "ruff",
 ]
 docs = [
   "mkdocs>=1,<2",               # make documentation
@@ -66,6 +67,10 @@ markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 [tool.pylint.main]
 init-hook = 'import sys; sys.path.append("python")'
+extension-pkg-allow-list = "magicsoup._lib"
+
+[tool.pylint.messages_control]
+disable = ["C", "R"]
 
 [tool.mypy]
 mypy_path = [

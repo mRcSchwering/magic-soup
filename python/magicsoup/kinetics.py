@@ -203,7 +203,7 @@ class _ReactionMapFact(_VectorMapFact):
                 t[molmap[sub]] -= 1
             for prod in prods:
                 t[molmap[prod]] += 1
-            idxs = torch.argwhere((M == t).all(dim=1)).flatten().tolist()
+            idxs = torch.argwhere((t == M).all(dim=1)).flatten().tolist()
             react_map[(tuple(subs), tuple(prods))] = idxs
         return react_map
 

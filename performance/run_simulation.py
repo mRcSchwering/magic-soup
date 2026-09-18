@@ -3,7 +3,7 @@ Dummy run to test simulation performance in realistic environment.
 For local python package:
 
     PYTHONPATH=./python python performance/run.py --help
-    
+
 For installed python package:
 
     python run_simulation.py --help
@@ -19,6 +19,7 @@ Last runs:
 - 2023-11-21 EC2 GPU: 0.05s / 1k cells, 0.35s / 40k cells (0.30s activity, 0.03 mutate genomes, 0.08 replicate peak)
 - 2023-12-19 EC2 GPU: 0.03s / 1k cells, 0.30s / 40k cells (0.25s activity, 0.03 mutate genomes, 0.05 replicate peak)
 """
+
 import datetime as dt
 import time
 from argparse import ArgumentParser, Namespace
@@ -31,7 +32,7 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from torch.utils.tensorboard import SummaryWriter
 
 _this_dir = Path(__file__).parent
-_now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
+_now = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d_%H-%M")
 
 
 @contextmanager

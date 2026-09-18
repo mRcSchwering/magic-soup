@@ -38,7 +38,7 @@ def test_codons(n: int):
     assert all(len(d) == n * CODON_SIZE for d in res)
     assert len(res) == (n_codons - len(excl_codons)) ** n
     for seq in res:
-        codons = set(seq[d : d + CODON_SIZE] for d in range(0, len(seq), CODON_SIZE))
+        codons = {seq[d : d + CODON_SIZE] for d in range(0, len(seq), CODON_SIZE)}
         assert len(set(codons) & set(excl_codons)) == 0
 
     excl_codons.append("AAA")
@@ -47,7 +47,7 @@ def test_codons(n: int):
     assert all(len(d) == n * CODON_SIZE for d in res)
     assert len(res) == (n_codons - len(excl_codons)) ** n
     for seq in res:
-        codons = set(seq[d : d + CODON_SIZE] for d in range(0, len(seq), CODON_SIZE))
+        codons = {seq[d : d + CODON_SIZE] for d in range(0, len(seq), CODON_SIZE)}
         assert len(set(codons) & set(excl_codons)) == 0
 
 

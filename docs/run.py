@@ -4,6 +4,7 @@ Run simple simulation to create data for visualizations
     PYTHONPATH=./python python docs/run.py --help
 
 """
+
 import datetime as dt
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
@@ -14,7 +15,7 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY  # pylint: disable=E0401
 from torch.utils.tensorboard import SummaryWriter
 
 _this_dir = Path(__file__).parent
-_now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
+_now = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d_%H-%M")
 
 
 def _log_scalars(

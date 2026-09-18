@@ -198,7 +198,7 @@ def _plot_cellmaps(
     textx = map_size * (1 - text_pad["x"])
     texty = map_size * (1 - text_pad["y"])
     text_df = pd.DataFrame.from_records(
-        [{"x": textx, "y": texty, "grp": d} for d in color_map.keys()]
+        [{"x": textx, "y": texty, "grp": d} for d in color_map]
     )
     text_df["grp"] = pd.Categorical(text_df["grp"], color_map)
 

@@ -856,7 +856,7 @@ class World:
             statedir / "cell_divisions.pt", map_location=self.device
         ).int()
 
-        with open(statedir / "cells.fasta", "r", encoding="utf-8") as fh:
+        with open(statedir / "cells.fasta", encoding="utf-8") as fh:
             text: str = fh.read()
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
@@ -902,7 +902,7 @@ class World:
         self.kinetics.increase_max_proteins(max_n=max_prots)
 
         n = len(set_proteomes)
-        s = n if self.batch_size is None else n
+        s = n
         for a in range(0, n, s):
             b = a + s
             self.kinetics.set_cell_params(

@@ -116,8 +116,8 @@ def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]) -> None:
     exp_starts, exp_stops = map(list, zip(*exp))
 
     assert len(res) == len(exp)
-    assert set(d[0] for d in res) == set(exp_starts)
-    assert set(d[1] for d in res) == set(exp_stops)
+    assert {d[0] for d in res} == set(exp_starts)
+    assert {d[1] for d in res} == set(exp_stops)
 
     for start, stop, is_fwd in res:
         idx = exp_starts.index(start)  # type: ignore

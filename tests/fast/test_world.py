@@ -183,8 +183,8 @@ def test_divide_cells():
     parent_child_idxs = world.divide_cells(cell_idxs=cell_idxs)
     assert len(parent_child_idxs) == 3
     assert world.cell_map.sum() == 6
-    assert set(d[0] for d in parent_child_idxs) == {0, 1, 2}
-    assert set(d[1] for d in parent_child_idxs) == {3, 4, 5}
+    assert {d[0] for d in parent_child_idxs} == {0, 1, 2}
+    assert {d[1] for d in parent_child_idxs} == {3, 4, 5}
 
     parents, children = list(map(list, zip(*parent_child_idxs)))
     assert torch.all(world.cell_molecules[parents] == world.cell_molecules[children])
@@ -721,14 +721,14 @@ def test_get_neighbours():
     nghbr_idxs = [2, 3]
     res = world.get_neighbors(cell_idxs=[0], nghbr_idxs=nghbr_idxs)
     exp = nghbrs[0]
-    exp = set(d for d in exp if d[0] in nghbr_idxs or d[1] in nghbr_idxs)
+    exp = {d for d in exp if d[0] in nghbr_idxs or d[1] in nghbr_idxs}
     assert len(res) == len(exp)
     assert set(res) == exp
 
     nghbr_idxs = [6, 2]
     res = world.get_neighbors(cell_idxs=[0, 3], nghbr_idxs=nghbr_idxs)
     exp = nghbrs[0] | nghbrs[3]
-    exp = set(d for d in exp if d[0] in nghbr_idxs or d[1] in nghbr_idxs)
+    exp = {d for d in exp if d[0] in nghbr_idxs or d[1] in nghbr_idxs}
     assert len(res) == len(exp)
     assert set(res) == exp
 
