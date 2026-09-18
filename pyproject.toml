@@ -4,27 +4,27 @@ build-backend = "maturin"
 
 [project]
 name = "magicsoup"
-version = "1.0.5"
-authors = [{ name="Marc", email="schweringmarc01@gmail.com" }]
+version = "1.0.6"
+authors = [{ name = "Marc", email = "schweringmarc01@gmail.com" }]
 description = "Simulation for cell metabolic and transduction pathway evolution"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.24.0,<1.27.0",
-  "torch>=2.0.0,<2.2.0"  # also noted in "Installation" docs
+  "torch>=2.0.0,<2.2.0",   # also noted in "Installation" docs
 ]
 classifiers = [
-    "Environment :: Console",
-    "Environment :: GPU",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
-    "Natural Language :: English",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Topic :: Education",
-    "Topic :: Games/Entertainment",
-    "Topic :: Scientific/Engineering",
-    "Typing :: Typed",
+  "Environment :: Console",
+  "Environment :: GPU",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Education",
+  "Topic :: Games/Entertainment",
+  "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
 ]
 
 [project.urls]
@@ -33,9 +33,9 @@ classifiers = [
 "Bug Tracker" = "https://github.com/mRcSchwering/magic-soup/issues"
 
 [tool.maturin]
-python-source = "python"  # python source
-module-name = "magicsoup._lib"  # python module name
-sdist-include = ["LICENSE", "README.md"]  # source distro files
+python-source = "python"                 # python source
+module-name = "magicsoup._lib"           # python module name
+sdist-include = ["LICENSE", "README.md"] # source distro files
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
