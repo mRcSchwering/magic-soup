@@ -992,3 +992,96 @@ class Kinetics:
 
     def _f32_tensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=torch.float32)
+
+    # TODO: for new solver
+    def _get_bounds(
+        self, x0: torch.Tensor, n: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        inf = torch.tensor(float("inf"))
+
+        # upper bound: limited by whichever substrate runs out first
+        ratio_hi = torch.where(n < 0, x0.unsqueeze(1) / (-n + _EPS), inf)
+        xi_hi = ratio_hi.min(dim=2).values  # shape (c, p)
+
+        # lower bound: limited by whichever product runs out first (reverse direction)
+        ratio_lo = torch.where(n > 0, -x0.unsqueeze(1) / (n + _EPS), -inf)
+        xi_lo = ratio_lo.max(dim=2).values  # shape (c, p)
+
+        return xi_lo, xi_hi
+
+    # TODO: pseudo, for new solver
+    def _velocity(
+        self,
+        xi: torch.Tensor,
+        x0: torch.Tensor,
+        n: torch.Tensor,
+        a: torch.Tensor,
+        v_max: torch.Tensor,
+        K_m: torch.Tensor,
+        K_r: torch.Tensor,
+    ) -> torch.Tensor:
+        # xi: (c, p) -> broadcast into a per-reaction shifted concentration
+        x_trial = x0.unsqueeze(1) + n * xi.unsqueeze(-1)  # (c, p, m)
+        x_trial = x_trial.clamp(min=_EPS)  # guard 0**(negative power)
+
+        a_cat = torch.prod(torch.pow(x_trial, n), dim=2) / K_m
+        a_reg = torch.prod(torch.pow(x_trial, a), dim=2) / K_r
+        return a_cat * v_max * a_reg
+
+    # TODO: for new solver
+    def _solve_xi(
+        self,
+        x0: torch.Tensor,
+        n: torch.Tensor,
+        a: torch.Tensor,
+        v_max: torch.Tensor,
+        K_m: torch.Tensor,
+        K_r,
+        h: torch.Tensor,
+        xi_lo: torch.Tensor,
+        xi_hi: torch.Tensor,
+        n_iters: int = 20,
+    ) -> torch.Tensor:
+        lo, hi = xi_lo.clone(), xi_hi.clone()
+        for _ in range(n_iters):
+            mid = 0.5 * (lo + hi)
+            g = mid - h * self._velocity(mid, x0, n, a, v_max, K_m, K_r)
+            go_lower = g > 0  # g increasing -> root is below mid
+            hi = torch.where(go_lower, mid, hi)
+            lo = torch.where(go_lower, lo, mid)
+        return 0.5 * (lo + hi)
+
+    # TODO: for new solver
+    def _solve_step(
+        self,
+        x0: torch.Tensor,
+        n: torch.Tensor,
+        a: torch.Tensor,
+        v_max: torch.Tensor,
+        K_m: torch.Tensor,
+        K_r: torch.Tensor,
+        h: torch.Tensor,
+        n_sweeps: int = 3,
+    ) -> torch.Tensor:
+        c, p, _ = n.shape
+        xi = torch.zeros(
+            c, p, device=x0.device, dtype=x0.dtype
+        )  # persists across sweeps
+
+        for _ in range(n_sweeps):
+            # what every OTHER reaction currently contributes, per reaction
+            total = torch.einsum("cpm,cp->cm", n, xi)  # (c, m)
+            others = total.unsqueeze(1) - n * xi.unsqueeze(
+                -1
+            )  # (c, p, m): subtract own contribution
+            x_background = x0.unsqueeze(1) + others  # (c, p, m)
+
+            xi_lo, xi_hi = self._get_bounds(
+                x_background, n
+            )  # same bound logic as before, now per-reaction background
+            xi = self._solve_xi(
+                x_background, n, a, v_max, K_m, K_r, h, xi_lo, xi_hi
+            )  # replaces xi, doesn't add to it
+
+        x1 = x0 + torch.einsum("cpm,cp->cm", n, xi)
+        return x1
