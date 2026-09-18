@@ -5,33 +5,49 @@ build-backend = "maturin"
 [project]
 name = "magicsoup" # as shown on PyPI (https://pypi.org/project/magicsoup/)
 version = "2.0.0"
-description = "MagicSoup is a game that simulates cell metabolic and transduction pathway evolution. Define a 2D world with certain molecules and reactions. Add a few cells and create evolutionary pressure by selectively replicating and killing them. Then run and see what random mutations can do."
+authors = [{ name = "Marc", email = "schweringmarc01@gmail.com" }]
+description = "Simulation for cell metabolic and transduction pathway evolution"
 readme = "README.md"
 requires-python = ">=3.12"
+classifiers = [
+  "Environment :: Console",
+  "Environment :: GPU",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Education",
+  "Topic :: Games/Entertainment",
+  "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
+]
 dependencies = [
   "numpy>=2,<3",    # CPU processing  (necessary?)
   "torch>=2.11,<3", # CPU processing
 ]
 
 [dependency-groups]
-tests = [
-  "maturin>=1,<2",                       # build and test python-rust packages
-  "mkdocs>=1.5.3,<1.6.0",                # make documentation
-  "mkdocstrings_python>=1.8.0,<2.0.0",   # make documentation from docstrings
-  "mkdocstrings[python]>=0.24.0,<1.0.0", # documentation (necessary?)
-  "Pygments>=2.14.0,<2.15.0",            # syntax highlighting
-  "python-markdown-math>=0.8,<0.9",      # math in markdown
-  "pytest>=9,<10",                       # testing
-  "plotnine>=0,<1",                      # plotting
-  "tensorboard>=2,<3",                   # watching simulation in browser
-  "Levenshtein>=0,<1",                   # Levenshtein distance
-  "mypy>=2,<3",                          # static type checking
+dev = [
+  "maturin>=1,<2",     # build and test python-rust packages
+  "pytest>=9,<10",     # testing
+  "plotnine>=0,<1",    # plotting
+  "tensorboard>=2,<3", # watching simulation in browser
+  "Levenshtein>=0,<1", # Levenshtein distance
+  "mypy>=2,<3",        # static type checking
+]
+docs = [
+  "mkdocs>=1,<2",               # make documentation
+  "python-markdown-math>=0,<1", # math in markdown
+  "mkdocstrings[python]>=1,<2", # make documentation from docstrings
+  "mkdocs-exclude>=1,<2",       # exclude files from documentation
 ]
 
 [tool.maturin]
-module-name = "magicsoup._lib"       # extension as imported from python
-python-source = "python"             # source directory for python package
-features = ["pyo3/extension-module"] # build as python extension module
+module-name = "magicsoup._lib"           # extension as imported from python
+python-source = "python"                 # source directory for python package
+features = ["pyo3/extension-module"]     # build as python extension module
+sdist-include = ["LICENSE", "README.md"] # include license and readme in sdist
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]

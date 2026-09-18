@@ -6,7 +6,6 @@
 #
 # bash scripts/serve-docs.sh
 #
-
 set -e
 
-mkdocs serve
+uv run --locked mkdocs serve
