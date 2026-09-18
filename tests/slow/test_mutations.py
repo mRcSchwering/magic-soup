@@ -1,5 +1,6 @@
-from ..conftest import gen_genomes
 import magicsoup.mutations as muts
+
+from ..conftest import gen_genomes
 
 
 def test_point_mutations():

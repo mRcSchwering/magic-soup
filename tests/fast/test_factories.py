@@ -1,6 +1,6 @@
+import magicsoup as ms
 import pytest
 from magicsoup.constants import CODON_SIZE
-import magicsoup as ms
 
 _MI = ms.Molecule("i", 10 * 1e3)
 _MJ = ms.Molecule("j", 20 * 1e3)

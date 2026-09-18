@@ -1,4 +1,5 @@
 import magicsoup as ms
+
 from tests.conftest import Retry
 
 

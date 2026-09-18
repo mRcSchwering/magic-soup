@@ -31,10 +31,11 @@ dependencies = [
 dev = [
   "maturin>=1,<2",     # build and test python-rust packages
   "pytest>=9,<10",     # testing
+  "mypy>=2,<3",        # static type checking
   "plotnine>=0,<1",    # plotting
   "tensorboard>=2,<3", # watching simulation in browser
   "Levenshtein>=0,<1", # Levenshtein distance
-  "mypy>=2,<3",        # static type checking
+  "ruff",
 ]
 docs = [
   "mkdocs>=1,<2",               # make documentation

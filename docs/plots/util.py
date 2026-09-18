@@ -1,5 +1,5 @@
-import pandas as pd
 import magicsoup as ms
+import pandas as pd
 
 
 def generate_cell(

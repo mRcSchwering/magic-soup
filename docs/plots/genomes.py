@@ -1,9 +1,9 @@
 # type: ignore
 from pathlib import Path
+
+import magicsoup as ms
 import pandas as pd
 from plotnine import *
-import magicsoup as ms
-
 
 _IMGS_DIR = Path(__file__).parent.parent / "docs" / "img" / "supporting"
 if not _IMGS_DIR.is_dir():

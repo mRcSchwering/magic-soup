@@ -15,10 +15,11 @@ gifsicle -i image.gif --optimize=3 --colors 32 -o image_o3_32.gif
 bash scripts/serve-docs.sh
 ```
 """
-import io
-import contextlib
 import argparse
+import contextlib
+import io
 from pathlib import Path
+
 from PIL import Image, ImageOps
 from tensorboard.backend.event_processing import event_accumulator
 

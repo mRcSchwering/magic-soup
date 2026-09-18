@@ -25,9 +25,10 @@ v0.14.1 CPU (Intel Core i5-10210U):
 (4.51+-0.12)s - enzymatic activity
 (0.40+-0.00)s - mutations
 """
-import time
 import random
+import time
 from argparse import ArgumentParser
+
 import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 

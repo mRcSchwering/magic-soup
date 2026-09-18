@@ -1,8 +1,10 @@
 # type: ignore
 from pathlib import Path
+
+import magicsoup as ms
 import pandas as pd
 from plotnine import *
-import magicsoup as ms
+
 from plots.util import generate_cell, record_concentrations
 
 

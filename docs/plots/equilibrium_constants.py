@@ -1,12 +1,13 @@
 # type: ignore
 from itertools import combinations
 from pathlib import Path
+
+import magicsoup as ms
 import pandas as pd
 import torch
-from plotnine import *
-import magicsoup as ms
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from magicsoup.constants import GAS_CONSTANT
+from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from plotnine import *
 
 
 def _plot_specific_ke_distributions():

@@ -144,8 +144,8 @@ pathway but I don't know enough about this topic.
 E.g. shoudln't there be a hydroxybutyrate <-> malate (or similar)?
 """
 from magicsoup.containers import (
-    Molecule,
     Chemistry,
+    Molecule,
 )
 
 _TReact = tuple[list[Molecule], list[Molecule]]

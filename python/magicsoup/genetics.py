@@ -1,8 +1,9 @@
-import warnings
 import random
-from magicsoup.util import codons
-from magicsoup.constants import CODON_SIZE, ProteinSpecType
+import warnings
+
 from magicsoup import _lib  # type: ignore
+from magicsoup.constants import CODON_SIZE, ProteinSpecType
+from magicsoup.util import codons
 
 
 def _get_n(p: float, s: int, name: str) -> int:

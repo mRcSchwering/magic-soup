@@ -8,4 +8,4 @@
 #
 set -e
 
-uv run --locked mkdocs serve
+uv run --locked --no-sync mkdocs serve

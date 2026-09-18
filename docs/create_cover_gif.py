@@ -25,14 +25,15 @@ bash scripts/serve-docs.sh
 gifsicle -U animation.gif `seq -f "#%g" 0 1 700` --optimize=3 -o 'animation[small].gif'
 ```
 """
-from pathlib import Path
-from collections import Counter
 import argparse
 import io
+from collections import Counter
+from pathlib import Path
+
+import magicsoup as ms
 import pandas as pd
 from PIL import Image
 from plotnine import *
-import magicsoup as ms
 
 theme_set(theme_minimal())
 

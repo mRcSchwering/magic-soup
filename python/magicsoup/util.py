@@ -1,10 +1,11 @@
-from typing import Iterable
-from itertools import product
-import string
-import random
 import math
-from magicsoup.constants import ALL_NTS, CODON_SIZE
+import random
+import string
+from collections.abc import Iterable
+from itertools import product
+
 from magicsoup import _lib  # type:ignore
+from magicsoup.constants import ALL_NTS, CODON_SIZE
 
 
 def round_down(d: float, to: int = 3) -> int:

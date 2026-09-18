@@ -1,17 +1,19 @@
-import random
 import math
-from typing import Any
-from io import BytesIO
 import pickle
+import random
+from io import BytesIO
 from pathlib import Path
+from typing import Any
+
 import torch
-from magicsoup.constants import ProteinSpecType
-from magicsoup.util import randstr
-from magicsoup.containers import Chemistry, Cell
-from magicsoup.kinetics import Kinetics
-from magicsoup.genetics import Genetics
-from magicsoup.mutations import point_mutations, recombinations
+
 from magicsoup import _lib  # type: ignore
+from magicsoup.constants import ProteinSpecType
+from magicsoup.containers import Cell, Chemistry
+from magicsoup.genetics import Genetics
+from magicsoup.kinetics import Kinetics
+from magicsoup.mutations import point_mutations, recombinations
+from magicsoup.util import randstr
 
 
 def _torch_load(map_loc: str | None = None):
@@ -784,7 +786,7 @@ class World:
         """
         with open(rundir / name, "rb") as fh:
             unpickler = _CPU_Unpickler(fh, map_location=device)
-            obj: "World" = unpickler.load()
+            obj: World = unpickler.load()
 
         if device is not None:
             obj.device = device
@@ -911,8 +913,7 @@ class World:
         # available spots on map
         pxls = torch.nonzero(~self.cell_map).int()
         n_pxls = pxls.size(0)
-        if n_cells > n_pxls:
-            n_cells = n_pxls
+        n_cells = min(n_cells, n_pxls)
 
         # place cells on map
         idxs = random.sample(range(n_pxls), k=n_cells)
@@ -936,8 +937,7 @@ class World:
         if mol_perm_rate < 0.0:
             mol_perm_rate = -mol_perm_rate
 
-        if mol_perm_rate > 1.0:
-            mol_perm_rate = 1.0
+        mol_perm_rate = min(mol_perm_rate, 1.0)
 
         if mol_perm_rate == 0.0:
             return 0.0
@@ -951,8 +951,7 @@ class World:
 
         # mol_diff_rate > 1.0 could also mean expanding the kernel
         # so that molecules can diffuse more than just 1 pxl per round
-        if mol_diff_rate > 1.0:
-            mol_diff_rate = 1.0
+        mol_diff_rate = min(mol_diff_rate, 1.0)
 
         if mol_diff_rate == 0.0:
             a = 0.0
@@ -1000,5 +999,5 @@ class World:
             "abs_temp": self.abs_temp,
             "device": self.device,
         }
-        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        args = [f"{k}:{d!r}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"

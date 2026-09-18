@@ -1,6 +1,7 @@
 import warnings
-import pytest
+
 import magicsoup.containers as cntnrs
+import pytest
 
 _X = cntnrs.Molecule(name="X", energy=10)
 _Y = cntnrs.Molecule(name="Y", energy=100)

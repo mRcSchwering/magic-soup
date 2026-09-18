@@ -1,10 +1,12 @@
-from typing import Any
 import math
 import random
+from typing import Any
+
 import torch
-from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
-from magicsoup.containers import Molecule, Protein, Chemistry
+
 from magicsoup import _lib  # type: ignore
+from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
+from magicsoup.containers import Chemistry, Molecule, Protein
 
 # MAX,MIN should be at least x100 away from inf
 # EPS should be 1/MAX
@@ -290,7 +292,7 @@ class _RegulatoryMapFact(_VectorMapFact):
 
 
 class Kinetics:
-    """
+    r"""
     Class holding logic for simulating protein work.
     Usually this class is instantiated automatically when initializing [World][magicsoup.world.World].
     You can access it on `world.kinetics`.

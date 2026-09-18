@@ -1,16 +1,17 @@
 # type: ignore
 from pathlib import Path
+
+import magicsoup as ms
 import pandas as pd
 from Levenshtein import distance
-from plotnine import *
-import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from plotnine import *
 
 
 def _record_sequence_similarities(
     seqs0: list[str], seqs1: list[str], record: dict, records: list
 ):
-    for i, (s0, s1) in enumerate((zip(seqs0, seqs1))):
+    for i, (s0, s1) in enumerate(zip(seqs0, seqs1)):
         minlen, maxlen = sorted([len(s0), len(s1)])
         d = 1.0 - distance(s0, s1) / maxlen if minlen > 0 else 0.0
         records.append({**record, "value": d, "i": i})

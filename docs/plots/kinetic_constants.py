@@ -1,11 +1,12 @@
 # type: ignore
 import math
 from pathlib import Path
+
+import magicsoup as ms
 import pandas as pd
 import torch
-from plotnine import *
-import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from plotnine import *
 
 
 def _plot_constant_distributions(gsize=1000, ncells=1000):

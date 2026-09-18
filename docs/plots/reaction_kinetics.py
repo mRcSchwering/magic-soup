@@ -1,9 +1,11 @@
 # type: ignore
 from pathlib import Path
+
+import magicsoup as ms
 import pandas as pd
 from plotnine import *
-import magicsoup as ms
-from plots.util import record_concentrations, generate_cell
+
+from plots.util import generate_cell, record_concentrations
 
 
 def _run_enzymatic_activity(

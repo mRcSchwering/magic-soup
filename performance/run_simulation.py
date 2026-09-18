@@ -19,15 +19,16 @@ Last runs:
 - 2023-11-21 EC2 GPU: 0.05s / 1k cells, 0.35s / 40k cells (0.30s activity, 0.03 mutate genomes, 0.08 replicate peak)
 - 2023-12-19 EC2 GPU: 0.03s / 1k cells, 0.30s / 40k cells (0.25s activity, 0.03 mutate genomes, 0.05 replicate peak)
 """
+import datetime as dt
+import time
 from argparse import ArgumentParser, Namespace
 from contextlib import contextmanager
-import time
 from pathlib import Path
-import datetime as dt
-import torch
-from torch.utils.tensorboard import SummaryWriter
+
 import magicsoup as ms
+import torch
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from torch.utils.tensorboard import SummaryWriter
 
 _this_dir = Path(__file__).parent
 _now = dt.datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -73,7 +74,7 @@ def main(args: Namespace):
 
             with timeit("kill", step_i, writer):
                 kill = (
-                    torch.argwhere((world.cell_molecules[:, ATP_IDX] < 1.0))
+                    torch.argwhere(world.cell_molecules[:, ATP_IDX] < 1.0)
                     .flatten()
                     .tolist()
                 )

@@ -1,5 +1,6 @@
 import random
 from contextlib import contextmanager
+
 from magicsoup.util import random_genome
 
 

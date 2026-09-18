@@ -1,6 +1,7 @@
 import random
 from collections import Counter
 from typing import Protocol
+
 from magicsoup.constants import CODON_SIZE
 from magicsoup.containers import Molecule
 from magicsoup.util import closest_value, random_genome, round_down

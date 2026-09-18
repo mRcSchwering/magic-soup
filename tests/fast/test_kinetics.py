@@ -1,16 +1,16 @@
-import pytest
 import math
+
+import pytest
 import torch
+from magicsoup.constants import GAS_CONSTANT
 from magicsoup.containers import (
+    CatalyticDomain,
     Chemistry,
     Molecule,
-    CatalyticDomain,
     RegulatoryDomain,
     TransporterDomain,
 )
-from magicsoup.constants import GAS_CONSTANT
-from magicsoup.kinetics import Kinetics
-from magicsoup.kinetics import _MAX, _EPS
+from magicsoup.kinetics import _EPS, _MAX, Kinetics
 
 _TOLERANCE = 1e-4
 

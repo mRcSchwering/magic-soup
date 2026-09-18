@@ -1,7 +1,7 @@
 import warnings
-from typing import Protocol
 from collections import Counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
+
 import torch
 
 if TYPE_CHECKING:
@@ -180,7 +180,7 @@ class Molecule:
             "diffusivity": self.diffusivity,
             "permeability": self.permeability,
         }
-        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        args = [f"{k}:{d!r}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
 
     def __str__(self) -> str:
@@ -262,7 +262,7 @@ class Chemistry:
             "molecules": self.molecules,
             "reactions": self.reactions,
         }
-        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        args = [f"{k}:{d!r}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
 
 
@@ -607,7 +607,7 @@ class Protein:
             "cds_end": self.cds_end,
             "domains": self.domains,
         }
-        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        args = [f"{k}:{d!r}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
 
     def __str__(self) -> str:
@@ -713,5 +713,5 @@ class Cell:
             "n_steps_alive": self.n_steps_alive,
             "n_divisions": self.n_divisions,
         }
-        args = [f"{k}:{repr(d)}" for k, d in kwargs.items()]
+        args = [f"{k}:{d!r}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"

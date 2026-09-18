@@ -1,8 +1,7 @@
-import pytest
 import magicsoup as ms
-from magicsoup.constants import CODON_SIZE, ProteinSpecType
+import pytest
 from magicsoup import _lib  # type: ignore
-
+from magicsoup.constants import CODON_SIZE, ProteinSpecType
 
 # (genome, (start, stop))
 # starts: "TTG", "GTG", "ATG"
@@ -93,14 +92,14 @@ def _reverse_complement_rs(seq: str) -> str:
     return _lib.reverse_complement(seq)
 
 
-def test_reverse_complement():
+def test_reverse_complement() -> None:
     seq = "ACTGG"
     res = _reverse_complement_rs(seq=seq)
     assert res == "CCAGT"
 
 
 @pytest.mark.parametrize("seq, exp", _DATA)
-def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]):
+def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]) -> None:
     # 1 codon is too small to express p=0.01 domain types
     with pytest.warns(UserWarning):
         genetics = ms.Genetics(n_dom_type_codons=1)
@@ -127,7 +126,7 @@ def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]):
         assert not is_fwd
 
 
-def test_extract_domains():
+def test_extract_domains() -> None:
     dom_type_map = {"AAA": 1, "GGG": 2, "CCC": 3}
     two_codon_map = {"ACTGAT": 1, "CTGTAT": 2, "CCGCGA": 3, "GGAATC": 4, "TGTCGA": 5}
     one_codon_map = {"ACT": 1, "CTG": 2, "CCG": 3, "GGA": 4, "TGT": 5}
@@ -201,14 +200,14 @@ def test_extract_domains():
     assert res[3][0][1][2] == 18 + dom_size
 
 
-def test_genetics():
+def test_genetics() -> None:
     # 1=catalytic, 2=transporter, 3=regulatory
     # regulatory-only proteins get sorted out, so there is a bias towards
     # fewer regulatory domains
 
     # all same likelihood (while considering reg bias)
     kwargs = {"p_catal_dom": 0.1, "p_transp_dom": 0.1, "p_reg_dom": 0.1}
-    genetics = ms.Genetics(**kwargs)
+    genetics = ms.Genetics(**kwargs)  # type: ignore
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes_data = genetics.translate_genomes(genomes=genomes)
 
@@ -221,7 +220,7 @@ def test_genetics():
 
     # fewer catalytics (while considering reg bias)
     kwargs["p_catal_dom"] = 0.01
-    genetics = ms.Genetics(**kwargs)
+    genetics = ms.Genetics(**kwargs)  # type: ignore
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes_data = genetics.translate_genomes(genomes=genomes)
 
@@ -234,7 +233,7 @@ def test_genetics():
 
     # also fewer transporters (while considering reg bias)
     kwargs["p_transp_dom"] = 0.01
-    genetics = ms.Genetics(**kwargs)
+    genetics = ms.Genetics(**kwargs)  # type: ignore
     genomes = [ms.random_genome(s=500) for _ in range(1000)]
     proteomes_data = genetics.translate_genomes(genomes=genomes)
 

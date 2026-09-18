@@ -1,6 +1,6 @@
+import magicsoup as ms
 import pytest
 import torch
-import magicsoup as ms
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 
 

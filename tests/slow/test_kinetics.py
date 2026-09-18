@@ -1,6 +1,7 @@
-import torch
 import random
+
 import magicsoup as ms
+import torch
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 
 

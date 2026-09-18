@@ -1,9 +1,10 @@
 # type: ignore
 from itertools import product
 from pathlib import Path
+
+import magicsoup as ms
 import pandas as pd
 from plotnine import *
-import magicsoup as ms
 
 
 def _plot_diff_degrad(chemistry: ms.Chemistry):

@@ -2,7 +2,7 @@
 free hand, energies invented, from
 https://en.wikipedia.org/wiki/Reverse_Krebs_cycle
 """
-from magicsoup.containers import Molecule, Chemistry
+from magicsoup.containers import Chemistry, Molecule
 
 NADPH = Molecule("NADPH", 200.0 * 1e3)
 NADP = Molecule("NADP", 100.0 * 1e3)

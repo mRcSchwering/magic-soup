@@ -1,6 +1,7 @@
-from typing import Iterable
+from collections.abc import Iterable
+
 import pytest
-import magicsoup.util as util
+from magicsoup import util
 from magicsoup.constants import CODON_SIZE
 
 

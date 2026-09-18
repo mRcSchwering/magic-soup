@@ -12,7 +12,7 @@ CFeSP methyltransferase (2.1.1.X): methyl-FH4 + Ni-ACS -> FH4 + methyl-Ni-ACS
 CO dehydrogenase / acetyl-CoA synthetase: CO2 + HS-CoA + methyl-Ni-ACS -> Ni-ACS + acetyl-CoA
 (skipped Co step)
 """
-from magicsoup.containers import Molecule, Chemistry
+from magicsoup.containers import Chemistry, Molecule
 
 NADPH = Molecule("NADPH", 200.0 * 1e3)
 NADP = Molecule("NADP", 100.0 * 1e3)

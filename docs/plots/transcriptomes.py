@@ -1,9 +1,10 @@
 # type: ignore
 from pathlib import Path
-import pandas as pd
-from plotnine import *
+
 import magicsoup as ms
+import pandas as pd
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from plotnine import *
 
 
 def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, cdsw=4):
