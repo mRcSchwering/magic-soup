@@ -770,7 +770,6 @@ name = "magicsoup"
 version = "2.0.0"
 source = { editable = "." }
 dependencies = [
-    { name = "numpy" },
     { name = "torch", version = "2.14.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
     { name = "torch", version = "2.14.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
 ]
@@ -794,10 +793,7 @@ docs = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=2,<3" },
-    { name = "torch", specifier = ">=2.11,<3", index = "https://download.pytorch.org/whl/cpu" },
-]
+requires-dist = [{ name = "torch", specifier = ">=2.11,<3", index = "https://download.pytorch.org/whl/cpu" }]
 
 [package.metadata.requires-dev]
 dev = [

@@ -12,6 +12,7 @@ markdown_extensions:
 nav:
   - "index.md"
   - "mechanics.md"
+  - "computation.md"
   - "tutorials.md"
   - "reference.md"
   - "other_simulations.md"
@@ -41,4 +42,3 @@ plugins:
             merge_init_into_class: true
             show_if_no_docstring: false
             filters: ["!^_", "^__init__$"]
-            

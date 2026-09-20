@@ -23,8 +23,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "numpy>=2,<3",    # CPU processing  (necessary?)
-  "torch>=2.11,<3", # CPU processing
+  "torch>=2.11,<3", # CPU/GPUprocessing
 ]
 
 [dependency-groups]

@@ -144,5 +144,5 @@ pip install magicsoup
 This simulation relies on [PyTorch](https://pytorch.org/).
 You can move almost all calculations to a GPU.
 This increases performance a lot and is recommended.
-In this case first setup PyTorch (>=2.0.0,<2.2.0) with CUDA as described in [Get Started (pytorch.org)](https://pytorch.org/get-started/locally/),
+In this case first setup PyTorch with CUDA as described in [Get Started (pytorch.org)](https://pytorch.org/get-started/locally/),
 then install MagicSoup afterwards.
