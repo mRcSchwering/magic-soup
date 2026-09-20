@@ -13,6 +13,7 @@ from magicsoup.containers import Chemistry, Molecule, Protein
 _EPS = 1e-36
 _MAX = 1e36
 _MIN = -1e36
+_INF = torch.tensor(float("inf"))
 
 
 class _HillMapFact:
@@ -993,95 +994,97 @@ class Kinetics:
     def _f32_tensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=torch.float32)
 
-    # TODO: for new solver
     def _get_bounds(
-        self, x0: torch.Tensor, n: torch.Tensor
+        self,
+        B: torch.Tensor,  # f32 (c, p, m)
+        N: torch.Tensor,  # i32 (c, p, m)
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        inf = torch.tensor(float("inf"))
+        ratio_lo = torch.where(N > 0, -B / N, -_INF)
+        xi_lo = ratio_lo.max(dim=2).values  # f32 (c, p)
 
-        # upper bound: limited by whichever substrate runs out first
-        ratio_hi = torch.where(n < 0, x0.unsqueeze(1) / (-n + _EPS), inf)
-        xi_hi = ratio_hi.min(dim=2).values  # shape (c, p)
+        ratio_hi = torch.where(N < 0, B / -N, _INF)
+        xi_hi = ratio_hi.min(dim=2).values  # f32 (c, p)
 
-        # lower bound: limited by whichever product runs out first (reverse direction)
-        ratio_lo = torch.where(n > 0, -x0.unsqueeze(1) / (n + _EPS), -inf)
-        xi_lo = ratio_lo.max(dim=2).values  # shape (c, p)
+        return xi_lo, xi_hi  # f32 (c, p), f32 (c, p)
 
-        return xi_lo, xi_hi
-
-    # TODO: pseudo, for new solver
-    def _velocity(
+    def _get_velocity(
         self,
-        xi: torch.Tensor,
-        x0: torch.Tensor,
-        n: torch.Tensor,
-        a: torch.Tensor,
-        v_max: torch.Tensor,
-        K_m: torch.Tensor,
-        K_r: torch.Tensor,
+        xi: torch.Tensor,  # f32 (c, p)
+        B: torch.Tensor,  # f32 (c, p, m)
     ) -> torch.Tensor:
-        # xi: (c, p) -> broadcast into a per-reaction shifted concentration
-        x_trial = x0.unsqueeze(1) + n * xi.unsqueeze(-1)  # (c, p, m)
-        x_trial = x_trial.clamp(min=_EPS)  # guard 0**(negative power)
+        v_max = self.Vmax  # f32 (c, p)
+        N = self.N  # i32 (c, p, m)
+        H = self.A  # i32 (c, p, m)
+        Nf = self.Nf  # i32 (c, p, m)
+        Nb = self.Nb  # i32 (c, p, m)
+        Kmf = self.Kmf  # f32 (c, p)
+        Kmb = self.Kmb  # f32 (c, p)
+        Kr = self.Kmr  # f32 (c, p, m) already exponentiated with H
 
-        a_cat = torch.prod(torch.pow(x_trial, n), dim=2) / K_m
-        a_reg = torch.prod(torch.pow(x_trial, a), dim=2) / K_r
-        return a_cat * v_max * a_reg
+        # broadcast into a per-reaction shifted concentration
+        x1 = B + N * xi.unsqueeze(-1)  # f32 (c, p, m)
 
-    # TODO: for new solver
-    def _solve_xi(
+        # guard 0**(negative power)  # TODO: necessary?
+        x1 = x1.clamp(min=_EPS)  # f32 (c, p, m)
+
+        # calculate per protein catalytic velocity
+        # TODO: replace with optimized computation
+        af = torch.prod(torch.pow(x1, Nf), dim=2) / Kmf  # f32 (c, p)
+        ab = torch.prod(torch.pow(x1, Nb), dim=2) / Kmb  # f32 (c, p)
+        v_cat = v_max * (af - ab) / (1 + af + ab)  # f32 (c, p)
+
+        # calculate per protein regulatory activity
+        # TODO: replace with optimized computation
+        ar = torch.pow(x1, H)  # f32 (c, p, m)
+        v_reg = torch.prod(ar / (ar + Kr), dim=2)  # f32 (c, p)
+        return v_cat * v_reg  # f32 (c, p)
+
+    def _bisect_xi(
         self,
-        x0: torch.Tensor,
-        n: torch.Tensor,
-        a: torch.Tensor,
-        v_max: torch.Tensor,
-        K_m: torch.Tensor,
-        K_r,
-        h: torch.Tensor,
-        xi_lo: torch.Tensor,
-        xi_hi: torch.Tensor,
+        B: torch.Tensor,  # f32 (c, p, m)
+        xi_lo: torch.Tensor,  # f32 (c, p)
+        xi_hi: torch.Tensor,  # f32 (c, p)
+        h: float,
         n_iters: int = 20,
     ) -> torch.Tensor:
-        lo, hi = xi_lo.clone(), xi_hi.clone()
-        for _ in range(n_iters):
-            mid = 0.5 * (lo + hi)
-            g = mid - h * self._velocity(mid, x0, n, a, v_max, K_m, K_r)
-            go_lower = g > 0  # g increasing -> root is below mid
-            hi = torch.where(go_lower, mid, hi)
-            lo = torch.where(go_lower, lo, mid)
-        return 0.5 * (lo + hi)
+        lo = xi_lo.clone()  # f32 (c, p)
+        hi = xi_hi.clone()  # f32 (c, p)
 
-    # TODO: for new solver
-    def _solve_step(
+        for _ in range(n_iters):
+            mid = 0.5 * (lo + hi)  # f32 (c, p)
+            v = self._get_velocity(xi=mid, B=B)  # f32 (c, p)
+            g = mid - h * v  # f32 (c, p)
+            too_high = g > 0  # bool (c, p)
+            hi = torch.where(too_high, mid, hi)  # f32 (c, p)
+            lo = torch.where(too_high, lo, mid)  # f32 (c, p)
+
+        return 0.5 * (lo + hi)  # f32 (c, p)
+
+    def solve_step(
         self,
         x0: torch.Tensor,
-        n: torch.Tensor,
-        a: torch.Tensor,
-        v_max: torch.Tensor,
-        K_m: torch.Tensor,
-        K_r: torch.Tensor,
-        h: torch.Tensor,
+        N: torch.Tensor,
+        h: float = 1.0,
         n_sweeps: int = 3,
+        n_bisect: int = 10,
     ) -> torch.Tensor:
-        c, p, _ = n.shape
-        xi = torch.zeros(
-            c, p, device=x0.device, dtype=x0.dtype
-        )  # persists across sweeps
+        N = self.N  # i32 (c, p, m)
+        c, p, _ = N.shape
+
+        # persists across sweeps
+        xi = self._zeros_f32_tensor(c, p)  # f32 (c, p)
 
         for _ in range(n_sweeps):
-            # what every OTHER reaction currently contributes, per reaction
-            total = torch.einsum("cpm,cp->cm", n, xi)  # (c, m)
-            others = total.unsqueeze(1) - n * xi.unsqueeze(
-                -1
-            )  # (c, p, m): subtract own contribution
-            x_background = x0.unsqueeze(1) + others  # (c, p, m)
+            dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
+            dx_ = dx.unsqueeze(1)  # (c, 1, m)
+            xi_ = xi.unsqueeze(-1)  # (c, p, 1)
+            x0_ = x0.unsqueeze(1)  # (c, 1, m)
 
-            xi_lo, xi_hi = self._get_bounds(
-                x_background, n
-            )  # same bound logic as before, now per-reaction background
-            xi = self._solve_xi(
-                x_background, n, a, v_max, K_m, K_r, h, xi_lo, xi_hi
-            )  # replaces xi, doesn't add to it
+            # substract contribution of each protein from total concentration change
+            B = x0_ + (dx_ - N * xi_)  # (c, p, m)
 
-        x1 = x0 + torch.einsum("cpm,cp->cm", n, xi)
+            xi_lo, xi_hi = self._get_bounds(B=B, N=N)  # (c, p), (c, p)
+            xi = self._bisect_xi(B=B, xi_lo=xi_lo, xi_hi=xi_hi, h=h, n_iters=n_bisect)
+
+        x1 = x0 + torch.einsum("cpm,cp->cm", N, xi)
         return x1

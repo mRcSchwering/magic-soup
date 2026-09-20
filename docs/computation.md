@@ -88,11 +88,11 @@ where $\boldsymbol{n_q}$ are the reaction stoichiometry and $v_q$ the velocity f
 This equation should have exactly one root which can be found using the Bisection method. The search interval can be defined using the positivity requirement for concentrations. For each molecule $i$ the search interval for $\xi_q^{*(k+1)}$ is
 
 $$
-\max_{i: n_{i,q} > 0} \frac{-b_{i,q}^{(k)}}{n_{i,q}}
-\ge
+\max_{i: n_{i,q} > 0} \frac{-\boldsymbol{b_{i,q}^{(k)}}}{n_{i,q}}
+\le
 \xi_q^{*(k+1)}
-\ge
-\min_{i: n_{i,q} < 0} \frac{b_{i,q}^{(k)}}{-n_{i,q}}
+\le
+\min_{i: n_{i,q} < 0} \frac{\boldsymbol{b_{i,q}^{(k)}}}{-n_{i,q}}
 $$
 
 The whole approach can be summarized as the following:

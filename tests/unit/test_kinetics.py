@@ -110,12 +110,12 @@ def _get_kinetics(use_original_class=False) -> Kinetics:
     return kinetics
 
 
-def _ke(subs: list[Molecule], prods: list[Molecule]):
+def _ke(subs: list[Molecule], prods: list[Molecule]) -> float:
     e = sum(d.energy for d in prods) - sum(d.energy for d in subs)
     return math.exp(-e / 310 / GAS_CONSTANT)
 
 
-def _avg(*x):
+def _avg(*x: float) -> float:
     return sum(x) / len(x)
 
 
@@ -999,7 +999,7 @@ def test_simple_mm_kinetic():
 
     # fmt: on
 
-    def mm(s, p, kf, kb, v):
+    def mm(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s / kf - p / kb) / (1 + s / kf + p / kb)
         vb = v * (p / kb - s / kf) / (1 + s / kf + p / kb)
         return (vf - vb) / 2
@@ -1090,17 +1090,17 @@ def test_mm_kinetic_with_proportions():
 
     # fmt: on
 
-    def mm12(s, p, kf, kb, v):
+    def mm12(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s / kf - p**2 / kb) / (1 + s / kf + p**2 / kb)
         vb = v * (p**2 / kb - s / kf) / (1 + s / kf + p**2 / kb)
         return (vf - vb) / 2
 
-    def mm21(s, p, kf, kb, v):
+    def mm21(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s**2 / kf - p / kb) / (1 + s**2 / kf + p / kb)
         vb = v * (p / kb - s**2 / kf) / (1 + s**2 / kf + p / kb)
         return (vf - vb) / 2
 
-    def mm32(s, p, kf, kb, v):
+    def mm32(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s**3 / kf - p**2 / kb) / (1 + s**3 / kf + p**2 / kb)
         vb = v * (p**2 / kb - s**3 / kf) / (1 + s**3 / kf + p**2 / kb)
         return (vf - vb) / 2
@@ -1191,12 +1191,14 @@ def test_mm_kinetic_with_multiple_substrates():
 
     # fmt: on
 
-    def mm111(s1, s2, p, kf, kb, v):
+    def mm111(s1: float, s2: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s1 * s2 / kf - p / kb) / (1 + s1 * s2 / kf + p / kb)
         vb = v * (p / kb - s1 * s2 / kf) / (1 + s1 * s2 / kf + p / kb)
         return (vf - vb) / 2
 
-    def mm1121(s1, s2, p1, p2, kf, kb, v):
+    def mm1121(
+        s1: float, s2: float, p1: float, p2: float, kf: float, kb: float, v: float
+    ) -> float:
         base = 1 + s1 * s2 / kf + p1**2 * p2 / kb
         vf = v * (s1 * s2 / kf - p1**2 * p2 / kb) / base
         vb = v * (p1**2 * p2 / kb - s1 * s2 / kf) / base
@@ -1304,7 +1306,9 @@ def test_mm_kinetic_with_cofactors():
 
     # fmt: on
 
-    def mm(s1, s2, p1, p2, kf, kb, v):
+    def mm(
+        s1: float, s2: float, p1: float, p2: float, kf: float, kb: float, v: float
+    ) -> float:
         vf = v * (s1 * s2 / kf - p1 * p2 / kb) / (1 + s1 * s2 / kf + p1 * p2 / kb)
         vb = v * (p1 * p2 / kb - s1 * s2 / kf) / (1 + s1 * s2 / kf + p1 * p2 / kb)
         return (vf - vb) / 2
@@ -1409,7 +1413,7 @@ def test_mm_kinetic_with_allosteric_action():
             [0, 0, 0, 0]   ],
     ], dtype=torch.int32)
 
-    def mm(s, p, kf, kb, v):
+    def mm(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s / kf - p / kb) / (1 + s / kf + p / kb)
         vb = v * (p / kb - s / kf) / (1 + s / kf + p / kb)
         return (vf - vb) / 2
@@ -1523,12 +1527,12 @@ def test_reduce_velocity_to_avoid_negative_concentrations():
 
     # fmt: on
 
-    def mm(s, p, kf, kb, v):
+    def mm(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s / kf - p / kb) / (1 + s / kf + p / kb)
         vb = v * (p / kb - s / kf) / (1 + s / kf + p / kb)
         return (vf - vb) / 2
 
-    def mm21(s, p, kf, kb, v):
+    def mm21(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s**2 / kf - p / kb) / (1 + s**2 / kf + p / kb)
         vb = v * (p / kb - s**2 / kf) / (1 + s**2 / kf + p / kb)
         return (vf - vb) / 2
@@ -1633,12 +1637,12 @@ def test_reduce_velocity_in_multiple_proteins():
 
     # fmt: on
 
-    def mm(s, p, kf, kb, v):
+    def mm(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s / kf - p / kb) / (1 + s / kf + p / kb)
         vb = v * (p / kb - s / kf) / (1 + s / kf + p / kb)
         return (vf - vb) / 2
 
-    def mm21(s, p, kf, kb, v):
+    def mm21(s: float, p: float, kf: float, kb: float, v: float) -> float:
         vf = v * (s**2 / kf - p / kb) / (1 + s**2 / kf + p / kb)
         vb = v * (p / kb - s**2 / kf) / (1 + s**2 / kf + p / kb)
         return (vf - vb) / 2
