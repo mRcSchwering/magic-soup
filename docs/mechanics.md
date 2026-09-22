@@ -191,11 +191,11 @@ $$
 
 where $[S]_i$ is the concentration of substrate $i$ with stoichiometric coefficient $n_i$, and $[P]_j$ is the concentration of product $j$ with stoichiometric coefficient $n_j$.
 Over time the reaction will approach an equilibrium state
-where $v_{cat} = 0$, and its [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient)
+where $v_{cat} = 0$ and $a_f = a_f$, and its [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient)
 $Q = K_e$ (the [equilibirum constant](https://en.wikipedia.org/wiki/Equilibrium_constant)):
 
 $$
-\lim_{t \to \infty} Q = \frac{a_b}{a_f} = \frac{K_{m,f}}{K_{m,b}} = K_e
+\lim_{t \to \infty} Q = \frac{K_{m,b}}{K_{m,f}} = K_e
 $$
 
 Thus, $K_e = \frac{K_{m,f}}{K_{m,b}}$ defines in which direction the reaction will proceed.
