@@ -74,12 +74,12 @@ def test_get_bounds():
 @pytest.mark.slow
 @pytest.mark.parametrize("_", range(100))
 def test_get_bounds_randomly(_: int):
-    c = random.randint(2, 100)
+    c = random.randint(2, 1000)
     p = random.randint(1, 100)
     m = random.randint(2, 100)
-    N = torch.randint(-10, 10, (c, p, m), dtype=torch.float32)
+    N = torch.randint(-100, 100, (c, p, m), dtype=torch.float32)
     N[0, 0, :] = 0.0
-    B = torch.rand(c, p, m, dtype=torch.float32)
+    B = torch.rand(c, p, m, dtype=torch.float32) * 1000
     lo, hi = _KINETICS._get_bounds(B=B, N=N)
     assert lo.shape == (c, p)
     assert hi.shape == (c, p)
@@ -90,52 +90,152 @@ def test_get_bounds_randomly(_: int):
     assert (lo <= hi).all()
 
 
-def test_get_alpha_cat_simple_mm_kinetic():
+def test_get_alpha_cat():
     # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
+    # simple MM kinetics
     # cell 0: P0: a -> b, P1: b -> d
     # cell 1: P0: c -> d, P1: a -> d
+    # multiple substrates and products
+    # cell 2: P0: a -> 2b, P1: 2c -> d
+    # cell 3: P0: 3b -> 2c
+    # cell 4: P0: a,b -> c, P1: b,d -> 2a,c
+    # cell 5: P0: a,d -> b
+    # co-factors involved (required but n_f+n_b=0)
+    # cell 6: P0: a + b -> b + c
+    # cell 7: P0: a + c -> b + c
 
     # concentrations
     x0 = torch.tensor(
         [
             [2.1, 1.9, 0.0, 0.8],
             [2.9, 3.1, 2.1, 1.0],
+            [1.1, 0.1, 2.9, 0.8],
+            [1.2, 4.9, 5.1, 1.4],
+            [1.1, 2.1, 2.9, 0.8],
+            [2.3, 0.4, 0.0, 3.2],
+            [10.0, 0.1, 3.0, 0.8],
+            [10.0, 3.0, 0.1, 0.0],
         ],
         dtype=torch.float32,
     )
-    x0_ = torch.broadcast_to(x0.unsqueeze(1), (2, 3, 4))
+    x0_ = torch.broadcast_to(x0.unsqueeze(1), (len(x0), 3, 4))
 
     # stoichiometry
-    N = torch.tensor(
+    N_f = torch.tensor(
         [
             [
-                [-1, 1, 0, 0],
-                [0, -1, 0, 1],
+                [1, 0, 0, 0],  # P0: a -> b
+                [0, 1, 0, 0],  # P1: b -> d
                 [0, 0, 0, 0],
             ],
             [
-                [0, 0, -1, 1],
-                [-1, 0, 0, 1],
+                [0, 0, 1, 0],  # P0: c -> d
+                [1, 0, 0, 0],  # P1: a -> d
+                [0, 0, 0, 0],
+            ],
+            [
+                [1, 0, 0, 0],  # P0: a -> 2b
+                [0, 0, 2, 0],  # P1: 2c -> d
+                [0, 0, 0, 0],
+            ],
+            [
+                [0, 3, 0, 0],  # P0: 3b -> 2c
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+            [
+                [1, 1, 0, 0],  # P0: a,b -> c
+                [0, 1, 0, 1],  # P1: b,d -> 2a,c
+                [0, 0, 0, 0],
+            ],
+            [
+                [1, 0, 0, 1],  # P0: a,d -> b
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+            [
+                [1, 1, 0, 0],  # P0: a + b -> b + c
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+            [
+                [1, 0, 1, 0],  # P0: a + c -> b + c
+                [0, 0, 0, 0],
                 [0, 0, 0, 0],
             ],
         ],
         dtype=torch.float32,
     )
-    N_f = torch.where(N < 0, -N, 0)
-    N_b = torch.where(N > 0, N, 0)
+    N_b = torch.tensor(
+        [
+            [
+                [0, 1, 0, 0],  # P0: a -> b
+                [0, 0, 0, 1],  # P1: b -> d
+                [0, 0, 0, 0],
+            ],
+            [
+                [0, 0, 0, 1],  # P0: c -> d
+                [0, 0, 0, 1],  # P1: a -> d
+                [0, 0, 0, 0],
+            ],
+            [
+                [0, 2, 0, 0],  # P0: a -> 2b
+                [0, 0, 0, 1],  # P1: 2c -> d
+                [0, 0, 0, 0],
+            ],
+            [
+                [0, 0, 2, 0],  # P0: 3b -> 2c
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+            [
+                [0, 0, 1, 0],  # P0: a,b -> c
+                [2, 0, 1, 0],  # P1: b,d -> 2a,c
+                [0, 0, 0, 0],
+            ],
+            [
+                [0, 1, 0, 0],  # P0: a,d -> b
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+            [
+                [0, 1, 1, 0],  # P0: a + b -> b + c
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+            [
+                [0, 1, 1, 0],  # P0: a + c -> b + c
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+            ],
+        ],
+        dtype=torch.float32,
+    )
 
     # affinities
     k_f = torch.tensor(
         [
-            [1.3, 2.1, 0.0],
-            [1.0, 1.7, 0.0],
+            [1.3, 2.1, 0.0],  # P0: a -> b, P1: b -> d
+            [1.0, 1.7, 0.0],  # P0: c -> d, P1: a -> d
+            [1.3, 2.1, 0.0],  # P0: a -> 2b, P1: 2c -> d
+            [1.4, 0.0, 0.0],  # P0: 3b -> 2c
+            [1.3, 2.1, 0.0],  # P0: a,b -> c, P1: b,d -> 2a,c
+            [1.4, 0.0, 0.0],  # P0: a,d -> b
+            [2.0, 0.0, 0.0],  # P0: a + b -> b + c
+            [2.0, 0.0, 0.0],  # P0: a + c -> b + c
         ],
         dtype=torch.float32,
     )
     k_b = torch.tensor(
         [
-            [0.3, 1.1, 0.0],
-            [1.5, 0.7, 0.0],
+            [0.3, 1.1, 0.0],  # P0: a -> b, P1: b -> d
+            [1.5, 0.7, 0.0],  # P0: c -> d, P1: a -> d
+            [0.3, 1.1, 0.0],  # P0: a -> 2b, P1: 2c -> d
+            [1.5, 0.0, 0.0],  # P0: 3b -> 2c
+            [0.3, 1.1, 0.0],  # P0: a,b -> c, P1: b,d -> 2a,c
+            [1.5, 0.0, 0.0],  # P0: a,d -> b
+            [1.0, 0.0, 0.0],  # P0: a + b -> b + c
+            [1.0, 0.0, 0.0],  # P0: a + c -> b + c
         ],
         dtype=torch.float32,
     )
@@ -144,76 +244,6 @@ def test_get_alpha_cat_simple_mm_kinetic():
         vf = (s / kf - p / kb) / (1 + s / kf + p / kb)
         vb = (p / kb - s / kf) / (1 + s / kf + p / kb)
         return (vf - vb) / 2
-
-    # expected outcome
-    a_c0_0 = f(x0[0, 0], x0[0, 1], k_f[0, 0], k_b[0, 0])
-    a_c0_1 = f(x0[0, 1], x0[0, 3], k_f[0, 1], k_b[0, 1])
-
-    a_c1_0 = f(x0[1, 2], x0[1, 3], k_f[1, 0], k_b[1, 0])
-    a_c1_1 = f(x0[1, 0], x0[1, 3], k_f[1, 1], k_b[1, 1])
-
-    a_exp = torch.tensor(
-        [
-            [a_c0_0, a_c0_1, 0.0],
-            [a_c1_0, a_c1_1, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-
-    # test
-    a = _KINETICS._get_alpha_cat(x=x0_, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
-    torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
-
-
-def test_get_alpha_cat_mm_kinetic_with_proportions():
-    # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
-    # cell 0: P0: a -> 2b, P1: 2c -> d
-    # cell 1: P0: 3b -> 2c
-
-    # concentrations
-    x0 = torch.tensor(
-        [
-            [1.1, 0.1, 2.9, 0.8],
-            [1.2, 4.9, 5.1, 1.4],
-        ],
-        dtype=torch.float32,
-    )
-    x0_ = torch.broadcast_to(x0.unsqueeze(1), (2, 3, 4))
-
-    # reactions
-    N = torch.tensor(
-        [
-            [
-                [-1, 2, 0, 0],
-                [0, 0, -2, 1],
-                [0, 0, 0, 0],
-            ],
-            [
-                [0, -3, 2, 0],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ],
-        ],
-        dtype=torch.float32,
-    )
-    N_f = torch.where(N < 0, -N, 0)
-    N_b = torch.where(N > 0, N, 0)
-
-    # affinities
-    k_f = torch.tensor(
-        [
-            [1.3, 2.1, 0.0],
-            [1.4, 0.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-    k_b = torch.tensor(
-        [
-            [0.3, 1.1, 0.0],
-            [1.5, 0.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
 
     def f12(s, p, kf, kb):
         af = (s / kf - p**2 / kb) / (1 + s / kf + p**2 / kb)
@@ -230,75 +260,6 @@ def test_get_alpha_cat_mm_kinetic_with_proportions():
         ab = (p**2 / kb - s**3 / kf) / (1 + s**3 / kf + p**2 / kb)
         return (af - ab) / 2
 
-    # expected outcome
-    a_c0_0 = f12(x0[0, 0], x0[0, 1], k_f[0, 0], k_b[0, 0])
-    a_c0_1 = f21(x0[0, 2], x0[0, 3], k_f[0, 1], k_b[0, 1])
-
-    a_c1_0 = f32(x0[1, 1], x0[1, 2], k_f[1, 0], k_b[1, 0])
-
-    a_exp = torch.tensor(
-        [
-            [a_c0_0, a_c0_1, 0.0],
-            [a_c1_0, 0.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-
-    # test
-    a = _KINETICS._get_alpha_cat(x=x0_, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
-    torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
-
-
-def test_get_alpha_cat_mm_kinetic_with_multiple_substrates():
-    # 2 cell, 3 max proteins, 4 molecules (a, b, c, d)
-    # cell 0: P0: a,b -> c, P1: b,d -> 2a,c
-    # cell 1: P0: a,d -> b
-
-    # concentrations
-    x0 = torch.tensor(
-        [
-            [1.1, 2.1, 2.9, 0.8],
-            [2.3, 0.4, 0.0, 3.2],
-        ],
-        dtype=torch.float32,
-    )
-    x0_ = torch.broadcast_to(x0.unsqueeze(1), (2, 3, 4))
-
-    # reactions
-    N = torch.tensor(
-        [
-            [
-                [-1, -1, 1, 0],
-                [2, -1, 1, -1],
-                [0, 0, 0, 0],
-            ],
-            [
-                [-1, 1, 0, -1],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ],
-        ],
-        dtype=torch.float32,
-    )
-    N_f = torch.where(N < 0, -N, 0)
-    N_b = torch.where(N > 0, N, 0)
-
-    # affinities
-    k_f = torch.tensor(
-        [
-            [1.3, 2.1, 0.0],
-            [1.4, 0.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-    k_b = torch.tensor(
-        [
-            [0.3, 1.1, 0.0],
-            [1.5, 0.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-
     def f111(s1, s2, p, kf, kb):
         af = (s1 * s2 / kf - p / kb) / (1 + s1 * s2 / kf + p / kb)
         ab = (p / kb - s1 * s2 / kf) / (1 + s1 * s2 / kf + p / kb)
@@ -310,103 +271,50 @@ def test_get_alpha_cat_mm_kinetic_with_multiple_substrates():
         ab = (p1**2 * p2 / kb - s1 * s2 / kf) / base
         return (af - ab) / 2
 
-    # expected outcome
-    a_c0_0 = f111(x0[0, 0], x0[0, 1], x0[0, 2], k_f[0, 0], k_b[0, 0])
-    a_c0_1 = f1121(x0[0, 1], x0[0, 3], x0[0, 0], x0[0, 2], k_f[0, 1], k_b[0, 1])
-
-    a_c1_0 = f111(x0[1, 0], x0[1, 3], x0[1, 1], k_f[1, 0], k_b[1, 0])
-
-    a_exp = torch.tensor(
-        [
-            [a_c0_0, a_c0_1, 0.0],
-            [a_c1_0, 0.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-
-    # test
-    a = _KINETICS._get_alpha_cat(x=x0_, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
-    torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
-
-
-def test_get_alpha_cat_mm_kinetic_with_cofactors():
-    # 2 cell, 3 proteins, 4 molecules (a, b, c, d)
-    # N for a molecule might be 0 but it's still required
-    # cell 0: P0: a + b -> b + c
-    # cell 1: P0: a + c -> b + c
-
-    # concentrations
-    x0 = torch.tensor(
-        [
-            [10.0, 0.1, 3.0, 0.8],
-            [10.0, 3.0, 0.1, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-    x0_ = torch.broadcast_to(x0.unsqueeze(1), (2, 3, 4))
-
-    # reactions
-    N_f = torch.tensor(
-        [
-            [
-                [1, 1, 0, 0],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ],
-            [
-                [1, 0, 1, 0],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ],
-        ],
-        dtype=torch.float32,
-    )
-    N_b = torch.tensor(
-        [
-            [
-                [0, 1, 1, 0],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ],
-            [
-                [0, 1, 1, 0],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ],
-        ],
-        dtype=torch.float32,
-    )
-
-    # affinities
-    k_f = torch.tensor(
-        [
-            [2.0, 0.0, 0.0],
-            [2.0, 0.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-    k_b = torch.tensor(
-        [
-            [1.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-
-    def f(s1, s2, p1, p2, kf, kb):
+    def f1111(s1, s2, p1, p2, kf, kb):
         af = (s1 * s2 / kf - p1 * p2 / kb) / (1 + s1 * s2 / kf + p1 * p2 / kb)
         ab = (p1 * p2 / kb - s1 * s2 / kf) / (1 + s1 * s2 / kf + p1 * p2 / kb)
         return (af - ab) / 2
 
+    # cell 0: P0: a -> b, P1: b -> d
+    a_c0_0 = f(x0[0, 0], x0[0, 1], k_f[0, 0], k_b[0, 0])
+    a_c0_1 = f(x0[0, 1], x0[0, 3], k_f[0, 1], k_b[0, 1])
+
+    # cell 1: P0: c -> d, P1: a -> d
+    a_c1_0 = f(x0[1, 2], x0[1, 3], k_f[1, 0], k_b[1, 0])
+    a_c1_1 = f(x0[1, 0], x0[1, 3], k_f[1, 1], k_b[1, 1])
+
+    # cell 2: P0: a -> 2b, P1: 2c -> d
+    a_c2_0 = f12(x0[2, 0], x0[2, 1], k_f[2, 0], k_b[2, 0])
+    a_c2_1 = f21(x0[2, 2], x0[2, 3], k_f[2, 1], k_b[2, 1])
+
+    # cell 3: P0: 3b -> 2c
+    a_c3_0 = f32(x0[3, 1], x0[3, 2], k_f[3, 0], k_b[3, 0])
+
+    # cell 4: P0: a,b -> c, P1: b,d -> 2a,c
+    a_c4_0 = f111(x0[4, 0], x0[4, 1], x0[4, 2], k_f[4, 0], k_b[4, 0])
+    a_c4_1 = f1121(x0[4, 1], x0[4, 3], x0[4, 0], x0[4, 2], k_f[4, 1], k_b[4, 1])
+
+    # cell 5: P0: a,d -> b
+    a_c5_0 = f111(x0[5, 0], x0[5, 3], x0[5, 1], k_f[5, 0], k_b[5, 0])
+
+    # cell 6: P0: a + b -> b + c
+    a_c6_0 = f1111(x0[6, 0], x0[6, 1], x0[6, 1], x0[6, 2], k_f[6, 0], k_b[6, 0])
+
+    # cell 7: P0: a + c -> b + c
+    a_c7_0 = f1111(x0[7, 0], x0[7, 2], x0[7, 1], x0[7, 2], k_f[7, 0], k_b[7, 0])
+
     # expected outcome
-    a_c0_0 = f(x0[0, 0], x0[0, 1], x0[0, 1], x0[0, 2], k_f[0, 0], k_b[0, 0])
-
-    a_c1_0 = f(x0[1, 0], x0[1, 2], x0[1, 1], x0[1, 2], k_f[1, 0], k_b[1, 0])
-
     a_exp = torch.tensor(
         [
-            [a_c0_0, 0.0, 0.0],
-            [a_c1_0, 0.0, 0.0],
+            [a_c0_0, a_c0_1, 0.0],
+            [a_c1_0, a_c1_1, 0.0],
+            [a_c2_0, a_c2_1, 0.0],
+            [a_c3_0, 0.0, 0.0],
+            [a_c4_0, a_c4_1, 0.0],
+            [a_c5_0, 0.0, 0.0],
+            [a_c6_0, 0.0, 0.0],
+            [a_c7_0, 0.0, 0.0],
         ],
         dtype=torch.float32,
     )
@@ -414,6 +322,23 @@ def test_get_alpha_cat_mm_kinetic_with_cofactors():
     # test
     a = _KINETICS._get_alpha_cat(x=x0_, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
     torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("_", range(100))
+def test_get_alpha_cat_randomly(_: int):
+    c = random.randint(2, 1000)
+    p = random.randint(1, 100)
+    m = random.randint(2, 100)
+    x = torch.rand(c, p, m, dtype=torch.float32) * 1000
+    N_f = torch.randint(-100, 100, (c, p, m), dtype=torch.float32)
+    N_b = torch.randint(-100, 100, (c, p, m), dtype=torch.float32)
+    k_f = torch.rand(c, p, dtype=torch.float32) * 10  # TODO: better distro
+    k_b = torch.rand(c, p, dtype=torch.float32) * 10  # TODO: better distro
+    a = _KINETICS._get_alpha_cat(x=x, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
+    assert a.shape == (c, p)
+    assert a.isfinite().all()
+    assert a.isnan().sum() == 0
 
 
 def test_mm_kinetic_with_allosteric_action():

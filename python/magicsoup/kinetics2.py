@@ -35,6 +35,19 @@ class Kinetics:
         k_f: torch.Tensor,  # f32 (c, p)
         k_b: torch.Tensor,  # f32 (c, p)
     ) -> torch.Tensor:
+        # for each protein calculate alpha_cat:
+        #
+        #   a_f = 1/k_f * product(x_i^n_f_i)  i in 1..m
+        #   a_b = 1/k_b * product(x_i^n_b_i)  i in 1..m
+        #   alpha = (a_f - b_b) / (1 + a_f + b_b)
+        #
+        # for better effective dynamic range as:
+        #
+        #   l_f = -log(k_f) + sum(n_f_i * log(x_i))  i in 1..m
+        #   l_b = -log(k_b) + sum(n_b_i * log(x_i))  i in 1..m
+        #   l_max = max(l_f, l_b, 0)
+        #   alpha  = (exp(l_f - l_max) - exp(l_b - l_max)) / (exp(-l_max) + exp(l_f - l_max) + exp(l_b - l_max))
+        #
         l_f = -torch.log(k_f) + (N_f * torch.log(x + _EPS)).sum(dim=2)  # f32 (c, p)
         l_b = -torch.log(k_b) + (N_b * torch.log(x + _EPS)).sum(dim=2)  # f32 (c, p)
         l_max = torch.maximum(l_f, l_b).clamp(min=0.0)  # f32 (c, p)
@@ -50,6 +63,15 @@ class Kinetics:
         N_h: torch.Tensor,  # i32 (c, p, m)
         K_r: torch.Tensor,  # f32 (c, p, m)
     ) -> torch.Tensor:
+        # for each protein calculate alpha_reg:
+        #
+        #   alpha = prod(x_i^n_i / (k_i^n_i + x_i^n_i))  i in 1..m
+        #
+        # for better effective dynamic range as:
+        #
+        #   z_i = n_i * (log(k_i) - log(x_i))
+        #   alpha = exp(-sum(softplus(z_i)))  i in 1..m
+        #
         z = N_h * (torch.log(K_r) - torch.log(x))  # f32 (c, p, m)
         s = F.softplus(z, beta=1.0, threshold=20.0)  # pylint: disable=E1102
         alpha = torch.exp(-s.sum(dim=2))  # f32 (c, p)
