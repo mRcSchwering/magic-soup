@@ -1,23 +1,56 @@
+import logging
+
 import torch
 import torch.nn.functional as F
 
-# 100x below f32 limits
-_EPS = 1e-43  # n < -45 -> 0.0
-_MAX = 1e36  # n > 38 -> inf
-_MIN = -1e36  # n > 38 -> inf
-_INF = float("inf")
+_log = logging.getLogger(__name__)
 
 
 class Kinetics:
 
-    def __init__(self, device: str = "cpu"):
+    def __init__(
+        self,
+        device: str = "cpu",
+        itype: torch.dtype = torch.int8,
+        ftype: torch.dtype = torch.float32,
+        eps: float = 1e-40,
+    ):
         self.device = device
+        self.itype = itype
+        self.ftype = ftype
+        self.eps = eps
+
+    def _check_nonfinite(self, t: torch.Tensor, where: str) -> None:
+        is_finite = torch.isfinite(t)
+        if not is_finite.all():
+            bad = (~is_finite).nonzero()
+            _log.warning("non-finite values in %s, cells/proteins: %r", where, bad[:5])
+
+    def _dampen_cells(
+        self, x0: torch.Tensor, dx: torch.Tensor, xi: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Rescale xi and x0 to ensure positive concentrations
+        #
+        # Rescaling happens per cell (whole cell is slowed down) but is quick
+        # Jacobi iterations should still converge to correct solution
+        #
+        # find scaling factor as largest λ∈(0,1] with:
+        #
+        #   x + λ * dx >= 0
+        #
+        eps = self.eps
+        inf = float("inf")
+        ratio = torch.where(dx < 0, x0 / (-dx + eps), torch.full_like(dx, inf))
+        lam = ratio.min(dim=1, keepdim=True).values.clamp(max=1.0)  # (c, 1)
+        return xi * lam, dx * lam  # (c, p), (c, m)
 
     @classmethod
     def _get_bounds(
         cls,
-        B: torch.Tensor,  # f32 (c, p, m)
-        N: torch.Tensor,  # f32 (c, p, m)
+        B: torch.Tensor,  # (c, p, m)
+        N: torch.Tensor,  # (c, p, m)
+        v_max: torch.Tensor,  # (c, p)
+        h: float,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # calculate xi bounds for bisection
         # - B represents molecule concentration per protein if all other proteins were active
@@ -28,26 +61,38 @@ class Kinetics:
         #   lo = max(-B / N)  for N > 0
         #   hi = min(B / -N)  for N < 0
         #
-        ratio_lo = torch.where(N > 0, -B / N, -_INF)
-        xi_lo = ratio_lo.max(dim=2).values  # f32 (c, p)
+        inf = float("inf")
 
-        ratio_hi = torch.where(N < 0, B / -N, _INF)
-        xi_hi = ratio_hi.min(dim=2).values  # f32 (c, p)
+        ratio_lo = torch.where(N > 0, -B / N, -inf)
+        xi_lo = ratio_lo.max(dim=2).values  # (c, p)
 
-        return xi_lo, xi_hi  # f32 (c, p), f32 (c, p)
+        ratio_hi = torch.where(N < 0, B / -N, inf)
+        xi_hi = ratio_hi.min(dim=2).values  # (c, p)
+
+        # guard against infeasible per-protein brackets
+        # could happen with B < 0 elements
+        # which means one background protein is producing substrate
+        xi_lo = torch.minimum(xi_lo, xi_hi)  # (c, p)
+
+        # since always xi <= h * v_max it can be used as limiting factor
+        max_rate = h * v_max  # (c, p)
+        xi_lo = torch.maximum(xi_lo, -max_rate)
+        xi_hi = torch.minimum(xi_hi, max_rate)
+
+        return xi_lo, xi_hi  # (c, p), (c, p)
 
     def _get_alpha_cat(
         self,
-        x: torch.Tensor,  # f32 (c, p, m)
-        N_f: torch.Tensor,  # i32 (c, p, m)
-        N_b: torch.Tensor,  # i32 (c, p, m)
-        k_f: torch.Tensor,  # f32 (c, p)
-        k_b: torch.Tensor,  # f32 (c, p)
+        x: torch.Tensor,  # (c, p, m)
+        N_f: torch.Tensor,  # (c, p, m)
+        N_b: torch.Tensor,  # (c, p, m)
+        k_f: torch.Tensor,  # (c, p)
+        k_b: torch.Tensor,  # (c, p)
     ) -> torch.Tensor:
         # calculate per protein catalytic activity
         # - N_f defines forward stoichiometric coefficients
         # - N_b defines backward stoichiometric coefficients
-        # - x must be >= 0 for all elements
+        # - x must be >= 0 for all elements where N_f, N_b > 0
         # - k_f, K_b must be > 0 for all elements where N_f, N_b > 0
         # - k_f, k_b must be 0 for all elements where N_f, N_b = 0
         #
@@ -64,20 +109,21 @@ class Kinetics:
         #   l_max = max(l_f, l_b, 0)
         #   alpha  = (exp(l_f - l_max) - exp(l_b - l_max)) / (exp(-l_max) + exp(l_f - l_max) + exp(l_b - l_max))
         #
-        l_f = -torch.log(k_f) + (N_f * torch.log(x + _EPS)).sum(dim=2)  # f32 (c, p)
-        l_b = -torch.log(k_b) + (N_b * torch.log(x + _EPS)).sum(dim=2)  # f32 (c, p)
-        l_max = torch.maximum(l_f, l_b).clamp(min=0.0)  # f32 (c, p)
-        e_f = torch.exp(l_f - l_max)  # f32 (c, p)
-        e_b = torch.exp(l_b - l_max)  # f32 (c, p)
-        e_max = torch.exp(-l_max)  # f32 (c, p)
-        alpha = (e_f - e_b) / (e_max + e_f + e_b)  # f32 (c, p)
-        return alpha.nan_to_num(0.0)  # f32 (c, p)
+        eps = self.eps
+        l_f = -torch.log(k_f + eps) + (N_f * torch.log(x + eps)).sum(dim=2)  # (c, p)
+        l_b = -torch.log(k_b + eps) + (N_b * torch.log(x + eps)).sum(dim=2)  # (c, p)
+        l_max = torch.maximum(l_f, l_b).clamp(min=0.0)  # (c, p)
+        e_f = torch.exp(l_f - l_max)  # (c, p)
+        e_b = torch.exp(l_b - l_max)  # (c, p)
+        e_max = torch.exp(-l_max)  # (c, p)
+        alpha = (e_f - e_b) / (e_max + e_f + e_b)  # (c, p)
+        return alpha.nan_to_num(0.0)  # (c, p)
 
     def _get_alpha_reg(
         self,
-        x: torch.Tensor,  # f32 (c, p, m)
-        N_h: torch.Tensor,  # i32 (c, p, m)
-        K_r: torch.Tensor,  # f32 (c, p, m)
+        x: torch.Tensor,  # (c, p, m)
+        N_h: torch.Tensor,  # (c, p, m)
+        K_r: torch.Tensor,  # (c, p, m)
     ) -> torch.Tensor:
         # calculate per protein regulatory activity
         # - N_h defines hill coefficients
@@ -94,71 +140,35 @@ class Kinetics:
         #   z_i = n_i * (log(k_i) - log(x_i))
         #   alpha = exp(-sum(softplus(z_i)))  i in 1..m
         #
-        z = N_h * (torch.log(K_r) - torch.log(x))  # f32 (c, p, m)
+        eps = self.eps
+        z = N_h * (torch.log(K_r) - torch.log(x + eps))  # (c, p, m)
         s = F.softplus(z, beta=1.0, threshold=20.0)  # pylint: disable=E1102
-        alpha = torch.exp(-s.nansum(dim=2))  # f32 (c, p)
-        return alpha  # f32 (c, p)
-
-    def _get_velocity(
-        self,
-        xi: torch.Tensor,  # f32 (c, p)
-        B: torch.Tensor,  # f32 (c, p, m)
-        N: torch.Tensor,  # f32 (c, p, m)
-        N_h: torch.Tensor,  # i32 (c, p, m)
-        N_f: torch.Tensor,  # i32 (c, p, m)
-        N_b: torch.Tensor,  # i32 (c, p, m)
-        k_f: torch.Tensor,  # f32 (c, p)
-        k_b: torch.Tensor,  # f32 (c, p)
-        K_r: torch.Tensor,  # f32 (c, p, m)
-        v_max: torch.Tensor,  # f32 (c, p)
-    ) -> torch.Tensor:
-        # get per protein velocity
-        # - N defines stoichiometric numbers
-        # - xi defines current reaction extend
-        # - v_max must be >= 0 for all elements where N != 0
-        #
-        # given concentrations from background activity calculate:
-        #
-        #   v(x) = v_max * alpha_cat(x) * alpha_reg(x)
-        #   dx = N * xi
-        #
-
-        # broadcast into a per-reaction shifted concentration
-        x1 = B + N * xi.unsqueeze(-1)  # f32 (c, p, m)
-
-        # TODO: shouldn't be necessary
-        if x1.min() < 0.0:
-            raise ValueError(f"negative concentration: {x1.min()}")
-
-        # calculate per protein catalytic activity
-        alpha_cat = self._get_alpha_cat(
-            x=x1, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b
-        )  # f32 (c, p)
-
-        # calculate per protein regulatory activity
-        alpha_reg = self._get_alpha_reg(x=x1, N_h=N_h, K_r=K_r)  # f32 (c, p)
-
-        return v_max * alpha_cat * alpha_reg  # f32 (c, p)
+        alpha = torch.exp(-s.nansum(dim=2))  # (c, p)
+        return alpha  # (c, p)
 
     def _bisect_xi(
         self,
-        n_iters: int,
+        n_max_iters: int,
+        xi_conv_tol: float,
         h: float,
-        B: torch.Tensor,  # f32 (c, p, m)
-        xi_lo: torch.Tensor,  # f32 (c, p)
-        xi_hi: torch.Tensor,  # f32 (c, p)
-        N: torch.Tensor,  # i32 (c, p, m)
-        N_h: torch.Tensor,  # i32 (c, p, m)
-        N_f: torch.Tensor,  # i32 (c, p, m)
-        N_b: torch.Tensor,  # i32 (c, p, m)
-        k_f: torch.Tensor,  # f32 (c, p)
-        k_b: torch.Tensor,  # f32 (c, p)
-        K_r: torch.Tensor,  # f32 (c, p, m)
-        v_max: torch.Tensor,  # f32 (c, p)
+        B: torch.Tensor,  # (c, p, m)
+        xi_lo: torch.Tensor,  # (c, p)
+        xi_hi: torch.Tensor,  # (c, p)
+        N: torch.Tensor,  # (c, p, m)
+        N_h: torch.Tensor,  # (c, p, m)
+        N_f: torch.Tensor,  # (c, p, m)
+        N_b: torch.Tensor,  # (c, p, m)
+        k_f: torch.Tensor,  # (c, p)
+        k_b: torch.Tensor,  # (c, p)
+        K_r: torch.Tensor,  # (c, p, m)
+        v_max: torch.Tensor,  # (c, p)
     ) -> torch.Tensor:
         # solve for xi per protein
         # - B must be concentrations of all other activity at initial xi
         # - xi_lo, xi_hi must ensure concentration positivity
+        # - N defines stoichiometric numbers
+        # - xi defines current reaction extend
+        # - v_max must be >= 0 for all elements where N != 0
         #
         # use bisection method so that:
         #
@@ -166,67 +176,70 @@ class Kinetics:
         #
         # xi is chosen as midpoint between lo and hi
         # lo,hi is updated each iteration based on sign of g(xi)
-        lo = xi_lo.clone()  # f32 (c, p)
-        hi = xi_hi.clone()  # f32 (c, p)
+        # velocity is calculated given concentrations from background activity:
+        #
+        #   v(x) = v_max * alpha_cat(x) * alpha_reg(x)
+        #   dx = N * xi
+        #
+        lo = xi_lo.clone()  # (c, p)
+        hi = xi_hi.clone()  # (c, p)
 
-        for _ in range(n_iters):
-            mid = 0.5 * (lo + hi)  # f32 (c, p)
+        for _ in range(n_max_iters):
+            xi = 0.5 * (lo + hi)  # (c, p)
 
             # bounds can be non-finite for N=0
-            mid = mid.nan_to_num(0.0)
+            xi = xi.nan_to_num(0.0)
 
-            v = self._get_velocity(
-                xi=mid,
-                B=B,
-                N=N,
-                N_h=N_h,
-                N_f=N_f,
-                N_b=N_b,
-                k_f=k_f,
-                k_b=k_b,
-                K_r=K_r,
-                v_max=v_max,
-            )  # f32 (c, p)
+            # broadcast into a per-reaction shifted concentration
+            x1 = B + N * xi.unsqueeze(-1)  # (c, p, m)
 
-            too_high = mid - h * v > 0  # bool (c, p)
-            hi = torch.where(too_high, mid, hi)  # f32 (c, p)
-            lo = torch.where(too_high, lo, mid)  # f32 (c, p)
+            # only for numerical safety, not for mass bookkeeping
+            x1 = x1.clamp(min=0.0)  # (c, p, m)
 
-        return 0.5 * (lo + hi)  # f32 (c, p)
+            # calculate per protein catalytic activity
+            a_cat = self._get_alpha_cat(x=x1, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
 
-    def _rescale_to_feasible(self, x0: torch.Tensor, dx: torch.Tensor) -> torch.Tensor:
-        # dx: (c, m) combined proposed change; find largest λ∈(0,1] keeping x0+λ*dx >= 0
-        neg = dx < 0
-        ratio = torch.where(neg, x0 / (-dx + 1e-30), torch.full_like(dx, float("inf")))
-        lam = ratio.min(dim=1, keepdim=True).values.clamp(max=1.0)  # (c, 1)
-        return lam
+            # calculate per protein regulatory activity
+            a_reg = self._get_alpha_reg(x=x1, N_h=N_h, K_r=K_r)
+
+            v = v_max * a_cat * a_reg  # (c, p)
+
+            too_high = xi - h * v > 0  # (c, p)
+            hi = torch.where(too_high, xi, hi)  # (c, p)
+            lo = torch.where(too_high, lo, xi)  # (c, p)
+
+            if (hi - lo).max() < xi_conv_tol:
+                break
+
+        return 0.5 * (lo + hi)  # (c, p)
 
     def step_protein_activity(
         self,
         h: float,
-        x0: torch.Tensor,  # f32 (c, m)
-        N_h: torch.Tensor,  # i32 (c, p, m)
-        N_f: torch.Tensor,  # i32 (c, p, m)
-        N_b: torch.Tensor,  # i32 (c, p, m)
-        k_f: torch.Tensor,  # f32 (c, p)
-        k_b: torch.Tensor,  # f32 (c, p)
-        K_r: torch.Tensor,  # f32 (c, p, m)
-        v_max: torch.Tensor,  # f32 (c, p)
-        n_sweeps: int = 3,
-        n_bisect: int = 10,
+        x0: torch.Tensor,  # (c, m)
+        N_h: torch.Tensor,  # (c, p, m)
+        N_f: torch.Tensor,  # (c, p, m)
+        N_b: torch.Tensor,  # (c, p, m)
+        k_f: torch.Tensor,  # (c, p)
+        k_b: torch.Tensor,  # (c, p)
+        K_r: torch.Tensor,  # (c, p, m)
+        v_max: torch.Tensor,  # (c, p)
+        n_max_sweeps: int = 5,
+        n_max_bisect: int = 10,
+        xi_conv_tol: float = 1e-4,
     ) -> torch.Tensor:
         c, p = v_max.shape
-        N = (N_b - N_f).float()
+        N = N_b - N_f.float()
 
         # initial xi
-        xi = torch.zeros((c, p), device=self.device, dtype=torch.float32)  # f32 (c, p)
+        xi = torch.zeros((c, p), device=self.device, dtype=self.ftype)  # (c, p)
 
-        for _ in range(n_sweeps):
+        for _ in range(n_max_sweeps):
+            xi_prev = xi.clone()
             dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
 
-            # dampen uniformly per cell
-            xi = xi * self._rescale_to_feasible(x0=x0, dx=dx)  # (c, p)
-            dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
+            # per cell dampening helps background convergence here
+            xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
 
             dx_ = dx.unsqueeze(1)  # (c, 1, m)
             xi_ = xi.unsqueeze(-1)  # (c, p, 1)
@@ -235,10 +248,15 @@ class Kinetics:
             # substract contribution of each protein from total concentration change
             B = x0_ + (dx_ - N * xi_)  # (c, p, m)
 
-            xi_lo, xi_hi = self._get_bounds(B=B, N=N)  # (c, p), (c, p)
+            self._check_nonfinite(B, "B at Jacobi sweep")
+
+            xi_lo, xi_hi = self._get_bounds(
+                B=B, N=N, v_max=v_max, h=h
+            )  # (c, p), (c, p)
             xi = self._bisect_xi(
                 h=h,
-                n_iters=n_bisect,
+                n_max_iters=n_max_bisect,
+                xi_conv_tol=xi_conv_tol,
                 B=B,
                 xi_lo=xi_lo,
                 xi_hi=xi_hi,
@@ -252,16 +270,15 @@ class Kinetics:
                 v_max=v_max,
             )  # (c, p)
 
+            if (xi - xi_prev).abs().max() < xi_conv_tol:
+                break
+
         dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
 
-        # dampen uniformly per cell
-        xi = xi * self._rescale_to_feasible(x0=x0, dx=dx)  # (c, p)
-        dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
+        # per cell dampening for final result
+        xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
 
         x1 = x0 + dx  # (c, m)
+        self._check_nonfinite(x1, "x1 at Jacobi sweep")
 
-        # TODO: shouldn't be necessary
-        if x1.min() < 0.0:
-            raise ValueError(f"negative concentration: {x1.min()}")
-
-        return x1
+        return x1.clamp(min=0.0)  # (c, m)
