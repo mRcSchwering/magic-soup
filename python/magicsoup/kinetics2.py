@@ -26,6 +26,22 @@ class Kinetics:
             bad = (~is_finite).nonzero()
             _log.warning("non-finite values in %s, cells/proteins: %r", where, bad[:5])
 
+    def _fix_nonfinite(self, t: torch.Tensor, where: str) -> None:
+        is_finite = torch.isfinite(t)
+        if not is_finite.all():
+            bad = (~is_finite).nonzero()
+            _log.warning("non-finite values in %s, cells/proteins: %r", where, bad[:5])
+            t[~is_finite] = 0.0
+            _log.warning("non-finite values in %s replaced with 0.0", where)
+
+    def _fix_negative(self, t: torch.Tensor, where: str) -> None:
+        is_neg = t < 0.0
+        if is_neg.any():
+            bad = (~is_neg).nonzero()
+            _log.warning("negative values in %s, cells/molecules: %r", where, bad[:5])
+            t[~is_neg] = 0.0
+            _log.warning("negative values in %s replaced with 0.0", where)
+
     def _dampen_cells(
         self, x0: torch.Tensor, dx: torch.Tensor, xi: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -215,7 +231,6 @@ class Kinetics:
 
     def step_protein_activity(
         self,
-        h: float,
         x0: torch.Tensor,  # (c, m)
         N_h: torch.Tensor,  # (c, p, m)
         N_f: torch.Tensor,  # (c, p, m)
@@ -224,8 +239,9 @@ class Kinetics:
         k_b: torch.Tensor,  # (c, p)
         K_r: torch.Tensor,  # (c, p, m)
         v_max: torch.Tensor,  # (c, p)
-        n_max_sweeps: int = 5,
-        n_max_bisect: int = 10,
+        h: float = 1.0,
+        n_max_sweeps: int = 3,
+        n_max_bisect: int = 20,
         xi_conv_tol: float = 1e-4,
     ) -> torch.Tensor:
         c, p = v_max.shape
@@ -248,7 +264,7 @@ class Kinetics:
             # substract contribution of each protein from total concentration change
             B = x0_ + (dx_ - N * xi_)  # (c, p, m)
 
-            self._check_nonfinite(B, "B at Jacobi sweep")
+            self._check_nonfinite(B, "B during Jacobi sweep")
 
             xi_lo, xi_hi = self._get_bounds(
                 B=B, N=N, v_max=v_max, h=h
@@ -279,6 +295,8 @@ class Kinetics:
         xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
 
         x1 = x0 + dx  # (c, m)
-        self._check_nonfinite(x1, "x1 at Jacobi sweep")
+
+        self._fix_nonfinite(x1, "x1 after Jacobi sweep")
+        self._fix_negative(x1, "x1 after Jacobi sweep")
 
         return x1.clamp(min=0.0)  # (c, m)

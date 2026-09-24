@@ -1,58 +1,45 @@
+import logging
 import random
 
 import pytest
 import torch
 from magicsoup.kinetics2 import Kinetics
 
-_INF = float("inf")
+from tests.config import DEVICE
+
 _ATOL = 1e-4
 _RTOL = 1e-4
-_KINETICS = Kinetics(device="cpu")
 _INT = torch.int8
 _FLOAT = torch.float32
+
+_kinetics = Kinetics(device=DEVICE)
 
 
 def test_get_bounds():
     # 2 cells, 3 proteins, 4 molecules (a, b, c, d)
-    # cell 0: P0: 2a -> 5b, P1: 10b -> d
-    # cell 1: P0: 3c -> 7d, P1: a -> d
-    N = torch.tensor(
-        [
-            [
-                [-2, 5, 0, 0],
-                [0, -10, 0, 1],
-                [0, 0, 0, 0],
-            ],
-            [
-                [0, 0, -3, 7],
-                [-1, 0, 0, 1],
-                [0, 0, 0, 0],
-            ],
-        ],
-        dtype=_FLOAT,
-    )
-    B = torch.tensor(
-        [
-            [
-                [10, 10, 10, 10],
-                [0, 1, 0, 1],
-                [10, 10, 10, 10],
-            ],
-            [
-                [3, 7, 5, 1],
-                [0, 0, 0, 1],
-                [10, 10, 10, 10],
-            ],
-        ],
-        dtype=_FLOAT,
-    )
-    v_max = torch.tensor(
-        [
-            [10, 10, 10],
-            [5, 5, 5],
-        ]
-    )
+    c = 2
+    p = 3
+    m = 4
     h = 0.5
+    v_max = torch.zeros((c, p), dtype=_FLOAT)
+    N = torch.zeros((c, p, m), dtype=_FLOAT)
+    B = torch.zeros((c, p, m), dtype=_FLOAT)
+
+    # cell 0: P0: 2a -> 5b, P1: 10b -> d
+    v_max[0, :] = torch.tensor([10, 10, 10], dtype=_FLOAT)
+    N[0, 0, :] = torch.tensor([-2, 5, 0, 0], dtype=_FLOAT)
+    N[0, 1, :] = torch.tensor([0, -10, 0, 1], dtype=_FLOAT)
+    B[0, 0, :] = torch.tensor([10, 10, 10, 10], dtype=_FLOAT)
+    B[0, 1, :] = torch.tensor([0, 1, 0, 1], dtype=_FLOAT)
+    B[0, 2, :] = torch.tensor([10, 10, 10, 10], dtype=_FLOAT)
+
+    # cell 1: P0: 3c -> 7d, P1: a -> d
+    v_max[1, :] = torch.tensor([5, 5, 5], dtype=_FLOAT)
+    N[1, 0, :] = torch.tensor([0, 0, -3, 7], dtype=_FLOAT)
+    N[1, 1, :] = torch.tensor([-1, 0, 0, 1], dtype=_FLOAT)
+    B[1, 0, :] = torch.tensor([3, 7, 5, 1], dtype=_FLOAT)
+    B[1, 1, :] = torch.tensor([0, 0, 0, 1], dtype=_FLOAT)
+    B[1, 2, :] = torch.tensor([10, 10, 10, 10], dtype=_FLOAT)
 
     # expected boundaries
     lo_exp = torch.tensor(
@@ -70,7 +57,7 @@ def test_get_bounds():
         dtype=_FLOAT,
     )
 
-    lo, hi = _KINETICS._get_bounds(B=B, N=N, v_max=v_max, h=h)
+    lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, h=h)
 
     torch.testing.assert_close(lo, lo_exp, atol=_ATOL, rtol=_RTOL)
     torch.testing.assert_close(hi, hi_exp, atol=_ATOL, rtol=_RTOL)
@@ -87,7 +74,7 @@ def test_get_bounds_randomly():
         B = torch.rand(c, p, m, dtype=_FLOAT) * 1000
         N = torch.randint(-100, 100, (c, p, m), dtype=_FLOAT)
         N[0, 0, :] = 0.0
-        lo, hi = _KINETICS._get_bounds(B=B, N=N, v_max=v_max, h=h)
+        lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, h=h)
         assert lo.shape == (c, p)
         assert hi.shape == (c, p)
         assert lo[0, 0] == -v_max[0, 0] * h
@@ -97,6 +84,7 @@ def test_get_bounds_randomly():
         assert (lo <= hi).all()
 
 
+# TODO: refactor
 def test_get_alpha_cat():
     # n cells, 3 max proteins, 4 molecules (a, b, c, d)
     # simple MM kinetics
@@ -322,7 +310,7 @@ def test_get_alpha_cat():
     )
 
     # test
-    a = _KINETICS._get_alpha_cat(x=x0_, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
+    a = _kinetics._get_alpha_cat(x=x0_, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
     torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
 
 
@@ -337,7 +325,7 @@ def test_get_alpha_cat_randomly():
         N_b = torch.randint(-100, 100, (c, p, m), dtype=_INT)
         k_f = torch.rand(c, p, dtype=_FLOAT) * 10
         k_b = torch.rand(c, p, dtype=_FLOAT) * 10
-        a = _KINETICS._get_alpha_cat(x=x, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
+        a = _kinetics._get_alpha_cat(x=x, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
         assert a.shape == (c, p)
         assert a.isnan().sum() == 0
         assert a.isfinite().all()
@@ -434,7 +422,7 @@ def test_get_alpha_reg():
     )
 
     # test
-    a = _KINETICS._get_alpha_reg(x=x0_, N_h=N_h, K_r=K_r)
+    a = _kinetics._get_alpha_reg(x=x0_, N_h=N_h, K_r=K_r)
     torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
 
 
@@ -447,7 +435,7 @@ def test_get_alpha_reg_randomly():
         x = torch.rand(c, p, m, dtype=_FLOAT) * 1000
         N_h = torch.randint(-100, 100, (c, p, m), dtype=_INT)
         K_r = torch.rand(c, p, m, dtype=_FLOAT) * 10
-        a = _KINETICS._get_alpha_reg(x=x, N_h=N_h, K_r=K_r)
+        a = _kinetics._get_alpha_reg(x=x, N_h=N_h, K_r=K_r)
         assert a.shape == (c, p)
         assert a.isnan().sum() == 0
         assert a.isfinite().all()
@@ -456,87 +444,74 @@ def test_get_alpha_reg_randomly():
 
 def test_step_protein_activity():
     # c cells, p max proteins, m molecules (a, b, c, d)
-    c = 3
+    c = 4
     p = 3
     m = 4
 
     # molecular masses (a, b, c, d)
     c_mass = torch.tensor([9.0, 6.0, 3.0, 3.0])
 
-    # cell 0: P0: a -> 3c, P1: b -> 2d (uncoupled)
-    # cell 1: P0: a -> b + c, P1: b -> c + d, P2: c -> d (coupled)
-    # cell 3: P0: c -> d (at equilibrium)
-    #
-    # overshooting K_e and negative concentrations
-    # TODO: a reaction from above but regulated (should be slower)
-
-    # concentrations
-    x0 = torch.full((c, m), 10.0, dtype=torch.float32)
-    v_max = torch.full((c, p), 10.0, dtype=torch.float32)
-
-    N_f = torch.tensor(
-        [
-            [
-                [1, 0, 0, 0],  # P0: a -> 3c
-                [0, 1, 0, 0],  # P1: b -> 2d
-                [0, 0, 0, 0],
-            ],
-            [
-                [1, 0, 0, 0],  # P0: a -> b + c
-                [0, 1, 0, 0],  # P1: b -> c + d
-                [0, 0, 1, 0],  # P2: c -> d
-            ],
-            [
-                [0, 0, 1, 0],  # P0: c -> d
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ],
-        ],
-        dtype=torch.int32,
-    )
-    N_b = torch.tensor(
-        [
-            [
-                [0, 0, 3, 0],  # P0: a -> 3c
-                [0, 0, 0, 2],  # P1: b -> 2d
-                [0, 0, 0, 0],
-            ],
-            [
-                [0, 1, 1, 0],  # P0: a -> b + c
-                [0, 0, 1, 1],  # P1: b -> c + d
-                [0, 0, 0, 1],  # P2: c -> d
-            ],
-            [
-                [0, 0, 0, 1],  # P0: c -> d
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-            ],
-        ],
-        dtype=torch.int32,
-    )
-    k_f = torch.tensor(
-        [
-            [5.0, 5.0, 0.0],  # P0: a -> 3c, P1: b -> 2d
-            [5.0, 5.0, 1.0],  # P0: a -> b + c, P1: b -> c + d, P2: c -> d
-            [5.0, 0.0, 0.0],  # P0: c -> d
-        ],
-        dtype=torch.float32,
-    )
-    k_b = torch.tensor(
-        [
-            [5.0, 5.0, 0.0],  # P0: a -> 3c, P1: b -> 2d
-            [5.0, 5.0, 9.0],  # P0: a -> b + c, P1: b -> c + d, P2: c -> d
-            [5.0, 0.0, 0.0],  # P0: c -> d
-        ],
-        dtype=torch.float32,
-    )
-
-    # regulation
+    x0 = torch.full((c, m), 10.0, dtype=_FLOAT)
+    v_max = torch.full((c, p), 10.0, dtype=_FLOAT)
+    k_f = torch.zeros((c, p), dtype=_FLOAT)
+    k_b = torch.zeros((c, p), dtype=_FLOAT)
     K_r = torch.zeros(c, p, m, dtype=_FLOAT)
+    N_f = torch.zeros(c, p, m, dtype=_INT)
+    N_b = torch.zeros(c, p, m, dtype=_INT)
     N_h = torch.zeros(c, p, m, dtype=_INT)
 
+    # cell 0: P0: a -> 3c, P1: b -> 2d (uncoupled)
+    N_f[0, 0, 0] = 1
+    N_b[0, 0, 2] = 3
+    k_f[0, 0] = 5.0
+    k_b[0, 0] = 5.0
+
+    N_f[0, 1, 1] = 1
+    N_b[0, 1, 3] = 2
+    k_f[0, 1] = 5.0
+    k_b[0, 1] = 5.0
+
+    # cell 1: P0: a -> b + c, P1: b -> c + d, P2: c -> d (coupled)
+    N_f[1, 0, 0] = 1
+    N_b[1, 0, 1] = 1
+    N_b[1, 0, 2] = 1
+    k_f[1, 0] = 5.0
+    k_b[1, 0] = 5.0
+
+    N_f[1, 1, 1] = 1
+    N_b[1, 1, 2] = 1
+    N_b[1, 1, 3] = 1
+    k_f[1, 1] = 5.0
+    k_b[1, 1] = 5.0
+
+    N_f[1, 2, 2] = 1
+    N_b[1, 2, 3] = 1
+    k_f[1, 2] = 1.0
+    k_b[1, 2] = 9.0
+
+    # cell 3: P0: c -> d (at equilibrium)
+    N_f[2, 0, 2] = 1
+    N_b[2, 0, 3] = 1
+    k_f[2, 0] = 5.0
+    k_b[2, 0] = 5.0
+
+    # cell 4: P0: a -> 3c | b-inh, P1: b -> 2d | a-act (like cell 0 but regulated)
+    N_f[3, 0, 0] = 1
+    N_b[3, 0, 2] = 3
+    N_h[3, 0, 1] = -1
+    k_f[3, 0] = 5.0
+    k_b[3, 0] = 5.0
+    K_r[3, 0, 1] = 5.0
+
+    N_f[3, 1, 1] = 1
+    N_b[3, 1, 3] = 2
+    N_h[3, 1, 0] = 1
+    k_f[3, 1] = 5.0
+    k_b[3, 1] = 5.0
+    K_r[3, 1, 0] = 5.0
+
     # test
-    x1 = _KINETICS.step_protein_activity(
+    x1 = _kinetics.step_protein_activity(
         h=1.0,
         x0=x0,
         N_f=N_f,
@@ -558,32 +533,77 @@ def test_step_protein_activity():
     xd = x1 - x0
     assert (xd @ c_mass).abs().max() < 1e-4
 
-    # moving towards K_e
-
-    # cell 0: P0: a -> 3c, P1: b -> 2d
+    # cell 0: moves towards K_e
     assert xd[0, 0] > 0
     assert xd[0, 1] > 0
     assert xd[0, 2] < 0
     assert xd[0, 3] < 0
 
-    # cell 1: P0: a -> b + c, P1: b -> c + d, P2: c -> d
+    # cell 1: moves towards K_e
     assert xd[1, 0] > 0
     assert xd[1, 1] > 0
     assert xd[1, 2] < 0
     assert xd[1, 3] < 0
 
-    # already at K_e
-
-    # cell 3: P0: c -> d
+    # cell 3: already at K_e
     assert xd[2, 0] == 0
     assert xd[2, 1] == 0
     assert xd[2, 2].abs() < 0.01
     assert xd[2, 3].abs() < 0.01
 
-    # which should stay constant over time
-    for _ in range(10):
-        x0 = x1
-        x1 = _KINETICS.step_protein_activity(
+    # cell 4: like cell 0 but regulated (so should be slower)
+    assert xd[3, 0] > 0
+    assert xd[3, 1] > 0
+    assert xd[3, 2] < 0
+    assert xd[3, 3] < 0
+    assert xd[3, 0].abs() < xd[0, 0].abs()
+    assert xd[3, 1].abs() < xd[0, 1].abs()
+    assert xd[3, 2].abs() < xd[0, 2].abs()
+    assert xd[3, 3].abs() < xd[0, 3].abs()
+
+
+def test_step_protein_activity_convergence():
+    c = 3
+    p = 1
+    m = 4
+
+    # molecular masses (a, b, c, d)
+    c_mass = torch.tensor([9.0, 6.0, 3.0, 3.0])
+
+    x0 = torch.full((c, m), 10.0, dtype=_FLOAT)
+    v_max = torch.full((c, p), 10.0, dtype=_FLOAT)
+    k_f = torch.zeros((c, p), dtype=_FLOAT)
+    k_b = torch.zeros((c, p), dtype=_FLOAT)
+    K_r = torch.zeros(c, p, m, dtype=_FLOAT)
+    N_f = torch.zeros(c, p, m, dtype=_INT)
+    N_b = torch.zeros(c, p, m, dtype=_INT)
+    N_h = torch.zeros(c, p, m, dtype=_INT)
+
+    # cell 0: P0: c -> d
+    N_f[0, 0, 2] = 1
+    N_b[0, 0, 3] = 1
+    k_f[0, 0] = 2.0
+    k_b[0, 0] = 9.0
+    v_max[0, 0] = 10.0
+
+    # cell 1: P0: a -> 3c
+    N_f[1, 0, 0] = 1
+    N_b[1, 0, 2] = 3
+    k_f[1, 0] = 1.0
+    k_b[1, 0] = 50.0
+    v_max[1, 0] = 10.0
+
+    # cell 2: P0: P0: b + c -> a
+    N_f[2, 0, 1] = 1
+    N_f[2, 0, 2] = 1
+    N_b[2, 0, 0] = 1
+    k_f[2, 0] = 1.0
+    k_b[2, 0] = 100.0
+    v_max[2, 0] = 100.0
+
+    # should converge within 5s
+    for _ in range(6):
+        x1 = _kinetics.step_protein_activity(
             h=1.0,
             x0=x0,
             N_f=N_f,
@@ -594,25 +614,27 @@ def test_step_protein_activity():
             K_r=K_r,
             v_max=v_max,
         )
+
+        # useful results
+        assert x1.shape == x0.shape
+        assert x1.isnan().sum() == 0
+        assert x1.isfinite().all()
+        assert (x1 >= 0).all()
+
+        # conservation of mass
         xd = x1 - x0
         assert (xd @ c_mass).abs().max() < 1e-4
 
-        # cell 3: P0: c -> d
-        assert xd[2, 0] == 0
-        assert xd[2, 1] == 0
-        assert xd[2, 2].abs() < 0.01
-        assert xd[2, 3].abs() < 0.01
+        x0 = x1
 
-
-# TODO: test for how quickly equilibrium should be reached
-
-# TODO: test for reaching equilibrium in stiff function
-
-# TODO: test for one sided reaction (-> A)?
+    # should have converged by now
+    N = (N_b - N_f).float()
+    q = torch.prod(x0.unsqueeze(1) ** N, dim=2)
+    torch.testing.assert_close(k_b / k_f, q, atol=0.1, rtol=0.1)
 
 
 @pytest.mark.slow
-def test_step_protein_activity_randomly():
+def test_step_protein_activity_randomly(caplog):
     for _ in range(10):
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
@@ -626,19 +648,22 @@ def test_step_protein_activity_randomly():
         k_f = torch.rand(c, p, dtype=_FLOAT) * 10
         k_b = torch.rand(c, p, dtype=_FLOAT) * 10
         K_r = torch.rand(c, p, m, dtype=_FLOAT) * 10
+
         for _ in range(10):
-            x = _KINETICS.step_protein_activity(
-                h=h,
-                x0=x,
-                N_f=N_f,
-                N_b=N_b,
-                N_h=N_h,
-                k_f=k_f,
-                k_b=k_b,
-                K_r=K_r,
-                v_max=v_max,
-            )
+            with caplog.at_level(logging.WARNING):
+                x = _kinetics.step_protein_activity(
+                    h=h,
+                    x0=x,
+                    N_f=N_f,
+                    N_b=N_b,
+                    N_h=N_h,
+                    k_f=k_f,
+                    k_b=k_b,
+                    K_r=K_r,
+                    v_max=v_max,
+                )
             assert x.shape == (c, m)
             assert x.isnan().sum() == 0
             assert x.isfinite().all()
             assert (x >= 0).all()
+            assert len(caplog.records) == 0
