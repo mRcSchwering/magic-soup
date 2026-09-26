@@ -23,22 +23,22 @@ class Kinetics:
     def _check_nonfinite(self, t: torch.Tensor, where: str) -> None:
         is_finite = torch.isfinite(t)
         if not is_finite.all():
-            bad = (~is_finite).nonzero()
-            _log.warning("non-finite values in %s, cells/proteins: %r", where, bad[:5])
+            bad = t[~is_finite].flatten()[:5]
+            _log.warning("non-finite values in %s, cells/proteins: %r", where, bad)
 
     def _fix_nonfinite(self, t: torch.Tensor, where: str) -> None:
         is_finite = torch.isfinite(t)
         if not is_finite.all():
-            bad = (~is_finite).nonzero()
-            _log.warning("non-finite values in %s, cells/proteins: %r", where, bad[:5])
+            bad = t[~is_finite].flatten()[:5]
+            _log.warning("non-finite values in %s, cells/proteins: %r", where, bad)
             t[~is_finite] = 0.0
             _log.warning("non-finite values in %s replaced with 0.0", where)
 
     def _fix_negative(self, t: torch.Tensor, where: str) -> None:
         is_neg = t < 0.0
         if is_neg.any():
-            bad = (~is_neg).nonzero()
-            _log.warning("negative values in %s, cells/molecules: %r", where, bad[:5])
+            bad = t[is_neg].flatten()[:5]
+            _log.warning("negative values in %s, cells/molecules: %r", where, bad)
             t[~is_neg] = 0.0
             _log.warning("negative values in %s replaced with 0.0", where)
 
@@ -116,7 +116,7 @@ class Kinetics:
         #
         #   a_f = 1/k_f * product(x_i^n_f_i)  i in 1..m
         #   a_b = 1/k_b * product(x_i^n_b_i)  i in 1..m
-        #   alpha = (a_f - b_b) / (1 + a_f + b_b)
+        #   alpha = (a_f - a_b) / (1 + a_f + a_b)
         #
         # for better effective dynamic range as:
         #
@@ -232,6 +232,7 @@ class Kinetics:
     def step_protein_activity(
         self,
         x0: torch.Tensor,  # (c, m)
+        N: torch.Tensor,  # (c, p, m)
         N_h: torch.Tensor,  # (c, p, m)
         N_f: torch.Tensor,  # (c, p, m)
         N_b: torch.Tensor,  # (c, p, m)
@@ -245,14 +246,22 @@ class Kinetics:
         xi_conv_tol: float = 1e-4,
     ) -> torch.Tensor:
         c, p = v_max.shape
-        N = N_b - N_f.float()
+
+        # NOTE: Using int8 N for mixed-precision N x xi^T
+        # can be fast but is less precise and leads to negative x more often (~ -1e-6)
+        # creating float32 N once and using einsum would reduce that
 
         # initial xi
         xi = torch.zeros((c, p), device=self.device, dtype=self.ftype)  # (c, p)
 
         for _ in range(n_max_sweeps):
             xi_prev = xi.clone()
-            dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
+
+            # avoid einsum for mixed precision multiplication on GPU
+            # dx = torch.einsum("cpm,cp->cm", N.float(), xi)
+            # avoids creating and maintaining a float32 N
+            # but comes at a cost of precision (-> more often negative x1)
+            dx = (N * xi.unsqueeze(-1)).sum(dim=1)  # (c, m)
 
             # per cell dampening helps background convergence here
             xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
@@ -289,7 +298,11 @@ class Kinetics:
             if (xi - xi_prev).abs().max() < xi_conv_tol:
                 break
 
-        dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
+        # avoid einsum for mixed precision multiplication on GPU
+        # dx = torch.einsum("cpm,cp->cm", N.float(), xi)
+        # avoids creating and maintaining a float32 N
+        # but comes at a cost of precision (-> more often negative x1)
+        dx = (N * xi.unsqueeze(-1)).sum(dim=1)  # (c, m)
 
         # per cell dampening for final result
         xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
