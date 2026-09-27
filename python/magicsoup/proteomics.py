@@ -514,9 +514,10 @@ class Proteomics:
         # effector vectors are multiplied with signs and hill coefficients
         # and summed up over domains
         # no Int matmul impl in torch CUDA (dimenion is not shared)
+        # TODO: can be done as mixed precision matmul
         N_h = torch.einsum(
             "cpds,cpd->cps", effectors.float(), (signs * Hills).float()
-        ).int()
+        ).to(self.itype)
 
         # Kms from other domains are ignored using NaNs
         # their Kms must be seperated for each signal
@@ -534,15 +535,13 @@ class Proteomics:
         # reaction stoichiometry N is derived from transporter and catalytic vectors
         # vectors for regulatory domains or emptpy proteins are all 0s
         N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
-        N = N_d.sum(dim=2, dtype=torch.int32)
+        N = N_d.sum(dim=2, dtype=self.itype)
         self.N[cell_idxs] = N
 
         # N for forward and backward reactions is distinguished
         # to not loose molecules like co-facors whose net N would become 0
-        self.N_f[cell_idxs] = torch.where(N_d < 0, -N_d, 0).sum(
-            dim=2, dtype=torch.int32
-        )
-        self.N_b[cell_idxs] = torch.where(N_d > 0, N_d, 0).sum(dim=2, dtype=torch.int32)
+        self.N_f[cell_idxs] = torch.where(N_d < 0, -N_d, 0).sum(dim=2, dtype=self.itype)
+        self.N_b[cell_idxs] = torch.where(N_d > 0, N_d, 0).sum(dim=2, dtype=self.itype)
 
         # Kms of catalytic and transporter domains are aggregated
         # Kms from other domains are ignored using NaNs and nanmean
@@ -692,7 +691,8 @@ class Proteomics:
         return torch.zeros(*args, device=self.device, dtype=self.ftype)
 
     def _itensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=self.itype)
+        # indexing Tensors must be at least int32
+        return torch.tensor(d, device=self.device, dtype=torch.int32)
 
     def _ftensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=self.ftype)
