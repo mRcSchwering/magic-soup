@@ -145,15 +145,15 @@ This can be described with the reversible Michaelis-Menten equation
 
 $$
 v_{\text{S} \rightleftharpoons \text{P}} = \frac{d[P]}{dt} =
-\frac{v_{max,f} \frac{[S]}{K_{m,f}} - v_{max,b} \frac{[P]}{K_{m,b}}}{1 + \frac{[S]}{K_{m,f}} + \frac{[P]}{K_{m,b}}}
+\frac{v_{max,f} \frac{[S]}{K_f} - v_{max,b} \frac{[P]}{K_b}}{1 + \frac{[S]}{K_f} + \frac{[P]}{K_b}}
 $$
 
 with
 
 $$
 \begin{aligned}
-v_{max,f} &= k_2 [E_{total}]      && K_{m,f} = \frac{k_{-1} + k_2}{k_1}    \\
-v_{max,b} &= k_{-1} [E_{total}]   && K_{m,b} = \frac{k_{-1} + k_2}{k_{-2}}
+v_{max,f} &= k_2 [E_{total}]      && K_f = \frac{k_{-1} + k_2}{k_1}    \\
+v_{max,b} &= k_{-1} [E_{total}]   && K_b = \frac{k_{-1} + k_2}{k_{-2}}
 \end{aligned}
 $$
 
@@ -169,48 +169,48 @@ The reversible Michaelis-Menten equation can then be re-written as
 
 $$
 v_{\text{S} \rightleftharpoons \text{P}} = \frac{d[P]}{dt} =
-v_{max} \frac{\frac{[S]}{K_{m,f}} - \frac{[P]}{K_{m,b}}}{1 + \frac{[S]}{K_{m,f}} + \frac{[P]}{K_{m,b}}}
+v_{max} \frac{\frac{[S]}{K_f} - \frac{[P]}{K_b}}{1 + \frac{[S]}{K_f} + \frac{[P]}{K_b}}
 $$
 
 $v_{max}$ defines the maximum velocity of this protein.
-$K_{m,f}$ and $K_{m,b}$ describe reciprocal affinities to S and P.
+$K_f$ and $K_b$ describe reciprocal affinities to S and P.
 
-A protein can contain many functional domains catalyzing various reactions (see [Genetics](#genetics)). Transporters are treated as catalytic domains which convert a molecule species from its intracellular version to its extracellular one and _vice versa_. The catalytic velocity of one protein can be described as
+A protein can contain many functional domains catalyzing various reactions (see [Genetics](#genetics)). Transporters are treated as catalytic domains which convert a molecule species from its intracellular version to its extracellular one and _vice versa_. The catalytic activity of one protein is described as
 
 $$
-v_{cat} = v_{max} \frac{a_f - a_b}{1 + a_f + a_b}
+\alpha_{cat} = \frac{a_f - a_b}{1 + a_f + a_b}
 $$
 
 with
 
 $$
-a_f = \frac{1}{K_{m,f}} \prod^{\text{substrates}} [S]_i^{n_i}
+a_f = \frac{1}{K_f} \prod^{\text{substrates}} [S]_i^{n_i}
 \text{  ,  }
-a_b = \frac{1}{K_{m,b}} \prod^{\text{products}} [P]_j^{n_j}
+a_b = \frac{1}{K_b} \prod^{\text{products}} [P]_j^{n_j}
 $$
 
-where $[S]_i$ is the concentration of substrate $i$ with stoichiometric coefficient $n_i$, and $[P]_j$ is the concentration of product $j$ with stoichiometric coefficient $n_j$.
+where $[S]_i$ is the concentration of substrate $i$ with its stoichiometric coefficient $n_i$, and $[P]_j$ is the concentration of product $j$ with  its stoichiometric coefficient $n_j$.
 Over time the reaction will approach an equilibrium state
 where $v_{cat} = 0$ and $a_f = a_f$, and its [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient)
 $Q = K_e$ (the [equilibirum constant](https://en.wikipedia.org/wiki/Equilibrium_constant)):
 
 $$
-\lim_{t \to \infty} Q = \frac{K_{m,b}}{K_{m,f}} = K_e
+\lim_{t \to \infty} Q = \frac{K_b}{K_f} = K_e
 $$
 
-Thus, $K_e = \frac{K_{m,f}}{K_{m,b}}$ defines in which direction the reaction will proceed.
+Thus, $K_e = K_b/K_f$ defines in which direction the reaction will proceed.
 As described in [Chemistry](#chemistry) $K_e$ is calculated from an analogy of the reaction's Gibbs free energy.
-Actual values for $v_{max}$, $K_{m,f}$, $K_{m,b}$ are derived from the domain specifications (see [Genetics](#genetics)).
+Actual values for $v_{max}$, $K_f$, $K_b$ are derived from the domain specifications (see [Genetics](#genetics)).
 One part of of the domain specification encodes maximum velocity $v_{max}$.
-Another part encodes affinity $K_m$ from which $K_{m,f}$ and $K_{m,b}$ are derived.
+Another part encodes affinity $K_m$ from which $K_f$ and $K_b$ are derived.
 
 $$
-K_{m,f} = \begin{cases}
+K_f = \begin{cases}
 K_m,             & \text{if } K_e \ge 1 \\
 \frac{K_m}{K_e}, & \text{if } K_e < 1
 \end{cases}
 \text{  ,  }
-K_{m,b} = \begin{cases}
+K_b = \begin{cases}
 K_e K_m,  & \text{if } K_e \ge 1 \\
 K_m,      & \text{if } K_e < 1
 \end{cases}
@@ -218,36 +218,32 @@ $$
 
 In addition, a protein can contain
 regulatory domains which regulate the protein [non-competitively](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
-Allosteric regulation $v_{reg}$ with effector molecules A is modeled as
+Allosteric regulation $\alpha_{reg}$ with effector molecules A is modeled as
 
 $$
-v_{reg} = \prod^{\text{effectors}} \frac{[A]_l^{h_l}}{[A]_l^{h_l} + K_{a,l}^{h_l}}
+\alpha_{reg} = \prod^{\text{effectors}} \frac{[A]_l^{h_l}}{[A]_l^{h_l} + K_{r,l}^{h_l}}
 $$
 
 where $[A]_l$ is the concentration of effector molecule $l$,
-$h_l$ is the hill coefficient,
-and $K_{a,l}$ is the effector concentration producing half occupation.
+$h_l$ is its hill coefficient,
+and $K_{r,l}$ is its effector concentration producing half occupation.
 $h_l > 0$ for activating effectors, $h_l < 0$ for inhibiting effectors.
-Proteins without regulatory domains are always active.
-
-With this, the final velocity of a protein in a cell is modeled as
+Proteins without regulatory domains are always active. With this, the catalytic velocity of a protein in a cell is modeled as
 
 $$
 v = \begin{cases}
-  v_{cat} v_{reg},     & \text{any } h_l \ne 0 \\
-  v_{cat},             & \text{otherwise}
+  v_{max} \alpha_{cat} \alpha_{reg},     & \text{if any } h_l \ne 0 \\
+  v_{max} \alpha_{cat},             & \text{otherwise}
 \end{cases}
 $$
 
-Some kinetics examples are given in [figures 6](./figures.md#6-simple-reaction-kinetics).
-
-When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
+Some kinetics examples are given in [figures 6](./figures.md#6-simple-reaction-kinetics). When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
 are created, they are sampled from distributions with user defined boundaries.
 For multiple domains specifications with overlapping
 values for $v_{max}$, $K_m$, $K_a$ are averaged.
 The resulting distributions of these values are shown in
 [figures 11](./figures.md#11-kinetics-constants).
 All defaults were chosen with some assumptions in mind:
-(1) molecule numbers (such as in `world.molecule_map`) represent mM,
+(1) molecule values (such as in `world.molecule_map`) represent mM,
 (2) a time step represents 1 second,
 (3) molecule energies represent Joules.

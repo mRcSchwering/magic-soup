@@ -5,7 +5,7 @@ Each cell can contain proteins which catalyze reactions.
 As the **Kinetics** section explains the reaction velocity of a protein (or its catalyzed reaction) at any moment in time depends on the concentrations of involved molecules at that moment in time.
 Since there can be multiple proteins in a cell molecule concentrations form a differential equation system which has to be solved in order to calculate molecule concentrations at any moment in time.
 
-## Problem
+## ODE
 
 Let  $\boldsymbol{N}$ be a matrix describing the reaction stoichiometry of all reactions catalyzed by proteins in a cell
 
@@ -29,7 +29,6 @@ at time point $t$ for $m$ molecule species
 and reaction velocities
 $\boldsymbol{v} = (v_1(x) \cdots v_p(x))^\text{T} \in \mathbb{R}^p$
 given concentrations $x$ for $p$ proteins catalyzing reactions.
-
 This can be further simplified.
 Over time molecule concentrations change according to $\boldsymbol{v}$ and their stoichiometric number in $\boldsymbol{N}$.
 However, concentration changes for each reaction only really have one degree of freedom which can be described by [reaction extend](https://en.wikipedia.org/wiki/Extent_of_reaction) $\boldsymbol{\xi}$.
@@ -64,10 +63,9 @@ $$
 \Delta \boldsymbol{\xi^*} = h \boldsymbol{v}(\boldsymbol{N} \Delta \boldsymbol{\xi^*} + \boldsymbol{x_n})
 $$
 
-This is a genuinely coupled ODE system since $\boldsymbol{N}$ can define reaction stoichiometries where multiple proteins use the same molecule species as substrates or products at the same time.
-The system can be approximated by using the [Jacobi method](https://en.wikipedia.org/wiki/Jacobi_method), splitting the $p$-dimensional problem into $p$ independent scalar problems.
+This ODE system is genuinely coupled since $\boldsymbol{N}$ can define reaction stoichiometries where multiple proteins use the same molecule species as substrates or products at the same time.
+The solution can be approximated by using the [Jacobi method](https://en.wikipedia.org/wiki/Jacobi_method), splitting the $p$-dimensional problem into $p$ independent scalar problems.
 Each scalar problem should have exactly one root which can be found using the [Bisection method](https://en.wikipedia.org/wiki/Bisection_method).
-
 Consider $S$ block Jacobi sweeps with sweep index $k = 0 \cdots S - 1$.
 First, calculate the background at step $k$.
 For each protein $q \in 1 \cdots p$ calculate the background as
