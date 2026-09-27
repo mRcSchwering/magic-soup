@@ -12,7 +12,13 @@ CFeSP methyltransferase (2.1.1.X): methyl-FH4 + Ni-ACS -> FH4 + methyl-Ni-ACS
 CO dehydrogenase / acetyl-CoA synthetase: CO2 + HS-CoA + methyl-Ni-ACS -> Ni-ACS + acetyl-CoA
 (skipped Co step)
 """
+
 from magicsoup.containers import Chemistry, Molecule
+
+# TODO: normal K_e should be roughly in [-1e3, 1e3]
+#       (K_e = E[J/mol] / T[K] / G[J/(K*mol)])
+#       why are K_e in Figure 5 so high?
+#       is it because of ln? Maybe better use Log10 then (or absolute)
 
 NADPH = Molecule("NADPH", 200.0 * 1e3)
 NADP = Molecule("NADP", 100.0 * 1e3)

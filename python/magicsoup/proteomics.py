@@ -333,7 +333,7 @@ class Proteomics:
         vector_enc_size: int = 4096 - 3 * 64,
         max_k: float = 1e36,
         eps: float = 1e-40,
-    ):
+    ) -> None:
         self.abs_temp = abs_temp
         self.device = device
         self.itype = itype
@@ -438,40 +438,40 @@ class Proteomics:
         # idx1-3 are 1-codon used for the floats (n=64)
         # some values are not defined for certain domain types
         # setting their indices to 0 lets them map to empty values (0-vector, NaN)
-        catal_lng = (is_catal).int()
-        trnsp_lng = (is_trnsp).int()
-        reg_lng = (is_reg).int()
-        not_reg_lng = (~is_reg).int()
+        catal_int = (is_catal).int()
+        trnsp_int = (is_trnsp).int()
+        reg_int = (is_reg).int()
+        not_reg_int = (~is_reg).int()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # f32 (c,p,d)
-        Hills = self.hill_map(idxs0 * reg_lng)  # i32 (c,p,d)
-        Kms = self.km_map(idxs1)  # f32 (c,p,d)
-        signs = self.sign_map(idxs2)  # i32 (c,p,d)
+        v_max_d = self.vmax_map(idxs0 * not_reg_int)  # f32 (c,p,d)
+        n_h_d = self.hill_map(idxs0 * reg_int)  # i32 (c,p,d)
+        k_m_d = self.km_map(idxs1)  # f32 (c,p,d)
+        sign_d = self.sign_map(idxs2)  # i32 (c,p,d)
 
         # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        reacts = self.reaction_map(idxs3 * catal_lng)  # i32 (c,p,d,s)
-        trnspts = self.transport_map(idxs3 * trnsp_lng)  # i32 (c,p,d,s)
-        effectors = self.effector_map(idxs3 * reg_lng)  # i32 (c,p,d,s)
+        react_d = self.reaction_map(idxs3 * catal_int)  # i32 (c,p,d,s)
+        trnspt_d = self.transport_map(idxs3 * trnsp_int)  # i32 (c,p,d,s)
+        effect_d = self.effector_map(idxs3 * reg_int)  # i32 (c,p,d,s)
 
         proteome_kwargs = _lib.get_proteome(
             proteome,
-            Vmaxs[0].tolist(),
-            Kms[0].tolist(),
-            Hills[0].tolist(),
-            signs[0].tolist(),
-            reacts[0].tolist(),
-            trnspts[0].tolist(),
-            effectors[0].tolist(),
+            v_max_d[0].tolist(),
+            k_m_d[0].tolist(),
+            n_h_d[0].tolist(),
+            sign_d[0].tolist(),
+            react_d[0].tolist(),
+            trnspt_d[0].tolist(),
+            effect_d[0].tolist(),
             self.mol_names,
         )
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
     def set_cell_params(
         self,
-        cell_idxs: list[int],
+        idx: torch.Tensor,  # int32 idxs or bool mask
         proteomes: list[list[ProteinSpecType]],
-    ):
+    ) -> None:
         eps = self.eps
         max_k = self.max_k
 
@@ -491,136 +491,137 @@ class Proteomics:
         # idx1-3 are 1-codon used for the floats (n=64)
         # some values are not defined for certain domain types
         # setting their indices to 0 lets them map to empty values (0-vector, NaN)
-        catal_lng = (is_catal).int()
-        trnsp_lng = (is_trnsp).int()
-        reg_lng = (is_reg).int()
-        not_reg_lng = (~is_reg).int()
+        catal_int = (is_catal).int()
+        trnsp_int = (is_trnsp).int()
+        reg_int = (is_reg).int()
+        not_reg_int = (~is_reg).int()
 
         # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        Vmaxs = self.vmax_map(idxs0 * not_reg_lng)  # f32 (c,p,d)
-        Hills = self.hill_map(idxs0 * reg_lng)  # i32 (c,p,d)
-        Kms = self.km_map(idxs1)  # f32 (c,p,d)
-        signs = self.sign_map(idxs2)  # i32 (c,p,d)
+        v_max_d = self.vmax_map(idxs0 * not_reg_int)  # f32 (c,p,d)
+        n_h_d = self.hill_map(idxs0 * reg_int)  # i32 (c,p,d)
+        k_m_d = self.km_map(idxs1)  # f32 (c,p,d)
+        sign_d = self.sign_map(idxs2)  # i32 (c,p,d)
 
         # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        reacts = self.reaction_map(idxs3 * catal_lng)  # i32 (c,p,d,s)
-        trnspts = self.transport_map(idxs3 * trnsp_lng)  # i32 (c,p,d,s)
-        effectors = self.effector_map(idxs3 * reg_lng)  # i32 (c,p,d,s)
+        react_d = self.reaction_map(idxs3 * catal_int)  # i32 (c,p,d,m)
+        trnspt_d = self.transport_map(idxs3 * trnsp_int)  # i32 (c,p,d,m)
+        effect_d = self.effector_map(idxs3 * reg_int)  # i32 (c,p,d,m)
 
         # v_max are averaged over domains
         # undefined v_max enries are NaN and are ignored by nanmean
-        self.v_max[cell_idxs] = Vmaxs.nanmean(dim=2).nan_to_num(0.0)
+        self.v_max[idx] = v_max_d.nanmean(dim=2).nan_to_num(0.0)
 
         # effector vectors are multiplied with signs and hill coefficients
         # and summed up over domains
-        # no Int matmul impl in torch CUDA (dimenion is not shared)
-        # TODO: can be done as mixed precision matmul
-        N_h = torch.einsum(
-            "cpds,cpd->cps", effectors.float(), (signs * Hills).float()
-        ).to(self.itype)
+        N_h = torch.einsum("cpdm,cpd->cpm", effect_d, (sign_d * n_h_d)).to(self.itype)
+        self.N_h[idx] = N_h
 
         # Kms from other domains are ignored using NaNs
-        # their Kms must be seperated for each signal
-        Kmr_d = torch.where(is_reg, Kms, torch.nan)  # (c,p,d)
-        Kmr_ds = torch.einsum("cpds,cpd->cpds", effectors, Kmr_d)
+        # their Kms must be seperated for each molecule
+        K_r_d_ = torch.where(is_reg, k_m_d, torch.nan)  # (c,p,d)
+        K_r_d = torch.einsum("cpdm,cpd->cpdm", effect_d, K_r_d_)
 
         # average Kmrs, ignored unused with nanmean
-        Kmr_ds[Kmr_ds == 0.0] = torch.nan  # effectors introduce 0s
-        K_r = Kmr_ds.nanmean(dim=2).nan_to_num(0.0)  # (c,p,s)
-
-        # Kms of regulatory domains are already exponentiated with Hill coefficients
-        self.K_r[cell_idxs] = torch.pow(K_r, N_h)
-        self.N_h[cell_idxs] = N_h
+        K_r_d[K_r_d == 0.0] = torch.nan  # effectors introduce 0s
+        K_r = K_r_d.nanmean(dim=2).nan_to_num(0.0)  # (c,p,m)
+        self.K_r[idx] = K_r
 
         # reaction stoichiometry N is derived from transporter and catalytic vectors
         # vectors for regulatory domains or emptpy proteins are all 0s
-        N_d = torch.einsum("cpds,cpd->cpds", (reacts + trnspts), signs)
+        N_d = torch.einsum("cpdm,cpd->cpdm", (react_d + trnspt_d), sign_d)
         N = N_d.sum(dim=2, dtype=self.itype)
-        self.N[cell_idxs] = N
+        self.N[idx] = N
 
         # N for forward and backward reactions is distinguished
         # to not loose molecules like co-facors whose net N would become 0
-        self.N_f[cell_idxs] = torch.where(N_d < 0, -N_d, 0).sum(dim=2, dtype=self.itype)
-        self.N_b[cell_idxs] = torch.where(N_d > 0, N_d, 0).sum(dim=2, dtype=self.itype)
+        self.N_f[idx] = torch.where(N_d < 0, -N_d, 0).sum(dim=2, dtype=self.itype)
+        self.N_b[idx] = torch.where(N_d > 0, N_d, 0).sum(dim=2, dtype=self.itype)
 
         # Kms of catalytic and transporter domains are aggregated
         # Kms from other domains are ignored using NaNs and nanmean
-        Kmn = torch.where(~is_reg, Kms, torch.nan).nanmean(dim=2).nan_to_num(0.0)
+        k_m = torch.where(~is_reg, k_m_d, torch.nan).nanmean(dim=2).nan_to_num(0.0)
 
         # energies define k_e which defines k_e = k_f/k_b
         # extreme energies can create Inf or 0.0, avoid them with clamp
-        E = torch.einsum("cps,s->cp", N.float(), self.mol_energies)
-        k_e = torch.exp(-E / self.abs_temp / GAS_CONSTANT).clamp(eps, max_k)
-        self.k_e[cell_idxs] = k_e
+        e = torch.einsum("cpm,m->cp", N.to(self.ftype), self.mol_energies)
+        k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(eps, max_k)
+        self.k_e[idx] = k_e
 
         # Km is sampled between a defined range
         # exessively small Km can create numerical instability
         # thus, sampled Km should define the smaller Km of k_e = k_f/k_b
         # k_e>=1  => k_f=Km,         k_b=k_e*Km
         # k_e<1   => k_f=Km/k_e,      k_b=Km
-        # this operation can create again Inf or 0.0, avoided with clamp
-        # this effectively limits k_e around 1e38
+        # this operation can create again Inf or 0.0, avoided with clamp, limits K_e
         is_fwd = k_e >= 1.0
-        self.k_f[cell_idxs] = torch.where(is_fwd, Kmn, Kmn / k_e).clamp(eps, max_k)
-        self.k_b[cell_idxs] = torch.where(is_fwd, Kmn * k_e, Kmn).clamp(eps, max_k)
+        self.k_f[idx] = torch.where(is_fwd, k_m, k_m / k_e).clamp(eps, max_k)
+        self.k_b[idx] = torch.where(is_fwd, k_m * k_e, k_m).clamp(eps, max_k)
 
-    def unset_cell_params(self, cell_idxs: list[int]):
-        self.N[cell_idxs] = 0
-        self.N_f[cell_idxs] = 0
-        self.N_b[cell_idxs] = 0
-        self.N_h[cell_idxs] = 0
-        self.k_e[cell_idxs] = 0.0
-        self.k_f[cell_idxs] = 0.0
-        self.k_b[cell_idxs] = 0.0
-        self.K_r[cell_idxs] = 0.0
-        self.v_max[cell_idxs] = 0.0
+    def unset_cell_params(self, idx: torch.Tensor) -> None:
+        self.N[idx] = 0
+        self.N_f[idx] = 0
+        self.N_b[idx] = 0
+        self.N_h[idx] = 0
+        self.k_e[idx] = 0.0
+        self.k_f[idx] = 0.0
+        self.k_b[idx] = 0.0
+        self.K_r[idx] = 0.0
+        self.v_max[idx] = 0.0
 
-    def copy_cell_params(self, from_idxs: list[int], to_idxs: list[int]):
-        self.k_e[to_idxs] = self.k_e[from_idxs]
-        self.k_f[to_idxs] = self.k_f[from_idxs]
-        self.k_b[to_idxs] = self.k_b[from_idxs]
-        self.K_r[to_idxs] = self.K_r[from_idxs]
-        self.v_max[to_idxs] = self.v_max[from_idxs]
-        self.N[to_idxs] = self.N[from_idxs]
-        self.N_f[to_idxs] = self.N_f[from_idxs]
-        self.N_b[to_idxs] = self.N_b[from_idxs]
-        self.N_h[to_idxs] = self.N_h[from_idxs]
+    def copy_cell_params(self, from_idx: torch.Tensor, to_idx: torch.Tensor) -> None:
+        self.k_e[to_idx] = self.k_e[from_idx]
+        self.k_f[to_idx] = self.k_f[from_idx]
+        self.k_b[to_idx] = self.k_b[from_idx]
+        self.K_r[to_idx] = self.K_r[from_idx]
+        self.v_max[to_idx] = self.v_max[from_idx]
+        self.N[to_idx] = self.N[from_idx]
+        self.N_f[to_idx] = self.N_f[from_idx]
+        self.N_b[to_idx] = self.N_b[from_idx]
+        self.N_h[to_idx] = self.N_h[from_idx]
 
-    def remove_cell_params(self, keep: torch.Tensor):
-        self.k_e = self.k_e[keep]
-        self.k_f = self.k_f[keep]
-        self.k_b = self.k_b[keep]
-        self.K_r = self.K_r[keep]
-        self.v_max = self.v_max[keep]
-        self.N = self.N[keep]
-        self.N_f = self.N_f[keep]
-        self.N_b = self.N_b[keep]
-        self.N_h = self.N_h[keep]
+    def decrease_cells(self, keep_idx: torch.Tensor) -> None:
+        self.k_e = self.k_e[keep_idx]
+        self.k_f = self.k_f[keep_idx]
+        self.k_b = self.k_b[keep_idx]
+        self.K_r = self.K_r[keep_idx]
+        self.v_max = self.v_max[keep_idx]
+        self.N = self.N[keep_idx]
+        self.N_f = self.N_f[keep_idx]
+        self.N_b = self.N_b[keep_idx]
+        self.N_h = self.N_h[keep_idx]
 
-    def increase_max_cells(self, by_n: int):
-        self.k_e = self._expand_c(t=self.k_e, n=by_n)
-        self.k_f = self._expand_c(t=self.k_f, n=by_n)
-        self.k_b = self._expand_c(t=self.k_b, n=by_n)
-        self.K_r = self._expand_c(t=self.K_r, n=by_n)
-        self.v_max = self._expand_c(t=self.v_max, n=by_n)
-        self.N = self._expand_c(t=self.N, n=by_n)
-        self.N_f = self._expand_c(t=self.N_f, n=by_n)
-        self.N_b = self._expand_c(t=self.N_b, n=by_n)
-        self.N_h = self._expand_c(t=self.N_h, n=by_n)
+    def increase_cells(self, by_n: int) -> None:
+        self.k_e = self._expand_c(t=self.k_e, by_n=by_n)
+        self.k_f = self._expand_c(t=self.k_f, by_n=by_n)
+        self.k_b = self._expand_c(t=self.k_b, by_n=by_n)
+        self.K_r = self._expand_c(t=self.K_r, by_n=by_n)
+        self.v_max = self._expand_c(t=self.v_max, by_n=by_n)
+        self.N = self._expand_c(t=self.N, by_n=by_n)
+        self.N_f = self._expand_c(t=self.N_f, by_n=by_n)
+        self.N_b = self._expand_c(t=self.N_b, by_n=by_n)
+        self.N_h = self._expand_c(t=self.N_h, by_n=by_n)
 
-    def increase_max_proteins(self, max_n: int):
-        n_prots = int(self.N.size(1))
-        if max_n > n_prots:
-            by_n = max_n - n_prots
-            self.k_e = self._expand_p(t=self.k_e, n=by_n)
-            self.k_f = self._expand_p(t=self.k_f, n=by_n)
-            self.k_b = self._expand_p(t=self.k_b, n=by_n)
-            self.K_r = self._expand_p(t=self.K_r, n=by_n)
-            self.v_max = self._expand_p(t=self.v_max, n=by_n)
-            self.N = self._expand_p(t=self.N, n=by_n)
-            self.N_f = self._expand_p(t=self.N_f, n=by_n)
-            self.N_b = self._expand_p(t=self.N_b, n=by_n)
-            self.N_h = self._expand_p(t=self.N_h, n=by_n)
+    def decrease_proteins(self, by_n: int) -> None:
+        self.k_e = self.k_e[:, :-by_n]
+        self.k_f = self.k_f[:, :-by_n]
+        self.k_b = self.k_b[:, :-by_n]
+        self.K_r = self.K_r[:, :-by_n]
+        self.v_max = self.v_max[:, :-by_n]
+        self.N = self.N[:, :-by_n]
+        self.N_f = self.N_f[:, :-by_n]
+        self.N_b = self.N_b[:, :-by_n]
+        self.N_h = self.N_h[:, :-by_n]
+
+    def increase_proteins(self, by_n: int) -> None:
+        self.k_e = self._expand_p(t=self.k_e, by_n=by_n)
+        self.k_f = self._expand_p(t=self.k_f, by_n=by_n)
+        self.k_b = self._expand_p(t=self.k_b, by_n=by_n)
+        self.K_r = self._expand_p(t=self.K_r, by_n=by_n)
+        self.v_max = self._expand_p(t=self.v_max, by_n=by_n)
+        self.N = self._expand_p(t=self.N, by_n=by_n)
+        self.N_f = self._expand_p(t=self.N_f, by_n=by_n)
+        self.N_b = self._expand_p(t=self.N_b, by_n=by_n)
+        self.N_h = self._expand_p(t=self.N_h, by_n=by_n)
 
     def _collect_proteome_idxs(
         self,
@@ -667,21 +668,21 @@ class Proteomics:
             c_idxs2.append(p_idxs2 + [empty_seq] * p_pad)
             c_idxs3.append(p_idxs3 + [empty_seq] * p_pad)
 
-        dom_types = self._itensor(c_dts)  # (c,p,d)
-        idxs0 = self._itensor(c_idxs0)  # (c,p,d)
-        idxs1 = self._itensor(c_idxs1)  # (c,p,d)
-        idxs2 = self._itensor(c_idxs2)  # (c,p,d)
-        idxs3 = self._itensor(c_idxs3)  # (c,p,d)
+        dom_types = self._idxtensor(c_dts)  # (c,p,d)
+        idxs0 = self._idxtensor(c_idxs0)  # (c,p,d)
+        idxs1 = self._idxtensor(c_idxs1)  # (c,p,d)
+        idxs2 = self._idxtensor(c_idxs2)  # (c,p,d)
+        idxs3 = self._idxtensor(c_idxs3)  # (c,p,d)
         return dom_types, idxs0, idxs1, idxs2, idxs3
 
-    def _expand_c(self, t: torch.Tensor, n: int) -> torch.Tensor:
+    def _expand_c(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
         size = t.size()
-        zeros = torch.zeros(n, *size[1:], device=self.device, dtype=t.dtype)
+        zeros = torch.zeros(by_n, *size[1:], device=self.device, dtype=t.dtype)
         return torch.cat([t, zeros], dim=0)
 
-    def _expand_p(self, t: torch.Tensor, n: int) -> torch.Tensor:
+    def _expand_p(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
         size = t.size()
-        zeros = torch.zeros(size[0], n, *size[2:], device=self.device, dtype=t.dtype)
+        zeros = torch.zeros(size[0], by_n, *size[2:], device=self.device, dtype=t.dtype)
         return torch.cat([t, zeros], dim=1)
 
     def _izeros(self, *args) -> torch.Tensor:
@@ -690,7 +691,7 @@ class Proteomics:
     def _fzeros(self, *args) -> torch.Tensor:
         return torch.zeros(*args, device=self.device, dtype=self.ftype)
 
-    def _itensor(self, d: Any) -> torch.Tensor:
+    def _idxtensor(self, d: Any) -> torch.Tensor:
         # indexing Tensors must be at least int32
         return torch.tensor(d, device=self.device, dtype=torch.int32)
 
