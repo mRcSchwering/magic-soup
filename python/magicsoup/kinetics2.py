@@ -3,6 +3,8 @@ import logging
 import torch
 import torch.nn.functional as F
 
+from .constants import TorchDeviceType
+
 _log = logging.getLogger(__name__)
 
 
@@ -10,7 +12,7 @@ class Kinetics:
 
     def __init__(
         self,
-        device: str = "cpu",
+        device: TorchDeviceType = "cpu",
         itype: torch.dtype = torch.int8,
         ftype: torch.dtype = torch.float32,
         eps: float = 1e-40,
