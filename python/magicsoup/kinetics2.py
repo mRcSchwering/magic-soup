@@ -26,24 +26,29 @@ class Kinetics:
             bad = t[~is_finite].flatten()[:5]
             _log.warning("non-finite values in %s, cells/proteins: %r", where, bad)
 
-    def _fix_nonfinite(self, t: torch.Tensor, where: str) -> None:
+    def _fix_nonfinite(self, t: torch.Tensor, where: str) -> torch.Tensor:
         is_finite = torch.isfinite(t)
-        if not is_finite.all():
-            bad = t[~is_finite].flatten()[:5]
-            _log.warning("non-finite values in %s, cells/proteins: %r", where, bad)
-            t[~is_finite] = 0.0
-            _log.warning("non-finite values in %s replaced with 0.0", where)
+        if is_finite.all():
+            return t
 
-    def _fix_negative(self, t: torch.Tensor, where: str) -> None:
-        is_neg = t < 0.0
-        if is_neg.any():
-            bad = t[is_neg].flatten()[:5]
-            _log.warning("negative values in %s, cells/molecules: %r", where, bad)
-            t[~is_neg] = 0.0
-            _log.warning("negative values in %s replaced with 0.0", where)
+        bad = t[~is_finite].flatten()[:5]
+        _log.warning("non-finite values in %s, cells/proteins: %r", where, bad)
+        _log.warning("non-finite values in %s replaced with 0.0", where)
+        t[~is_finite] = 0.0
+        return t
+
+    def _fix_negative(self, t: torch.Tensor, where: str) -> torch.Tensor:
+        is_neg = t < -self.eps  # error < eps is negligible
+        if not is_neg.any():
+            return t.clamp(min=0.0)
+
+        bad = t[is_neg].flatten()[:5]
+        _log.warning("negative values in %s, cells/molecules: %r", where, bad)
+        _log.warning("negative values in %s replaced with 0.0", where)
+        return t.clamp(min=0.0)
 
     def _dampen_cells(
-        self, x0: torch.Tensor, dx: torch.Tensor, xi: torch.Tensor
+        self, x0: torch.Tensor, dx: torch.Tensor, xi: torch.Tensor, pad: float = 1e-3
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # Rescale xi and x0 to ensure positive concentrations
         #
@@ -54,9 +59,8 @@ class Kinetics:
         #
         #   x + λ * dx >= 0
         #
-        eps = self.eps
         inf = float("inf")
-        ratio = torch.where(dx < 0, x0 / (-dx + eps), torch.full_like(dx, inf))
+        ratio = torch.where(dx < 0, x0 / (-dx + pad), torch.full_like(dx, inf))
         lam = ratio.min(dim=1, keepdim=True).values.clamp(max=1.0)  # (c, 1)
         return xi * lam, dx * lam  # (c, p), (c, m)
 
@@ -309,7 +313,10 @@ class Kinetics:
 
         x1 = x0 + dx  # (c, m)
 
-        self._fix_nonfinite(x1, "x1 after Jacobi sweep")
-        self._fix_negative(x1, "x1 after Jacobi sweep")
+        x1 = self._fix_nonfinite(x1, "x1 after Jacobi sweep")
+        x1 = self._fix_negative(x1, "x1 after Jacobi sweep")
+
+        if x1.min() < 0.0:
+            raise ValueError("Fix didnt work")
 
         return x1.clamp(min=0.0)  # (c, m)
