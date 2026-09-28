@@ -1,8 +1,9 @@
 import math
+import random
 
 import pytest
 import torch
-from magicsoup.constants import GAS_CONSTANT
+from magicsoup.constants import GAS_CONSTANT, DomainSpecType, ProteinSpecType
 from magicsoup.containers import (
     CatalyticDomain,
     Chemistry,
@@ -11,6 +12,8 @@ from magicsoup.containers import (
     TransporterDomain,
 )
 from magicsoup.proteomics import Proteomics
+
+from tests.config import DEVICE
 
 _TOL = 1e-4
 _ATOL = 1e-4
@@ -29,7 +32,7 @@ _MOLECULES = [_ma, _mb, _mc, _md]
 _r_a_b = ([_ma], [_mb])
 _r_b_c = ([_mb], [_mc])
 _r_bc_d = ([_mb, _mc], [_md])
-_r_d_bb = ([_md], [_mb, _mb])
+_r_d_bb = ([_md], 2 * [_mb])
 _REACTIONS = [_r_a_b, _r_b_c, _r_bc_d, _r_d_bb]
 
 _CHEMISTRY = Chemistry(molecules=_MOLECULES, reactions=_REACTIONS)
@@ -94,7 +97,7 @@ _REACTION_M = torch.tensor([
 
 
 def _get_proteomics() -> Proteomics:
-    protics = Proteomics(chemistry=_CHEMISTRY, abs_temp=310)
+    protics = Proteomics(chemistry=_CHEMISTRY, abs_temp=310, device=DEVICE)
     protics.km_map.weights = _KM_WEIGHTS.clone()
     protics.vmax_map.weights = _VMAX_WEIGHTS.clone()
     protics.sign_map.signs = _SIGNS.clone()
@@ -114,12 +117,12 @@ def _avg(*x: float) -> float:
     return sum(x) / len(x)
 
 
-def test_cell_params_with_transporter_domains():
+def test_cell_params_with_transporter_domains() -> None:
     # Protein: (domains, cds_start, cds_end, is_fwd)
     # Domain: (domain_spec, dom_start, dom_end)
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-    c0 = [
+    c0: list[ProteinSpecType] = [
         (
             [
                 (
@@ -144,7 +147,7 @@ def test_cell_params_with_transporter_domains():
             36, 74, False
         ),
     ]
-    c1 = [
+    c1: list[ProteinSpecType] = [
         (
             [
                 (
@@ -346,12 +349,12 @@ def test_cell_params_with_transporter_domains():
     assert p1.domains[1].end == 60
 
 
-def test_cell_params_with_regulatory_domains():
+def test_cell_params_with_regulatory_domains() -> None:
     # Protein: (domains, cds_start, cds_end, is_fwd)
     # Domain: (domain_spec, dom_start, dom_end)
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-    c0 = [
+    c0: list[ProteinSpecType] = [
         (
             [
                 (
@@ -388,7 +391,7 @@ def test_cell_params_with_regulatory_domains():
         )
     ]
 
-    c1 = [
+    c1: list[ProteinSpecType] = [
         (
             [
                 (
@@ -429,7 +432,6 @@ def test_cell_params_with_regulatory_domains():
     # setup proteomics
     c = 2
     p = 3
-    m = 8
     protics = _get_proteomics()
     protics.increase_cells(by_n=c)
     protics.increase_proteins(by_n=p)
@@ -656,12 +658,12 @@ def test_cell_params_with_regulatory_domains():
     assert p1.domains[2].end == 120
 
 
-def test_cell_params_with_catalytic_domains():
+def test_cell_params_with_catalytic_domains() -> None:
     # Protein: (domains, cds_start, cds_end, is_fwd)
     # Domain: (domain_spec, dom_start, dom_end)
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-    c0 = [
+    c0: list[ProteinSpecType] = [
         (
             [
                 (
@@ -698,7 +700,7 @@ def test_cell_params_with_catalytic_domains():
             3, 300, False
         )
     ]
-    c1 = [
+    c1: list[ProteinSpecType] = [
         (
             [
                 (
@@ -909,5 +911,123 @@ def test_cell_params_with_catalytic_domains():
     assert p1.domains[1].end == 90
 
 
-# TODO: test setting/unsetting cells, proteins
-# TODO: random test
+def _get_random_proteomes(n_cells: int) -> tuple[list[list[ProteinSpecType]], int]:
+    proteomes: list[list[ProteinSpecType]] = []
+    p_max = 0
+
+    for cell_i in range(n_cells):
+        prots: list[ProteinSpecType] = []
+        n_prots = random.choice(range(1, 10))
+
+        for prot_i in range(n_prots):
+            doms: list[DomainSpecType] = []
+            n_doms = random.choice(range(1, 4))
+
+            for dom_i in range(n_doms):
+                domtype = random.choice([1, 2, 3])
+                idx0 = random.choice(range(20 if domtype == 1 else 6))
+                idx1 = random.choice(range(30))
+                idx2 = random.choice(range(3))
+                idx3 = random.choice(range(9))
+                dom_start = random.choice(range(1, 100))
+                dom_end = random.choice(range(dom_start, 200))
+                doms.append(((domtype, idx0, idx1, idx2, idx3), dom_start, dom_end))
+
+            dom_start = random.choice(range(1, 100))
+            dom_end = random.choice(range(dom_start, 200))
+            is_fwd = random.choice([True, False])
+            prots.append((doms, dom_start, dom_end, is_fwd))
+
+        p_max = max(p_max, len(prots))
+        proteomes.append(prots)
+
+    return proteomes, p_max
+
+
+@pytest.mark.slow
+def test_random_cell_params() -> None:
+    for _ in range(100):
+        m = len(_MOLECULES) * 2
+        n_cells = random.choice(range(1, 10))
+        proteomes, p_max = _get_random_proteomes(n_cells)
+
+        # setup proteomics
+        protics = _get_proteomics()
+        protics.increase_cells(by_n=n_cells)
+        protics.increase_proteins(by_n=p_max)
+        idx = torch.tensor(range(n_cells))
+        protics.set_cell_params(idx=idx, proteomes=proteomes)
+
+        # test
+        float_np = [protics.k_e, protics.k_f, protics.k_b, protics.v_max]
+        float_npm = [protics.K_r]
+        int_npm = [protics.N, protics.N_f, protics.N_b, protics.N_h]
+
+        for t in float_np:
+            assert t.dtype == _FLOAT
+            assert t.shape == (n_cells, p_max)
+
+        for t in float_npm:
+            assert t.dtype == _FLOAT
+            assert t.shape == (n_cells, p_max, m)
+
+        for t in int_npm:
+            assert t.dtype == _INT
+            assert t.shape == (n_cells, p_max, m)
+
+        for t in float_np + float_npm + int_npm:
+            assert not torch.any(t.isnan())
+            assert torch.all(t.isfinite())
+
+
+# TODO: test adjusting Tensors with specific examples
+
+
+def test_adjust_tensor_sizes_randomly() -> None:
+    m = len(_MOLECULES) * 2
+    c = 10
+    proteomes, p = _get_random_proteomes(c)
+
+    # setup proteomics
+    protics = _get_proteomics()
+    protics.increase_cells(by_n=c)
+    protics.increase_proteins(by_n=p)
+    idx = torch.tensor(range(c))
+    protics.set_cell_params(idx=idx, proteomes=proteomes)
+
+    for _ in range(100):
+        dc = random.choice(range(-c, 10))
+        dp = random.choice(range(-p, 10))
+        if dc > 0:
+            protics.increase_cells(by_n=dc)
+        if dc < 0:
+            keep = torch.tensor(random.sample(range(c), c + dc))
+            protics.decrease_cells(keep_idx=keep.int())
+        if dp > 0:
+            protics.increase_proteins(by_n=dp)
+        if dp < 0:
+            protics.decrease_proteins(by_n=-dp)
+
+        c += dc
+        p += dp
+
+        # test
+        float_np = [protics.k_e, protics.k_f, protics.k_b, protics.v_max]
+        float_npm = [protics.K_r]
+        int_npm = [protics.N, protics.N_f, protics.N_b, protics.N_h]
+
+        for t in float_np:
+            assert t.dtype == _FLOAT
+            assert t.shape == (c, p)
+
+        for t in float_npm:
+            assert t.dtype == _FLOAT
+            assert t.shape == (c, p, m)
+
+        for t in int_npm:
+            assert t.dtype == _INT
+            assert t.shape == (c, p, m)
+
+        for t in float_np + float_npm + int_npm:
+            assert not torch.any(t.isnan())
+            assert torch.all(t.isfinite())
