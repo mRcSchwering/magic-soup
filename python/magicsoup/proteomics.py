@@ -7,7 +7,7 @@ import torch
 from magicsoup import _lib  # type: ignore
 
 from . import Chemistry, Molecule, Protein
-from .constants import GAS_CONSTANT, ProteinSpecType, TorchDeviceType
+from .constants import GAS_CONSTANT, ProteinSpecType
 
 # TODO: Is it fater to leave the factory map tensors on CPU?
 
@@ -21,7 +21,7 @@ class _HillMapFact:
     def __init__(
         self,
         max_token: int,
-        device: TorchDeviceType = "cpu",
+        device: str = "cpu",
         dtype: torch.dtype = torch.int8,
         zero_value: int = 0,
     ):
@@ -52,7 +52,7 @@ class _LogNormWeightMapFact:
         max_token: int,
         weight_range: tuple[float, float],
         dtype: torch.dtype = torch.float32,
-        device: TorchDeviceType = "cpu",
+        device: str = "cpu",
         zero_value: float = torch.nan,
     ):
         min_w = min(weight_range)
@@ -99,7 +99,7 @@ class _SignMapFact:
     def __init__(
         self,
         max_token: int,
-        device: TorchDeviceType = "cpu",
+        device: str = "cpu",
         dtype: torch.dtype = torch.int8,
         zero_value: int = 0,
     ):
@@ -129,7 +129,7 @@ class _VectorMapFact:
         max_token: int,
         vec_len: int,
         vectors: list[list[int]],
-        device: TorchDeviceType = "cpu",
+        device: str = "cpu",
         dtype: torch.dtype = torch.int16,
         zero_value: int = 0,
     ):
@@ -178,7 +178,7 @@ class _ReactionMapFact(_VectorMapFact):
         molmap: dict[Molecule, int],
         reactions: list[tuple[list[Molecule], list[Molecule]]],
         max_token: int,
-        device: TorchDeviceType = "cpu",
+        device: str = "cpu",
         dtype: torch.dtype = torch.int8,
         zero_value: int = 0,
     ):
@@ -238,7 +238,7 @@ class _TransporterMapFact(_VectorMapFact):
         self,
         n_molecules: int,
         max_token: int,
-        device: TorchDeviceType = "cpu",
+        device: str = "cpu",
         dtype: torch.dtype = torch.int8,
         zero_value: int = 0,
     ):
@@ -282,7 +282,7 @@ class _RegulatoryMapFact(_VectorMapFact):
         self,
         n_molecules: int,
         max_token: int,
-        device: TorchDeviceType = "cpu",
+        device: str = "cpu",
         dtype: torch.dtype = torch.int8,
         zero_value: int = 0,
     ):
@@ -326,7 +326,7 @@ class Proteomics:
         abs_temp: float = 310.0,
         km_range: tuple[float, float] = (1e-2, 100.0),
         vmax_range: tuple[float, float] = (1e-3, 100.0),
-        device: TorchDeviceType = "cpu",
+        device: str = "cpu",
         itype: torch.dtype = torch.int8,
         ftype: torch.dtype = torch.float32,
         scalar_enc_size: int = 64 - 3,
@@ -338,24 +338,11 @@ class Proteomics:
         self.device = device
         self.itype = itype
         self.ftype = ftype
-        self.abs_temp = abs_temp
         self.max_k = max_k
         self.eps = eps
 
         self.mol_names = [d.name for d in chemistry.molecules]
         self.mol_energies = self._ftensor([d.energy for d in chemistry.molecules] * 2)
-
-        # working cell params
-        n_mols = 2 * len(chemistry.molecules)
-        self.k_e = self._fzeros(0, 0)
-        self.k_f = self._fzeros(0, 0)
-        self.k_b = self._fzeros(0, 0)
-        self.K_r = self._fzeros(0, 0, n_mols)
-        self.v_max = self._fzeros(0, 0)
-        self.N = self._izeros(0, 0, n_mols)
-        self.N_f = self._izeros(0, 0, n_mols)
-        self.N_b = self._izeros(0, 0, n_mols)
-        self.N_h = self._izeros(0, 0, n_mols)
 
         # the domain specifications return 4 indexes
         # idx 0-2 are 1-codon idxs for scalars (n=64)
@@ -367,30 +354,24 @@ class Proteomics:
             weight_range=km_range,
             device=device,
         )
-
         self.vmax_map = _LogNormWeightMapFact(
             max_token=scalar_enc_size,
             weight_range=vmax_range,
             device=device,
         )
-
         self.sign_map = _SignMapFact(max_token=scalar_enc_size, device=device)
-
         self.hill_map = _HillMapFact(max_token=scalar_enc_size, device=device)
-
         self.reaction_map = _ReactionMapFact(
             molmap=mol_2_mi,
             reactions=chemistry.reactions,
             max_token=vector_enc_size,
             device=device,
         )
-
         self.transport_map = _TransporterMapFact(
             n_molecules=len(chemistry.molecules),
             max_token=vector_enc_size,
             device=device,
         )
-
         self.effector_map = _RegulatoryMapFact(
             n_molecules=len(chemistry.molecules),
             max_token=vector_enc_size,
@@ -398,6 +379,7 @@ class Proteomics:
         )
 
         # derive inverse maps for genome generation
+        m = 2 * len(chemistry.molecules)
         self.km_2_idxs = self.km_map.inverse()
         self.vmax_2_idxs = self.vmax_map.inverse()
         self.sign_2_idxs = self.sign_map.inverse()
@@ -405,13 +387,10 @@ class Proteomics:
         self.trnsp_2_idxs = self.transport_map.inverse(molecules=chemistry.molecules)
         self.regul_2_idxs = self.effector_map.inverse(molecules=chemistry.molecules)
         self.catal_2_idxs = self.reaction_map.inverse(
-            molmap=mol_2_mi, reactions=chemistry.reactions, n_mols=n_mols
+            molmap=mol_2_mi, reactions=chemistry.reactions, n_mols=m
         )
 
-    def get_proteome(
-        self,
-        proteome: list[ProteinSpecType],
-    ) -> list[Protein]:
+    def get_proteome(self, proteome: list[ProteinSpecType], p: int) -> list[Protein]:
         """
         Translate and return cell parameters for a single proteome
 
@@ -424,7 +403,7 @@ class Proteomics:
         """
         # get proteome tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
-            proteomes=[proteome]
+            proteomes=[proteome], p=p
         )
 
         # identify domain types
@@ -467,17 +446,23 @@ class Proteomics:
         )
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
-    def set_cell_params(
-        self,
-        idx: torch.Tensor,  # int32 idxs or bool mask
-        proteomes: list[list[ProteinSpecType]],
-    ) -> None:
+    def set_cell_params(self, proteomes: list[list[ProteinSpecType]], p: int) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         eps = self.eps
         max_k = self.max_k
 
         # get proteome tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
-            proteomes=proteomes
+            proteomes=proteomes, p=p
         )
 
         # identify domain types
@@ -509,12 +494,11 @@ class Proteomics:
 
         # v_max are averaged over domains
         # undefined v_max enries are NaN and are ignored by nanmean
-        self.v_max[idx] = v_max_d.nanmean(dim=2).nan_to_num(0.0)
+        v_max = v_max_d.nanmean(dim=2).nan_to_num(0.0)
 
         # effector vectors are multiplied with signs and hill coefficients
         # and summed up over domains
         N_h = torch.einsum("cpdm,cpd->cpm", effect_d, (sign_d * n_h_d)).to(self.itype)
-        self.N_h[idx] = N_h
 
         # Kms from other domains are ignored using NaNs
         # their Kms must be seperated for each molecule
@@ -524,18 +508,16 @@ class Proteomics:
         # average Kmrs, ignored unused with nanmean
         K_r_d[K_r_d == 0.0] = torch.nan  # effectors introduce 0s
         K_r = K_r_d.nanmean(dim=2).nan_to_num(0.0)  # (c,p,m)
-        self.K_r[idx] = K_r
 
         # reaction stoichiometry N is derived from transporter and catalytic vectors
         # vectors for regulatory domains or emptpy proteins are all 0s
         N_d = torch.einsum("cpdm,cpd->cpdm", (react_d + trnspt_d), sign_d)
         N = N_d.sum(dim=2, dtype=self.itype)
-        self.N[idx] = N
 
         # N for forward and backward reactions is distinguished
         # to not loose molecules like co-facors whose net N would become 0
-        self.N_f[idx] = torch.where(N_d < 0, -N_d, 0).sum(dim=2, dtype=self.itype)
-        self.N_b[idx] = torch.where(N_d > 0, N_d, 0).sum(dim=2, dtype=self.itype)
+        N_f = torch.where(N_d < 0, -N_d, 0).sum(dim=2, dtype=self.itype)
+        N_b = torch.where(N_d > 0, N_d, 0).sum(dim=2, dtype=self.itype)
 
         # Kms of catalytic and transporter domains are aggregated
         # Kms from other domains are ignored using NaNs and nanmean
@@ -545,7 +527,6 @@ class Proteomics:
         # extreme energies can create Inf or 0.0, avoid them with clamp
         e = torch.einsum("cpm,m->cp", N.to(self.ftype), self.mol_energies)
         k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(eps, max_k)
-        self.k_e[idx] = k_e
 
         # Km is sampled between a defined range
         # exessively small Km can create numerical instability
@@ -554,80 +535,14 @@ class Proteomics:
         # k_e<1   => k_f=Km/k_e,      k_b=Km
         # this operation can create again Inf or 0.0, avoided with clamp, limits K_e
         is_fwd = k_e >= 1.0
-        self.k_f[idx] = torch.where(is_fwd, k_m, k_m / k_e).clamp(eps, max_k)
-        self.k_b[idx] = torch.where(is_fwd, k_m * k_e, k_m).clamp(eps, max_k)
+        k_f = torch.where(is_fwd, k_m, k_m / k_e).clamp(eps, max_k)
+        k_b = torch.where(is_fwd, k_m * k_e, k_m).clamp(eps, max_k)
 
-    def unset_cell_params(self, idx: torch.Tensor) -> None:
-        self.N[idx] = 0
-        self.N_f[idx] = 0
-        self.N_b[idx] = 0
-        self.N_h[idx] = 0
-        self.k_e[idx] = 0.0
-        self.k_f[idx] = 0.0
-        self.k_b[idx] = 0.0
-        self.K_r[idx] = 0.0
-        self.v_max[idx] = 0.0
-
-    def copy_cell_params(self, from_idx: torch.Tensor, to_idx: torch.Tensor) -> None:
-        self.k_e[to_idx] = self.k_e[from_idx]
-        self.k_f[to_idx] = self.k_f[from_idx]
-        self.k_b[to_idx] = self.k_b[from_idx]
-        self.K_r[to_idx] = self.K_r[from_idx]
-        self.v_max[to_idx] = self.v_max[from_idx]
-        self.N[to_idx] = self.N[from_idx]
-        self.N_f[to_idx] = self.N_f[from_idx]
-        self.N_b[to_idx] = self.N_b[from_idx]
-        self.N_h[to_idx] = self.N_h[from_idx]
-
-    def decrease_cells(self, keep_idx: torch.Tensor) -> None:
-        self.k_e = self.k_e[keep_idx]
-        self.k_f = self.k_f[keep_idx]
-        self.k_b = self.k_b[keep_idx]
-        self.K_r = self.K_r[keep_idx]
-        self.v_max = self.v_max[keep_idx]
-        self.N = self.N[keep_idx]
-        self.N_f = self.N_f[keep_idx]
-        self.N_b = self.N_b[keep_idx]
-        self.N_h = self.N_h[keep_idx]
-
-    def increase_cells(self, by_n: int) -> None:
-        self.k_e = self._expand_c(t=self.k_e, by_n=by_n)
-        self.k_f = self._expand_c(t=self.k_f, by_n=by_n)
-        self.k_b = self._expand_c(t=self.k_b, by_n=by_n)
-        self.K_r = self._expand_c(t=self.K_r, by_n=by_n)
-        self.v_max = self._expand_c(t=self.v_max, by_n=by_n)
-        self.N = self._expand_c(t=self.N, by_n=by_n)
-        self.N_f = self._expand_c(t=self.N_f, by_n=by_n)
-        self.N_b = self._expand_c(t=self.N_b, by_n=by_n)
-        self.N_h = self._expand_c(t=self.N_h, by_n=by_n)
-
-    def decrease_proteins(self, by_n: int) -> None:
-        self.k_e = self.k_e[:, :-by_n]
-        self.k_f = self.k_f[:, :-by_n]
-        self.k_b = self.k_b[:, :-by_n]
-        self.K_r = self.K_r[:, :-by_n]
-        self.v_max = self.v_max[:, :-by_n]
-        self.N = self.N[:, :-by_n]
-        self.N_f = self.N_f[:, :-by_n]
-        self.N_b = self.N_b[:, :-by_n]
-        self.N_h = self.N_h[:, :-by_n]
-
-    def increase_proteins(self, by_n: int) -> None:
-        self.k_e = self._expand_p(t=self.k_e, by_n=by_n)
-        self.k_f = self._expand_p(t=self.k_f, by_n=by_n)
-        self.k_b = self._expand_p(t=self.k_b, by_n=by_n)
-        self.K_r = self._expand_p(t=self.K_r, by_n=by_n)
-        self.v_max = self._expand_p(t=self.v_max, by_n=by_n)
-        self.N = self._expand_p(t=self.N, by_n=by_n)
-        self.N_f = self._expand_p(t=self.N_f, by_n=by_n)
-        self.N_b = self._expand_p(t=self.N_b, by_n=by_n)
-        self.N_h = self._expand_p(t=self.N_h, by_n=by_n)
+        return N, N_f, N_b, N_h, k_e, k_f, k_b, K_r, v_max
 
     def _collect_proteome_idxs(
-        self,
-        proteomes: list[list[ProteinSpecType]],
+        self, proteomes: list[list[ProteinSpecType]], p: int
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        n_prots = self.N.size(1)
         n_doms = max(len(dd[0]) for d in proteomes for dd in d)
         empty_seq = [0] * n_doms
 
@@ -661,7 +576,8 @@ class Proteomics:
                 p_idxs2.append(d_idxs2 + [0] * d_pad)
                 p_idxs3.append(d_idxs3 + [0] * d_pad)
 
-            p_pad = n_prots - len(p_idxs0)
+            # TODO: couldn't I do the padding without p?
+            p_pad = p - len(p_idxs0)
             c_dts.append(p_dts + [empty_seq] * p_pad)
             c_idxs0.append(p_idxs0 + [empty_seq] * p_pad)
             c_idxs1.append(p_idxs1 + [empty_seq] * p_pad)
@@ -674,22 +590,6 @@ class Proteomics:
         idxs2 = self._idxtensor(c_idxs2)  # (c,p,d)
         idxs3 = self._idxtensor(c_idxs3)  # (c,p,d)
         return dom_types, idxs0, idxs1, idxs2, idxs3
-
-    def _expand_c(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
-        size = t.size()
-        zeros = torch.zeros(by_n, *size[1:], device=self.device, dtype=t.dtype)
-        return torch.cat([t, zeros], dim=0)
-
-    def _expand_p(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
-        size = t.size()
-        zeros = torch.zeros(size[0], by_n, *size[2:], device=self.device, dtype=t.dtype)
-        return torch.cat([t, zeros], dim=1)
-
-    def _izeros(self, *args) -> torch.Tensor:
-        return torch.zeros(*args, device=self.device, dtype=self.itype)
-
-    def _fzeros(self, *args) -> torch.Tensor:
-        return torch.zeros(*args, device=self.device, dtype=self.ftype)
 
     def _idxtensor(self, d: Any) -> torch.Tensor:
         # indexing Tensors must be at least int32

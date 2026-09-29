@@ -3,8 +3,6 @@ import logging
 import torch
 import torch.nn.functional as F
 
-from .constants import TorchDeviceType
-
 _log = logging.getLogger(__name__)
 
 
@@ -12,15 +10,21 @@ class Kinetics:
 
     def __init__(
         self,
-        device: TorchDeviceType = "cpu",
-        itype: torch.dtype = torch.int8,
+        device: str = "cpu",
         ftype: torch.dtype = torch.float32,
         eps: float = 1e-40,
+        h: float = 1.0,
+        n_max_sweeps: int = 3,
+        n_max_bisect: int = 20,
+        xi_conv_tol: float = 1e-4,
     ):
         self.device = device
-        self.itype = itype
         self.ftype = ftype
         self.eps = eps
+        self.h = h
+        self.n_max_sweeps = n_max_sweeps
+        self.n_max_bisect = n_max_bisect
+        self.xi_conv_tol = xi_conv_tol
 
     def _check_nonfinite(self, t: torch.Tensor, where: str) -> None:
         is_finite = torch.isfinite(t)
@@ -246,12 +250,16 @@ class Kinetics:
         k_b: torch.Tensor,  # (c, p)
         K_r: torch.Tensor,  # (c, p, m)
         v_max: torch.Tensor,  # (c, p)
-        h: float = 1.0,
-        n_max_sweeps: int = 3,
-        n_max_bisect: int = 20,
-        xi_conv_tol: float = 1e-4,
+        h: float | None = None,
+        n_max_sweeps: int | None = None,
+        n_max_bisect: int | None = None,
+        xi_conv_tol: float | None = None,
     ) -> torch.Tensor:
         c, p = v_max.shape
+        h = h or self.h
+        n_max_sweeps = n_max_sweeps or self.n_max_sweeps
+        n_max_bisect = n_max_bisect or self.n_max_bisect
+        xi_conv_tol = xi_conv_tol or self.xi_conv_tol
 
         # NOTE: Using int8 N for mixed-precision N x xi^T
         # can be fast but is less precise and leads to negative x more often (~ -1e-6)
