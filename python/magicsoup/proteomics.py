@@ -6,7 +6,8 @@ import torch
 
 from magicsoup import _lib  # type: ignore
 
-from . import Chemistry, Molecule, Protein
+from .cellular import Protein
+from .chemistry import Chemistry, Molecule
 from .constants import GAS_CONSTANT, ProteinSpecType
 
 # TODO: Is it fater to leave the factory map tensors on CPU?
@@ -390,7 +391,7 @@ class Proteomics:
             molmap=mol_2_mi, reactions=chemistry.reactions, n_mols=m
         )
 
-    def get_proteome(self, proteome: list[ProteinSpecType], p: int) -> list[Protein]:
+    def get_proteome(self, proteome: list[ProteinSpecType]) -> list[Protein]:
         """
         Translate and return cell parameters for a single proteome
 
@@ -403,7 +404,7 @@ class Proteomics:
         """
         # get proteome tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
-            proteomes=[proteome], p=p
+            proteomes=[proteome], p=len(proteome)
         )
 
         # identify domain types

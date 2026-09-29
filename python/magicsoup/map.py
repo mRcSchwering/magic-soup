@@ -1,0 +1,130 @@
+import random
+from pathlib import Path
+from typing import Any
+
+import torch
+
+from magicsoup.chemistry import Chemistry
+
+
+class Map:
+
+    def __init__(
+        self,
+        chemistry: Chemistry,
+        size: int = 128,
+        mol_init: str = "zeros",
+        device: str = "cpu",
+        ftype: torch.dtype = torch.float32,
+    ):
+        molecules = chemistry.molecules
+        self.size = size
+        self.device = device
+        self.ftype = ftype
+
+        self.cells: torch.Tensor = torch.zeros(size, size).to(device).bool()
+        self.molecules: torch.Tensor = self._get_molecule_map(
+            n=len(molecules), size=size, init=mol_init
+        )
+
+        self._diffusion_funs: list[torch.nn.Conv2d] = [
+            self._get_diffuse(mol_diff_rate=m.diffusivity) for m in molecules
+        ]
+
+    @torch.no_grad()
+    def diffuse_molecules(self):
+        n_pxls = self.size**2
+        for mol_i, diffuse in enumerate(self._diffusion_funs):
+            total_before = self.molecules[mol_i].sum()
+            before = self.molecules[mol_i].unsqueeze(0).unsqueeze(1)
+            after = diffuse(before)
+            self.molecules[mol_i] = torch.squeeze(after, 0).squeeze(0)
+            total_after = self.molecules[mol_i].sum()
+
+            # attempt to fix the problem that convolusion makes a small amount of
+            # molecules appear or disappear (I think because floating point)
+            self.molecules[mol_i] += (total_before - total_after) / n_pxls
+            self.molecules[mol_i] = self.molecules[mol_i].clamp(0.0)
+
+    def save_state(self, statedir: Path) -> None:
+        statedir.mkdir(parents=True, exist_ok=True)
+        name = type(self).__name__
+        torch.save(self.cells, statedir / f"{name}.cells.pt")
+        torch.save(self.molecules, statedir / f"{name}.molecules.pt")
+
+    def load_state(self, statedir: Path) -> None:
+        name = type(self).__name__
+        self.cells[:] = torch.load(
+            statedir / f"{name}.cells.pt",
+            map_location=self.device,
+            dtype=torch.bool,
+        )
+        self.molecules[:] = torch.load(
+            statedir / f"{name}.molecules.pt",
+            map_location=self.device,
+            dtype=self.ftype,
+        )
+
+    def find_free_random_positions(self, n: int) -> torch.Tensor:
+        # available spots on map
+        pxls = torch.nonzero(~self.cells).int()
+        n_pxls = pxls.size(0)
+        n = min(n, n_pxls)
+
+        # place cells on map
+        idxs = random.sample(range(n_pxls), k=n)
+        chosen = pxls[idxs]
+        return chosen
+
+    def _get_diffuse(self, mol_diff_rate: float) -> torch.nn.Conv2d:
+        if mol_diff_rate < 0.0:
+            mol_diff_rate = -mol_diff_rate
+
+        # mol_diff_rate > 1.0 could also mean expanding the kernel
+        # so that molecules can diffuse more than just 1 pxl per round
+        mol_diff_rate = min(mol_diff_rate, 1.0)
+
+        if mol_diff_rate == 0.0:
+            a = 0.0
+            b = 1.0
+        else:
+            d = 1 / mol_diff_rate
+            a = 1 / (d + 8)
+            b = d * a
+            b = b + 1.0 - (8 * a + b)  # try correcting inaccuracy
+
+        # fmt: off
+        kernel = self._ftensor([[[
+            [a, a, a],
+            [a, b, a],
+            [a, a, a],
+        ]]])
+        # fmt: on
+
+        conv = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=1,
+            kernel_size=3,
+            padding=1,
+            padding_mode="circular",
+            bias=False,
+            device=self.device,
+        )
+        conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
+        return conv
+
+    def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
+        args = [n, size, size]
+        if init == "zeros":
+            return torch.zeros(*args, device=self.device, dtype=torch.float32)
+        if init == "randn":
+            return (
+                torch.randn(*args, dtype=torch.float32, device=self.device) + 10.0
+            ).abs()
+        raise ValueError(
+            f"Didnt recognize mol_map_init={init}."
+            " Should be one of: 'zeros', 'randn'."
+        )
+
+    def _ftensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=self.ftype)

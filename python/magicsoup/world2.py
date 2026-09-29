@@ -8,10 +8,12 @@ from typing import Any
 import torch
 
 from magicsoup import _lib  # type: ignore
+from magicsoup.cellular import Cell
+from magicsoup.chemistry import Chemistry
 from magicsoup.constants import ProteinSpecType
-from magicsoup.containers import Cell, Chemistry
-from magicsoup.genetics import Genetics
+from magicsoup.genomics import Genomics
 from magicsoup.kinetics2 import Kinetics
+from magicsoup.map import Map
 from magicsoup.mutations import point_mutations, recombinations
 from magicsoup.proteomics import Proteomics
 from magicsoup.util import randstr
@@ -43,7 +45,7 @@ class World:
         chemistry: Chemistry,
         map_size: int = 128,
         abs_temp: float = 310.0,
-        mol_map_init: str = "randn",
+        mol_map_init: str = "zeros",
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         device: str = "cpu",
@@ -51,9 +53,6 @@ class World:
         ftype: torch.dtype = torch.float32,
         batch_size: int | None = None,
     ):
-        if not torch.cuda.is_available():
-            device = "cpu"
-
         self.device = device
         self.itype = itype
         self.ftype = ftype
@@ -62,29 +61,33 @@ class World:
         self.abs_temp = abs_temp
         self.chemistry = chemistry
 
-        self.genetics = Genetics(start_codons=start_codons, stop_codons=stop_codons)
+        self.map = Map(
+            mol_init=mol_map_init,
+            size=map_size,
+            chemistry=chemistry,
+            device=device,
+            ftype=ftype,
+        )
+        self.genomics = Genomics(start_codons=start_codons, stop_codons=stop_codons)
         self.kinetics = Kinetics(device=device)
         self.proteomics = Proteomics(
             chemistry=chemistry,
             device=device,
             abs_temp=abs_temp,
-            scalar_enc_size=max(self.genetics.one_codon_map.values()),
-            vector_enc_size=max(self.genetics.two_codon_map.values()),
+            scalar_enc_size=max(self.genomics.one_codon_map.values()),
+            vector_enc_size=max(self.genomics.two_codon_map.values()),
         )
 
         mol_degrads: list[float] = []
-        diffusion: list[torch.nn.Conv2d] = []
         permeation: list[float] = []
         for mol in chemistry.molecules:
             mol_degrads.append(math.exp(-math.log(2) / mol.half_life))
-            diffusion.append(self._get_diffuse(mol_diff_rate=mol.diffusivity))
             permeation.append(self._get_permeate(mol_perm_rate=mol.permeability))
 
         self.n_molecules = len(chemistry.molecules)
         self._int_mol_idxs = list(range(self.n_molecules))
         self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
         self._mol_degrads = mol_degrads
-        self._diffusion = diffusion
         self._permeation = permeation
 
         # working params
@@ -102,15 +105,11 @@ class World:
         self.n_cells = 0
         self.cell_genomes: list[str] = []
         self.cell_labels: list[str] = []
-        self.cell_map: torch.Tensor = torch.zeros(map_size, map_size).to(device).bool()
         self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).int()
         self.cell_lifetimes: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_divisions: torch.Tensor = torch.zeros(0).to(device).int()
         self.cell_molecules: torch.Tensor = (
             torch.zeros(0, self.n_molecules).to(device).float()
-        )
-        self.molecule_map: torch.Tensor = self._get_molecule_map(
-            n=self.n_molecules, size=map_size, init=mol_map_init
         )
 
     def get_cell(
@@ -165,7 +164,7 @@ class World:
         if n_new_cells == 0:
             return []
 
-        free_pos = self._find_free_random_positions(n_cells=n_new_cells)
+        free_pos = self.map.find_free_random_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             return []
@@ -185,13 +184,13 @@ class World:
         # occupy positions
         xs = new_pos[:, 0]
         ys = new_pos[:, 1]
-        self.cell_map[xs, ys] = True
+        self.map.cells[xs, ys] = True
         self.cell_positions[new_idxs] = new_pos
 
         # cell is picking up half the molecules of the pxl it is born on
-        pickup = self.molecule_map[:, xs, ys] * 0.5
+        pickup = self.map.molecules[:, xs, ys] * 0.5
         self.cell_molecules[new_idxs, :] += pickup.T
-        self.molecule_map[:, xs, ys] -= pickup
+        self.map.molecules[:, xs, ys] -= pickup
 
         self._update_cell_params(genomes=genomes, idxs=new_idxs)
         return new_idxs
@@ -201,7 +200,7 @@ class World:
         if n_new_cells == 0:
             return []
 
-        free_pos = self._find_free_random_positions(n_cells=n_new_cells)
+        free_pos = self.map.find_free_random_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             return []
@@ -223,7 +222,7 @@ class World:
         # occupy positions
         xs = new_pos[:, 0]
         ys = new_pos[:, 1]
-        self.cell_map[xs, ys] = True
+        self.map.cells[xs, ys] = True
         self.cell_positions[new_idxs] = new_pos
 
         # previous molecules, lifetimes, divisions are transfered
@@ -268,7 +267,7 @@ class World:
 
         # position new cells
         child_pos = self._i32_tensor(child_pos)
-        self.cell_map[child_pos[:, 0], child_pos[:, 1]] = True
+        self.map.cells[child_pos[:, 0], child_pos[:, 1]] = True
         self.cell_positions[child_idxs] = child_pos
 
         # cells share molecules and increment cell divisions
@@ -303,10 +302,10 @@ class World:
 
         xs = self.cell_positions[cell_idxs, 0]
         ys = self.cell_positions[cell_idxs, 1]
-        self.cell_map[xs, ys] = False
+        self.map.cells[xs, ys] = False
 
         spillout = self.cell_molecules[cell_idxs, :]
-        self.molecule_map[:, xs, ys] += spillout.T
+        self.map.molecules[:, xs, ys] += spillout.T
 
         n_cells = self.cell_lifetimes.size(0)
         keep = torch.ones(n_cells, dtype=torch.bool, device=self.device)
@@ -341,9 +340,9 @@ class World:
 
         # reposition cells
         old_pos = self.cell_positions[moved_idxs]
-        self.cell_map[old_pos[:, 0], old_pos[:, 1]] = False
+        self.map.cells[old_pos[:, 0], old_pos[:, 1]] = False
         new_pos = self._i32_tensor(new_pos)
-        self.cell_map[new_pos[:, 0], new_pos[:, 1]] = True
+        self.map.cells[new_pos[:, 0], new_pos[:, 1]] = True
         self.cell_positions[moved_idxs] = new_pos
 
     def resuspend_cells(self, cell_idxs: list[int] | None = None):
@@ -359,14 +358,14 @@ class World:
         # unoccupy current positions
         old_xs = self.cell_positions[cell_idxs, 0]
         old_ys = self.cell_positions[cell_idxs, 1]
-        self.cell_map[old_xs, old_ys] = False
+        self.map.cells[old_xs, old_ys] = False
 
         # find new unoccupied positions
-        new_pos = self._find_free_random_positions(n_cells=len(cell_idxs))
+        new_pos = self.map.find_free_random_positions(n=len(cell_idxs))
         new_xs = new_pos[:, 0]
         new_ys = new_pos[:, 1]
 
-        self.cell_map[new_xs, new_ys] = True
+        self.map.cells[new_xs, new_ys] = True
         self.cell_positions[cell_idxs] = new_pos
 
     def enzymatic_activity(self):
@@ -375,7 +374,7 @@ class World:
 
         xs = self.cell_positions[:, 0]
         ys = self.cell_positions[:, 1]
-        X0 = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
+        X0 = torch.cat([self.cell_molecules, self.map.molecules[:, xs, ys].T], dim=1)
         X1 = self.kinetics.step_protein_activity(
             h=1,
             x0=X0,
@@ -389,39 +388,8 @@ class World:
             v_max=self.v_max,
         )
 
-        self.molecule_map[:, xs, ys] = X1[:, self._ext_mol_idxs].T
+        self.map.molecules[:, xs, ys] = X1[:, self._ext_mol_idxs].T
         self.cell_molecules = X1[:, self._int_mol_idxs]
-
-    @torch.no_grad()
-    def diffuse_molecules(self):
-        n_pxls = self.map_size**2
-        for mol_i, diffuse in enumerate(self._diffusion):
-            total_before = self.molecule_map[mol_i].sum()
-            before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
-            after = diffuse(before)
-            self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0)
-            total_after = self.molecule_map[mol_i].sum()
-
-            # attempt to fix the problem that convolusion makes a small amount of
-            # molecules appear or disappear (I think because floating point)
-            self.molecule_map[mol_i] += (total_before - total_after) / n_pxls
-            self.molecule_map[mol_i] = self.molecule_map[mol_i].clamp(0.0)
-
-        if self.n_cells == 0:
-            return
-
-        xs = self.cell_positions[:, 0]
-        ys = self.cell_positions[:, 1]
-        X = torch.cat([self.cell_molecules, self.molecule_map[:, xs, ys].T], dim=1)
-
-        for mol_i, permeate in enumerate(self._permeation):
-            d_int = X[:, mol_i] * permeate
-            d_ext = X[:, mol_i + self.n_molecules] * permeate
-            X[:, mol_i] += d_ext - d_int
-            X[:, mol_i + self.n_molecules] += d_int - d_ext
-
-        self.molecule_map[:, xs, ys] = X[:, self._ext_mol_idxs].T
-        self.cell_molecules = X[:, self._int_mol_idxs]
 
     def increment_cell_lifetimes(self):
         self.cell_lifetimes += 1
@@ -480,9 +448,8 @@ class World:
 
     def save_state(self, statedir: Path):
         statedir.mkdir(parents=True, exist_ok=True)
+        self.map.save_state(statedir=statedir)
         torch.save(self.cell_molecules, statedir / "cell_molecules.pt")
-        torch.save(self.cell_map, statedir / "cell_map.pt")
-        torch.save(self.molecule_map, statedir / "molecule_map.pt")
         torch.save(self.cell_lifetimes, statedir / "cell_lifetimes.pt")
         torch.save(self.cell_positions, statedir / "cell_positions.pt")
         torch.save(self.cell_divisions, statedir / "cell_divisions.pt")
@@ -500,13 +467,10 @@ class World:
 
         # TODO: load after calling increase cells
         #       then fill tensors with their values
+        self.map.load_state(statedir=statedir)
         cell_molecules = torch.load(
             statedir / "cell_molecules.pt", map_location=self.device
         ).float()
-        cell_map = torch.load(statedir / "cell_map.pt", map_location=self.device).bool()
-        molecule_map = torch.load(
-            statedir / "molecule_map.pt", map_location=self.device
-        )
         cell_lifetimes = torch.load(
             statedir / "cell_lifetimes.pt", map_location=self.device
         ).int()
@@ -538,8 +502,6 @@ class World:
 
         self._increase_cells(by_n=self.n_cells)
         self.cell_molecules[:] = cell_molecules
-        self.cell_map[:] = cell_map
-        self.molecule_map[:] = molecule_map
         self.cell_lifetimes[:] = cell_lifetimes
         self.cell_positions[:] = cell_positions
         self.cell_divisions[:] = cell_divisions
@@ -548,7 +510,7 @@ class World:
             self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
     def _update_cell_params(self, genomes: list[str], idxs: list[int]):
-        proteomes = self.genetics.translate_genomes(genomes=genomes)
+        proteomes = self.genomics.translate_genomes(genomes=genomes)
 
         max_prots: int = 0
         set_idxs: list[int] = []
@@ -587,30 +549,6 @@ class World:
             self.K_r[set_idxs[a:b]] = K_r
             self.v_max[set_idxs[a:b]] = v_max
 
-    def _find_free_random_positions(self, n_cells: int) -> torch.Tensor:
-        # available spots on map
-        pxls = torch.nonzero(~self.cell_map).int()
-        n_pxls = pxls.size(0)
-        n_cells = min(n_cells, n_pxls)
-
-        # place cells on map
-        idxs = random.sample(range(n_pxls), k=n_cells)
-        chosen = pxls[idxs]
-        return chosen
-
-    def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
-        args = [n, size, size]
-        if init == "zeros":
-            return torch.zeros(*args, device=self.device, dtype=torch.float32)
-        if init == "randn":
-            return (
-                torch.randn(*args, dtype=torch.float32, device=self.device) + 10.0
-            ).abs()
-        raise ValueError(
-            f"Didnt recognize mol_map_init={init}."
-            " Should be one of: 'zeros', 'randn'."
-        )
-
     def _get_permeate(self, mol_perm_rate: float) -> float:
         if mol_perm_rate < 0.0:
             mol_perm_rate = -mol_perm_rate
@@ -622,43 +560,6 @@ class World:
 
         d = 1 / mol_perm_rate
         return 1 / (d + 1)
-
-    def _get_diffuse(self, mol_diff_rate: float) -> torch.nn.Conv2d:
-        if mol_diff_rate < 0.0:
-            mol_diff_rate = -mol_diff_rate
-
-        # mol_diff_rate > 1.0 could also mean expanding the kernel
-        # so that molecules can diffuse more than just 1 pxl per round
-        mol_diff_rate = min(mol_diff_rate, 1.0)
-
-        if mol_diff_rate == 0.0:
-            a = 0.0
-            b = 1.0
-        else:
-            d = 1 / mol_diff_rate
-            a = 1 / (d + 8)
-            b = d * a
-            b = b + 1.0 - (8 * a + b)  # try correcting inaccuracy
-
-        # fmt: off
-        kernel = self._f32_tensor([[[
-            [a, a, a],
-            [a, b, a],
-            [a, a, a],
-        ]]])
-        # fmt: on
-
-        conv = torch.nn.Conv2d(
-            in_channels=1,
-            out_channels=1,
-            kernel_size=3,
-            padding=1,
-            padding_mode="circular",
-            bias=False,
-            device=self.device,
-        )
-        conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
-        return conv
 
     def _i32_tensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=torch.int32)
