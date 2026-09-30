@@ -447,7 +447,7 @@ class Proteomics:
         )
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
-    def set_cell_params(self, proteomes: list[list[ProteinSpecType]], p: int) -> tuple[
+    def get_cell_params(self, proteomes: list[list[ProteinSpecType]], p: int) -> tuple[
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
@@ -460,11 +460,16 @@ class Proteomics:
     ]:
         eps = self.eps
         max_k = self.max_k
+        # TODO: return kwargs
 
         # get proteome tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
             proteomes=proteomes, p=p
         )
+
+        # TODO: could I do more of this in rust
+        #       e.g. can I avoid dimension d
+        #       would need to send mappings to rust and do aggregation there
 
         # identify domain types
         # 1=catalytic, 2=transporter, 3=regulatory

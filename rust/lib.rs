@@ -13,6 +13,58 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::collections::HashMap;
 
+// TODO: Only send maps once to Rust using OnceLock
+// e.g.:
+//
+// // lib.rs
+// use pyo3::prelude::*;
+// use std::collections::HashMap;
+// use std::sync::OnceLock;
+
+// // Your constant map type (pure Rust, no Python objects)
+// type MapType = HashMap<String, Vec<f64>>;
+
+// static CONST_MAP: OnceLock<MapType> = OnceLock::new();
+
+// /// Called once from Python to initialize the constant maps.
+// #[pyfunction]
+// fn init_const_map(py: Python<'_>, data: HashMap<String, Vec<f64>>) -> PyResult<()> {
+//     // Ensure we only initialize once
+//     CONST_MAP
+//         .set(data)
+//         .map_err(|_| {
+//             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+//                 "init_const_map was already called; constant maps are already set",
+//             )
+//         })?;
+//     Ok(())
+// }
+
+// #[pyfunction]
+// fn process(py: Python<'_>, changing_data: Vec<f64>) -> PyResult<Vec<f64>> {
+//     let const_map = CONST_MAP.get().ok_or_else(|| {
+//         PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+//             "Constant maps not initialized; call init_const_map first",
+//         )
+//     })?;
+
+//     // Use const_map + changing_data
+//     let mut result = Vec::with_capacity(changing_data.len());
+//     for x in changing_data {
+//         let factor = const_map.get("foo").map(|v| v[0]).unwrap_or(1.0);
+//         result.push(x * factor);
+//     }
+
+//     Ok(result)
+// }
+
+// #[pymodule]
+// fn my_rust_lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
+//     m.add_function(wrap_pyfunction!(init_const_map, m)?)?;
+//     m.add_function(wrap_pyfunction!(process, m)?)?;
+//     Ok(())
+// }
+
 // util
 
 #[pyfunction]

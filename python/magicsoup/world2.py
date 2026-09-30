@@ -1,4 +1,3 @@
-import math
 import pickle
 import random
 from io import BytesIO
@@ -8,7 +7,7 @@ from typing import Any
 import torch
 
 from magicsoup import _lib  # type: ignore
-from magicsoup.cellular import Cell
+from magicsoup.cellular import Cell, Cells
 from magicsoup.chemistry import Chemistry
 from magicsoup.constants import ProteinSpecType
 from magicsoup.genomics import Genomics
@@ -46,18 +45,17 @@ class World:
         map_size: int = 128,
         abs_temp: float = 310.0,
         mol_map_init: str = "zeros",
+        time_step: float = 1.0,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         device: str = "cpu",
         itype: torch.dtype = torch.int8,
         ftype: torch.dtype = torch.float32,
-        batch_size: int | None = None,
     ):
+        self.time_step = time_step
         self.device = device
         self.itype = itype
         self.ftype = ftype
-        self.batch_size = batch_size
-        self.map_size = map_size
         self.abs_temp = abs_temp
         self.chemistry = chemistry
 
@@ -68,6 +66,7 @@ class World:
             device=device,
             ftype=ftype,
         )
+        self.cells = Cells(chemistry=chemistry, device=device, itype=itype, ftype=ftype)
         self.genomics = Genomics(start_codons=start_codons, stop_codons=stop_codons)
         self.kinetics = Kinetics(device=device)
         self.proteomics = Proteomics(
@@ -78,39 +77,10 @@ class World:
             vector_enc_size=max(self.genomics.two_codon_map.values()),
         )
 
-        mol_degrads: list[float] = []
-        permeation: list[float] = []
-        for mol in chemistry.molecules:
-            mol_degrads.append(math.exp(-math.log(2) / mol.half_life))
-            permeation.append(self._get_permeate(mol_perm_rate=mol.permeability))
-
-        self.n_molecules = len(chemistry.molecules)
-        self._int_mol_idxs = list(range(self.n_molecules))
-        self._ext_mol_idxs = list(range(self.n_molecules, self.n_molecules * 2))
-        self._mol_degrads = mol_degrads
-        self._permeation = permeation
-
-        # working params
-        m = 2 * len(chemistry.molecules)
-        self.k_e = self._fzeros(0, 0)
-        self.k_f = self._fzeros(0, 0)
-        self.k_b = self._fzeros(0, 0)
-        self.K_r = self._fzeros(0, 0, m)
-        self.v_max = self._fzeros(0, 0)
-        self.N = self._izeros(0, 0, m)
-        self.N_f = self._izeros(0, 0, m)
-        self.N_b = self._izeros(0, 0, m)
-        self.N_h = self._izeros(0, 0, m)
-
+        n_molecules = len(chemistry.molecules)
+        self._int_mol_idxs = list(range(n_molecules))
+        self._ext_mol_idxs = list(range(n_molecules, n_molecules * 2))
         self.n_cells = 0
-        self.cell_genomes: list[str] = []
-        self.cell_labels: list[str] = []
-        self.cell_positions: torch.Tensor = torch.zeros(0, 2).to(device).int()
-        self.cell_lifetimes: torch.Tensor = torch.zeros(0).to(device).int()
-        self.cell_divisions: torch.Tensor = torch.zeros(0).to(device).int()
-        self.cell_molecules: torch.Tensor = (
-            torch.zeros(0, self.n_molecules).to(device).float()
-        )
 
     def get_cell(
         self,
@@ -122,7 +92,7 @@ class World:
             idx = by_idx
         if by_position is not None:
             pos = self._i32_tensor(by_position)
-            mask = (self.cell_positions == pos).all(dim=1)
+            mask = (self.cells.positions == pos).all(dim=1)
             idxs = torch.argwhere(mask).flatten().tolist()
             if len(idxs) == 0:
                 raise ValueError(f"Cell at {by_position} not found")
@@ -131,11 +101,11 @@ class World:
         return Cell(
             world=self,
             idx=idx,
-            genome=self.cell_genomes[idx],
-            position=tuple(self.cell_positions[idx].tolist()),  # type: ignore
-            label=self.cell_labels[idx],
-            n_steps_alive=int(self.cell_lifetimes[idx].item()),
-            n_divisions=int(self.cell_divisions[idx].item()),
+            genome=self.cells.genomes[idx],
+            position=tuple(self.cells.positions[idx].tolist()),  # type: ignore
+            label=self.cells.labels[idx],
+            age=int(self.cells.ages[idx].item()),
+            generation=int(self.cells.generations[idx].item()),
         )
 
     def get_neighbors(
@@ -153,10 +123,10 @@ class World:
         if to_idxs == 0:
             return []
 
-        xs = self.cell_positions[:, 0].tolist()
-        ys = self.cell_positions[:, 1].tolist()
+        xs = self.cells.positions[:, 0].tolist()
+        ys = self.cells.positions[:, 1].tolist()
         positions = [(x, y) for x, y in zip(xs, ys)]
-        nghbrs = _lib.get_neighbors(from_idxs, to_idxs, positions, self.map_size)
+        nghbrs = _lib.get_neighbors(from_idxs, to_idxs, positions, self.map.size)
         return nghbrs
 
     def spawn_cells(self, genomes: list[str]) -> list[int]:
@@ -172,24 +142,28 @@ class World:
         if n_avail_pos < n_new_cells:
             n_new_cells = n_avail_pos
             random.shuffle(genomes)
+            # TODO: log warning or info
             genomes = genomes[:n_new_cells]
 
-        new_pos = free_pos[:n_new_cells]
-        new_idxs = list(range(self.n_cells, self.n_cells + n_new_cells))
-        self.n_cells += n_new_cells
-        self.cell_genomes.extend(genomes)
-        self.cell_labels.extend(randstr(n=12) for _ in range(n_new_cells))
-        self._increase_cells(by_n=n_new_cells)
+        n_cells = self.cells.get_alive_cells()
+        self.cells.set_c(n_cells + n_new_cells)
+        free_idxs = self.cells.get_available_idxs()
+        new_idxs = free_idxs[:n_new_cells].tolist()
+
+        for genome, idx in zip(genomes, new_idxs):
+            self.cells.genomes[idx] = genome
+            self.cells.labels[idx] = randstr(n=12)
 
         # occupy positions
+        new_pos = free_pos[:n_new_cells]
         xs = new_pos[:, 0]
         ys = new_pos[:, 1]
         self.map.cells[xs, ys] = True
-        self.cell_positions[new_idxs] = new_pos
+        self.cells.positions[new_idxs] = new_pos
 
         # cell is picking up half the molecules of the pxl it is born on
         pickup = self.map.molecules[:, xs, ys] * 0.5
-        self.cell_molecules[new_idxs, :] += pickup.T
+        self.cells.x_i[new_idxs, :] += pickup.T
         self.map.molecules[:, xs, ys] -= pickup
 
         self._update_cell_params(genomes=genomes, idxs=new_idxs)
@@ -208,35 +182,36 @@ class World:
         if n_avail_pos < n_new_cells:
             n_new_cells = n_avail_pos
             random.shuffle(cells)
+            # TODO: log warning or info
             cells = cells[:n_new_cells]
 
-        new_pos = free_pos[:n_new_cells]
-        new_idxs = list(range(self.n_cells, self.n_cells + n_new_cells))
-        self.n_cells += n_new_cells
-        for cell in cells:
-            self.cell_genomes.append(cell.genome)
-            self.cell_labels.append(cell.label)
+        n_cells = self.cells.get_alive_cells()
+        self.cells.set_c(n_cells + n_new_cells)
+        free_idxs = self.cells.get_available_idxs()
+        new_idxs = free_idxs[:n_new_cells].tolist()
 
-        self._increase_cells(by_n=n_new_cells)
+        for cell, idx in zip(cells, new_idxs):
+            self.cells.genomes[idx] = cell.genome
+            self.cells.labels[idx] = cell.label
 
         # occupy positions
+        new_pos = free_pos[:n_new_cells]
         xs = new_pos[:, 0]
         ys = new_pos[:, 1]
         self.map.cells[xs, ys] = True
-        self.cell_positions[new_idxs] = new_pos
+        self.cells.positions[new_idxs] = new_pos
 
-        # previous molecules, lifetimes, divisions are transfered
+        # previous molecules, ages, divisions are transfered
         int_mols = [d.int_molecules for d in cells]
-        lifetimes = [d.n_steps_alive for d in cells]
-        divisions = [d.n_divisions for d in cells]
+        ages = [d.age for d in cells]
+        generations = [d.generation for d in cells]
         genomes = [d.genome for d in cells]
 
-        self.cell_molecules[new_idxs, :] = torch.stack(int_mols).to(self.device).float()
-        self.cell_lifetimes[new_idxs] = self._i32_tensor(lifetimes)
-        self.cell_divisions[new_idxs] = self._i32_tensor(divisions)
+        self.cells.x_i[new_idxs, :] = self._f32_tensor(torch.stack(int_mols))
+        self.cells.ages[new_idxs] = self._i32_tensor(ages)
+        self.cells.generations[new_idxs] = self._i32_tensor(generations)
 
         self._update_cell_params(genomes=genomes, idxs=new_idxs)
-
         return new_idxs
 
     def divide_cells(self, cell_idxs: list[int]) -> list[tuple[int, int]]:
@@ -246,37 +221,48 @@ class World:
         # duplicates could lead to unexpected results
         cell_idxs = list(set(cell_idxs))
 
-        xs = self.cell_positions[:, 0].tolist()
-        ys = self.cell_positions[:, 1].tolist()
+        n_cells = self.cells.get_alive_cells()
+
+        xs = self.cells.positions[:, 0].tolist()
+        ys = self.cells.positions[:, 1].tolist()
         occupied_positions = [(x, y) for x, y in zip(xs, ys)]
         (parent_idxs, child_idxs, child_pos) = _lib.divide_cells_if_possible(
-            cell_idxs, occupied_positions, self.n_cells, self.map_size
+            cell_idxs, occupied_positions, n_cells, self.map.size
         )
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
             return []
 
-        # increment cells, genomes, labels
-        self.n_cells += n_new_cells
-        self.cell_genomes.extend([self.cell_genomes[d] for d in parent_idxs])
-        self.cell_labels.extend([self.cell_labels[d] for d in parent_idxs])
+        self.cells.set_c(n_cells + n_new_cells)
 
-        self._increase_cells(by_n=n_new_cells)
-        self._copy_cell_params(from_idx=parent_idxs, to_idx=child_idxs)
+        # transfer genomes, labels
+        for child_idx, parent_idx in zip(child_idxs, parent_idxs):
+            self.cells.genomes[child_idx] = self.cells.genomes[parent_idx]
+            self.cells.labels[child_idx] = self.cells.labels[parent_idx]
+
+        self.cells.k_e[parent_idxs] = self.cells.k_e[child_idxs]
+        self.cells.k_f[parent_idxs] = self.cells.k_f[child_idxs]
+        self.cells.k_b[parent_idxs] = self.cells.k_b[child_idxs]
+        self.cells.K_r[parent_idxs] = self.cells.K_r[child_idxs]
+        self.cells.v_max[parent_idxs] = self.cells.v_max[child_idxs]
+        self.cells.N[parent_idxs] = self.cells.N[child_idxs]
+        self.cells.N_f[parent_idxs] = self.cells.N_f[child_idxs]
+        self.cells.N_b[parent_idxs] = self.cells.N_b[child_idxs]
+        self.cells.N_h[parent_idxs] = self.cells.N_h[child_idxs]
 
         # position new cells
-        child_pos = self._i32_tensor(child_pos)
+        child_pos = self._idxtensor(child_pos)
         self.map.cells[child_pos[:, 0], child_pos[:, 1]] = True
-        self.cell_positions[child_idxs] = child_pos
+        self.cells.positions[child_idxs] = child_pos
 
-        # cells share molecules and increment cell divisions
+        # cells share molecules, increment generations, reset lifetimes
         descendant_idxs = parent_idxs + child_idxs
-        self.cell_molecules[child_idxs] = self.cell_molecules[parent_idxs]
-        self.cell_molecules[descendant_idxs] *= 0.5
-        self.cell_divisions[child_idxs] = self.cell_divisions[parent_idxs]
-        self.cell_divisions[descendant_idxs] += 1
-        self.cell_lifetimes[descendant_idxs] = 0
+        self.cells.x_i[child_idxs] = self.cells.x_i[parent_idxs]
+        self.cells.x_i[descendant_idxs] *= 0.5
+        self.cells.generations[child_idxs] = self.cells.generations[parent_idxs]
+        self.cells.generations[descendant_idxs] += 1
+        self.cells.ages[descendant_idxs] = 0
 
         return list(zip(parent_idxs, child_idxs))
 
@@ -285,7 +271,7 @@ class World:
             return
 
         for genome, idx in genome_idx_pairs:
-            self.cell_genomes[idx] = genome
+            self.cells.genomes[idx] = genome
 
         genomes, idxs = list(map(list, zip(*genome_idx_pairs)))
         self._update_cell_params(genomes=genomes, idxs=idxs)  # type: ignore
@@ -300,28 +286,32 @@ class World:
         # duplicates could raise error later
         cell_idxs = list(set(cell_idxs))
 
-        xs = self.cell_positions[cell_idxs, 0]
-        ys = self.cell_positions[cell_idxs, 1]
+        # free up map
+        xs = self.cells.positions[cell_idxs, 0]
+        ys = self.cells.positions[cell_idxs, 1]
         self.map.cells[xs, ys] = False
 
-        spillout = self.cell_molecules[cell_idxs, :]
+        # spill out molecules
+        spillout = self.cells.x_i[cell_idxs, :]
         self.map.molecules[:, xs, ys] += spillout.T
 
-        n_cells = self.cell_lifetimes.size(0)
-        keep = torch.ones(n_cells, dtype=torch.bool, device=self.device)
-        keep[cell_idxs] = False
-        self.cell_lifetimes = self.cell_lifetimes[keep]
-        self.cell_positions = self.cell_positions[keep]
-        self.cell_divisions = self.cell_divisions[keep]
-        self.cell_molecules = self.cell_molecules[keep]
-        self._unset_cell_params(idx=~keep)
-        self._decrease_cells(keep_idx=keep)
+        self.cells.ages[cell_idxs] = 0.0
+        self.cells.positions[cell_idxs] = 0
+        self.cells.generations[cell_idxs] = 0
+        self.cells.x_i[cell_idxs] = 0.0
+        self.cells.N[cell_idxs] = 0
+        self.cells.N_f[cell_idxs] = 0
+        self.cells.N_b[cell_idxs] = 0
+        self.cells.N_h[cell_idxs] = 0
+        self.cells.k_e[cell_idxs] = 0.0
+        self.cells.k_f[cell_idxs] = 0.0
+        self.cells.k_b[cell_idxs] = 0.0
+        self.cells.K_r[cell_idxs] = 0.0
+        self.cells.v_max[cell_idxs] = 0.0
 
-        for idx in sorted(cell_idxs, reverse=True):
-            self.cell_genomes.pop(idx)
-            self.cell_labels.pop(idx)
-
-        self.n_cells -= len(cell_idxs)
+        for idx in cell_idxs:
+            self.cells.genomes[idx] = ""
+            self.cells.labels[idx] = ""
 
     def migrate_cells(self, cell_idxs: list[int] | None = None):
         if cell_idxs is None:
@@ -333,17 +323,17 @@ class World:
         # duplicates could lead to unexpected results
         cell_idxs = list(set(cell_idxs))
 
-        xs = self.cell_positions[:, 0].tolist()
-        ys = self.cell_positions[:, 1].tolist()
+        xs = self.cells.positions[:, 0].tolist()
+        ys = self.cells.positions[:, 1].tolist()
         positions = [(x, y) for x, y in zip(xs, ys)]
-        new_pos, moved_idxs = _lib.move_cells(cell_idxs, positions, self.map_size)
+        new_pos, moved_idxs = _lib.move_cells(cell_idxs, positions, self.map.size)
 
         # reposition cells
-        old_pos = self.cell_positions[moved_idxs]
+        old_pos = self.cells.positions[moved_idxs]
         self.map.cells[old_pos[:, 0], old_pos[:, 1]] = False
-        new_pos = self._i32_tensor(new_pos)
+        new_pos = self._idxtensor(new_pos)
         self.map.cells[new_pos[:, 0], new_pos[:, 1]] = True
-        self.cell_positions[moved_idxs] = new_pos
+        self.cells.positions[moved_idxs] = new_pos
 
     def resuspend_cells(self, cell_idxs: list[int] | None = None):
         if cell_idxs is None:
@@ -356,8 +346,8 @@ class World:
         cell_idxs = list(set(cell_idxs))
 
         # unoccupy current positions
-        old_xs = self.cell_positions[cell_idxs, 0]
-        old_ys = self.cell_positions[cell_idxs, 1]
+        old_xs = self.cells.positions[cell_idxs, 0]
+        old_ys = self.cells.positions[cell_idxs, 1]
         self.map.cells[old_xs, old_ys] = False
 
         # find new unoccupied positions
@@ -366,33 +356,36 @@ class World:
         new_ys = new_pos[:, 1]
 
         self.map.cells[new_xs, new_ys] = True
-        self.cell_positions[cell_idxs] = new_pos
+        self.cells.positions[cell_idxs] = new_pos
 
     def enzymatic_activity(self):
         if self.n_cells == 0:
             return
 
-        xs = self.cell_positions[:, 0]
-        ys = self.cell_positions[:, 1]
-        X0 = torch.cat([self.cell_molecules, self.map.molecules[:, xs, ys].T], dim=1)
-        X1 = self.kinetics.step_protein_activity(
-            h=1,
-            x0=X0,
-            N=self.N,
-            N_f=self.N_f,
-            N_b=self.N_b,
-            N_h=self.N_h,
-            k_f=self.k_f,
-            k_b=self.k_b,
-            K_r=self.K_r,
-            v_max=self.v_max,
+        alive = self.cells.alive
+        xs = self.cells.positions[alive, 0]
+        ys = self.cells.positions[alive, 1]
+        x0 = torch.cat(
+            [self.cells.x_i[alive], self.map.molecules[alive, xs, ys].T], dim=1
+        )
+        x1 = self.kinetics.step_protein_activity(
+            h=self.time_step,
+            x0=x0,
+            N=self.cells.N[alive],
+            N_f=self.cells.N_f[alive],
+            N_b=self.cells.N_b[alive],
+            N_h=self.cells.N_h[alive],
+            k_f=self.cells.k_f[alive],
+            k_b=self.cells.k_b[alive],
+            K_r=self.cells.K_r[alive],
+            v_max=self.cells.v_max[alive],
         )
 
-        self.map.molecules[:, xs, ys] = X1[:, self._ext_mol_idxs].T
-        self.cell_molecules = X1[:, self._int_mol_idxs]
+        self.map.molecules[alive, xs, ys] = x1[:, self._ext_mol_idxs].T
+        self.cells.x_i[alive] = x1[:, self._int_mol_idxs]
 
-    def increment_cell_lifetimes(self):
-        self.cell_lifetimes += 1
+    def age_cells(self):
+        self.cells.ages += self.time_step
 
     def mutate_cells(
         self,
@@ -401,20 +394,20 @@ class World:
         p_indel: float = 0.4,
         p_del: float = 0.66,
     ):
-        if cell_idxs is None:
-            seqs = self.cell_genomes
-            mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
-            self.update_cells(genome_idx_pairs=mutated)
-        else:
-            seqs = [self.cell_genomes[d] for d in cell_idxs]
-            mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
-            pairs = [(d, cell_idxs[i]) for d, i in mutated]
-            self.update_cells(genome_idx_pairs=pairs)
+        idxs = (
+            self.cells.get_available_idxs().tolist() if cell_idxs is None else cell_idxs
+        )
+        seqs = [self.cells.genomes[d] for d in idxs]
+        mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
+        pairs = [(d, idxs[i]) for d, i in mutated]
+        self.update_cells(genome_idx_pairs=pairs)
 
     def recombinate_cells(self, cell_idxs: list[int] | None = None, p: float = 1e-7):
-        idxs = list(range(self.n_cells)) if cell_idxs is None else cell_idxs
+        idxs = (
+            self.cells.get_available_idxs().tolist() if cell_idxs is None else cell_idxs
+        )
         nghbrs = self.get_neighbors(cell_idxs=idxs)
-        pairs = [(self.cell_genomes[a], self.cell_genomes[b]) for a, b in nghbrs]
+        pairs = [(self.cells.genomes[a], self.cells.genomes[b]) for a, b in nghbrs]
         mutated = recombinations(seq_pairs=pairs, p=p)
 
         genome_idx_pairs = []
@@ -449,67 +442,13 @@ class World:
     def save_state(self, statedir: Path):
         statedir.mkdir(parents=True, exist_ok=True)
         self.map.save_state(statedir=statedir)
-        torch.save(self.cell_molecules, statedir / "cell_molecules.pt")
-        torch.save(self.cell_lifetimes, statedir / "cell_lifetimes.pt")
-        torch.save(self.cell_positions, statedir / "cell_positions.pt")
-        torch.save(self.cell_divisions, statedir / "cell_divisions.pt")
+        self.cells.save_state(statedir=statedir)
 
-        lines: list[str] = []
-        for idx, (genome, label) in enumerate(zip(self.cell_genomes, self.cell_labels)):
-            lines.append(f">{idx} {label}\n{genome}")
-
-        with open(statedir / "cells.fasta", "w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines))
-
-    def load_state(self, statedir: Path, ignore_cell_params: bool = False):
-        if not ignore_cell_params:
-            self.kill_cells(cell_idxs=list(range(self.n_cells)))
-
-        # TODO: load after calling increase cells
-        #       then fill tensors with their values
+    def load_state(self, statedir: Path):
         self.map.load_state(statedir=statedir)
-        cell_molecules = torch.load(
-            statedir / "cell_molecules.pt", map_location=self.device
-        ).float()
-        cell_lifetimes = torch.load(
-            statedir / "cell_lifetimes.pt", map_location=self.device
-        ).int()
-        cell_positions = torch.load(
-            statedir / "cell_positions.pt", map_location=self.device
-        ).int()
-        cell_divisions = torch.load(
-            statedir / "cell_divisions.pt", map_location=self.device
-        ).int()
+        self.cells.load_state(statedir=statedir)
 
-        with open(statedir / "cells.fasta", encoding="utf-8") as fh:
-            text: str = fh.read()
-            entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
-
-        self.cell_labels = []
-        self.cell_genomes = []
-        genome_idx_pairs: list[tuple[str, int]] = []
-        for idx, entry in enumerate(entries):
-            parts = entry.split("\n")
-            descr = parts[0]
-            seq = "" if len(parts) < 2 else parts[1]
-            names = descr.split()
-            label = names[1].strip() if len(names) > 1 else ""
-            self.cell_genomes.append(seq)
-            self.cell_labels.append(label)
-            genome_idx_pairs.append((seq, idx))
-
-        self.n_cells = len(genome_idx_pairs)
-
-        self._increase_cells(by_n=self.n_cells)
-        self.cell_molecules[:] = cell_molecules
-        self.cell_lifetimes[:] = cell_lifetimes
-        self.cell_positions[:] = cell_positions
-        self.cell_divisions[:] = cell_divisions
-
-        if not ignore_cell_params:
-            self.update_cells(genome_idx_pairs=genome_idx_pairs)
-
-    def _update_cell_params(self, genomes: list[str], idxs: list[int]):
+    def _update_cell_params(self, genomes: list[str], idxs: list[int]) -> None:
         proteomes = self.genomics.translate_genomes(genomes=genomes)
 
         max_prots: int = 0
@@ -525,29 +464,34 @@ class World:
             else:
                 unset_idxs.append(idx)
 
-        self._unset_cell_params(idx=unset_idxs)
+        self.cells.N[unset_idxs] = 0
+        self.cells.N_f[unset_idxs] = 0
+        self.cells.N_b[unset_idxs] = 0
+        self.cells.N_h[unset_idxs] = 0
+        self.cells.k_e[unset_idxs] = 0.0
+        self.cells.k_f[unset_idxs] = 0.0
+        self.cells.k_b[unset_idxs] = 0.0
+        self.cells.K_r[unset_idxs] = 0.0
+        self.cells.v_max[unset_idxs] = 0.0
+
         if max_prots == 0:
             return
 
-        p = self.N.size(1)
-        self._increase_proteins(by_n=max(max_prots - p, 0))
+        self.cells.set_p(max(max_prots - self.cells.p, 0))
 
-        n = len(set_proteomes)
-        s = n  # TODO: should be configurable
-        for a in range(0, n, s):
-            b = a + s
-            N, N_f, N_b, N_h, k_e, k_f, k_b, K_r, v_max = (
-                self.proteomics.set_cell_params(proteomes=set_proteomes[a:b], p=p)
-            )
-            self.N[set_idxs[a:b]] = N
-            self.N_f[set_idxs[a:b]] = N_f
-            self.N_b[set_idxs[a:b]] = N_b
-            self.N_h[set_idxs[a:b]] = N_h
-            self.k_e[set_idxs[a:b]] = k_e
-            self.k_f[set_idxs[a:b]] = k_f
-            self.k_b[set_idxs[a:b]] = k_b
-            self.K_r[set_idxs[a:b]] = K_r
-            self.v_max[set_idxs[a:b]] = v_max
+        # TODO: implement batch updates
+        N, N_f, N_b, N_h, k_e, k_f, k_b, K_r, v_max = self.proteomics.get_cell_params(
+            proteomes=set_proteomes, p=self.cells.p
+        )
+        self.cells.N[set_idxs] = N
+        self.cells.N_f[set_idxs] = N_f
+        self.cells.N_b[set_idxs] = N_b
+        self.cells.N_h[set_idxs] = N_h
+        self.cells.k_e[set_idxs] = k_e
+        self.cells.k_f[set_idxs] = k_f
+        self.cells.k_b[set_idxs] = k_b
+        self.cells.K_r[set_idxs] = K_r
+        self.cells.v_max[set_idxs] = v_max
 
     def _get_permeate(self, mol_perm_rate: float) -> float:
         if mol_perm_rate < 0.0:
@@ -567,78 +511,6 @@ class World:
     def _f32_tensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=torch.float32)
 
-    def _copy_cell_params(
-        self, from_idx: torch.Tensor | list[int], to_idx: torch.Tensor | list[int]
-    ) -> None:
-        self.k_e[to_idx] = self.k_e[from_idx]
-        self.k_f[to_idx] = self.k_f[from_idx]
-        self.k_b[to_idx] = self.k_b[from_idx]
-        self.K_r[to_idx] = self.K_r[from_idx]
-        self.v_max[to_idx] = self.v_max[from_idx]
-        self.N[to_idx] = self.N[from_idx]
-        self.N_f[to_idx] = self.N_f[from_idx]
-        self.N_b[to_idx] = self.N_b[from_idx]
-        self.N_h[to_idx] = self.N_h[from_idx]
-
-    def _unset_cell_params(self, idx: torch.Tensor | list[int]) -> None:
-        self.N[idx] = 0
-        self.N_f[idx] = 0
-        self.N_b[idx] = 0
-        self.N_h[idx] = 0
-        self.k_e[idx] = 0.0
-        self.k_f[idx] = 0.0
-        self.k_b[idx] = 0.0
-        self.K_r[idx] = 0.0
-        self.v_max[idx] = 0.0
-
-    def _increase_cells(self, by_n: int) -> None:
-        self.cell_lifetimes = self._expand_c(t=self.cell_lifetimes, by_n=by_n)
-        self.cell_positions = self._expand_c(t=self.cell_positions, by_n=by_n)
-        self.cell_divisions = self._expand_c(t=self.cell_divisions, by_n=by_n)
-        self.cell_molecules = self._expand_c(t=self.cell_molecules, by_n=by_n)
-        self.k_e = self._expand_c(t=self.k_e, by_n=by_n)
-        self.k_f = self._expand_c(t=self.k_f, by_n=by_n)
-        self.k_b = self._expand_c(t=self.k_b, by_n=by_n)
-        self.K_r = self._expand_c(t=self.K_r, by_n=by_n)
-        self.v_max = self._expand_c(t=self.v_max, by_n=by_n)
-        self.N = self._expand_c(t=self.N, by_n=by_n)
-        self.N_f = self._expand_c(t=self.N_f, by_n=by_n)
-        self.N_b = self._expand_c(t=self.N_b, by_n=by_n)
-        self.N_h = self._expand_c(t=self.N_h, by_n=by_n)
-
-    def _decrease_cells(self, keep_idx: torch.Tensor | list[int]) -> None:
-        self.k_e = self.k_e[keep_idx]
-        self.k_f = self.k_f[keep_idx]
-        self.k_b = self.k_b[keep_idx]
-        self.K_r = self.K_r[keep_idx]
-        self.v_max = self.v_max[keep_idx]
-        self.N = self.N[keep_idx]
-        self.N_f = self.N_f[keep_idx]
-        self.N_b = self.N_b[keep_idx]
-        self.N_h = self.N_h[keep_idx]
-
-    def _increase_proteins(self, by_n: int) -> None:
-        self.k_e = self._expand_p(t=self.k_e, by_n=by_n)
-        self.k_f = self._expand_p(t=self.k_f, by_n=by_n)
-        self.k_b = self._expand_p(t=self.k_b, by_n=by_n)
-        self.K_r = self._expand_p(t=self.K_r, by_n=by_n)
-        self.v_max = self._expand_p(t=self.v_max, by_n=by_n)
-        self.N = self._expand_p(t=self.N, by_n=by_n)
-        self.N_f = self._expand_p(t=self.N_f, by_n=by_n)
-        self.N_b = self._expand_p(t=self.N_b, by_n=by_n)
-        self.N_h = self._expand_p(t=self.N_h, by_n=by_n)
-
-    def _decrease_proteins(self, by_n: int) -> None:
-        self.k_e = self.k_e[:, :-by_n]
-        self.k_f = self.k_f[:, :-by_n]
-        self.k_b = self.k_b[:, :-by_n]
-        self.K_r = self.K_r[:, :-by_n]
-        self.v_max = self.v_max[:, :-by_n]
-        self.N = self.N[:, :-by_n]
-        self.N_f = self.N_f[:, :-by_n]
-        self.N_b = self.N_b[:, :-by_n]
-        self.N_h = self.N_h[:, :-by_n]
-
     def _expand_c(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
         size = t.size()
         zeros = torch.zeros(by_n, *size[1:], device=self.device, dtype=t.dtype)
@@ -655,9 +527,12 @@ class World:
     def _fzeros(self, *args) -> torch.Tensor:
         return torch.zeros(*args, device=self.device, dtype=self.ftype)
 
+    def _idxtensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=torch.float32)
+
     def __repr__(self) -> str:
         kwargs = {
-            "map_size": self.map_size,
+            "map_size": self.map.size,
             "abs_temp": self.abs_temp,
             "device": self.device,
         }
