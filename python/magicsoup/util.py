@@ -1,8 +1,10 @@
 import math
 import random
 import string
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from itertools import product
+
+import torch
 
 from magicsoup import _lib  # type:ignore
 from magicsoup.constants import ALL_NTS, CODON_SIZE
@@ -124,3 +126,93 @@ def free_moores_nghbhd(
     which are not already occupied as indicated by `positions`
     """
     return _lib.free_moores_nghbhd(x, y, positions, map_size)
+
+
+IndexLike = slice | list[int] | tuple[int] | torch.Tensor
+
+
+class Array[T]:
+    """Convenience class for indexing a list like a tensor"""
+
+    def __init__(self, items: list[T]) -> None:
+        self.items = items
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, idx: IndexLike) -> list[T]:
+        items = self.items
+
+        if isinstance(idx, torch.Tensor):
+
+            # 1) Boolean tensor mask
+            if idx.dtype == torch.bool:
+                if idx.ndim != 1:
+                    raise ValueError("Boolean mask must be 1D")
+                if idx.numel() != len(items):
+                    raise ValueError("Boolean mask length must match items length")
+                idxs = idx.nonzero(as_tuple=True)[0].tolist()
+                return [items[i] for i in idxs]
+
+            # 2) Integer tensor indices
+            if idx.dtype in (torch.int32, torch.int64):
+                if idx.ndim != 1:
+                    raise ValueError("Integer index tensor must be 1D")
+                idxs = idx.tolist()
+                return [items[i] for i in idxs]
+
+            raise TypeError(f"Unsupported tensor dtype for indexing: {idx.dtype}")
+
+        # 3) Python list / tuple of ints
+        if isinstance(idx, (list, tuple)):
+            return [items[i] for i in idx]
+
+        # 4) Plain slice: l[idx] (standard behavior)
+        if isinstance(idx, slice):
+            return items[idx]
+
+        raise ValueError(f"Unsupported index type: {type(idx)}")
+
+    def __setitem__(self, idx: IndexLike, value: Sequence[T]) -> None:
+        items = self.items
+
+        if isinstance(idx, torch.Tensor):
+
+            # 1) Boolean tensor mask
+            if idx.dtype == torch.bool:
+                if idx.ndim != 1 or idx.numel() != len(items):
+                    raise ValueError("Boolean mask must be 1D and match value length")
+                idxs = idx.nonzero(as_tuple=True)[0].tolist()
+                if len(idxs) != len(value):
+                    raise ValueError("Number of True elements must match value length")
+                for i, val in zip(idxs, value):
+                    items[i] = val
+                return
+
+            # 2) Integer tensor indices
+            if idx.dtype in (torch.int32, torch.int64):
+                if idx.ndim != 1:
+                    raise ValueError("Integer index tensor must be 1D")
+                idxs = idx.tolist()
+                if len(idxs) != len(value):
+                    raise ValueError("Number of indices must match value length")
+                for i, val in zip(idxs, value):
+                    items[i] = val
+                return
+
+            raise ValueError(f"Unsupported index type: {type(idx)}")
+
+        # 3) Python list / tuple of ints
+        if isinstance(idx, (list, tuple)):
+            if len(idx) != len(value):
+                raise ValueError("Number of indices must match value length")
+            for i, val in zip(idx, value):
+                items[i] = val
+            return
+
+        # 4) Plain slice: l[idx] (standard behavior)
+        if isinstance(idx, (int, slice)):
+            items[idx] = value
+            return
+
+        raise ValueError(f"Unsupported index type: {type(idx)}")

@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 
 import pytest
+import torch
 from magicsoup import util
 from magicsoup.constants import CODON_SIZE
 
@@ -124,3 +125,24 @@ def test_free_moores_nghbhd(x: int, y: int, exp: list[tuple[int, int]]):
 
     res2 = util.free_moores_nghbhd(x=x, y=y, positions=res, map_size=5)
     assert len(res2) == 0
+
+
+def test_array():
+    arr = util.Array(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"])
+    M = torch.tensor([1, 0, 1, 0, 1, 0, 1, 0, 1, 0]).bool()
+
+    assert arr[[0]] == ["a"]
+    assert arr[[-1]] == ["j"]
+    assert arr[3:5] == ["d", "e"]
+    assert arr[torch.tensor([0, 1, 2])] == ["a", "b", "c"]
+    assert arr[M] == ["a", "c", "e", "g", "i"]
+
+    with pytest.raises(ValueError):
+        _ = arr[0]
+
+    arr[1:3] = ["B", "C"]
+    assert arr[:4] == ["a", "B", "C", "d"]
+    arr[M] = ["A", "C", "E", "G", "I"]
+    assert arr[:] == ["A", "B", "C", "d", "E", "f", "G", "h", "I", "j"]
+    arr[torch.tensor([-2, -1])] = ["X", "X"]
+    assert arr[-3:] == ["h", "X", "X"]

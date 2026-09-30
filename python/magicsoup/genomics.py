@@ -84,11 +84,9 @@ class Genomics:
         self.idx_2_one_codon = {v: k for k, v in self.one_codon_map.items()}
         self.idx_2_two_codon = {v: k for k, v in self.two_codon_map.items()}
 
-    def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
-        if len(genomes) < 1:
-            return []
-        return _lib.translate_genomes(
-            genomes,
+    def setup(self) -> None:
+        # TODO: ugly
+        self.genome_translator = _lib.GenomeTranslator(
             self.start_codons,
             self.stop_codons,
             self.domain_map,
@@ -97,6 +95,11 @@ class Genomics:
             self.dom_size,
             self.dom_type_size,
         )
+
+    def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
+        if len(genomes) < 1:
+            return []
+        return self.genome_translator(genomes)
 
     def _get_single_codons(self) -> list[str]:
         seqs = codons(n=1)

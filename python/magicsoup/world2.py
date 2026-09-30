@@ -101,9 +101,9 @@ class World:
         return Cell(
             world=self,
             idx=idx,
-            genome=self.cells.genomes[idx],
+            genome=self.cells.genomes.items[idx],
             position=tuple(self.cells.positions[idx].tolist()),  # type: ignore
-            label=self.cells.labels[idx],
+            label=self.cells.labels.items[idx],
             age=int(self.cells.ages[idx].item()),
             generation=int(self.cells.generations[idx].item()),
         )
@@ -150,10 +150,6 @@ class World:
         free_idxs = self.cells.get_available_idxs()
         new_idxs = free_idxs[:n_new_cells].tolist()
 
-        for genome, idx in zip(genomes, new_idxs):
-            self.cells.genomes[idx] = genome
-            self.cells.labels[idx] = randstr(n=12)
-
         # occupy positions
         new_pos = free_pos[:n_new_cells]
         xs = new_pos[:, 0]
@@ -166,6 +162,13 @@ class World:
         self.cells.x_i[new_idxs, :] += pickup.T
         self.map.molecules[:, xs, ys] -= pickup
 
+        # set initial values
+        self.cells.genomes[new_idxs] = genomes
+        self.cells.labels[new_idxs] = [randstr(n=12) for _ in range(n_new_cells)]
+        self.cells.ages[new_idxs] = 0.0
+        self.cells.generations[new_idxs] = 0
+
+        # others are generated from genome
         self._update_cell_params(genomes=genomes, idxs=new_idxs)
         return new_idxs
 
@@ -190,10 +193,6 @@ class World:
         free_idxs = self.cells.get_available_idxs()
         new_idxs = free_idxs[:n_new_cells].tolist()
 
-        for cell, idx in zip(cells, new_idxs):
-            self.cells.genomes[idx] = cell.genome
-            self.cells.labels[idx] = cell.label
-
         # occupy positions
         new_pos = free_pos[:n_new_cells]
         xs = new_pos[:, 0]
@@ -201,16 +200,20 @@ class World:
         self.map.cells[xs, ys] = True
         self.cells.positions[new_idxs] = new_pos
 
-        # previous molecules, ages, divisions are transfered
+        # available values are transferred
         int_mols = [d.int_molecules for d in cells]
         ages = [d.age for d in cells]
         generations = [d.generation for d in cells]
         genomes = [d.genome for d in cells]
+        labels = [d.label for d in cells]
 
+        self.cells.genomes[new_idxs] = genomes
+        self.cells.labels[new_idxs] = labels
         self.cells.x_i[new_idxs, :] = self._f32_tensor(torch.stack(int_mols))
         self.cells.ages[new_idxs] = self._i32_tensor(ages)
         self.cells.generations[new_idxs] = self._i32_tensor(generations)
 
+        # others are generated from genome
         self._update_cell_params(genomes=genomes, idxs=new_idxs)
         return new_idxs
 
@@ -237,19 +240,17 @@ class World:
         self.cells.set_c(n_cells + n_new_cells)
 
         # transfer genomes, labels
-        for child_idx, parent_idx in zip(child_idxs, parent_idxs):
-            self.cells.genomes[child_idx] = self.cells.genomes[parent_idx]
-            self.cells.labels[child_idx] = self.cells.labels[parent_idx]
-
-        self.cells.k_e[parent_idxs] = self.cells.k_e[child_idxs]
-        self.cells.k_f[parent_idxs] = self.cells.k_f[child_idxs]
-        self.cells.k_b[parent_idxs] = self.cells.k_b[child_idxs]
-        self.cells.K_r[parent_idxs] = self.cells.K_r[child_idxs]
-        self.cells.v_max[parent_idxs] = self.cells.v_max[child_idxs]
-        self.cells.N[parent_idxs] = self.cells.N[child_idxs]
-        self.cells.N_f[parent_idxs] = self.cells.N_f[child_idxs]
-        self.cells.N_b[parent_idxs] = self.cells.N_b[child_idxs]
-        self.cells.N_h[parent_idxs] = self.cells.N_h[child_idxs]
+        self.cells.genomes[child_idxs] = self.cells.genomes[parent_idxs]
+        self.cells.labels[child_idxs] = self.cells.labels[parent_idxs]
+        self.cells.k_e[child_idxs] = self.cells.k_e[parent_idxs]
+        self.cells.k_f[child_idxs] = self.cells.k_f[parent_idxs]
+        self.cells.k_b[child_idxs] = self.cells.k_b[parent_idxs]
+        self.cells.K_r[child_idxs] = self.cells.K_r[parent_idxs]
+        self.cells.v_max[child_idxs] = self.cells.v_max[parent_idxs]
+        self.cells.N[child_idxs] = self.cells.N[parent_idxs]
+        self.cells.N_f[child_idxs] = self.cells.N_f[parent_idxs]
+        self.cells.N_b[child_idxs] = self.cells.N_b[parent_idxs]
+        self.cells.N_h[child_idxs] = self.cells.N_h[parent_idxs]
 
         # position new cells
         child_pos = self._idxtensor(child_pos)
@@ -270,10 +271,8 @@ class World:
         if len(genome_idx_pairs) == 0:
             return
 
-        for genome, idx in genome_idx_pairs:
-            self.cells.genomes[idx] = genome
-
         genomes, idxs = list(map(list, zip(*genome_idx_pairs)))
+        self.cells.genomes[idxs] = genomes
         self._update_cell_params(genomes=genomes, idxs=idxs)  # type: ignore
 
     def kill_cells(self, cell_idxs: list[int] | None = None) -> None:
@@ -295,6 +294,8 @@ class World:
         spillout = self.cells.x_i[cell_idxs, :]
         self.map.molecules[:, xs, ys] += spillout.T
 
+        self.cells.genomes[cell_idxs] = [""] * len(cell_idxs)
+        self.cells.labels[cell_idxs] = [""] * len(cell_idxs)
         self.cells.ages[cell_idxs] = 0.0
         self.cells.positions[cell_idxs] = 0
         self.cells.generations[cell_idxs] = 0
@@ -308,10 +309,6 @@ class World:
         self.cells.k_b[cell_idxs] = 0.0
         self.cells.K_r[cell_idxs] = 0.0
         self.cells.v_max[cell_idxs] = 0.0
-
-        for idx in cell_idxs:
-            self.cells.genomes[idx] = ""
-            self.cells.labels[idx] = ""
 
     def migrate_cells(self, cell_idxs: list[int] | None = None):
         if cell_idxs is None:
@@ -397,7 +394,7 @@ class World:
         idxs = (
             self.cells.get_available_idxs().tolist() if cell_idxs is None else cell_idxs
         )
-        seqs = [self.cells.genomes[d] for d in idxs]
+        seqs = self.cells.genomes[idxs]
         mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
         pairs = [(d, idxs[i]) for d, i in mutated]
         self.update_cells(genome_idx_pairs=pairs)
@@ -407,7 +404,9 @@ class World:
             self.cells.get_available_idxs().tolist() if cell_idxs is None else cell_idxs
         )
         nghbrs = self.get_neighbors(cell_idxs=idxs)
-        pairs = [(self.cells.genomes[a], self.cells.genomes[b]) for a, b in nghbrs]
+        genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
+        genomes1 = self.cells.genomes[[d[1] for d in nghbrs]]
+        pairs = [(g0, g1) for g0, g1 in zip(genomes0, genomes1)]
         mutated = recombinations(seq_pairs=pairs, p=p)
 
         genome_idx_pairs = []
@@ -479,19 +478,18 @@ class World:
 
         self.cells.set_p(max(max_prots - self.cells.p, 0))
 
-        # TODO: implement batch updates
-        N, N_f, N_b, N_h, k_e, k_f, k_b, K_r, v_max = self.proteomics.get_cell_params(
+        params = self.proteomics.get_cell_params(
             proteomes=set_proteomes, p=self.cells.p
         )
-        self.cells.N[set_idxs] = N
-        self.cells.N_f[set_idxs] = N_f
-        self.cells.N_b[set_idxs] = N_b
-        self.cells.N_h[set_idxs] = N_h
-        self.cells.k_e[set_idxs] = k_e
-        self.cells.k_f[set_idxs] = k_f
-        self.cells.k_b[set_idxs] = k_b
-        self.cells.K_r[set_idxs] = K_r
-        self.cells.v_max[set_idxs] = v_max
+        self.cells.N[set_idxs] = params["N"]
+        self.cells.N_f[set_idxs] = params["N_f"]
+        self.cells.N_b[set_idxs] = params["N_b"]
+        self.cells.N_h[set_idxs] = params["N_h"]
+        self.cells.k_e[set_idxs] = params["k_e"]
+        self.cells.k_f[set_idxs] = params["k_f"]
+        self.cells.k_b[set_idxs] = params["k_b"]
+        self.cells.K_r[set_idxs] = params["K_r"]
+        self.cells.v_max[set_idxs] = params["v_max"]
 
     def _get_permeate(self, mol_perm_rate: float) -> float:
         if mol_perm_rate < 0.0:

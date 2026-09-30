@@ -50,6 +50,13 @@ python-source = "python"                 # source directory for python package
 features = ["pyo3/extension-module"]     # build as python extension module
 sdist-include = ["LICENSE", "README.md"] # include license and readme in sdist
 
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "**/*.rs" },
+]
+
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]
 

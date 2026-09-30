@@ -447,20 +447,11 @@ class Proteomics:
         )
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
-    def get_cell_params(self, proteomes: list[list[ProteinSpecType]], p: int) -> tuple[
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-    ]:
+    def get_cell_params(
+        self, proteomes: list[list[ProteinSpecType]], p: int
+    ) -> dict[str, torch.Tensor]:
         eps = self.eps
         max_k = self.max_k
-        # TODO: return kwargs
 
         # get proteome tensors
         dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
@@ -544,7 +535,17 @@ class Proteomics:
         k_f = torch.where(is_fwd, k_m, k_m / k_e).clamp(eps, max_k)
         k_b = torch.where(is_fwd, k_m * k_e, k_m).clamp(eps, max_k)
 
-        return N, N_f, N_b, N_h, k_e, k_f, k_b, K_r, v_max
+        return {
+            "N": N,
+            "N_f": N_f,
+            "N_b": N_b,
+            "N_h": N_h,
+            "k_e": k_e,
+            "k_f": k_f,
+            "k_b": k_b,
+            "K_r": K_r,
+            "v_max": v_max,
+        }
 
     def _collect_proteome_idxs(
         self, proteomes: list[list[ProteinSpecType]], p: int

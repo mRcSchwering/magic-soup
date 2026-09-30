@@ -4,6 +4,7 @@ extern crate rand_distr;
 extern crate rayon;
 
 mod genetics;
+mod genomics;
 mod kinetics;
 mod mutations;
 mod util;
@@ -106,6 +107,71 @@ fn recombinations(
 
 // genetics
 
+// #[pyfunction]
+// fn get_coding_regions(
+//     seq: &str,
+//     min_cds_size: u8,
+//     start_codons: Vec<String>,
+//     stop_codons: Vec<String>,
+//     is_fwd: bool,
+// ) -> Vec<(usize, usize, bool)> {
+//     genetics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
+// }
+
+// #[pyfunction]
+// fn extract_domains(
+//     genome: String,
+//     cdss: Vec<(usize, usize, bool)>,
+//     dom_size: u8,
+//     dom_type_size: u8,
+//     dom_type_map: HashMap<String, u8>,
+//     one_codon_map: HashMap<String, u8>,
+//     two_codon_map: HashMap<String, u16>,
+// ) -> Vec<genetics::ProteinSpecType> {
+//     genetics::extract_domains(
+//         &genome,
+//         &cdss,
+//         &dom_size,
+//         &dom_type_size,
+//         &dom_type_map,
+//         &one_codon_map,
+//         &two_codon_map,
+//     )
+// }
+
+// #[pyfunction]
+// fn reverse_complement(seq: String) -> String {
+//     genetics::reverse_complement(&seq)
+// }
+
+// #[pyfunction]
+// fn translate_genomes(
+//     py: Python<'_>,
+//     genomes: Vec<String>,
+//     start_codons: Vec<String>,
+//     stop_codons: Vec<String>,
+//     domain_map: HashMap<String, u8>,
+//     one_codon_map: HashMap<String, u8>,
+//     two_codon_map: HashMap<String, u16>,
+//     dom_size: u8,
+//     dom_type_size: u8,
+// ) -> Vec<Vec<genetics::ProteinSpecType>> {
+//     py.allow_threads(move || {
+//         genetics::translate_genomes_threaded(
+//             &genomes,
+//             &start_codons,
+//             &stop_codons,
+//             &domain_map,
+//             &one_codon_map,
+//             &two_codon_map,
+//             &dom_size,
+//             &dom_type_size,
+//         )
+//     })
+// }
+
+// Genomics
+
 #[pyfunction]
 fn get_coding_regions(
     seq: &str,
@@ -114,7 +180,7 @@ fn get_coding_regions(
     stop_codons: Vec<String>,
     is_fwd: bool,
 ) -> Vec<(usize, usize, bool)> {
-    genetics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
+    genomics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
 }
 
 #[pyfunction]
@@ -127,7 +193,7 @@ fn extract_domains(
     one_codon_map: HashMap<String, u8>,
     two_codon_map: HashMap<String, u16>,
 ) -> Vec<genetics::ProteinSpecType> {
-    genetics::extract_domains(
+    genomics::extract_domains(
         &genome,
         &cdss,
         &dom_size,
@@ -140,13 +206,11 @@ fn extract_domains(
 
 #[pyfunction]
 fn reverse_complement(seq: String) -> String {
-    genetics::reverse_complement(&seq)
+    genomics::reverse_complement(&seq)
 }
 
-#[pyfunction]
-fn translate_genomes(
-    py: Python<'_>,
-    genomes: Vec<String>,
+#[pyclass]
+struct GenomeTranslator {
     start_codons: Vec<String>,
     stop_codons: Vec<String>,
     domain_map: HashMap<String, u8>,
@@ -154,19 +218,49 @@ fn translate_genomes(
     two_codon_map: HashMap<String, u16>,
     dom_size: u8,
     dom_type_size: u8,
-) -> Vec<Vec<genetics::ProteinSpecType>> {
-    py.allow_threads(move || {
-        genetics::translate_genomes_threaded(
-            &genomes,
-            &start_codons,
-            &stop_codons,
-            &domain_map,
-            &one_codon_map,
-            &two_codon_map,
-            &dom_size,
-            &dom_type_size,
-        )
-    })
+}
+
+#[pymethods]
+impl GenomeTranslator {
+    #[new]
+    fn new(
+        start_codons: Vec<String>,
+        stop_codons: Vec<String>,
+        domain_map: HashMap<String, u8>,
+        one_codon_map: HashMap<String, u8>,
+        two_codon_map: HashMap<String, u16>,
+        dom_size: u8,
+        dom_type_size: u8,
+    ) -> Self {
+        GenomeTranslator {
+            start_codons,
+            stop_codons,
+            domain_map,
+            one_codon_map,
+            two_codon_map,
+            dom_size,
+            dom_type_size,
+        }
+    }
+
+    fn __call__(
+        &self,
+        py: Python<'_>,
+        genomes: Vec<String>,
+    ) -> Vec<Vec<genomics::ProteinSpecType>> {
+        py.allow_threads(move || {
+            genomics::translate_genomes_threaded(
+                &genomes,
+                &self.start_codons,
+                &self.stop_codons,
+                &self.domain_map,
+                &self.one_codon_map,
+                &self.two_codon_map,
+                &self.dom_size,
+                &self.dom_type_size,
+            )
+        })
+    }
 }
 
 // world
@@ -239,11 +333,11 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
     m.add_function(wrap_pyfunction!(recombinations, m)?)?;
 
-    // genetics
+    // Genomics
     m.add_function(wrap_pyfunction!(get_coding_regions, m)?)?;
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
-    m.add_function(wrap_pyfunction!(translate_genomes, m)?)?;
+    m.add_class::<GenomeTranslator>()?;
 
     // world
     m.add_function(wrap_pyfunction!(get_neighbors, m)?)?;

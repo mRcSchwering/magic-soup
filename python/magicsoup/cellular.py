@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Protocol
 import torch
 
 from magicsoup.chemistry import Chemistry, Molecule
+from magicsoup.util import Array
 
 if TYPE_CHECKING:
     from magicsoup.world2 import World
@@ -487,8 +488,8 @@ class Cells:
         self.p = 0
         self.m = 2 * n_molecules
 
-        self.genomes: list[str] = []
-        self.labels: list[str] = []
+        self.genomes: Array[str] = Array([])
+        self.labels: Array[str] = Array([])
         self.alive = self._izeros(0).bool()
         self.positions = self._idxzeros(0, 2)
         self.ages = self._idxzeros(0)
@@ -508,7 +509,7 @@ class Cells:
         return int(self.alive.sum().item())
 
     def get_available_idxs(self) -> torch.Tensor:
-        return torch.nonzero(~self.alive).squeeze(1)
+        return (~self.alive).nonzero(as_tuple=True)[0]
 
     def set_c(self, c: int) -> None:
         # TODO: bad name, I just report the number of cells
@@ -547,9 +548,10 @@ class Cells:
         torch.save(self.N_f, statedir / f"{name}.N_f.pt")
         torch.save(self.N_h, statedir / f"{name}.N_h.pt")
 
-        lines: list[str] = []
-        for idx, (genome, label) in enumerate(zip(self.genomes, self.labels)):
-            lines.append(f">{idx} {label}\n{genome}")
+        lines: list[str] = [
+            f">{i} {l}\n{g}"
+            for i, (g, l) in enumerate(zip(self.genomes.items, self.labels.items))
+        ]
 
         with open(statedir / f"{name}.genomes.fasta", "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines))
@@ -631,20 +633,20 @@ class Cells:
             text: str = fh.read()
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
-        self.labels = []
-        self.genomes = []
+        self.labels = Array([])
+        self.genomes = Array([])
         for entry in entries:
             parts = entry.split("\n")
             descr = parts[0]
             seq = "" if len(parts) < 2 else parts[1]
             names = descr.split()
             label = names[1].strip() if len(names) > 1 else ""
-            self.genomes.append(seq)
-            self.labels.append(label)
+            self.genomes.items.append(seq)
+            self.labels.items.append(label)
 
     def _increase_c(self, by_n: int) -> None:
-        self.genomes.extend([""] * by_n)
-        self.labels.extend([""] * by_n)
+        self.genomes.items.extend([""] * by_n)
+        self.labels.items.extend([""] * by_n)
         self.alive = self._expand_c(t=self.alive, by_n=by_n)
         self.ages = self._expand_c(t=self.ages, by_n=by_n)
         self.positions = self._expand_c(t=self.positions, by_n=by_n)
@@ -670,8 +672,8 @@ class Cells:
         keep = torch.ones_like(self.alive, dtype=torch.bool)
         keep[dead] = False
 
-        self.genomes = [g for i, g in enumerate(self.genomes) if keep[i]]
-        self.labels = [l for i, l in enumerate(self.labels) if keep[i]]
+        self.genomes = Array(self.genomes[keep])
+        self.labels = Array(self.labels[keep])
         self.alive = self.alive[keep]
         self.ages = self.ages[keep]
         self.positions = self.positions[keep]
