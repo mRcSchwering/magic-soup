@@ -5,66 +5,15 @@ extern crate rayon;
 
 mod genetics;
 mod genomics;
-mod kinetics;
+//mod kinetics;
 mod mutations;
+mod proteomics;
 mod util;
 mod world;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::collections::HashMap;
-
-// TODO: Only send maps once to Rust using OnceLock
-// e.g.:
-//
-// // lib.rs
-// use pyo3::prelude::*;
-// use std::collections::HashMap;
-// use std::sync::OnceLock;
-
-// // Your constant map type (pure Rust, no Python objects)
-// type MapType = HashMap<String, Vec<f64>>;
-
-// static CONST_MAP: OnceLock<MapType> = OnceLock::new();
-
-// /// Called once from Python to initialize the constant maps.
-// #[pyfunction]
-// fn init_const_map(py: Python<'_>, data: HashMap<String, Vec<f64>>) -> PyResult<()> {
-//     // Ensure we only initialize once
-//     CONST_MAP
-//         .set(data)
-//         .map_err(|_| {
-//             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-//                 "init_const_map was already called; constant maps are already set",
-//             )
-//         })?;
-//     Ok(())
-// }
-
-// #[pyfunction]
-// fn process(py: Python<'_>, changing_data: Vec<f64>) -> PyResult<Vec<f64>> {
-//     let const_map = CONST_MAP.get().ok_or_else(|| {
-//         PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-//             "Constant maps not initialized; call init_const_map first",
-//         )
-//     })?;
-
-//     // Use const_map + changing_data
-//     let mut result = Vec::with_capacity(changing_data.len());
-//     for x in changing_data {
-//         let factor = const_map.get("foo").map(|v| v[0]).unwrap_or(1.0);
-//         result.push(x * factor);
-//     }
-
-//     Ok(result)
-// }
-
-// #[pymodule]
-// fn my_rust_lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
-//     m.add_function(wrap_pyfunction!(init_const_map, m)?)?;
-//     m.add_function(wrap_pyfunction!(process, m)?)?;
-//     Ok(())
-// }
 
 // util
 
@@ -104,71 +53,6 @@ fn recombinations(
 ) -> Vec<(String, String, usize)> {
     py.allow_threads(move || mutations::recombinations_threaded(seq_pairs, p))
 }
-
-// genetics
-
-// #[pyfunction]
-// fn get_coding_regions(
-//     seq: &str,
-//     min_cds_size: u8,
-//     start_codons: Vec<String>,
-//     stop_codons: Vec<String>,
-//     is_fwd: bool,
-// ) -> Vec<(usize, usize, bool)> {
-//     genetics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
-// }
-
-// #[pyfunction]
-// fn extract_domains(
-//     genome: String,
-//     cdss: Vec<(usize, usize, bool)>,
-//     dom_size: u8,
-//     dom_type_size: u8,
-//     dom_type_map: HashMap<String, u8>,
-//     one_codon_map: HashMap<String, u8>,
-//     two_codon_map: HashMap<String, u16>,
-// ) -> Vec<genetics::ProteinSpecType> {
-//     genetics::extract_domains(
-//         &genome,
-//         &cdss,
-//         &dom_size,
-//         &dom_type_size,
-//         &dom_type_map,
-//         &one_codon_map,
-//         &two_codon_map,
-//     )
-// }
-
-// #[pyfunction]
-// fn reverse_complement(seq: String) -> String {
-//     genetics::reverse_complement(&seq)
-// }
-
-// #[pyfunction]
-// fn translate_genomes(
-//     py: Python<'_>,
-//     genomes: Vec<String>,
-//     start_codons: Vec<String>,
-//     stop_codons: Vec<String>,
-//     domain_map: HashMap<String, u8>,
-//     one_codon_map: HashMap<String, u8>,
-//     two_codon_map: HashMap<String, u16>,
-//     dom_size: u8,
-//     dom_type_size: u8,
-// ) -> Vec<Vec<genetics::ProteinSpecType>> {
-//     py.allow_threads(move || {
-//         genetics::translate_genomes_threaded(
-//             &genomes,
-//             &start_codons,
-//             &stop_codons,
-//             &domain_map,
-//             &one_codon_map,
-//             &two_codon_map,
-//             &dom_size,
-//             &dom_type_size,
-//         )
-//     })
-// }
 
 // Genomics
 
@@ -301,30 +185,90 @@ fn move_cells(
     py.allow_threads(move || world::move_cells_threaded(&cell_idxs, &positions, &map_size))
 }
 
-// kinetics
+// Proteomics
 
-#[pyfunction]
-fn get_proteome(
-    py: Python<'_>,
-    proteome: Vec<kinetics::ProteinSpecType>,
-    vmaxs: Vec<Vec<f32>>,
-    kms: Vec<Vec<f32>>,
-    hills: Vec<Vec<u8>>,
-    signs: Vec<Vec<i8>>,
-    reacts: Vec<Vec<Vec<i8>>>,
-    trnspts: Vec<Vec<Vec<i8>>>,
-    effectors: Vec<Vec<Vec<i8>>>,
-    molecules: Vec<String>,
-) -> Vec<&PyDict> {
-    kinetics::get_proteome(
-        py, &proteome, &vmaxs, &kms, &hills, &signs, &reacts, &trnspts, &effectors, &molecules,
-    )
+#[pyclass]
+struct Proteomics {
+    k_m_map: HashMap<u8, f32>,
+    vmax_map: HashMap<u8, f32>,
+    sign_map: HashMap<u8, bool>,
+    hill_map: HashMap<u8, i8>,
+    reaction_map: HashMap<u16, Vec<i8>>,
+    transporter_map: HashMap<u16, Vec<i8>>,
+    effector_map: HashMap<u16, Vec<i8>>,
+    m: usize,
+}
+
+#[pymethods]
+impl Proteomics {
+    #[new]
+    fn new(
+        k_m_map: HashMap<u8, f32>,
+        vmax_map: HashMap<u8, f32>,
+        sign_map: HashMap<u8, bool>,
+        hill_map: HashMap<u8, i8>,
+        reaction_map: HashMap<u16, Vec<i8>>,
+        transporter_map: HashMap<u16, Vec<i8>>,
+        effector_map: HashMap<u16, Vec<i8>>,
+        m: usize,
+    ) -> Self {
+        Proteomics {
+            k_m_map,
+            vmax_map,
+            sign_map,
+            hill_map,
+            reaction_map,
+            transporter_map,
+            effector_map,
+            m,
+        }
+    }
+
+    fn get_proteome_params(
+        &self,
+        py: Python<'_>,
+        proteomes: Vec<Vec<genomics::ProteinSpecType>>,
+    ) -> Vec<Vec<proteomics::ProteinParamsType>> {
+        py.allow_threads(move || {
+            proteomics::get_proteome_params_threaded(
+                &proteomes,
+                &self.k_m_map,
+                &self.vmax_map,
+                &self.sign_map,
+                &self.hill_map,
+                &self.reaction_map,
+                &self.transporter_map,
+                &self.effector_map,
+                &self.m,
+            )
+        })
+    }
+
+    fn get_proteome_repr<'py>(
+        &self,
+        py: Python<'py>,
+        proteome: Vec<genomics::ProteinSpecType>,
+        molecules: Vec<String>,
+    ) -> Vec<Bound<'py, PyDict>> {
+        proteomics::get_proteome_repr(
+            py,
+            &proteome,
+            &molecules,
+            &self.k_m_map,
+            &self.vmax_map,
+            &self.sign_map,
+            &self.hill_map,
+            &self.reaction_map,
+            &self.transporter_map,
+            &self.effector_map,
+        )
+    }
 }
 
 // lib
 
 #[pymodule]
-fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // util
     m.add_function(wrap_pyfunction!(dist_1d, m)?)?;
     m.add_function(wrap_pyfunction!(free_moores_nghbhd, m)?)?;
@@ -339,13 +283,16 @@ fn _lib(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     m.add_class::<GenomeTranslator>()?;
 
+    //Proteomics
+    m.add_class::<Proteomics>()?;
+
     // world
     m.add_function(wrap_pyfunction!(get_neighbors, m)?)?;
     m.add_function(wrap_pyfunction!(divide_cells_if_possible, m)?)?;
     m.add_function(wrap_pyfunction!(move_cells, m)?)?;
 
     // kinetics
-    m.add_function(wrap_pyfunction!(get_proteome, m)?)?;
+    //m.add_function(wrap_pyfunction!(get_proteome, m)?)?;
 
     Ok(())
 }

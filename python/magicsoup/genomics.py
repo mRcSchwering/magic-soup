@@ -84,8 +84,9 @@ class Genomics:
         self.idx_2_one_codon = {v: k for k, v in self.one_codon_map.items()}
         self.idx_2_two_codon = {v: k for k, v in self.two_codon_map.items()}
 
-    def setup(self) -> None:
-        # TODO: ugly
+        self._setup_genome_translator()
+
+    def _setup_genome_translator(self) -> None:
         self.genome_translator = _lib.GenomeTranslator(
             self.start_codons,
             self.stop_codons,

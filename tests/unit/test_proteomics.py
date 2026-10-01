@@ -15,7 +15,6 @@ _ATOL = 1e-4
 _RTOL = 1e-4
 _FLOAT = torch.float32
 _INT = torch.int8
-_NAN = torch.nan
 
 
 _ma = Molecule("a", energy=15 * 1e3)
@@ -35,14 +34,14 @@ _CHEMISTRY = Chemistry(molecules=_MOLECULES, reactions=_REACTIONS)
 # fmt: off
 _KM_WEIGHTS = torch.tensor([
 #   x0    x1    x2    x3    x4    x5    x6    x7    x8    x9
-    _NAN, 0.1,  0.2,  0.3,  0.4,  0.5,  0.6,  0.7,  0.8,  0.9,  # 0x
+    0.0,  0.1,  0.2,  0.3,  0.4,  0.5,  0.6,  0.7,  0.8,  0.9,  # 0x
     1.0,  1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  # 1x
     2.0,  2.1,  2.2,  2.3,  2.4,  2.5,  2.6,  2.7,  2.8,  2.9,  # 2x
 ])
 
 _VMAX_WEIGHTS = torch.tensor([
 #   x0    x1    x2    x3    x4    x5    x6    x7    x8    x9
-    _NAN, 1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  # 0x
+    0.0,  1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  # 0x
     2.0,  2.1,  2.2,  2.3,  2.4,  2.5,  2.6,  2.7,  2.8,  2.9,  # 1x
 ])
 
@@ -100,6 +99,7 @@ def _get_proteomics() -> Proteomics:
     protics.effector_map.M = _EFFECTOR_M.clone()
     protics.reaction_map.M = _REACTION_M.clone()
     protics.hill_map.numbers = _HILLS.clone()
+    protics._setup_proteomics()
     return protics
 
 
@@ -913,10 +913,10 @@ def _get_random_proteomes(n_cells: int) -> tuple[list[list[ProteinSpecType]], in
 
             for _ in range(n_doms):
                 domtype = random.choice([1, 2, 3])
-                idx0 = random.choice(range(20 if domtype == 1 else 6))
-                idx1 = random.choice(range(30))
-                idx2 = random.choice(range(3))
-                idx3 = random.choice(range(9))
+                idx0 = random.choice(range(1, 64 - 3))
+                idx1 = random.choice(range(1, 64 - 3))
+                idx2 = random.choice(range(1, 64 - 3))
+                idx3 = random.choice(range(1, 4096 - 3 * 64))
                 dom_start = random.choice(range(1, 100))
                 dom_end = random.choice(range(dom_start, 200))
                 doms.append(((domtype, idx0, idx1, idx2, idx3), dom_start, dom_end))
@@ -940,7 +940,7 @@ def test_random_cell_params() -> None:
         proteomes, p_max = _get_random_proteomes(n_cells)
 
         # setup proteomics
-        protics = _get_proteomics()
+        protics = Proteomics(chemistry=_CHEMISTRY, device=DEVICE)
         params = protics.get_cell_params(proteomes=proteomes, p=p_max)
 
         # test
@@ -963,3 +963,12 @@ def test_random_cell_params() -> None:
         for t in float_np + float_npm + int_npm:
             assert not torch.any(t.isnan())
             assert torch.all(t.isfinite())
+
+
+def test_random_cell_reprs() -> None:
+    proteomes, _ = _get_random_proteomes(1000)
+    protics = Proteomics(chemistry=_CHEMISTRY, device=DEVICE)
+
+    # test
+    for proteome in proteomes:
+        _ = protics.get_proteome(proteome=proteome)

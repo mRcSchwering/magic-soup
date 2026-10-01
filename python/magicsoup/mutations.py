@@ -24,6 +24,8 @@ def point_mutations(
     E.g. `("...", 5)` means `seqs[5]` was mutated and the resulting sequence is
     in the tuple.
     """
+    # TODO: reducing to only the sequences that experience mutations
+    #       would reduce serialization from Pythont o Rust
     return _lib.point_mutations(seqs, p, p_indel, p_del)
 
 

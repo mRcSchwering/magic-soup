@@ -10,7 +10,7 @@ from .cellular import Protein
 from .chemistry import Chemistry, Molecule
 from .constants import GAS_CONSTANT, ProteinSpecType
 
-# TODO: Is it fater to leave the factory map tensors on CPU?
+# TODO: Maps umbauen -> einfach Python Maps
 
 
 class _HillMapFact:
@@ -54,7 +54,7 @@ class _LogNormWeightMapFact:
         weight_range: tuple[float, float],
         dtype: torch.dtype = torch.float32,
         device: str = "cpu",
-        zero_value: float = torch.nan,
+        zero_value: float = 0.0,
     ):
         min_w = min(weight_range)
         max_w = max(weight_range)
@@ -380,7 +380,7 @@ class Proteomics:
         )
 
         # derive inverse maps for genome generation
-        m = 2 * len(chemistry.molecules)
+        self.m = 2 * len(chemistry.molecules)
         self.km_2_idxs = self.km_map.inverse()
         self.vmax_2_idxs = self.vmax_map.inverse()
         self.sign_2_idxs = self.sign_map.inverse()
@@ -388,7 +388,44 @@ class Proteomics:
         self.trnsp_2_idxs = self.transport_map.inverse(molecules=chemistry.molecules)
         self.regul_2_idxs = self.effector_map.inverse(molecules=chemistry.molecules)
         self.catal_2_idxs = self.reaction_map.inverse(
-            molmap=mol_2_mi, reactions=chemistry.reactions, n_mols=m
+            molmap=mol_2_mi, reactions=chemistry.reactions, n_mols=self.m
+        )
+
+        # init rust class
+        self._setup_proteomics()
+
+    def _setup_proteomics(self) -> None:
+        km_map = {
+            i: d for i, d in enumerate(self.km_map.weights.to("cpu").numpy().tolist())
+        }
+        vmax_map = {
+            i: d for i, d in enumerate(self.vmax_map.weights.to("cpu").numpy().tolist())
+        }
+        sign_map = {
+            i: d > 0
+            for i, d in enumerate(self.sign_map.signs.to("cpu").numpy().tolist())
+        }
+        hill_map = {
+            i: d for i, d in enumerate(self.hill_map.numbers.to("cpu").numpy().tolist())
+        }
+        reaction_map = {
+            i: d for i, d in enumerate(self.reaction_map.M.to("cpu").numpy().tolist())
+        }
+        transport_map = {
+            i: d for i, d in enumerate(self.transport_map.M.to("cpu").numpy().tolist())
+        }
+        effector_map = {
+            i: d for i, d in enumerate(self.effector_map.M.to("cpu").numpy().tolist())
+        }
+        self._proteomics = _lib.Proteomics(
+            km_map,
+            vmax_map,
+            sign_map,
+            hill_map,
+            reaction_map,
+            transport_map,
+            effector_map,
+            self.m,
         )
 
     def get_proteome(self, proteome: list[ProteinSpecType]) -> list[Protein]:
@@ -402,49 +439,7 @@ class Proteomics:
             List [Proteins][magicsoup.containers.Protein] that describe
             the cell's proteome.
         """
-        # get proteome tensors
-        dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
-            proteomes=[proteome], p=len(proteome)
-        )
-
-        # identify domain types
-        # 1=catalytic, 2=transporter, 3=regulatory
-        is_catal = dom_types == 1  # (c,p,d)
-        is_trnsp = dom_types == 2  # (c,p,d)
-        is_reg = dom_types == 3  # (c,p,d)
-
-        # map indices of domain specifications to concrete values
-        # idx0 is a 2-codon index specific for every domain type (n=4096)
-        # idx1-3 are 1-codon used for the floats (n=64)
-        # some values are not defined for certain domain types
-        # setting their indices to 0 lets them map to empty values (0-vector, NaN)
-        catal_int = (is_catal).int()
-        trnsp_int = (is_trnsp).int()
-        reg_int = (is_reg).int()
-        not_reg_int = (~is_reg).int()
-
-        # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        v_max_d = self.vmax_map(idxs0 * not_reg_int)  # f32 (c,p,d)
-        n_h_d = self.hill_map(idxs0 * reg_int)  # i32 (c,p,d)
-        k_m_d = self.km_map(idxs1)  # f32 (c,p,d)
-        sign_d = self.sign_map(idxs2)  # i32 (c,p,d)
-
-        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        react_d = self.reaction_map(idxs3 * catal_int)  # i32 (c,p,d,s)
-        trnspt_d = self.transport_map(idxs3 * trnsp_int)  # i32 (c,p,d,s)
-        effect_d = self.effector_map(idxs3 * reg_int)  # i32 (c,p,d,s)
-
-        proteome_kwargs = _lib.get_proteome(
-            proteome,
-            v_max_d[0].tolist(),
-            k_m_d[0].tolist(),
-            n_h_d[0].tolist(),
-            sign_d[0].tolist(),
-            react_d[0].tolist(),
-            trnspt_d[0].tolist(),
-            effect_d[0].tolist(),
-            self.mol_names,
-        )
+        proteome_kwargs = self._proteomics.get_proteome_repr(proteome, self.mol_names)
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
     def get_cell_params(
@@ -453,72 +448,12 @@ class Proteomics:
         eps = self.eps
         max_k = self.max_k
 
-        # get proteome tensors
-        dom_types, idxs0, idxs1, idxs2, idxs3 = self._collect_proteome_idxs(
-            proteomes=proteomes, p=p
+        params = self._proteomics.get_proteome_params(proteomes)
+        v_max, k_m, K_r, N_f, N_b, N_h = self._collect_proteome_params(
+            params=params, p=p, m=self.m
         )
 
-        # TODO: could I do more of this in rust
-        #       e.g. can I avoid dimension d
-        #       would need to send mappings to rust and do aggregation there
-
-        # identify domain types
-        # 1=catalytic, 2=transporter, 3=regulatory
-        is_catal = dom_types == 1  # (c,p,d)
-        is_trnsp = dom_types == 2  # (c,p,d)
-        is_reg = dom_types == 3  # (c,p,d)
-
-        # map indices of domain specifications to concrete values
-        # idx0 is a 2-codon index specific for every domain type (n=4096)
-        # idx1-3 are 1-codon used for the floats (n=64)
-        # some values are not defined for certain domain types
-        # setting their indices to 0 lets them map to empty values (0-vector, NaN)
-        catal_int = (is_catal).int()
-        trnsp_int = (is_trnsp).int()
-        reg_int = (is_reg).int()
-        not_reg_int = (~is_reg).int()
-
-        # idxs 0-2 are 1-codon indexes used for scalars (n=64 (- stop codons))
-        v_max_d = self.vmax_map(idxs0 * not_reg_int)  # f32 (c,p,d)
-        n_h_d = self.hill_map(idxs0 * reg_int)  # i32 (c,p,d)
-        k_m_d = self.km_map(idxs1)  # f32 (c,p,d)
-        sign_d = self.sign_map(idxs2)  # i32 (c,p,d)
-
-        # idx3 is a 2-codon index used for vectors (n=4096 (- stop codons))
-        react_d = self.reaction_map(idxs3 * catal_int)  # i32 (c,p,d,m)
-        trnspt_d = self.transport_map(idxs3 * trnsp_int)  # i32 (c,p,d,m)
-        effect_d = self.effector_map(idxs3 * reg_int)  # i32 (c,p,d,m)
-
-        # v_max are averaged over domains
-        # undefined v_max enries are NaN and are ignored by nanmean
-        v_max = v_max_d.nanmean(dim=2).nan_to_num(0.0)
-
-        # effector vectors are multiplied with signs and hill coefficients
-        # and summed up over domains
-        N_h = torch.einsum("cpdm,cpd->cpm", effect_d, (sign_d * n_h_d)).to(self.itype)
-
-        # Kms from other domains are ignored using NaNs
-        # their Kms must be seperated for each molecule
-        K_r_d_ = torch.where(is_reg, k_m_d, torch.nan)  # (c,p,d)
-        K_r_d = torch.einsum("cpdm,cpd->cpdm", effect_d, K_r_d_)
-
-        # average Kmrs, ignored unused with nanmean
-        K_r_d[K_r_d == 0.0] = torch.nan  # effectors introduce 0s
-        K_r = K_r_d.nanmean(dim=2).nan_to_num(0.0)  # (c,p,m)
-
-        # reaction stoichiometry N is derived from transporter and catalytic vectors
-        # vectors for regulatory domains or emptpy proteins are all 0s
-        N_d = torch.einsum("cpdm,cpd->cpdm", (react_d + trnspt_d), sign_d)
-        N = N_d.sum(dim=2, dtype=self.itype)
-
-        # N for forward and backward reactions is distinguished
-        # to not loose molecules like co-facors whose net N would become 0
-        N_f = torch.where(N_d < 0, -N_d, 0).sum(dim=2, dtype=self.itype)
-        N_b = torch.where(N_d > 0, N_d, 0).sum(dim=2, dtype=self.itype)
-
-        # Kms of catalytic and transporter domains are aggregated
-        # Kms from other domains are ignored using NaNs and nanmean
-        k_m = torch.where(~is_reg, k_m_d, torch.nan).nanmean(dim=2).nan_to_num(0.0)
+        N = N_b - N_f  # (c,p,m)
 
         # energies define k_e which defines k_e = k_f/k_b
         # extreme energies can create Inf or 0.0, avoid them with clamp
@@ -546,6 +481,56 @@ class Proteomics:
             "K_r": K_r,
             "v_max": v_max,
         }
+
+    def _collect_proteome_params(
+        self,
+        params: list[
+            list[
+                tuple[float, float, list[float], list[float], list[float], list[float]]
+            ]
+        ],
+        p: int,
+        m: int,
+    ):
+        zero_vector = [0.0] * m
+
+        c_v_max = []
+        c_k_m = []
+        c_k_r = []
+        c_n_f = []
+        c_n_b = []
+        c_n_h = []
+        for proteome_params in params:
+            p_v_max = []
+            p_k_m = []
+            p_k_r = []
+            p_n_f = []
+            p_n_b = []
+            p_n_h = []
+            for v_max_, k_m_, k_r_, n_f_, n_b_, n_h_ in proteome_params:
+                p_v_max.append(v_max_)
+                p_k_m.append(k_m_)
+                p_k_r.append(k_r_)
+                p_n_f.append(n_f_)
+                p_n_b.append(n_b_)
+                p_n_h.append(n_h_)
+
+            p_pad = p - len(p_v_max)
+            c_v_max.append(p_v_max + [0.0] * p_pad)
+            c_k_m.append(p_k_m + [0.0] * p_pad)
+            c_k_r.append(p_k_r + [zero_vector] * p_pad)
+            c_n_f.append(p_n_f + [zero_vector] * p_pad)
+            c_n_b.append(p_n_b + [zero_vector] * p_pad)
+            c_n_h.append(p_n_h + [zero_vector] * p_pad)
+
+        v_max = self._ftensor(c_v_max)  # (c,p)
+        k_m = self._ftensor(c_k_m)  # (c,p)
+        k_r = self._ftensor(c_k_r)  # (c,p,m)
+        n_f = self._itensor(c_n_f)  # (c,p,m)
+        n_b = self._itensor(c_n_b)  # (c,p,m)
+        n_h = self._itensor(c_n_h)  # (c,p)
+
+        return v_max, k_m, k_r, n_f, n_b, n_h
 
     def _collect_proteome_idxs(
         self, proteomes: list[list[ProteinSpecType]], p: int
@@ -604,3 +589,6 @@ class Proteomics:
 
     def _ftensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=self.ftype)
+
+    def _itensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=self.itype)
