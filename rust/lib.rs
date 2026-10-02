@@ -228,7 +228,15 @@ impl Proteomics {
         &self,
         py: Python<'_>,
         proteomes: Vec<Vec<genomics::ProteinSpecType>>,
-    ) -> Vec<Vec<proteomics::ProteinParamsType>> {
+        p: usize,
+    ) -> (
+        util::MatrixType<f32>,
+        util::MatrixType<f32>,
+        util::MatrixType<Vec<f32>>,
+        util::MatrixType<Vec<i8>>,
+        util::MatrixType<Vec<i8>>,
+        util::MatrixType<Vec<i8>>,
+    ) {
         py.allow_threads(move || {
             proteomics::get_proteome_params_threaded(
                 &proteomes,
@@ -240,6 +248,7 @@ impl Proteomics {
                 &self.transporter_map,
                 &self.effector_map,
                 &self.m,
+                &p,
             )
         })
     }

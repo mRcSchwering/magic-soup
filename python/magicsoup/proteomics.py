@@ -11,8 +11,6 @@ from .cellular import Protein
 from .chemistry import Chemistry, Molecule
 from .constants import GAS_CONSTANT, ProteinSpecType
 
-# TODO: Maps umbauen -> einfach Python Maps
-
 
 def _get_hill_map(max_token: int, none_value: int = 0) -> dict[int, int]:
     """
@@ -258,10 +256,15 @@ class Proteomics:
         eps = self.eps
         max_k = self.max_k
 
-        params = self._proteomics.get_proteome_params(proteomes)
-        v_max, k_m, K_r, N_f, N_b, N_h = self._collect_proteome_params(
-            params=params, p=p, m=self.m
+        v_max_, k_m_, K_r_, N_f_, N_b_, N_h_ = self._proteomics.get_proteome_params(
+            proteomes, p=p
         )
+        v_max = self._ftensor(v_max_)
+        k_m = self._ftensor(k_m_)
+        K_r = self._ftensor(K_r_)
+        N_f = self._itensor(N_f_)
+        N_b = self._itensor(N_b_)
+        N_h = self._itensor(N_h_)
 
         N = N_b - N_f  # (c,p,m)
 
@@ -291,61 +294,6 @@ class Proteomics:
             "K_r": K_r,
             "v_max": v_max,
         }
-
-    def _collect_proteome_params(
-        self,
-        params: list[
-            list[
-                tuple[float, float, list[float], list[float], list[float], list[float]]
-            ]
-        ],
-        p: int,
-        m: int,
-    ):
-        # TODO: do this in rust
-        zero_vector = [0.0] * m
-
-        c_v_max = []
-        c_k_m = []
-        c_k_r = []
-        c_n_f = []
-        c_n_b = []
-        c_n_h = []
-        for proteome_params in params:
-            p_v_max = []
-            p_k_m = []
-            p_k_r = []
-            p_n_f = []
-            p_n_b = []
-            p_n_h = []
-            for v_max_, k_m_, k_r_, n_f_, n_b_, n_h_ in proteome_params:
-                p_v_max.append(v_max_)
-                p_k_m.append(k_m_)
-                p_k_r.append(k_r_)
-                p_n_f.append(n_f_)
-                p_n_b.append(n_b_)
-                p_n_h.append(n_h_)
-
-            p_pad = p - len(p_v_max)
-            c_v_max.append(p_v_max + [0.0] * p_pad)
-            c_k_m.append(p_k_m + [0.0] * p_pad)
-            c_k_r.append(p_k_r + [zero_vector] * p_pad)
-            c_n_f.append(p_n_f + [zero_vector] * p_pad)
-            c_n_b.append(p_n_b + [zero_vector] * p_pad)
-            c_n_h.append(p_n_h + [zero_vector] * p_pad)
-
-        v_max = self._ftensor(c_v_max)  # (c,p)
-        k_m = self._ftensor(c_k_m)  # (c,p)
-        k_r = self._ftensor(c_k_r)  # (c,p,m)
-        n_f = self._itensor(c_n_f)  # (c,p,m)
-        n_b = self._itensor(c_n_b)  # (c,p,m)
-        n_h = self._itensor(c_n_h)  # (c,p)
-
-        return v_max, k_m, k_r, n_f, n_b, n_h
-
-    def _idxtensor(self, d: Any) -> torch.Tensor:
-        # indexing Tensors must be at least int32
-        return torch.tensor(d, device=self.device, dtype=torch.int32)
 
     def _ftensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=self.ftype)

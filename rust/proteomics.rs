@@ -1,3 +1,4 @@
+use crate::util::MatrixType;
 use pyo3::marker::Python;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyDictMethods};
@@ -230,8 +231,17 @@ pub fn get_proteome_params_threaded(
     transporter_map: &HashMap<u16, Vec<i8>>,
     effector_map: &HashMap<u16, Vec<i8>>,
     m: &usize,
-) -> Vec<Vec<ProteinParamsType>> {
-    proteomes_spec
+    p: &usize,
+) -> (
+    MatrixType<f32>,
+    MatrixType<f32>,
+    MatrixType<Vec<f32>>,
+    MatrixType<Vec<i8>>,
+    MatrixType<Vec<i8>>,
+    MatrixType<Vec<i8>>,
+) {
+    let c = proteomes_spec.len();
+    let proteomes_params: MatrixType<ProteinParamsType> = proteomes_spec
         .into_par_iter()
         .map(|d| {
             get_proteome_params(
@@ -246,10 +256,31 @@ pub fn get_proteome_params_threaded(
                 m,
             )
         })
-        .collect()
+        .collect();
+
+    // (v_max, k_m, k_r, n_f, n_b, n_h)
+    let mut v_max = vec![vec![0 as f32; *p]; c];
+    let mut k_m = vec![vec![0 as f32; *p]; c];
+    let mut k_r = vec![vec![vec![0 as f32; *m]; *p]; c];
+    let mut n_f = vec![vec![vec![0 as i8; *m]; *p]; c];
+    let mut n_b = vec![vec![vec![0 as i8; *m]; *p]; c];
+    let mut n_h = vec![vec![vec![0 as i8; *m]; *p]; c];
+
+    for (c_i, c_params) in proteomes_params.iter().enumerate() {
+        for (p_i, p_params) in c_params.iter().enumerate() {
+            v_max[c_i][p_i] = p_params.0;
+            k_m[c_i][p_i] = p_params.1;
+            k_r[c_i][p_i] = p_params.2.to_vec();
+            n_f[c_i][p_i] = p_params.3.to_vec();
+            n_b[c_i][p_i] = p_params.4.to_vec();
+            n_h[c_i][p_i] = p_params.5.to_vec();
+        }
+    }
+
+    (v_max, k_m, k_r, n_f, n_b, n_h)
 }
 
-// Proteome Python Representation
+// Proteome Python Dict Representation
 
 // translate domain type int to char
 fn get_domtype_char(domtype: &u8) -> char {

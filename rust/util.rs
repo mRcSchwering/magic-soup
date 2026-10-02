@@ -1,3 +1,5 @@
+pub type MatrixType<T> = Vec<Vec<T>>;
+
 // Get vector with duplicates removed
 pub fn unique<T: PartialEq + Clone>(mut pairs: Vec<T>) -> Vec<T> {
     let mut seen: Vec<T> = Vec::with_capacity(pairs.len());
