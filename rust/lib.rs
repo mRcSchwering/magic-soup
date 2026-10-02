@@ -94,7 +94,7 @@ fn reverse_complement(seq: String) -> String {
 }
 
 #[pyclass]
-struct GenomeTranslator {
+struct Genomics {
     start_codons: Vec<String>,
     stop_codons: Vec<String>,
     domain_map: HashMap<String, u8>,
@@ -105,7 +105,7 @@ struct GenomeTranslator {
 }
 
 #[pymethods]
-impl GenomeTranslator {
+impl Genomics {
     #[new]
     fn new(
         start_codons: Vec<String>,
@@ -116,7 +116,7 @@ impl GenomeTranslator {
         dom_size: u8,
         dom_type_size: u8,
     ) -> Self {
-        GenomeTranslator {
+        Genomics {
             start_codons,
             stop_codons,
             domain_map,
@@ -127,7 +127,7 @@ impl GenomeTranslator {
         }
     }
 
-    fn __call__(
+    fn translate_genomes(
         &self,
         py: Python<'_>,
         genomes: Vec<String>,
@@ -290,7 +290,7 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_coding_regions, m)?)?;
     m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
-    m.add_class::<GenomeTranslator>()?;
+    m.add_class::<Genomics>()?;
 
     //Proteomics
     m.add_class::<Proteomics>()?;

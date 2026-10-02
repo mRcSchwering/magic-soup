@@ -5,7 +5,7 @@ from typing import Any
 
 import torch
 
-from magicsoup import _lib  # type: ignore
+from magicsoup import rs
 
 from .cellular import Protein
 from .chemistry import Chemistry, Molecule
@@ -225,15 +225,15 @@ class Proteomics:
         self._setup_proteomics()
 
     def _setup_proteomics(self) -> None:
-        self._proteomics = _lib.Proteomics(
-            self.km_map,
-            self.vmax_map,
-            self.sign_map,
-            self.hill_map,
-            self.reaction_map,
-            self.transport_map,
-            self.effector_map,
-            self.m,
+        self._proteomics = rs.Proteomics(
+            km_map=self.km_map,
+            vmax_map=self.vmax_map,
+            sign_map=self.sign_map,
+            hill_map=self.hill_map,
+            reaction_map=self.reaction_map,
+            transporter_map=self.transport_map,
+            effector_map=self.effector_map,
+            m=self.m,
         )
 
     def get_proteome(self, proteome: list[ProteinSpecType]) -> list[Protein]:
@@ -247,7 +247,9 @@ class Proteomics:
             List [Proteins][magicsoup.containers.Protein] that describe
             the cell's proteome.
         """
-        proteome_kwargs = self._proteomics.get_proteome_dict(proteome, self.mol_names)
+        proteome_kwargs = self._proteomics.get_proteome_dict(
+            proteome=proteome, molecules=self.mol_names
+        )
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
     def get_cell_params(

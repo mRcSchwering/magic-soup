@@ -1,7 +1,7 @@
 import random
 import warnings
 
-from magicsoup import _lib  # type: ignore
+from magicsoup import rs
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup.util import codons
 
@@ -87,20 +87,20 @@ class Genomics:
         self._setup_genome_translator()
 
     def _setup_genome_translator(self) -> None:
-        self.genome_translator = _lib.GenomeTranslator(
-            self.start_codons,
-            self.stop_codons,
-            self.domain_map,
-            self.one_codon_map,
-            self.two_codon_map,
-            self.dom_size,
-            self.dom_type_size,
+        self._genomics = rs.Genomics(
+            start_codons=self.start_codons,
+            stop_codons=self.stop_codons,
+            domain_map=self.domain_map,
+            one_codon_map=self.one_codon_map,
+            two_codon_map=self.two_codon_map,
+            dom_size=self.dom_size,
+            dom_type_size=self.dom_type_size,
         )
 
     def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
         if len(genomes) < 1:
             return []
-        return self.genome_translator(genomes)
+        return self._genomics.translate_genomes(genomes=genomes)
 
     def _get_single_codons(self) -> list[str]:
         seqs = codons(n=1)
