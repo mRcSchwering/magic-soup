@@ -191,7 +191,7 @@ fn move_cells(
 struct Proteomics {
     k_m_map: HashMap<u8, f32>,
     vmax_map: HashMap<u8, f32>,
-    sign_map: HashMap<u8, bool>,
+    sign_map: HashMap<u8, i8>,
     hill_map: HashMap<u8, i8>,
     reaction_map: HashMap<u16, Vec<i8>>,
     transporter_map: HashMap<u16, Vec<i8>>,
@@ -205,7 +205,7 @@ impl Proteomics {
     fn new(
         k_m_map: HashMap<u8, f32>,
         vmax_map: HashMap<u8, f32>,
-        sign_map: HashMap<u8, bool>,
+        sign_map: HashMap<u8, i8>,
         hill_map: HashMap<u8, i8>,
         reaction_map: HashMap<u16, Vec<i8>>,
         transporter_map: HashMap<u16, Vec<i8>>,
@@ -244,13 +244,13 @@ impl Proteomics {
         })
     }
 
-    fn get_proteome_repr<'py>(
+    fn get_proteome_dict<'py>(
         &self,
         py: Python<'py>,
         proteome: Vec<genomics::ProteinSpecType>,
         molecules: Vec<String>,
     ) -> Vec<Bound<'py, PyDict>> {
-        proteomics::get_proteome_repr(
+        proteomics::get_proteome_dict(
             py,
             &proteome,
             &molecules,

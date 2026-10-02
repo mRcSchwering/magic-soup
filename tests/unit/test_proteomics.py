@@ -32,73 +32,73 @@ _REACTIONS = [_r_a_b, _r_b_c, _r_bc_d, _r_d_bb]
 _CHEMISTRY = Chemistry(molecules=_MOLECULES, reactions=_REACTIONS)
 
 # fmt: off
-_KM_WEIGHTS = torch.tensor([
+_KM_WEIGHTS = [
 #   x0    x1    x2    x3    x4    x5    x6    x7    x8    x9
     0.0,  0.1,  0.2,  0.3,  0.4,  0.5,  0.6,  0.7,  0.8,  0.9,  # 0x
     1.0,  1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  # 1x
     2.0,  2.1,  2.2,  2.3,  2.4,  2.5,  2.6,  2.7,  2.8,  2.9,  # 2x
-])
+]
 
-_VMAX_WEIGHTS = torch.tensor([
+_VMAX_WEIGHTS = [
 #   x0    x1    x2    x3    x4    x5    x6    x7    x8    x9
     0.0,  1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  # 0x
     2.0,  2.1,  2.2,  2.3,  2.4,  2.5,  2.6,  2.7,  2.8,  2.9,  # 1x
-])
+]
 
-#                      0   1   2
-_SIGNS = torch.tensor([0,  1,  -1], dtype=_INT)
+#         0   1   2
+_SIGNS = [0,  1,  -1]
 
-#                      0  1  2  3  4  5
-_HILLS = torch.tensor([0, 1, 2, 3, 4, 5], dtype=_INT)
+#         0  1  2  3  4  5
+_HILLS = [0, 1, 2, 3, 4, 5]
 
-_TRANSPORT_M = torch.tensor([
-    [ 0,  0,  0,  0,  0,  0,  0,  0], # 0: none
-    [-1,  0,  0,  0,  1,  0,  0,  0], # 1: a intracellular -> extracellular
-    [ 0, -1,  0,  0,  0,  1,  0,  0], # 2: b intracellular -> extracellular
-    [ 0,  0, -1,  0,  0,  0,  1,  0], # 3: c intracellular -> extracellular
-    [ 0,  0,  0, -1,  0,  0,  0,  1], # 4: d intracellular -> extracellular
-    [ 0,  0,  0,  0,  0,  0,  0,  0],
-    [ 0,  0,  0,  0,  0,  0,  0,  0],
-    [ 0,  0,  0,  0,  0,  0,  0,  0],
-    [ 0,  0,  0,  0,  0,  0,  0,  0],
-], dtype=_INT)
+_TRANSPORT_M = [
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ), # 0: none
+    (-1,  0,  0,  0,  1,  0,  0,  0 ), # 1: a intracellular -> extracellular
+    ( 0, -1,  0,  0,  0,  1,  0,  0 ), # 2: b intracellular -> extracellular
+    ( 0,  0, -1,  0,  0,  0,  1,  0 ), # 3: c intracellular -> extracellular
+    ( 0,  0,  0, -1,  0,  0,  0,  1 ), # 4: d intracellular -> extracellular
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+]
 
-_EFFECTOR_M = torch.tensor([
-    [0, 0, 0, 0, 0, 0, 0, 0], # 0: none
-    [1, 0, 0, 0, 0, 0, 0, 0], # 1: a intracellular
-    [0, 1, 0, 0, 0, 0, 0, 0], # 2: b intracellular
-    [0, 0, 1, 0, 0, 0, 0, 0], # 3: c intracellular
-    [0, 0, 0, 1, 0, 0, 0, 0], # 4: d intracellular
-    [0, 0, 0, 0, 1, 0, 0, 0], # 5: a extracellular
-    [0, 0, 0, 0, 0, 1, 0, 0], # 6: b extracellular
-    [0, 0, 0, 0, 0, 0, 1, 0], # 7: c extracellular
-    [0, 0, 0, 0, 0, 0, 0, 1], # 8: d extracellular
-], dtype=_INT)
+_EFFECTOR_M = [
+    ( 0, 0, 0, 0, 0, 0, 0, 0 ), # 0: none
+    ( 1, 0, 0, 0, 0, 0, 0, 0 ), # 1: a intracellular
+    ( 0, 1, 0, 0, 0, 0, 0, 0 ), # 2: b intracellular
+    ( 0, 0, 1, 0, 0, 0, 0, 0 ), # 3: c intracellular
+    ( 0, 0, 0, 1, 0, 0, 0, 0 ), # 4: d intracellular
+    ( 0, 0, 0, 0, 1, 0, 0, 0 ), # 5: a extracellular
+    ( 0, 0, 0, 0, 0, 1, 0, 0 ), # 6: b extracellular
+    ( 0, 0, 0, 0, 0, 0, 1, 0 ), # 7: c extracellular
+    ( 0, 0, 0, 0, 0, 0, 0, 1 ), # 8: d extracellular
+]
 
-_REACTION_M = torch.tensor([
-    [ 0,  0,  0,  0,  0,  0,  0,  0], # 0: none
-    [-1,  1,  0,  0,  0,  0,  0,  0], # 1: a -> b
-    [ 0, -1,  1,  0,  0,  0,  0,  0], # 2: b -> c
-    [ 0, -1, -1,  1,  0,  0,  0,  0], # 3: b,c -> d
-    [ 0,  2,  0, -1,  0,  0,  0,  0], # 4: d -> 2b
-    [ 0,  0,  0,  0,  0,  0,  0,  0],
-    [ 0,  0,  0,  0,  0,  0,  0,  0],
-    [ 0,  0,  0,  0,  0,  0,  0,  0],
-    [ 0,  0,  0,  0,  0,  0,  0,  0],
-], dtype=_INT)
+_REACTION_M = [
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ), # 0: none
+    (-1,  1,  0,  0,  0,  0,  0,  0 ), # 1: a -> b
+    ( 0, -1,  1,  0,  0,  0,  0,  0 ), # 2: b -> c
+    ( 0, -1, -1,  1,  0,  0,  0,  0 ), # 3: b,c -> d
+    ( 0,  2,  0, -1,  0,  0,  0,  0 ), # 4: d -> 2b
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+]
 
 # fmt: on
 
 
 def _get_proteomics() -> Proteomics:
     protics = Proteomics(chemistry=_CHEMISTRY, abs_temp=310, device=DEVICE)
-    protics.km_map.weights = _KM_WEIGHTS.clone()
-    protics.vmax_map.weights = _VMAX_WEIGHTS.clone()
-    protics.sign_map.signs = _SIGNS.clone()
-    protics.transport_map.M = _TRANSPORT_M.clone()
-    protics.effector_map.M = _EFFECTOR_M.clone()
-    protics.reaction_map.M = _REACTION_M.clone()
-    protics.hill_map.numbers = _HILLS.clone()
+    protics.km_map = {i: d for i, d in enumerate(_KM_WEIGHTS)}
+    protics.vmax_map = {i: d for i, d in enumerate(_VMAX_WEIGHTS)}
+    protics.sign_map = {i: d for i, d in enumerate(_SIGNS)}
+    protics.transport_map = {i: d for i, d in enumerate(_TRANSPORT_M)}
+    protics.effector_map = {i: d for i, d in enumerate(_EFFECTOR_M)}
+    protics.reaction_map = {i: d for i, d in enumerate(_REACTION_M)}
+    protics.hill_map = {i: d for i, d in enumerate(_HILLS)}
     protics._setup_proteomics()
     return protics
 

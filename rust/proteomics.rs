@@ -13,9 +13,9 @@ fn get_cat_dom_params(
     domain: &DomainSpecType,
     vmax_map: &HashMap<u8, f32>,
     k_m_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     react_map: &HashMap<u16, Vec<i8>>,
-) -> (f32, f32, bool, Vec<i8>) {
+) -> (f32, f32, i8, Vec<i8>) {
     let v_max = vmax_map.get(&domain.0 .1).expect("Incomplete vmax_map");
     let k_m = k_m_map.get(&domain.0 .2).expect("Incomplete k_m_map");
     let sign = sign_map.get(&domain.0 .3).expect("Incomplete sign_map");
@@ -28,9 +28,9 @@ fn get_tsp_dom_params(
     domain: &DomainSpecType,
     vmax_map: &HashMap<u8, f32>,
     k_m_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     transp_map: &HashMap<u16, Vec<i8>>,
-) -> (f32, f32, bool, Vec<i8>) {
+) -> (f32, f32, i8, Vec<i8>) {
     let v_max = vmax_map.get(&domain.0 .1).expect("Incomplete vmax_map");
     let k_m = k_m_map.get(&domain.0 .2).expect("Incomplete k_m_map");
     let sign = sign_map.get(&domain.0 .3).expect("Incomplete sign_map");
@@ -40,7 +40,7 @@ fn get_tsp_dom_params(
 
 // Get protein v_max, k_m, n_f, n_b from domain values
 fn agg_cat_tsp_params(
-    params: &Vec<(f32, f32, bool, Vec<i8>)>,
+    params: &Vec<(f32, f32, i8, Vec<i8>)>,
     m: &usize,
 ) -> (f32, f32, Vec<i8>, Vec<i8>) {
     let n_doms = params.len() as f32;
@@ -63,7 +63,7 @@ fn agg_cat_tsp_params(
         k_m_sum += param.1;
 
         // if fwd
-        if param.2 {
+        if param.2 > 0 {
             for (i, &val) in param.3.iter().enumerate() {
                 if val > 0 {
                     // positive n is created
@@ -98,9 +98,9 @@ fn get_reg_dom_params(
     domain: &DomainSpecType,
     hill_map: &HashMap<u8, i8>,
     k_m_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     effect_map: &HashMap<u16, Vec<i8>>,
-) -> (i8, f32, bool, Vec<i8>) {
+) -> (i8, f32, i8, Vec<i8>) {
     let hill = hill_map.get(&domain.0 .1).expect("Incomplete hill_map");
     let k_m = k_m_map.get(&domain.0 .2).expect("Incomplete k_m_map");
     let sign = sign_map.get(&domain.0 .3).expect("Incomplete sign_map");
@@ -109,7 +109,7 @@ fn get_reg_dom_params(
 }
 
 // Get protein k_r, n_h from domain values
-fn agg_reg_params(params: &Vec<(i8, f32, bool, Vec<i8>)>, m: &usize) -> (Vec<f32>, Vec<i8>) {
+fn agg_reg_params(params: &Vec<(i8, f32, i8, Vec<i8>)>, m: &usize) -> (Vec<f32>, Vec<i8>) {
     // per molecule average k_r over domains
     let mut k_r_sum = vec![0 as f32; *m];
     let mut k_r_len = vec![0 as f32; *m];
@@ -124,7 +124,7 @@ fn agg_reg_params(params: &Vec<(i8, f32, bool, Vec<i8>)>, m: &usize) -> (Vec<f32
                 k_r_len[i] += 1.0;
 
                 // positive hill for activating, negative for inhibiting
-                n_h[i] += if param.2 { param.0 } else { -param.0 }
+                n_h[i] += param.2 * param.0;
             }
         }
     }
@@ -143,15 +143,15 @@ fn get_protein_params(
     protein_spec: &ProteinSpecType,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     hill_map: &HashMap<u8, i8>,
     reaction_map: &HashMap<u16, Vec<i8>>,
     transporter_map: &HashMap<u16, Vec<i8>>,
     effector_map: &HashMap<u16, Vec<i8>>,
     m: &usize,
 ) -> ProteinParamsType {
-    let mut cat_tsp_dom_params: Vec<(f32, f32, bool, Vec<i8>)> = Vec::new();
-    let mut reg_dom_params: Vec<(i8, f32, bool, Vec<i8>)> = Vec::new();
+    let mut cat_tsp_dom_params: Vec<(f32, f32, i8, Vec<i8>)> = Vec::new();
+    let mut reg_dom_params: Vec<(i8, f32, i8, Vec<i8>)> = Vec::new();
 
     for domain_spec in protein_spec.0.iter() {
         // collect domains by type
@@ -194,7 +194,7 @@ fn get_proteome_params(
     proteome_spec: &Vec<ProteinSpecType>,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     hill_map: &HashMap<u8, i8>,
     reaction_map: &HashMap<u16, Vec<i8>>,
     transporter_map: &HashMap<u16, Vec<i8>>,
@@ -224,7 +224,7 @@ pub fn get_proteome_params_threaded(
     proteomes_spec: &Vec<Vec<ProteinSpecType>>,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     hill_map: &HashMap<u8, i8>,
     reaction_map: &HashMap<u16, Vec<i8>>,
     transporter_map: &HashMap<u16, Vec<i8>>,
@@ -252,7 +252,7 @@ pub fn get_proteome_params_threaded(
 // Proteome Python Representation
 
 // translate domain type int to char
-fn get_domtype_char_repr(domtype: &u8) -> char {
+fn get_domtype_char(domtype: &u8) -> char {
     match domtype {
         1 => 'C',
         2 => 'T',
@@ -262,13 +262,13 @@ fn get_domtype_char_repr(domtype: &u8) -> char {
 }
 
 // set domain specification for catalytic domain on PyDict
-fn set_catalytic_domain_repr(
+fn set_catalytic_domain_dict(
     kwargs: &Bound<PyDict>,
     molecules: &Vec<String>,
     domain_spec: &DomainSpecType,
     vmax_map: &HashMap<u8, f32>,
     k_m_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     react_map: &HashMap<u16, Vec<i8>>,
 ) {
     let (v_max, k_m, sign, react) =
@@ -278,7 +278,7 @@ fn set_catalytic_domain_repr(
     let mut lfts: Vec<String> = Vec::with_capacity(2);
     let mut rgts: Vec<String> = Vec::with_capacity(2);
     for (mol_i, n) in react.iter().enumerate() {
-        let signed_n = if sign { *n } else { -*n };
+        let signed_n = sign * *n;
         if signed_n == 0 {
             continue;
         } else if signed_n > 0 {
@@ -295,13 +295,13 @@ fn set_catalytic_domain_repr(
 }
 
 // set domain specification for transporter domain on PyDict
-fn set_transporter_domain_repr(
+fn set_transporter_domain_dict(
     kwargs: &Bound<PyDict>,
     molecules: &Vec<String>,
     domain_spec: &DomainSpecType,
     vmax_map: &HashMap<u8, f32>,
     k_m_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     transp_map: &HashMap<u16, Vec<i8>>,
 ) {
     let (v_max, k_m, sign, trnspts) =
@@ -312,7 +312,7 @@ fn set_transporter_domain_repr(
         .position(|d| *d != 0)
         .expect("No transporter molecule identified");
 
-    let signed_n = if sign { trnspts[i] } else { -trnspts[i] };
+    let signed_n = sign * trnspts[i];
 
     let molecule = &molecules[i];
     kwargs.set_item("km", k_m).unwrap();
@@ -322,13 +322,13 @@ fn set_transporter_domain_repr(
 }
 
 // set domain specification for regulatory domain on PyDict
-fn set_regulatory_domain_repr(
+fn set_regulatory_domain_dict(
     kwargs: &Bound<PyDict>,
     molecules: &Vec<String>,
     domain_spec: &DomainSpecType,
     hill_map: &HashMap<u8, i8>,
     k_m_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     effect_map: &HashMap<u16, Vec<i8>>,
     n_mols: &usize,
 ) {
@@ -340,7 +340,7 @@ fn set_regulatory_domain_repr(
         .position(|d| *d != 0)
         .expect("No effector molecule identified");
 
-    let signed_n = if sign { effectors[i] } else { -effectors[i] };
+    let signed_n = sign * effectors[i];
 
     let mol_i: usize;
     let is_trns: bool;
@@ -362,13 +362,13 @@ fn set_regulatory_domain_repr(
 
 // Get protein representation for Protein class as PyDict
 // from Protein specification using index mappings
-fn get_protein_repr<'py>(
+fn get_protein_dict<'py>(
     py: Python<'py>,
     protein: &ProteinSpecType,
     molecules: &Vec<String>,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     hill_map: &HashMap<u8, i8>,
     reaction_map: &HashMap<u16, Vec<i8>>,
     transporter_map: &HashMap<u16, Vec<i8>>,
@@ -385,7 +385,7 @@ fn get_protein_repr<'py>(
             kwargs.set_item("start", domain_spec.1).unwrap();
             kwargs.set_item("end", domain_spec.2).unwrap();
             if domtype == 1 {
-                set_catalytic_domain_repr(
+                set_catalytic_domain_dict(
                     &kwargs,
                     molecules,
                     domain_spec,
@@ -395,7 +395,7 @@ fn get_protein_repr<'py>(
                     &reaction_map,
                 )
             } else if domtype == 2 {
-                set_transporter_domain_repr(
+                set_transporter_domain_dict(
                     &kwargs,
                     molecules,
                     domain_spec,
@@ -405,7 +405,7 @@ fn get_protein_repr<'py>(
                     &transporter_map,
                 )
             } else if domtype == 3 {
-                set_regulatory_domain_repr(
+                set_regulatory_domain_dict(
                     &kwargs,
                     molecules,
                     domain_spec,
@@ -418,8 +418,7 @@ fn get_protein_repr<'py>(
             }
             let out = PyDict::new(py);
             out.set_item("spec", kwargs).unwrap();
-            out.set_item("type", get_domtype_char_repr(&domtype))
-                .unwrap();
+            out.set_item("type", get_domtype_char(&domtype)).unwrap();
             out
         })
         .collect();
@@ -434,13 +433,13 @@ fn get_protein_repr<'py>(
 
 // Get proteome representation for many Protein classes as PyDicts
 // from Proteome specification using index mappings
-pub fn get_proteome_repr<'py>(
+pub fn get_proteome_dict<'py>(
     py: Python<'py>,
     proteome: &Vec<ProteinSpecType>,
     molecules: &Vec<String>,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
-    sign_map: &HashMap<u8, bool>,
+    sign_map: &HashMap<u8, i8>,
     hill_map: &HashMap<u8, i8>,
     reaction_map: &HashMap<u16, Vec<i8>>,
     transporter_map: &HashMap<u16, Vec<i8>>,
@@ -450,7 +449,7 @@ pub fn get_proteome_repr<'py>(
     proteome
         .iter()
         .map(|d| {
-            get_protein_repr(
+            get_protein_dict(
                 py,
                 &d,
                 molecules,
