@@ -274,6 +274,46 @@ impl Proteomics {
     }
 }
 
+// Cells
+
+#[pyclass]
+struct Cells {
+    genomics: Py<Genomics>,
+    proteomics: Py<Proteomics>,
+}
+
+#[pymethods]
+impl Cells {
+    #[new]
+    fn new(genomics: Bound<Genomics>, proteomics: Bound<Proteomics>) -> Self {
+        Cells {
+            genomics: genomics.unbind(),
+            proteomics: proteomics.unbind(),
+        }
+    }
+
+    fn translate_genomes(
+        &self,
+        py: Python,
+        genomes: Vec<String>,
+        p: usize,
+    ) -> (
+        util::MatrixType<f32>,
+        util::MatrixType<f32>,
+        util::MatrixType<Vec<f32>>,
+        util::MatrixType<Vec<i8>>,
+        util::MatrixType<Vec<i8>>,
+        util::MatrixType<Vec<i8>>,
+    ) {
+        // idiomatic way of using PyO3 class instance reference
+        let genomics = self.genomics.borrow(py);
+        let proteomics = self.proteomics.borrow(py);
+
+        let proteomes = genomics.translate_genomes(py, genomes);
+        proteomics.get_proteome_params(py, proteomes, p)
+    }
+}
+
 // lib
 
 #[pymodule]
@@ -294,6 +334,9 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     //Proteomics
     m.add_class::<Proteomics>()?;
+
+    // Cells
+    m.add_class::<Cells>()?;
 
     // world
     m.add_function(wrap_pyfunction!(get_neighbors, m)?)?;
