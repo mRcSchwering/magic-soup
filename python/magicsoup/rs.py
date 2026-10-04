@@ -54,9 +54,7 @@ class Proteomics:
             m,
         )
 
-    def get_proteome_params(
-        self, proteomes: list[list[ProteinSpecType]], p: int
-    ) -> tuple[
+    def get_proteome_params(self, proteomes: list[list[ProteinSpecType]]) -> tuple[
         list[list[float]],
         list[list[float]],
         list[list[list[float]]],
@@ -64,9 +62,25 @@ class Proteomics:
         list[list[list[int]]],
         list[list[list[int]]],
     ]:
-        return self._cls.get_proteome_params(proteomes, p)
+        return self._cls.get_proteome_params(proteomes)
 
     def get_proteome_dict(
         self, proteome: list[ProteinSpecType], molecules: list[str]
     ) -> list[dict[str, Any]]:
         return self._cls.get_proteome_dict(proteome, molecules)
+
+
+class Cells:
+
+    def __init__(self, genomics: Genomics, proteomics: Proteomics) -> None:
+        self._cls = _lib.Cells(genomics._cls, proteomics._cls)
+
+    def translate_genomes(self, genomes: list[str]) -> tuple[
+        list[list[float]],
+        list[list[float]],
+        list[list[list[float]]],
+        list[list[list[int]]],
+        list[list[list[int]]],
+        list[list[list[int]]],
+    ]:
+        return self._cls.translate_genomes(genomes)

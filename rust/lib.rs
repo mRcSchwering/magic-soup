@@ -228,7 +228,6 @@ impl Proteomics {
         &self,
         py: Python<'_>,
         proteomes: Vec<Vec<genomics::ProteinSpecType>>,
-        p: usize,
     ) -> (
         util::MatrixType<f32>,
         util::MatrixType<f32>,
@@ -248,7 +247,6 @@ impl Proteomics {
                 &self.transporter_map,
                 &self.effector_map,
                 &self.m,
-                &p,
             )
         })
     }
@@ -296,7 +294,6 @@ impl Cells {
         &self,
         py: Python,
         genomes: Vec<String>,
-        p: usize,
     ) -> (
         util::MatrixType<f32>,
         util::MatrixType<f32>,
@@ -310,7 +307,7 @@ impl Cells {
         let proteomics = self.proteomics.borrow(py);
 
         let proteomes = genomics.translate_genomes(py, genomes);
-        proteomics.get_proteome_params(py, proteomes, p)
+        proteomics.get_proteome_params(py, proteomes)
     }
 }
 

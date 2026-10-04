@@ -3,10 +3,11 @@ import random
 import string
 from collections.abc import Iterable, Sequence
 from itertools import product
+from typing import Any
 
 import torch
 
-from magicsoup import _lib  # type:ignore
+from magicsoup import _lib  # type: ignore
 from magicsoup.constants import ALL_NTS, CODON_SIZE
 
 
@@ -126,6 +127,37 @@ def free_moores_nghbhd(
     which are not already occupied as indicated by `positions`
     """
     return _lib.free_moores_nghbhd(x, y, positions, map_size)
+
+
+class TensorClass:
+
+    def __init__(
+        self,
+        device: torch.device | str = "cpu",
+        itype: torch.dtype = torch.int32,
+        ftype: torch.dtype = torch.float32,
+    ) -> None:
+        self.device = device
+        self.itype = itype
+        self.ftype = ftype
+
+    def idxtensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=torch.int32)
+
+    def itensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=self.itype)
+
+    def ftensor(self, d: Any) -> torch.Tensor:
+        return torch.tensor(d, device=self.device, dtype=self.ftype)
+
+    def idxzeros(self, *args) -> torch.Tensor:
+        return torch.zeros(*args, device=self.device, dtype=torch.int32)
+
+    def izeros(self, *args) -> torch.Tensor:
+        return torch.zeros(*args, device=self.device, dtype=self.itype)
+
+    def fzeros(self, *args) -> torch.Tensor:
+        return torch.zeros(*args, device=self.device, dtype=self.ftype)
 
 
 IndexLike = slice | list[int] | tuple[int] | torch.Tensor

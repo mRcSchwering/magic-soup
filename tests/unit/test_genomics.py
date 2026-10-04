@@ -224,7 +224,7 @@ def test_genomics() -> None:
     genomics.domain_map = load_test_json("Genomics.domain_map.json")
     genomics.one_codon_map = load_test_json("Genomics.one_codon_map.json")
     genomics.two_codon_map = load_test_json("Genomics.two_codon_map.json")
-    genomics._setup_genome_translator()
+    genomics._setup_rs()
 
     exp_proteome = [
         ([((1, 18, 44, 50, 783), 60, 81)], 14, 95, True),

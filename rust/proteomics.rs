@@ -231,7 +231,6 @@ pub fn get_proteome_params_threaded(
     transporter_map: &HashMap<u16, Vec<i8>>,
     effector_map: &HashMap<u16, Vec<i8>>,
     m: &usize,
-    p: &usize,
 ) -> (
     MatrixType<f32>,
     MatrixType<f32>,
@@ -240,31 +239,35 @@ pub fn get_proteome_params_threaded(
     MatrixType<Vec<i8>>,
     MatrixType<Vec<i8>>,
 ) {
-    let c = proteomes_spec.len();
-    let proteomes_params: MatrixType<ProteinParamsType> = proteomes_spec
-        .into_par_iter()
-        .map(|d| {
-            get_proteome_params(
-                d,
-                k_m_map,
-                vmax_map,
-                sign_map,
-                hill_map,
-                reaction_map,
-                transporter_map,
-                effector_map,
-                m,
-            )
-        })
-        .collect();
+    let c: usize = proteomes_spec.len();
+    let mut p: usize = 0;
+    let mut proteomes_params: MatrixType<ProteinParamsType> = Vec::with_capacity(c);
+
+    for proteome_spec in proteomes_spec.iter() {
+        let proteome_params: Vec<ProteinParamsType> = get_proteome_params(
+            proteome_spec,
+            k_m_map,
+            vmax_map,
+            sign_map,
+            hill_map,
+            reaction_map,
+            transporter_map,
+            effector_map,
+            m,
+        );
+        if proteome_params.len() > p {
+            p = proteome_params.len();
+        }
+        proteomes_params.push(proteome_params);
+    }
 
     // (v_max, k_m, k_r, n_f, n_b, n_h)
-    let mut v_max = vec![vec![0 as f32; *p]; c];
-    let mut k_m = vec![vec![0 as f32; *p]; c];
-    let mut k_r = vec![vec![vec![0 as f32; *m]; *p]; c];
-    let mut n_f = vec![vec![vec![0 as i8; *m]; *p]; c];
-    let mut n_b = vec![vec![vec![0 as i8; *m]; *p]; c];
-    let mut n_h = vec![vec![vec![0 as i8; *m]; *p]; c];
+    let mut v_max = vec![vec![0 as f32; p]; c];
+    let mut k_m = vec![vec![0 as f32; p]; c];
+    let mut k_r = vec![vec![vec![0 as f32; *m]; p]; c];
+    let mut n_f = vec![vec![vec![0 as i8; *m]; p]; c];
+    let mut n_b = vec![vec![vec![0 as i8; *m]; p]; c];
+    let mut n_h = vec![vec![vec![0 as i8; *m]; p]; c];
 
     for (c_i, c_params) in proteomes_params.iter().enumerate() {
         for (p_i, p_params) in c_params.iter().enumerate() {

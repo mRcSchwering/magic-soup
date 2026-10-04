@@ -13,7 +13,7 @@ CO dehydrogenase / acetyl-CoA synthetase: CO2 + HS-CoA + methyl-Ni-ACS -> Ni-ACS
 (skipped Co step)
 """
 
-from magicsoup.containers import Chemistry, Molecule
+from magicsoup.chemistry import Chemistry, Molecule
 
 # TODO: normal K_e should be roughly in [-1e3, 1e3]
 #       (K_e = E[J/mol] / T[K] / G[J/(K*mol)])

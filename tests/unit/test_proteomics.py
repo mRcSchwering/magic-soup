@@ -99,7 +99,7 @@ def _get_proteomics() -> Proteomics:
     protics.effector_map = {i: d for i, d in enumerate(_EFFECTOR_M)}
     protics.reaction_map = {i: d for i, d in enumerate(_REACTION_M)}
     protics.hill_map = {i: d for i, d in enumerate(_HILLS)}
-    protics._setup_proteomics()
+    protics._setup_rs()
     return protics
 
 
@@ -110,6 +110,249 @@ def _ke(subs: list[Molecule], prods: list[Molecule]) -> float:
 
 def _avg(*x: float) -> float:
     return sum(x) / len(x)
+
+
+def test_cell_params_with_catalytic_domains() -> None:
+    # Protein: (domains, cds_start, cds_end, is_fwd)
+    # Domain: (domain_spec, dom_start, dom_end)
+    # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
+    # fmt: off
+    c0: list[ProteinSpecType] = [
+        (
+            [
+                (
+                    (1, 1, 5, 1, 1), # catal, v_max 1.1, Km 0.5, fwd, a->b
+                    1, 10
+                ),
+                (
+                    (1, 2, 15, 2, 3), # catal, v_max 1.2, Km 1.5, bwd, bc->d
+                    2, 20
+                )
+            ],
+            1, 100, False
+        ),
+        (
+            [
+                (
+                    (1, 10, 9, 1, 2), # catal, v_max 2.0, Km 0.9, fwd, b->c
+                    3, 30
+                ),
+                (
+                    (1, 3, 12, 2, 3), # catal, v_max 1.3, Km 1.2, bwd, bc->d
+                    4, 40
+                )
+            ],
+            2, 200, True
+        ),
+        (
+            [
+                (
+                    (1, 19, 29, 1, 4), # catal, v_max 2.9, Km 2.9, fwd, d->bb
+                    5, 50
+                )
+            ],
+            3, 300, False
+        )
+    ]
+    c1: list[ProteinSpecType] = [
+        (
+            [
+                (
+                    (1, 1, 3, 2, 1), # catal, v_max 1.1, Km 0.3, bwd, a->b
+                    6, 60
+                ),
+                (
+                    (1, 11, 14, 2, 3), # catal, v_max 2.1, Km 1.4, bwd, bc->d
+                    7, 70
+                )
+            ],
+            4, 400, True
+        ),
+        (
+            [
+                (
+                    (1, 9, 3, 1, 2), # catal, v_max 1.9, Km 0.3, fwd, b->c
+                    8, 80
+                ),
+                (
+                    (1, 13, 17, 1, 3), # catal, v_max 2.3, Km 1.7, fwd, bc->d
+                    9, 90
+                )
+            ],
+            5, 500, False
+        )
+    ]
+    # fmt: on
+
+    # setup proteomics
+    c = 2  # 2 cells
+    p = 3  # 2 max proteins
+    m = 8  # 8 molecules
+    protics = _get_proteomics()
+    params = protics.get_cell_params(proteomes=[c0, c1])
+
+    # expected cell params
+    ke_c0_0 = _ke([_ma, _md], [_mb, _mb, _mc])
+    ke_c0_1 = _ke([_mb, _md], [_mc, _mb, _mc])
+    ke_c0_2 = _ke([_md], [_mb, _mb])
+    ke_c1_0 = _ke([_mb, _md], [_ma, _mb, _mc])
+    ke_c1_1 = _ke([_mb, _mb, _mc], [_mc, _md])
+    k_f_exp = torch.tensor(
+        [
+            [_avg(0.5, 1.5) / ke_c0_0, _avg(0.9, 1.2) / ke_c0_1, 2.9 / ke_c0_2],
+            [_avg(0.3, 1.4) / ke_c1_0, _avg(0.3, 1.7), 0.0],
+        ],
+        dtype=_FLOAT,
+    )
+    k_b_exp = torch.tensor(
+        [
+            [_avg(0.5, 1.5), _avg(0.9, 1.2), 2.9],
+            [_avg(0.3, 1.4), _avg(0.3, 1.7) * ke_c1_1, 0.0],
+        ]
+    )
+    K_r_exp = torch.zeros(c, p, m, dtype=_FLOAT)
+    v_max_exp = torch.tensor(
+        [
+            [_avg(1.1, 1.2), _avg(2.0, 1.3), 2.9],
+            [_avg(1.1, 2.1), _avg(1.9, 2.3), 0.0],
+        ],
+        dtype=_FLOAT,
+    )
+    N_f_exp = torch.tensor(
+        [
+            [
+                [1, 0, 0, 1, 0, 0, 0, 0],
+                [0, 1, 0, 1, 0, 0, 0, 0],
+                [0, 0, 0, 1, 0, 0, 0, 0],
+            ],
+            [
+                [0, 1, 0, 1, 0, 0, 0, 0],
+                [0, 2, 1, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+            ],
+        ],
+        dtype=_INT,
+    )
+    N_b_exp = torch.tensor(
+        [
+            [
+                [0, 2, 1, 0, 0, 0, 0, 0],
+                [0, 1, 2, 0, 0, 0, 0, 0],
+                [0, 2, 0, 0, 0, 0, 0, 0],
+            ],
+            [
+                [1, 1, 1, 0, 0, 0, 0, 0],
+                [0, 0, 1, 1, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+            ],
+        ],
+        dtype=_INT,
+    )
+    N_h_exp = torch.zeros(c, p, m, dtype=_INT)
+
+    # test cell params
+    torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N"], N_b_exp - N_f_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
+
+    # test protein representation
+
+    proteins = protics.get_proteome(proteome=c0)
+
+    p0 = proteins[0]
+    assert p0.cds_start == 1
+    assert p0.cds_end == 100
+    assert p0.is_fwd is False
+    assert isinstance(p0.domains[0], CatalyticDomain)
+    assert p0.domains[0].substrates == [_ma]
+    assert p0.domains[0].products == [_mb]
+    assert p0.domains[0].vmax == pytest.approx(1.1, abs=_TOL)
+    assert p0.domains[0].km == pytest.approx(0.5, abs=_TOL)
+    assert p0.domains[0].start == 1
+    assert p0.domains[0].end == 10
+    assert isinstance(p0.domains[1], CatalyticDomain)
+    assert p0.domains[1].substrates == [_md]
+    assert p0.domains[1].products == [_mb, _mc]
+    assert p0.domains[1].vmax == pytest.approx(1.2, abs=_TOL)
+    assert p0.domains[1].km == pytest.approx(1.5, abs=_TOL)
+    assert p0.domains[1].start == 2
+    assert p0.domains[1].end == 20
+
+    p1 = proteins[1]
+    assert p1.cds_start == 2
+    assert p1.cds_end == 200
+    assert p1.is_fwd is True
+    assert isinstance(p1.domains[0], CatalyticDomain)
+    assert p1.domains[0].substrates == [_mb]
+    assert p1.domains[0].products == [_mc]
+    assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOL)
+    assert p1.domains[0].km == pytest.approx(0.9, abs=_TOL)
+    assert p1.domains[0].start == 3
+    assert p1.domains[0].end == 30
+    assert isinstance(p1.domains[1], CatalyticDomain)
+    assert p1.domains[1].substrates == [_md]
+    assert p1.domains[1].products == [_mb, _mc]
+    assert p1.domains[1].vmax == pytest.approx(1.3, abs=_TOL)
+    assert p1.domains[1].km == pytest.approx(1.2, abs=_TOL)
+    assert p1.domains[1].start == 4
+    assert p1.domains[1].end == 40
+
+    p2 = proteins[2]
+    assert p2.cds_start == 3
+    assert p2.cds_end == 300
+    assert p2.is_fwd is False
+    assert isinstance(p2.domains[0], CatalyticDomain)
+    assert p2.domains[0].substrates == [_md]
+    assert p2.domains[0].products == [_mb, _mb]
+    assert p2.domains[0].vmax == pytest.approx(2.9, abs=_TOL)
+    assert p2.domains[0].km == pytest.approx(2.9, abs=_TOL)
+    assert p2.domains[0].start == 5
+    assert p2.domains[0].end == 50
+
+    proteins = protics.get_proteome(proteome=c1)
+
+    p0 = proteins[0]
+    assert p0.cds_start == 4
+    assert p0.cds_end == 400
+    assert p0.is_fwd is True
+    assert isinstance(p0.domains[0], CatalyticDomain)
+    assert p0.domains[0].substrates == [_mb]
+    assert p0.domains[0].products == [_ma]
+    assert p0.domains[0].vmax == pytest.approx(1.1, abs=_TOL)
+    assert p0.domains[0].km == pytest.approx(0.3, abs=_TOL)
+    assert p0.domains[0].start == 6
+    assert p0.domains[0].end == 60
+    assert isinstance(p0.domains[1], CatalyticDomain)
+    assert p0.domains[1].substrates == [_md]
+    assert p0.domains[1].products == [_mb, _mc]
+    assert p0.domains[1].vmax == pytest.approx(2.1, abs=_TOL)
+    assert p0.domains[1].km == pytest.approx(1.4, abs=_TOL)
+    assert p0.domains[1].start == 7
+    assert p0.domains[1].end == 70
+
+    p1 = proteins[1]
+    assert p1.cds_start == 5
+    assert p1.cds_end == 500
+    assert p1.is_fwd is False
+    assert isinstance(p1.domains[0], CatalyticDomain)
+    assert p1.domains[0].substrates == [_mb]
+    assert p1.domains[0].products == [_mc]
+    assert p1.domains[0].vmax == pytest.approx(1.9, abs=_TOL)
+    assert p1.domains[0].km == pytest.approx(0.3, abs=_TOL)
+    assert p1.domains[0].start == 8
+    assert p1.domains[0].end == 80
+    assert isinstance(p1.domains[1], CatalyticDomain)
+    assert p1.domains[1].substrates == [_mb, _mc]
+    assert p1.domains[1].products == [_md]
+    assert p1.domains[1].vmax == pytest.approx(2.3, abs=_TOL)
+    assert p1.domains[1].km == pytest.approx(1.7, abs=_TOL)
+    assert p1.domains[1].start == 9
+    assert p1.domains[1].end == 90
 
 
 def test_cell_params_with_transporter_domains() -> None:
@@ -181,39 +424,32 @@ def test_cell_params_with_transporter_domains() -> None:
     # fmt: on
 
     # setup proteomics
-    c = 2
-    p = 3
-    m = 8
+    c = 2  # 2 cells
+    p = 2  # 2 max proteins
+    m = 8  # 8 molecules
     protics = _get_proteomics()
-    params = protics.get_cell_params(proteomes=[c0, c1], p=p)
+    params = protics.get_cell_params(proteomes=[c0, c1])
 
     # expected cell params
-    k_e_exp = torch.tensor(
-        [
-            [1.0, 1.0, 1.0],
-            [1.0, _ke([_ma], [_mb]), 1.0],
-        ],
-        dtype=_FLOAT,
-    )
     k_f_exp = torch.tensor(
         [
-            [0.5, _avg(0.5, 0.2), 0.0],
-            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5), 0.0],
+            [0.5, _avg(0.5, 0.2)],
+            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5)],
         ],
         dtype=_FLOAT,
     )
     k_b_exp = torch.tensor(
         [
-            [0.5, _avg(0.5, 0.2), 0.0],
-            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) * _ke([_ma], [_mb]), 0.0],
+            [0.5, _avg(0.5, 0.2)],
+            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) * _ke([_ma], [_mb])],
         ],
         dtype=_FLOAT,
     )
-    K_r_exp = torch.zeros(2, 3, 8, dtype=_FLOAT)
+    K_r_exp = torch.zeros(c, p, 8, dtype=_FLOAT)
     v_max_exp = torch.tensor(
         [
-            [1.5, _avg(1.5, 1.1), 0.0],
-            [_avg(1.5, 1.4, 1.3, 1.2), _avg(2.0, 1.5), 0.0],
+            [1.5, _avg(1.5, 1.1)],
+            [_avg(1.5, 1.4, 1.3, 1.2), _avg(2.0, 1.5)],
         ],
         dtype=_FLOAT,
     )
@@ -222,12 +458,10 @@ def test_cell_params_with_transporter_domains() -> None:
             [
                 [1, 0, 0, 0, 0, 0, 0, 0],
                 [1, 0, 0, 0, 1, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
             [
                 [2, 1, 1, 0, 0, 0, 0, 0],
                 [2, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
         ],
         dtype=_INT,
@@ -237,12 +471,10 @@ def test_cell_params_with_transporter_domains() -> None:
             [
                 [0, 0, 0, 0, 1, 0, 0, 0],
                 [1, 0, 0, 0, 1, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
             [
                 [0, 0, 0, 0, 2, 1, 1, 0],
                 [0, 1, 0, 0, 1, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
         ],
         dtype=_INT,
@@ -250,7 +482,6 @@ def test_cell_params_with_transporter_domains() -> None:
     N_h_exp = torch.zeros(c, p, m, dtype=_INT)
 
     # test cell params
-    torch.testing.assert_close(params["k_e"], k_e_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
@@ -423,30 +654,22 @@ def test_cell_params_with_regulatory_domains() -> None:
     # fmt: on
 
     # setup proteomics
-    p = 3
     protics = _get_proteomics()
-    params = protics.get_cell_params(proteomes=[c0, c1], p=p)
+    params = protics.get_cell_params(proteomes=[c0, c1])
 
     # expected cell params
     ke_a_b = _ke([_ma], [_mb])
-    k_e_exp = torch.tensor(
-        [
-            [ke_a_b, ke_a_b, 1.0],
-            [ke_a_b, ke_a_b, 1.0],
-        ],
-        dtype=_FLOAT,
-    )
     k_f_exp = torch.tensor(
         [
-            [0.5, 0.5, 0.0],
-            [0.5, 0.5, 0.0],
+            [0.5, 0.5],
+            [0.5, 0.5],
         ],
         dtype=_FLOAT,
     )
     k_b_exp = torch.tensor(
         [
-            [0.5 * ke_a_b, 0.5 * ke_a_b, 0.0],
-            [0.5 * ke_a_b, 0.5 * ke_a_b, 0.0],
+            [0.5 * ke_a_b, 0.5 * ke_a_b],
+            [0.5 * ke_a_b, 0.5 * ke_a_b],
         ],
         dtype=_FLOAT,
     )
@@ -455,20 +678,18 @@ def test_cell_params_with_regulatory_domains() -> None:
             [
                 [0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             ],
             [
                 [0.0, 1.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0],
                 [0.0, 0.0, 0.0, 1.25, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             ],
         ],
         dtype=_FLOAT,
     )
     v_max_exp = torch.tensor(
         [
-            [2.0, 2.0, 0.0],
-            [2.0, 2.0, 0.0],
+            [2.0, 2.0],
+            [2.0, 2.0],
         ],
         dtype=_FLOAT,
     )
@@ -477,12 +698,10 @@ def test_cell_params_with_regulatory_domains() -> None:
             [
                 [1, 0, 0, 0, 0, 0, 0, 0],
                 [1, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
             [
                 [1, 0, 0, 0, 0, 0, 0, 0],
                 [1, 0, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
         ],
         dtype=_INT,
@@ -492,12 +711,10 @@ def test_cell_params_with_regulatory_domains() -> None:
             [
                 [0, 1, 0, 0, 0, 0, 0, 0],
                 [0, 1, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
             [
                 [0, 1, 0, 0, 0, 0, 0, 0],
                 [0, 1, 0, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
         ],
         dtype=_INT,
@@ -507,19 +724,16 @@ def test_cell_params_with_regulatory_domains() -> None:
             [
                 [0, 0, 1, -2, 0, 0, 0, 0],
                 [1, 0, 0, 0, 3, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
             [
                 [0, -1, 0, 0, 0, -3, 0, 0],
                 [0, 0, 0, 5, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
             ],
         ],
         dtype=_INT,
     )
 
     # test cell params
-    torch.testing.assert_close(params["k_e"], k_e_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
@@ -648,257 +862,6 @@ def test_cell_params_with_regulatory_domains() -> None:
     assert p1.domains[2].end == 120
 
 
-def test_cell_params_with_catalytic_domains() -> None:
-    # Protein: (domains, cds_start, cds_end, is_fwd)
-    # Domain: (domain_spec, dom_start, dom_end)
-    # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
-    # fmt: off
-    c0: list[ProteinSpecType] = [
-        (
-            [
-                (
-                    (1, 1, 5, 1, 1), # catal, v_max 1.1, Km 0.5, fwd, a->b
-                    1, 10
-                ),
-                (
-                    (1, 2, 15, 2, 3), # catal, v_max 1.2, Km 1.5, bwd, bc->d
-                    2, 20
-                )
-            ],
-            1, 100, False
-        ),
-        (
-            [
-                (
-                    (1, 10, 9, 1, 2), # catal, v_max 2.0, Km 0.9, fwd, b->c
-                    3, 30
-                ),
-                (
-                    (1, 3, 12, 2, 3), # catal, v_max 1.3, Km 1.2, bwd, bc->d
-                    4, 40
-                )
-            ],
-            2, 200, True
-        ),
-        (
-            [
-                (
-                    (1, 19, 29, 1, 4), # catal, v_max 2.9, Km 2.9, fwd, d->bb
-                    5, 50
-                )
-            ],
-            3, 300, False
-        )
-    ]
-    c1: list[ProteinSpecType] = [
-        (
-            [
-                (
-                    (1, 1, 3, 2, 1), # catal, v_max 1.1, Km 0.3, bwd, a->b
-                    6, 60
-                ),
-                (
-                    (1, 11, 14, 2, 3), # catal, v_max 2.1, Km 1.4, bwd, bc->d
-                    7, 70
-                )
-            ],
-            4, 400, True
-        ),
-        (
-            [
-                (
-                    (1, 9, 3, 1, 2), # catal, v_max 1.9, Km 0.3, fwd, b->c
-                    8, 80
-                ),
-                (
-                    (1, 13, 17, 1, 3), # catal, v_max 2.3, Km 1.7, fwd, bc->d
-                    9, 90
-                )
-            ],
-            5, 500, False
-        )
-    ]
-    # fmt: on
-
-    # setup proteomics
-    c = 2
-    p = 3
-    m = 8
-    protics = _get_proteomics()
-    params = protics.get_cell_params(proteomes=[c0, c1], p=p)
-
-    # expected cell params
-    ke_c0_0 = _ke([_ma, _md], [_mb, _mb, _mc])
-    ke_c0_1 = _ke([_mb, _md], [_mc, _mb, _mc])
-    ke_c0_2 = _ke([_md], [_mb, _mb])
-    ke_c1_0 = _ke([_mb, _md], [_ma, _mb, _mc])
-    ke_c1_1 = _ke([_mb, _mb, _mc], [_mc, _md])
-    k_e_exp = torch.tensor(
-        [
-            [ke_c0_0, ke_c0_1, ke_c0_2],
-            [ke_c1_0, ke_c1_1, 1.0],
-        ],
-        dtype=_FLOAT,
-    )
-    k_f_exp = torch.tensor(
-        [
-            [_avg(0.5, 1.5) / ke_c0_0, _avg(0.9, 1.2) / ke_c0_1, 2.9 / ke_c0_2],
-            [_avg(0.3, 1.4) / ke_c1_0, _avg(0.3, 1.7), 0.0],
-        ],
-        dtype=_FLOAT,
-    )
-    k_b_exp = torch.tensor(
-        [
-            [_avg(0.5, 1.5), _avg(0.9, 1.2), 2.9],
-            [_avg(0.3, 1.4), _avg(0.3, 1.7) * ke_c1_1, 0.0],
-        ]
-    )
-    K_r_exp = torch.zeros(c, p, m, dtype=_FLOAT)
-    v_max_exp = torch.tensor(
-        [
-            [_avg(1.1, 1.2), _avg(2.0, 1.3), 2.9],
-            [_avg(1.1, 2.1), _avg(1.9, 2.3), 0.0],
-        ],
-        dtype=_FLOAT,
-    )
-    N_f_exp = torch.tensor(
-        [
-            [
-                [1, 0, 0, 1, 0, 0, 0, 0],
-                [0, 1, 0, 1, 0, 0, 0, 0],
-                [0, 0, 0, 1, 0, 0, 0, 0],
-            ],
-            [
-                [0, 1, 0, 1, 0, 0, 0, 0],
-                [0, 2, 1, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
-            ],
-        ],
-        dtype=_INT,
-    )
-    N_b_exp = torch.tensor(
-        [
-            [
-                [0, 2, 1, 0, 0, 0, 0, 0],
-                [0, 1, 2, 0, 0, 0, 0, 0],
-                [0, 2, 0, 0, 0, 0, 0, 0],
-            ],
-            [
-                [1, 1, 1, 0, 0, 0, 0, 0],
-                [0, 0, 1, 1, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
-            ],
-        ],
-        dtype=_INT,
-    )
-    N_h_exp = torch.zeros(c, p, m, dtype=_INT)
-
-    # test cell params
-    torch.testing.assert_close(params["k_e"], k_e_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N"], N_b_exp - N_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
-
-    # test protein representation
-
-    proteins = protics.get_proteome(proteome=c0)
-
-    p0 = proteins[0]
-    assert p0.cds_start == 1
-    assert p0.cds_end == 100
-    assert p0.is_fwd is False
-    assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].substrates == [_ma]
-    assert p0.domains[0].products == [_mb]
-    assert p0.domains[0].vmax == pytest.approx(1.1, abs=_TOL)
-    assert p0.domains[0].km == pytest.approx(0.5, abs=_TOL)
-    assert p0.domains[0].start == 1
-    assert p0.domains[0].end == 10
-    assert isinstance(p0.domains[1], CatalyticDomain)
-    assert p0.domains[1].substrates == [_md]
-    assert p0.domains[1].products == [_mb, _mc]
-    assert p0.domains[1].vmax == pytest.approx(1.2, abs=_TOL)
-    assert p0.domains[1].km == pytest.approx(1.5, abs=_TOL)
-    assert p0.domains[1].start == 2
-    assert p0.domains[1].end == 20
-
-    p1 = proteins[1]
-    assert p1.cds_start == 2
-    assert p1.cds_end == 200
-    assert p1.is_fwd is True
-    assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].substrates == [_mb]
-    assert p1.domains[0].products == [_mc]
-    assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOL)
-    assert p1.domains[0].km == pytest.approx(0.9, abs=_TOL)
-    assert p1.domains[0].start == 3
-    assert p1.domains[0].end == 30
-    assert isinstance(p1.domains[1], CatalyticDomain)
-    assert p1.domains[1].substrates == [_md]
-    assert p1.domains[1].products == [_mb, _mc]
-    assert p1.domains[1].vmax == pytest.approx(1.3, abs=_TOL)
-    assert p1.domains[1].km == pytest.approx(1.2, abs=_TOL)
-    assert p1.domains[1].start == 4
-    assert p1.domains[1].end == 40
-
-    p2 = proteins[2]
-    assert p2.cds_start == 3
-    assert p2.cds_end == 300
-    assert p2.is_fwd is False
-    assert isinstance(p2.domains[0], CatalyticDomain)
-    assert p2.domains[0].substrates == [_md]
-    assert p2.domains[0].products == [_mb, _mb]
-    assert p2.domains[0].vmax == pytest.approx(2.9, abs=_TOL)
-    assert p2.domains[0].km == pytest.approx(2.9, abs=_TOL)
-    assert p2.domains[0].start == 5
-    assert p2.domains[0].end == 50
-
-    proteins = protics.get_proteome(proteome=c1)
-
-    p0 = proteins[0]
-    assert p0.cds_start == 4
-    assert p0.cds_end == 400
-    assert p0.is_fwd is True
-    assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].substrates == [_mb]
-    assert p0.domains[0].products == [_ma]
-    assert p0.domains[0].vmax == pytest.approx(1.1, abs=_TOL)
-    assert p0.domains[0].km == pytest.approx(0.3, abs=_TOL)
-    assert p0.domains[0].start == 6
-    assert p0.domains[0].end == 60
-    assert isinstance(p0.domains[1], CatalyticDomain)
-    assert p0.domains[1].substrates == [_md]
-    assert p0.domains[1].products == [_mb, _mc]
-    assert p0.domains[1].vmax == pytest.approx(2.1, abs=_TOL)
-    assert p0.domains[1].km == pytest.approx(1.4, abs=_TOL)
-    assert p0.domains[1].start == 7
-    assert p0.domains[1].end == 70
-
-    p1 = proteins[1]
-    assert p1.cds_start == 5
-    assert p1.cds_end == 500
-    assert p1.is_fwd is False
-    assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].substrates == [_mb]
-    assert p1.domains[0].products == [_mc]
-    assert p1.domains[0].vmax == pytest.approx(1.9, abs=_TOL)
-    assert p1.domains[0].km == pytest.approx(0.3, abs=_TOL)
-    assert p1.domains[0].start == 8
-    assert p1.domains[0].end == 80
-    assert isinstance(p1.domains[1], CatalyticDomain)
-    assert p1.domains[1].substrates == [_mb, _mc]
-    assert p1.domains[1].products == [_md]
-    assert p1.domains[1].vmax == pytest.approx(2.3, abs=_TOL)
-    assert p1.domains[1].km == pytest.approx(1.7, abs=_TOL)
-    assert p1.domains[1].start == 9
-    assert p1.domains[1].end == 90
-
-
 def _get_random_proteomes(n_cells: int) -> tuple[list[list[ProteinSpecType]], int]:
     proteomes: list[list[ProteinSpecType]] = []
     p_max = 0
@@ -941,10 +904,10 @@ def test_random_cell_params() -> None:
 
         # setup proteomics
         protics = Proteomics(chemistry=_CHEMISTRY, device=DEVICE)
-        params = protics.get_cell_params(proteomes=proteomes, p=p_max)
+        params = protics.get_cell_params(proteomes=proteomes)
 
         # test
-        float_np = [params["k_e"], params["k_f"], params["k_b"], params["v_max"]]
+        float_np = [params["k_f"], params["k_b"], params["v_max"]]
         float_npm = [params["K_r"]]
         int_npm = [params["N"], params["N_f"], params["N_b"], params["N_h"]]
 

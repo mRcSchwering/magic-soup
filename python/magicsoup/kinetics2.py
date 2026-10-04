@@ -3,23 +3,26 @@ import logging
 import torch
 import torch.nn.functional as F
 
+from magicsoup.util import TensorClass
+
 _log = logging.getLogger(__name__)
 
 
-class Kinetics:
+class Kinetics(TensorClass):
 
     def __init__(
         self,
-        device: str = "cpu",
-        ftype: torch.dtype = torch.float32,
         eps: float = 1e-40,
         h: float = 1.0,
         n_max_sweeps: int = 3,
         n_max_bisect: int = 20,
         xi_conv_tol: float = 1e-4,
+        device: str = "cpu",
+        ftype: torch.dtype = torch.float32,
+        itype: torch.dtype = torch.int32,
     ):
-        self.device = device
-        self.ftype = ftype
+        super().__init__(device=device, itype=itype, ftype=ftype)
+
         self.eps = eps
         self.h = h
         self.n_max_sweeps = n_max_sweeps

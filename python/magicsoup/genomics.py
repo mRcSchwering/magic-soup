@@ -84,10 +84,11 @@ class Genomics:
         self.idx_2_one_codon = {v: k for k, v in self.one_codon_map.items()}
         self.idx_2_two_codon = {v: k for k, v in self.two_codon_map.items()}
 
-        self._setup_genome_translator()
+        # setup rust class
+        self._setup_rs()
 
-    def _setup_genome_translator(self) -> None:
-        self._genomics = rs.Genomics(
+    def _setup_rs(self) -> None:
+        self.rs = rs.Genomics(
             start_codons=self.start_codons,
             stop_codons=self.stop_codons,
             domain_map=self.domain_map,
@@ -100,7 +101,7 @@ class Genomics:
     def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
         if len(genomes) < 1:
             return []
-        return self._genomics.translate_genomes(genomes=genomes)
+        return self.rs.translate_genomes(genomes=genomes)
 
     def _get_single_codons(self) -> list[str]:
         seqs = codons(n=1)

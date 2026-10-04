@@ -1,11 +1,11 @@
 import math
 import random
 from collections import defaultdict
-from typing import Any
 
 import torch
 
 from magicsoup import rs
+from magicsoup.util import TensorClass
 
 from .cellular import Protein
 from .chemistry import Chemistry, Molecule
@@ -165,7 +165,7 @@ def _get_inverse[T](m: dict[int, T]) -> dict[T, list[int]]:
     return inv
 
 
-class Proteomics:
+class Proteomics(TensorClass):
 
     def __init__(
         self,
@@ -181,15 +181,14 @@ class Proteomics:
         max_k: float = 1e36,
         eps: float = 1e-40,
     ) -> None:
+        super().__init__(device=device, itype=itype, ftype=ftype)
+
         self.abs_temp = abs_temp
-        self.device = device
-        self.itype = itype
-        self.ftype = ftype
         self.max_k = max_k
         self.eps = eps
 
         self.mol_names = [d.name for d in chemistry.molecules]
-        self.mol_energies = self._ftensor([d.energy for d in chemistry.molecules] * 2)
+        self.mol_energies = self.ftensor([d.energy for d in chemistry.molecules] * 2)
 
         self.m = 2 * len(chemistry.molecules)
         mol_2_mi = {d: i for i, d in enumerate(chemistry.molecules)}
@@ -222,10 +221,10 @@ class Proteomics:
         self.catal_2_idxs = _get_inverse(self.reaction_map)
 
         # init rust class
-        self._setup_proteomics()
+        self._setup_rs()
 
-    def _setup_proteomics(self) -> None:
-        self._proteomics = rs.Proteomics(
+    def _setup_rs(self) -> None:
+        self.rs = rs.Proteomics(
             km_map=self.km_map,
             vmax_map=self.vmax_map,
             sign_map=self.sign_map,
@@ -247,28 +246,46 @@ class Proteomics:
             List [Proteins][magicsoup.containers.Protein] that describe
             the cell's proteome.
         """
-        proteome_kwargs = self._proteomics.get_proteome_dict(
+        proteome_kwargs = self.rs.get_proteome_dict(
             proteome=proteome, molecules=self.mol_names
         )
         return [Protein.from_dict(d) for d in proteome_kwargs]
 
     def get_cell_params(
-        self, proteomes: list[list[ProteinSpecType]], p: int
+        self, proteomes: list[list[ProteinSpecType]]
     ) -> dict[str, torch.Tensor]:
+        v_max_, k_m_, K_r_, N_f_, N_b_, N_h_ = self.rs.get_proteome_params(proteomes)
+        v_max = self.ftensor(v_max_)
+        k_m = self.ftensor(k_m_)
+        K_r = self.ftensor(K_r_)
+        N_f = self.itensor(N_f_)
+        N_b = self.itensor(N_b_)
+        N_h = self.itensor(N_h_)
+
+        N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
+        k_f, k_b = self.derive_rates(N=N, k_m=k_m)
+
+        return {
+            "N": N,
+            "N_f": N_f,
+            "N_b": N_b,
+            "N_h": N_h,
+            "k_f": k_f,
+            "k_b": k_b,
+            "K_r": K_r,
+            "v_max": v_max,
+        }
+
+    def derive_stoichiometry(
+        self, N_f: torch.Tensor, N_b: torch.Tensor
+    ) -> torch.Tensor:
+        return N_b - N_f  # (c,p,m)
+
+    def derive_rates(
+        self, N: torch.Tensor, k_m: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         eps = self.eps
         max_k = self.max_k
-
-        v_max_, k_m_, K_r_, N_f_, N_b_, N_h_ = self._proteomics.get_proteome_params(
-            proteomes, p=p
-        )
-        v_max = self._ftensor(v_max_)
-        k_m = self._ftensor(k_m_)
-        K_r = self._ftensor(K_r_)
-        N_f = self._itensor(N_f_)
-        N_b = self._itensor(N_b_)
-        N_h = self._itensor(N_h_)
-
-        N = N_b - N_f  # (c,p,m)
 
         # energies define k_e which defines k_e = k_f/k_b
         # extreme energies can create Inf or 0.0, avoid them with clamp
@@ -284,21 +301,4 @@ class Proteomics:
         is_fwd = k_e >= 1.0
         k_f = torch.where(is_fwd, k_m, k_m / k_e).clamp(eps, max_k)
         k_b = torch.where(is_fwd, k_m * k_e, k_m).clamp(eps, max_k)
-
-        return {
-            "N": N,
-            "N_f": N_f,
-            "N_b": N_b,
-            "N_h": N_h,
-            "k_e": k_e,
-            "k_f": k_f,
-            "k_b": k_b,
-            "K_r": K_r,
-            "v_max": v_max,
-        }
-
-    def _ftensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=self.ftype)
-
-    def _itensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=self.itype)
+        return k_f, k_b
