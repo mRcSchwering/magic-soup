@@ -4,6 +4,27 @@ from magicsoup import _lib  # type: ignore
 from magicsoup.constants import ProteinSpecType
 
 
+def get_neighbors(
+    from_idxs: list[int],
+    to_idxs: list[int],
+    positions: list[tuple[int, int]],
+    map_size: int,
+) -> list[tuple[int, int]]:
+    return _lib.get_neighbors(from_idxs, to_idxs, positions, map_size)
+
+
+def divide_cells_if_possible(
+    cell_idxs: list[int], positions: list[tuple[int, int]], n_cells: int, map_size: int
+) -> tuple[list[int], list[int], list[tuple[int, int]]]:
+    return _lib.divide_cells_if_possible(cell_idxs, positions, n_cells, map_size)
+
+
+def move_cells(
+    cell_idxs: list[int], positions: list[tuple[int, int]], map_size: int
+) -> tuple[list[tuple[int, int]], list[int]]:
+    return _lib.move_cells(cell_idxs, positions, map_size)
+
+
 class Genomics:
 
     def __init__(

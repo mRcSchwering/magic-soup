@@ -52,9 +52,9 @@ class Cells(TensorClass):
         # cellular parameters
         self.genomes: Array[str] = Array([])  # cell genomes
         self.labels: Array[str] = Array([])  # cell labels
-        self.alive = self.izeros(0).bool()  # which ones are alive
+        self.alive = self.idxzeros(0).bool()  # which ones are alive
         self.positions = self.idxzeros(0, 2)  # x,y positions on map
-        self.ages = self.idxzeros(0)  # time since last division
+        self.ages = self.fzeros(0)  # time since last division
         self.generations = self.idxzeros(0)  # number of divisions
         self.molecules = self.fzeros(0, n_molecules)  # intracellular concentrations
 
@@ -152,14 +152,6 @@ class Cells(TensorClass):
         torch.save(self.positions, statedir / f"{name}.positions.pt")
         torch.save(self.generations, statedir / f"{name}.generations.pt")
         torch.save(self.molecules, statedir / f"{name}.molecules.pt")
-        torch.save(self.k_f, statedir / f"{name}.k_f.pt")
-        torch.save(self.k_b, statedir / f"{name}.k_b.pt")
-        torch.save(self.K_r, statedir / f"{name}.K_r.pt")
-        torch.save(self.v_max, statedir / f"{name}.v_max.pt")
-        torch.save(self.N, statedir / f"{name}.N.pt")
-        torch.save(self.N_b, statedir / f"{name}.N_b.pt")
-        torch.save(self.N_f, statedir / f"{name}.N_f.pt")
-        torch.save(self.N_h, statedir / f"{name}.N_h.pt")
 
         lines: list[str] = [
             f">{i} {l}\n{g}"
@@ -196,46 +188,6 @@ class Cells(TensorClass):
             map_location=self.device,
             dtype=self.ftype,
         )
-        self.k_f = torch.load(
-            statedir / f"{name}.k_f.pt",
-            map_location=self.device,
-            dtype=self.ftype,
-        )
-        self.k_b = torch.load(
-            statedir / f"{name}.k_b.pt",
-            map_location=self.device,
-            dtype=self.ftype,
-        )
-        self.K_r = torch.load(
-            statedir / f"{name}.K_r.pt",
-            map_location=self.device,
-            dtype=self.ftype,
-        )
-        self.v_max = torch.load(
-            statedir / f"{name}.v_max.pt",
-            map_location=self.device,
-            dtype=self.ftype,
-        )
-        self.N = torch.load(
-            statedir / f"{name}.N.pt",
-            map_location=self.device,
-            dtype=self.itype,
-        )
-        self.N_f = torch.load(
-            statedir / f"{name}.N_f.pt",
-            map_location=self.device,
-            dtype=self.itype,
-        )
-        self.N_b = torch.load(
-            statedir / f"{name}.N_b.pt",
-            map_location=self.device,
-            dtype=self.itype,
-        )
-        self.N_h = torch.load(
-            statedir / f"{name}.N_h.pt",
-            map_location=self.device,
-            dtype=self.itype,
-        )
 
         with open(statedir / f"{name}.genomes.fasta", encoding="utf-8") as fh:
             text: str = fh.read()
@@ -252,6 +204,8 @@ class Cells(TensorClass):
             self.genomes.items.append(seq)
             self.labels.items.append(label)
 
+        # TODO: load kinetics parameters from genomes
+
     def _setup_rs(self) -> None:
         self.rs = rs.Cells(genomics=self.genomics.rs, proteomics=self.proteomics.rs)
 
@@ -261,7 +215,7 @@ class Cells(TensorClass):
         self.labels.items.extend([""] * by_n)
         self.alive = self._expand_c(t=self.alive, by_n=by_n)
         self.ages = self._expand_c(t=self.ages, by_n=by_n)
-        self.positions = self._expand_c(t=self.positions, by_n=by_n)
+        self.positions = self._expand_c(t=self.positions, by_n=by_n, value=-1)
         self.generations = self._expand_c(t=self.generations, by_n=by_n)
         self.molecules = self._expand_c(t=self.molecules, by_n=by_n)
 
@@ -353,12 +307,14 @@ class Cells(TensorClass):
     def _get_degrade(self, half_life: float) -> float:
         return math.exp(-math.log(2) / half_life)
 
-    def _expand_c(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
+    def _expand_c(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
         size = t.size()
-        zeros = torch.zeros(by_n, *size[1:], device=t.device, dtype=t.dtype)
+        shape = (by_n, *size[1:])
+        zeros = torch.full(shape, value, device=t.device, dtype=t.dtype)
         return torch.cat([t, zeros], dim=0)
 
-    def _expand_p(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
+    def _expand_p(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
         size = t.size()
-        zeros = torch.zeros(size[0], by_n, *size[2:], device=t.device, dtype=t.dtype)
-        return torch.cat([t, zeros], dim=1)
+        shape = (size[0], by_n, *size[2:])
+        zeros = torch.full(shape, value, device=t.device, dtype=t.dtype)
+        return torch.cat([t, zeros + value], dim=1)

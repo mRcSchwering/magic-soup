@@ -1,13 +1,13 @@
 import random
 from pathlib import Path
-from typing import Any
 
 import torch
 
 from magicsoup.chemistry import Chemistry
+from magicsoup.util import TensorClass
 
 
-class Map:
+class Map(TensorClass):
 
     def __init__(
         self,
@@ -16,17 +16,16 @@ class Map:
         mol_init: str = "zeros",
         device: str = "cpu",
         ftype: torch.dtype = torch.float32,
+        itype: torch.dtype = torch.int8,
     ):
+        super().__init__(device=device, ftype=ftype, itype=itype)
         molecules = chemistry.molecules
         self.size = size
-        self.device = device
-        self.ftype = ftype
 
         self.cells: torch.Tensor = torch.zeros(size, size).to(device).bool()
         self.molecules: torch.Tensor = self._get_molecule_map(
             n=len(molecules), size=size, init=mol_init
         )
-
         self._diffusion_funs: list[torch.nn.Conv2d] = [
             self._get_diffuse(mol_diff_rate=m.diffusivity) for m in molecules
         ]
@@ -94,7 +93,7 @@ class Map:
             b = b + 1.0 - (8 * a + b)  # try correcting inaccuracy
 
         # fmt: off
-        kernel = self._ftensor([[[
+        kernel = self.ftensor([[[
             [a, a, a],
             [a, b, a],
             [a, a, a],
@@ -125,6 +124,3 @@ class Map:
             f"Didnt recognize mol_map_init={init}."
             " Should be one of: 'zeros', 'randn'."
         )
-
-    def _ftensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=self.ftype)

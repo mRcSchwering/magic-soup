@@ -1,21 +1,23 @@
+import logging
 import pickle
 import random
 from io import BytesIO
 from pathlib import Path
-from typing import Any
 
 import torch
 
-from magicsoup import _lib  # type: ignore
-from magicsoup.cellular import Cell, Cells
+from magicsoup import rs
+from magicsoup.cells import Cells
+from magicsoup.cellular import Cell
 from magicsoup.chemistry import Chemistry
-from magicsoup.constants import ProteinSpecType
 from magicsoup.genomics import Genomics
 from magicsoup.kinetics2 import Kinetics
 from magicsoup.map import Map
 from magicsoup.mutations import point_mutations, recombinations
 from magicsoup.proteomics import Proteomics
-from magicsoup.util import randstr
+from magicsoup.util import TensorClass, randstr
+
+_log = logging.getLogger(__name__)
 
 
 def _torch_load(map_loc: str | None = None):
@@ -37,45 +39,57 @@ class _CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
-class World:
+class World(TensorClass):
 
     def __init__(
         self,
         chemistry: Chemistry,
+        kinetics: Kinetics | None = None,
+        map: Map | None = None,
+        cells: Cells | None = None,
         map_size: int = 128,
         abs_temp: float = 310.0,
         mol_map_init: str = "zeros",
         time_step: float = 1.0,
-        start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
-        stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
         device: str = "cpu",
-        itype: torch.dtype = torch.int8,
         ftype: torch.dtype = torch.float32,
+        itype: torch.dtype = torch.int8,
     ):
+        super().__init__(device=device, itype=itype, ftype=ftype)
+
         self.time_step = time_step
-        self.device = device
-        self.itype = itype
-        self.ftype = ftype
         self.abs_temp = abs_temp
         self.chemistry = chemistry
+        self.kinetics = kinetics or Kinetics(device=device)
+        self.map = map or (
+            Map(
+                mol_init=mol_map_init,
+                size=map_size,
+                chemistry=chemistry,
+                device=device,
+                ftype=ftype,
+            )
+        )
 
-        self.map = Map(
-            mol_init=mol_map_init,
-            size=map_size,
-            chemistry=chemistry,
-            device=device,
-            ftype=ftype,
-        )
-        self.cells = Cells(chemistry=chemistry, device=device, itype=itype, ftype=ftype)
-        self.genomics = Genomics(start_codons=start_codons, stop_codons=stop_codons)
-        self.kinetics = Kinetics(device=device)
-        self.proteomics = Proteomics(
-            chemistry=chemistry,
-            device=device,
-            abs_temp=abs_temp,
-            scalar_enc_size=max(self.genomics.one_codon_map.values()),
-            vector_enc_size=max(self.genomics.two_codon_map.values()),
-        )
+        if not cells:
+            genomics = Genomics()
+            proteomics = Proteomics(
+                chemistry=chemistry,
+                device=device,
+                scalar_enc_size=max(genomics.one_codon_map.values()),
+                vector_enc_size=max(genomics.two_codon_map.values()),
+            )
+            self.cells = Cells(
+                c_max=self.map.size**2,
+                chemistry=chemistry,
+                genomics=genomics,
+                proteomics=proteomics,
+                device=device,
+                itype=itype,
+                ftype=ftype,
+            )
+        else:
+            self.cells = cells
 
         n_molecules = len(chemistry.molecules)
         self._int_mol_idxs = list(range(n_molecules))
@@ -91,7 +105,7 @@ class World:
         if by_idx is not None:
             idx = by_idx
         if by_position is not None:
-            pos = self._i32_tensor(by_position)
+            pos = self.idxtensor(by_position)
             mask = (self.cells.positions == pos).all(dim=1)
             idxs = torch.argwhere(mask).flatten().tolist()
             if len(idxs) == 0:
@@ -126,7 +140,12 @@ class World:
         xs = self.cells.positions[:, 0].tolist()
         ys = self.cells.positions[:, 1].tolist()
         positions = [(x, y) for x, y in zip(xs, ys)]
-        nghbrs = _lib.get_neighbors(from_idxs, to_idxs, positions, self.map.size)
+        nghbrs = rs.get_neighbors(
+            from_idxs=from_idxs,
+            to_idxs=to_idxs,
+            positions=positions,
+            map_size=self.map.size,
+        )
         return nghbrs
 
     def spawn_cells(self, genomes: list[str]) -> list[int]:
@@ -137,16 +156,19 @@ class World:
         free_pos = self.map.find_free_random_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
+            _log.warning("No free positions to spawn %d cells", n_new_cells)
             return []
 
         if n_avail_pos < n_new_cells:
+            _log.warning(
+                "Only %d free positions to spawn %d cells", n_avail_pos, n_new_cells
+            )
             n_new_cells = n_avail_pos
             random.shuffle(genomes)
-            # TODO: log warning or info
             genomes = genomes[:n_new_cells]
 
-        n_cells = self.cells.get_alive_cells()
-        self.cells.set_c(n_cells + n_new_cells)
+        n_living_cells = self.cells.get_alive_cells()
+        self.cells.update_c(c_req=n_living_cells + n_new_cells)
         free_idxs = self.cells.get_available_idxs()
         new_idxs = free_idxs[:n_new_cells].tolist()
 
@@ -159,17 +181,16 @@ class World:
 
         # cell is picking up half the molecules of the pxl it is born on
         pickup = self.map.molecules[:, xs, ys] * 0.5
-        self.cells.x_i[new_idxs, :] += pickup.T
-        self.map.molecules[:, xs, ys] -= pickup
+        self.cells.molecules[new_idxs, :] = pickup.T
+        self.map.molecules[:, xs, ys] = pickup
 
-        # set initial values
-        self.cells.genomes[new_idxs] = genomes
+        # update parameters from genomes
+        self.cells.update_genomes(genomes=genomes, idxs=new_idxs)
+
+        # update other values
+        self.cells.alive[new_idxs] = True
         self.cells.labels[new_idxs] = [randstr(n=12) for _ in range(n_new_cells)]
-        self.cells.ages[new_idxs] = 0.0
-        self.cells.generations[new_idxs] = 0
 
-        # others are generated from genome
-        self._update_cell_params(genomes=genomes, idxs=new_idxs)
         return new_idxs
 
     def add_cells(self, cells: list["Cell"]) -> list[int]:
@@ -180,16 +201,19 @@ class World:
         free_pos = self.map.find_free_random_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
+            _log.warning("No free positions to add %d cells", n_new_cells)
             return []
 
         if n_avail_pos < n_new_cells:
+            _log.warning(
+                "Only %d free positions to add %d cells", n_avail_pos, n_new_cells
+            )
             n_new_cells = n_avail_pos
             random.shuffle(cells)
-            # TODO: log warning or info
             cells = cells[:n_new_cells]
 
         n_cells = self.cells.get_alive_cells()
-        self.cells.set_c(n_cells + n_new_cells)
+        self.cells.update_c(c_req=n_cells + n_new_cells)
         free_idxs = self.cells.get_available_idxs()
         new_idxs = free_idxs[:n_new_cells].tolist()
 
@@ -200,21 +224,17 @@ class World:
         self.map.cells[xs, ys] = True
         self.cells.positions[new_idxs] = new_pos
 
-        # available values are transferred
+        # update parameters from genomes
+        self.cells.update_genomes(genomes=[d.genome for d in cells], idxs=new_idxs)
+
+        # update other parameters
         int_mols = [d.int_molecules for d in cells]
-        ages = [d.age for d in cells]
-        generations = [d.generation for d in cells]
-        genomes = [d.genome for d in cells]
-        labels = [d.label for d in cells]
+        self.cells.alive[new_idxs] = True
+        self.cells.labels[new_idxs] = [d.label for d in cells]
+        self.cells.molecules[new_idxs, :] = self.ftensor(torch.stack(int_mols))
+        self.cells.ages[new_idxs] = self.ftensor([d.age for d in cells])
+        self.cells.generations[new_idxs] = self.itensor([d.generation for d in cells])
 
-        self.cells.genomes[new_idxs] = genomes
-        self.cells.labels[new_idxs] = labels
-        self.cells.x_i[new_idxs, :] = self._f32_tensor(torch.stack(int_mols))
-        self.cells.ages[new_idxs] = self._i32_tensor(ages)
-        self.cells.generations[new_idxs] = self._i32_tensor(generations)
-
-        # others are generated from genome
-        self._update_cell_params(genomes=genomes, idxs=new_idxs)
         return new_idxs
 
     def divide_cells(self, cell_idxs: list[int]) -> list[tuple[int, int]]:
@@ -229,41 +249,39 @@ class World:
         xs = self.cells.positions[:, 0].tolist()
         ys = self.cells.positions[:, 1].tolist()
         occupied_positions = [(x, y) for x, y in zip(xs, ys)]
-        (parent_idxs, child_idxs, child_pos) = _lib.divide_cells_if_possible(
-            cell_idxs, occupied_positions, n_cells, self.map.size
+        parent_idxs, child_idxs, child_pos_ = rs.divide_cells_if_possible(
+            cell_idxs=cell_idxs,
+            positions=occupied_positions,
+            n_cells=n_cells,
+            map_size=self.map.size,
         )
 
         n_new_cells = len(child_idxs)
         if n_new_cells == 0:
             return []
 
-        self.cells.set_c(n_cells + n_new_cells)
+        self.cells.update_c(c_req=n_cells + n_new_cells)
 
-        # transfer genomes, labels
-        self.cells.genomes[child_idxs] = self.cells.genomes[parent_idxs]
+        # update child parameters from genomes
+        genomes = self.cells.genomes[parent_idxs]
+        self.cells.update_genomes(genomes=genomes, idxs=child_idxs)
+
+        # update other child parameters
+        self.cells.alive[child_idxs] = True
         self.cells.labels[child_idxs] = self.cells.labels[parent_idxs]
-        self.cells.k_e[child_idxs] = self.cells.k_e[parent_idxs]
-        self.cells.k_f[child_idxs] = self.cells.k_f[parent_idxs]
-        self.cells.k_b[child_idxs] = self.cells.k_b[parent_idxs]
-        self.cells.K_r[child_idxs] = self.cells.K_r[parent_idxs]
-        self.cells.v_max[child_idxs] = self.cells.v_max[parent_idxs]
-        self.cells.N[child_idxs] = self.cells.N[parent_idxs]
-        self.cells.N_f[child_idxs] = self.cells.N_f[parent_idxs]
-        self.cells.N_b[child_idxs] = self.cells.N_b[parent_idxs]
-        self.cells.N_h[child_idxs] = self.cells.N_h[parent_idxs]
 
         # position new cells
-        child_pos = self._idxtensor(child_pos)
+        child_pos = self.idxtensor(child_pos_)
         self.map.cells[child_pos[:, 0], child_pos[:, 1]] = True
         self.cells.positions[child_idxs] = child_pos
 
         # cells share molecules, increment generations, reset lifetimes
         descendant_idxs = parent_idxs + child_idxs
-        self.cells.x_i[child_idxs] = self.cells.x_i[parent_idxs]
-        self.cells.x_i[descendant_idxs] *= 0.5
+        self.cells.molecules[child_idxs] = self.cells.molecules[parent_idxs]
+        self.cells.molecules[descendant_idxs] *= 0.5
         self.cells.generations[child_idxs] = self.cells.generations[parent_idxs]
         self.cells.generations[descendant_idxs] += 1
-        self.cells.ages[descendant_idxs] = 0
+        self.cells.ages[descendant_idxs] = 0.0
 
         return list(zip(parent_idxs, child_idxs))
 
@@ -272,8 +290,7 @@ class World:
             return
 
         genomes, idxs = list(map(list, zip(*genome_idx_pairs)))
-        self.cells.genomes[idxs] = genomes
-        self._update_cell_params(genomes=genomes, idxs=idxs)  # type: ignore
+        self.cells.update_genomes(genomes=genomes, idxs=idxs)
 
     def kill_cells(self, cell_idxs: list[int] | None = None) -> None:
         if cell_idxs is None:
@@ -291,24 +308,25 @@ class World:
         self.map.cells[xs, ys] = False
 
         # spill out molecules
-        spillout = self.cells.x_i[cell_idxs, :]
+        spillout = self.cells.molecules[cell_idxs, :]
         self.map.molecules[:, xs, ys] += spillout.T
 
+        # unset parameters
         self.cells.genomes[cell_idxs] = [""] * len(cell_idxs)
         self.cells.labels[cell_idxs] = [""] * len(cell_idxs)
         self.cells.ages[cell_idxs] = 0.0
-        self.cells.positions[cell_idxs] = 0
+        self.cells.positions[cell_idxs] = -1
         self.cells.generations[cell_idxs] = 0
-        self.cells.x_i[cell_idxs] = 0.0
-        self.cells.N[cell_idxs] = 0
-        self.cells.N_f[cell_idxs] = 0
-        self.cells.N_b[cell_idxs] = 0
-        self.cells.N_h[cell_idxs] = 0
-        self.cells.k_e[cell_idxs] = 0.0
+        self.cells.molecules[cell_idxs] = 0.0
+
+        self.cells.v_max[cell_idxs] = 0.0
         self.cells.k_f[cell_idxs] = 0.0
         self.cells.k_b[cell_idxs] = 0.0
         self.cells.K_r[cell_idxs] = 0.0
-        self.cells.v_max[cell_idxs] = 0.0
+        self.cells.N_f[cell_idxs] = 0
+        self.cells.N_b[cell_idxs] = 0
+        self.cells.N_h[cell_idxs] = 0
+        self.cells.N[cell_idxs] = 0
 
     def migrate_cells(self, cell_idxs: list[int] | None = None):
         if cell_idxs is None:
@@ -323,12 +341,14 @@ class World:
         xs = self.cells.positions[:, 0].tolist()
         ys = self.cells.positions[:, 1].tolist()
         positions = [(x, y) for x, y in zip(xs, ys)]
-        new_pos, moved_idxs = _lib.move_cells(cell_idxs, positions, self.map.size)
+        new_pos_, moved_idxs = rs.move_cells(
+            cell_idxs=cell_idxs, positions=positions, map_size=self.map.size
+        )
 
         # reposition cells
         old_pos = self.cells.positions[moved_idxs]
         self.map.cells[old_pos[:, 0], old_pos[:, 1]] = False
-        new_pos = self._idxtensor(new_pos)
+        new_pos = self.idxtensor(new_pos_)
         self.map.cells[new_pos[:, 0], new_pos[:, 1]] = True
         self.cells.positions[moved_idxs] = new_pos
 
@@ -362,9 +382,14 @@ class World:
         alive = self.cells.alive
         xs = self.cells.positions[alive, 0]
         ys = self.cells.positions[alive, 1]
+
+        # collect internal and external molecules for x0
         x0 = torch.cat(
-            [self.cells.x_i[alive], self.map.molecules[alive, xs, ys].T], dim=1
+            [self.cells.molecules[alive], self.map.molecules[alive, xs, ys].T],
+            dim=1,
         )
+
+        # integrate
         x1 = self.kinetics.step_protein_activity(
             h=self.time_step,
             x0=x0,
@@ -378,10 +403,11 @@ class World:
             v_max=self.cells.v_max[alive],
         )
 
+        # distribute x1 to internal and external molecules
         self.map.molecules[alive, xs, ys] = x1[:, self._ext_mol_idxs].T
-        self.cells.x_i[alive] = x1[:, self._int_mol_idxs]
+        self.cells.molecules[alive] = x1[:, self._int_mol_idxs]
 
-    def age_cells(self):
+        # age cells
         self.cells.ages += self.time_step
 
     def mutate_cells(
@@ -391,18 +417,14 @@ class World:
         p_indel: float = 0.4,
         p_del: float = 0.66,
     ):
-        idxs = (
-            self.cells.get_available_idxs().tolist() if cell_idxs is None else cell_idxs
-        )
+        idxs = cell_idxs or (self.cells.get_available_idxs().tolist())
         seqs = self.cells.genomes[idxs]
         mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
         pairs = [(d, idxs[i]) for d, i in mutated]
         self.update_cells(genome_idx_pairs=pairs)
 
     def recombinate_cells(self, cell_idxs: list[int] | None = None, p: float = 1e-7):
-        idxs = (
-            self.cells.get_available_idxs().tolist() if cell_idxs is None else cell_idxs
-        )
+        idxs = cell_idxs or (self.cells.get_available_idxs().tolist())
         nghbrs = self.get_neighbors(cell_idxs=idxs)
         genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
         genomes1 = self.cells.genomes[[d[1] for d in nghbrs]]
@@ -414,6 +436,7 @@ class World:
             c0_i, c1_i = nghbrs[idx]
             genome_idx_pairs.append((c0, c0_i))
             genome_idx_pairs.append((c1, c1_i))
+
         self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
     def save(self, rundir: Path, name: str = "world.pkl"):
@@ -446,87 +469,6 @@ class World:
     def load_state(self, statedir: Path):
         self.map.load_state(statedir=statedir)
         self.cells.load_state(statedir=statedir)
-
-    def _update_cell_params(self, genomes: list[str], idxs: list[int]) -> None:
-        proteomes = self.genomics.translate_genomes(genomes=genomes)
-
-        max_prots: int = 0
-        set_idxs: list[int] = []
-        unset_idxs: list[int] = []
-        set_proteomes: list[list[ProteinSpecType]] = []
-        for idx, proteome in zip(idxs, proteomes):
-            n_prots = len(proteome)
-            if n_prots > 0:
-                set_idxs.append(idx)
-                set_proteomes.append(proteome)
-                max_prots = max(max_prots, n_prots)
-            else:
-                unset_idxs.append(idx)
-
-        self.cells.N[unset_idxs] = 0
-        self.cells.N_f[unset_idxs] = 0
-        self.cells.N_b[unset_idxs] = 0
-        self.cells.N_h[unset_idxs] = 0
-        self.cells.k_e[unset_idxs] = 0.0
-        self.cells.k_f[unset_idxs] = 0.0
-        self.cells.k_b[unset_idxs] = 0.0
-        self.cells.K_r[unset_idxs] = 0.0
-        self.cells.v_max[unset_idxs] = 0.0
-
-        if max_prots == 0:
-            return
-
-        self.cells.set_p(max(max_prots - self.cells.p, 0))
-
-        params = self.proteomics.get_cell_params(
-            proteomes=set_proteomes, p=self.cells.p
-        )
-        self.cells.N[set_idxs] = params["N"]
-        self.cells.N_f[set_idxs] = params["N_f"]
-        self.cells.N_b[set_idxs] = params["N_b"]
-        self.cells.N_h[set_idxs] = params["N_h"]
-        self.cells.k_e[set_idxs] = params["k_e"]
-        self.cells.k_f[set_idxs] = params["k_f"]
-        self.cells.k_b[set_idxs] = params["k_b"]
-        self.cells.K_r[set_idxs] = params["K_r"]
-        self.cells.v_max[set_idxs] = params["v_max"]
-
-    def _get_permeate(self, mol_perm_rate: float) -> float:
-        if mol_perm_rate < 0.0:
-            mol_perm_rate = -mol_perm_rate
-
-        mol_perm_rate = min(mol_perm_rate, 1.0)
-
-        if mol_perm_rate == 0.0:
-            return 0.0
-
-        d = 1 / mol_perm_rate
-        return 1 / (d + 1)
-
-    def _i32_tensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=torch.int32)
-
-    def _f32_tensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=torch.float32)
-
-    def _expand_c(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
-        size = t.size()
-        zeros = torch.zeros(by_n, *size[1:], device=self.device, dtype=t.dtype)
-        return torch.cat([t, zeros], dim=0)
-
-    def _expand_p(self, t: torch.Tensor, by_n: int) -> torch.Tensor:
-        size = t.size()
-        zeros = torch.zeros(size[0], by_n, *size[2:], device=self.device, dtype=t.dtype)
-        return torch.cat([t, zeros], dim=1)
-
-    def _izeros(self, *args) -> torch.Tensor:
-        return torch.zeros(*args, device=self.device, dtype=self.itype)
-
-    def _fzeros(self, *args) -> torch.Tensor:
-        return torch.zeros(*args, device=self.device, dtype=self.ftype)
-
-    def _idxtensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=torch.float32)
 
     def __repr__(self) -> str:
         kwargs = {
