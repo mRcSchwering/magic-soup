@@ -1,4 +1,5 @@
 import random
+from pathlib import Path
 
 import pytest
 import torch
@@ -16,7 +17,7 @@ def cells() -> Cells:
     return Cells(chemistry=CHEMISTRY, genomics=genomics, proteomics=proteomics)
 
 
-def assert_empty_values(cells: Cells) -> None:
+def _assert_empty_values(cells: Cells) -> None:
     # test empty values of cell parameters
     assert all(d == "" for d in cells.genomes.items)
     assert all(d == "" for d in cells.labels.items)
@@ -80,7 +81,29 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
     assert cells.N_h.shape == (cells.c, cells.p, cells.m)
     assert cells.N.shape == (cells.c, cells.p, cells.m)
 
-    assert_empty_values(cells=cells)
+    _assert_empty_values(cells=cells)
+
+
+def test_update_c_keeps_living_cells(cells: Cells) -> None:
+    cells.dim_scaling = 0.2
+    cells.c_max = 1000
+    cells.update_c(c_req=83)  # leaves exactly c=100
+
+    # simulate 50 interspersed living cells
+    idxs = list(range(0, 100, 2))
+    cells.alive[idxs] = True
+    assert cells.alive.sum() == 50
+
+    # reduce to 60 (50 + 20%) cells
+    cells.update_c(c_req=50)
+    assert cells.c == 60
+
+    # living cells should be preserved
+    assert cells.alive.sum() == 50
+
+    # reducing below 50 doesn't work with 50 living cells
+    with pytest.raises(ValueError):
+        cells.update_c(c_req=40)
 
 
 @pytest.mark.parametrize(
@@ -126,7 +149,7 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
     assert cells.N_h.shape == (cells.c, cells.p, cells.m)
     assert cells.N.shape == (cells.c, cells.p, cells.m)
 
-    assert_empty_values(cells=cells)
+    _assert_empty_values(cells=cells)
 
 
 @pytest.mark.slow
@@ -161,3 +184,63 @@ def test_update_genomes_randomly(cells: Cells) -> None:
         assert cells.N.dtype == torch.int8
 
     assert cells.p > p_init
+
+
+def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
+    statedir = tmp_path / "cells_state"
+
+    # create interspersed cells
+    c = 60
+    cells.update_c(c_req=c)
+    idxs = list(range(0, c, 2))
+    genomes_ = [random_genome() for _ in range(len(idxs))]
+    cells.update_genomes(genomes=genomes_, idxs=idxs)
+    cells.alive[idxs] = True
+
+    # keep original state for comparison
+    genomes = [d for d in cells.genomes.items]
+    labels = [d for d in cells.labels.items]
+    alive = cells.alive.clone()
+    ages = cells.ages.clone()
+    positions = cells.positions.clone()
+    generations = cells.generations.clone()
+    molecules = cells.molecules.clone()
+
+    v_max = cells.v_max.clone()
+    k_f = cells.k_f.clone()
+    k_b = cells.k_b.clone()
+    K_r = cells.K_r.clone()
+    N_f = cells.N_f.clone()
+    N_b = cells.N_b.clone()
+    N_h = cells.N_h.clone()
+    N = cells.N.clone()
+
+    # save state
+    cells.save_state(statedir=statedir)
+
+    # clear cells
+    cells.alive[:] = False
+    cells.update_p(p_req=0)
+    cells.update_c(c_req=0)
+
+    # load state
+    cells.load_state(statedir=statedir)
+
+    # check that the loaded state matches the original state
+    assert cells.genomes.items == genomes
+    assert cells.labels.items == labels
+    assert (cells.alive == alive).all()
+    assert (cells.ages == ages).all()
+    assert (cells.positions == positions).all()
+    assert (cells.generations == generations).all()
+    assert (cells.molecules == molecules).all()
+
+    # check kinetics parameters
+    assert (cells.v_max == v_max).all()
+    assert (cells.k_f == k_f).all()
+    assert (cells.k_b == k_b).all()
+    assert (cells.K_r == K_r).all()
+    assert (cells.N_f == N_f).all()
+    assert (cells.N_b == N_b).all()
+    assert (cells.N_h == N_h).all()
+    assert (cells.N == N).all()

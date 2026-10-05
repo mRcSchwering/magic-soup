@@ -19,12 +19,6 @@ def divide_cells_if_possible(
     return _lib.divide_cells_if_possible(cell_idxs, positions, n_cells, map_size)
 
 
-def move_cells(
-    cell_idxs: list[int], positions: list[tuple[int, int]], map_size: int
-) -> tuple[list[tuple[int, int]], list[int]]:
-    return _lib.move_cells(cell_idxs, positions, map_size)
-
-
 class Genomics:
 
     def __init__(
@@ -49,6 +43,21 @@ class Genomics:
 
     def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
         return self._cls.translate_genomes(genomes)
+
+    def get_coding_regions(
+        self,
+        seq: str,
+        min_cds_size: int,
+        is_fwd: bool,
+    ) -> list[tuple[int, int, bool]]:
+        return self._cls.get_coding_regions(seq, min_cds_size, is_fwd)
+
+    def extract_domains(
+        self,
+        genome: str,
+        cdss: list[tuple[int, int, bool]],
+    ) -> list[ProteinSpecType]:
+        return self._cls.extract_domains(genome, cdss)
 
 
 class Proteomics:
@@ -105,3 +114,14 @@ class Cells:
         list[list[list[int]]],
     ]:
         return self._cls.translate_genomes(genomes)
+
+
+class Culture:
+
+    def __init__(self, size: int) -> None:
+        self._cls = _lib.Culture(size)
+
+    def move_cells(
+        self, cell_idxs: list[int], positions: list[tuple[int, int]]
+    ) -> tuple[list[tuple[int, int]], list[int]]:
+        return self._cls.move_cells(cell_idxs, positions)

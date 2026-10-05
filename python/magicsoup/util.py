@@ -159,6 +159,15 @@ class TensorClass:
     def fzeros(self, *args) -> torch.Tensor:
         return torch.zeros(*args, device=self.device, dtype=self.ftype)
 
+    def __repr__(self) -> str:
+        kwargs = {
+            "device": self.device,
+            "itype": self.itype,
+            "ftype": self.ftype,
+        }
+        args = [f"{k}:{d!r}" for k, d in kwargs.items()]
+        return f"{type(self).__name__}({','.join(args)})"
+
 
 IndexLike = slice | list[int] | tuple[int] | torch.Tensor
 

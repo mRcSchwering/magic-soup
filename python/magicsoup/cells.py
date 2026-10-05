@@ -1,6 +1,8 @@
+import json
 import logging
 import math
 from pathlib import Path
+from typing import TypedDict
 
 import torch
 
@@ -11,6 +13,11 @@ from magicsoup.proteomics import Proteomics
 from magicsoup.util import Array, TensorClass
 
 _log = logging.getLogger(__name__)
+
+
+class CellsKwargs(TypedDict, total=False):
+    dim_scaling: float
+    p_max: int
 
 
 class Cells(TensorClass):
@@ -74,10 +81,16 @@ class Cells(TensorClass):
     def get_alive_cells(self) -> int:
         return int(self.alive.sum().item())
 
+    def get_cell_idxs(self) -> torch.Tensor:
+        return self.alive.nonzero(as_tuple=True)[0]
+
     def get_available_idxs(self) -> torch.Tensor:
         return (~self.alive).nonzero(as_tuple=True)[0]
 
     def update_genomes(self, genomes: list[str], idxs: list[int]) -> None:
+        if len(genomes) == 0:
+            return
+
         v_max_, k_m_, K_r_, N_f_, N_b_, N_h_ = self.rs.translate_genomes(
             genomes=genomes
         )
@@ -146,50 +159,43 @@ class Cells(TensorClass):
             self._increase_p(by_n=to_p - self.p)
 
     def save_state(self, statedir: Path) -> None:
-        name = type(self).__name__
-        torch.save(self.alive, statedir / f"{name}.alive.pt")
-        torch.save(self.ages, statedir / f"{name}.ages.pt")
-        torch.save(self.positions, statedir / f"{name}.positions.pt")
-        torch.save(self.generations, statedir / f"{name}.generations.pt")
-        torch.save(self.molecules, statedir / f"{name}.molecules.pt")
+        statedir = statedir / type(self).__name__
+        statedir.mkdir(parents=True, exist_ok=True)
+
+        shape = {"c": self.c, "p": self.p, "m": self.m}
+        (statedir / "shape.json").write_text(json.dumps(shape), encoding="utf-8")
+
+        torch.save(self.alive, statedir / "alive.pt")
+        torch.save(self.ages, statedir / "ages.pt")
+        torch.save(self.positions, statedir / "positions.pt")
+        torch.save(self.generations, statedir / "generations.pt")
+        torch.save(self.molecules, statedir / "molecules.pt")
 
         lines: list[str] = [
             f">{i} {l}\n{g}"
             for i, (g, l) in enumerate(zip(self.genomes.items, self.labels.items))
         ]
 
-        with open(statedir / f"{name}.genomes.fasta", "w", encoding="utf-8") as fh:
+        with open(statedir / "genomes.fasta", "w", encoding="utf-8") as fh:
             fh.write("\n".join(lines))
 
     def load_state(self, statedir: Path) -> None:
-        name = type(self).__name__
-        self.alive = torch.load(
-            statedir / f"{name}.alive.pt",
-            map_location=self.device,
-            dtype=torch.bool,
-        )
-        self.ages = torch.load(
-            statedir / f"{name}.ages.pt",
-            map_location=self.device,
-            dtype=torch.int32,
-        )
-        self.positions = torch.load(
-            statedir / f"{name}.positions.pt",
-            map_location=self.device,
-            dtype=torch.int32,
-        )
-        self.generations = torch.load(
-            statedir / f"{name}generations.pt",
-            map_location=self.device,
-            dtype=torch.int32,
-        )
-        self.molecules = torch.load(
-            statedir / f"{name}.molecules.pt",
-            map_location=self.device,
-            dtype=self.ftype,
-        )
+        statedir = statedir / type(self).__name__
 
-        with open(statedir / f"{name}.genomes.fasta", encoding="utf-8") as fh:
+        shape = json.loads((statedir / "shape.json").read_text(encoding="utf-8"))
+        self.c = shape["c"]
+        self.p = shape["p"]
+        self.m = shape["m"]
+
+        self.alive = torch.load(statedir / "alive.pt", map_location=self.device)
+        self.ages = torch.load(statedir / "ages.pt", map_location=self.device)
+        self.positions = torch.load(statedir / "positions.pt", map_location=self.device)
+        self.generations = torch.load(
+            statedir / "generations.pt", map_location=self.device
+        )
+        self.molecules = torch.load(statedir / "molecules.pt", map_location=self.device)
+
+        with open(statedir / "genomes.fasta", encoding="utf-8") as fh:
             text: str = fh.read()
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
@@ -204,7 +210,19 @@ class Cells(TensorClass):
             self.genomes.items.append(seq)
             self.labels.items.append(label)
 
-        # TODO: load kinetics parameters from genomes
+        # setup kinetics parameters again
+        self.v_max = self.fzeros(self.c, self.p)
+        self.k_f = self.fzeros(self.c, self.p)
+        self.k_b = self.fzeros(self.c, self.p)
+        self.K_r = self.fzeros(self.c, self.p, self.m)
+        self.N_f = self.izeros(self.c, self.p, self.m)
+        self.N_b = self.izeros(self.c, self.p, self.m)
+        self.N_h = self.izeros(self.c, self.p, self.m)
+        self.N = self.izeros(self.c, self.p, self.m)
+
+        # derive kinetics parameters from genomes
+        idxs = list(range(len(self.genomes)))
+        self.update_genomes(genomes=self.genomes[idxs], idxs=idxs)
 
     def _setup_rs(self) -> None:
         self.rs = rs.Cells(genomics=self.genomics.rs, proteomics=self.proteomics.rs)

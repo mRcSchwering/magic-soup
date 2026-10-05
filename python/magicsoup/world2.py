@@ -7,14 +7,14 @@ from pathlib import Path
 import torch
 
 from magicsoup import rs
-from magicsoup.cells import Cells
-from magicsoup.cellular import Cell
+from magicsoup.biology import Cell
+from magicsoup.cells import Cells, CellsKwargs
 from magicsoup.chemistry import Chemistry
-from magicsoup.genomics import Genomics
-from magicsoup.kinetics2 import Kinetics
-from magicsoup.map import Map
+from magicsoup.culture import Culture, CultureKwargs
+from magicsoup.genomics import Genomics, GenomicsKwargs
+from magicsoup.kinetics2 import Kinetics, KineticsKwargs
 from magicsoup.mutations import point_mutations, recombinations
-from magicsoup.proteomics import Proteomics
+from magicsoup.proteomics import Proteomics, ProteomicsKwargs
 from magicsoup.util import TensorClass, randstr
 
 _log = logging.getLogger(__name__)
@@ -45,12 +45,14 @@ class World(TensorClass):
         self,
         chemistry: Chemistry,
         kinetics: Kinetics | None = None,
-        map: Map | None = None,
+        culture: Culture | None = None,
         cells: Cells | None = None,
-        map_size: int = 128,
-        abs_temp: float = 310.0,
-        mol_map_init: str = "zeros",
         time_step: float = 1.0,
+        kinetics_kwargs: KineticsKwargs | None = None,
+        culture_kwargs: CultureKwargs | None = None,
+        cells_kwargs: CellsKwargs | None = None,
+        genomics_kwargs: GenomicsKwargs | None = None,
+        proteomics_kwargs: ProteomicsKwargs | None = None,
         device: str = "cpu",
         ftype: torch.dtype = torch.float32,
         itype: torch.dtype = torch.int8,
@@ -58,29 +60,37 @@ class World(TensorClass):
         super().__init__(device=device, itype=itype, ftype=ftype)
 
         self.time_step = time_step
-        self.abs_temp = abs_temp
         self.chemistry = chemistry
-        self.kinetics = kinetics or Kinetics(device=device)
-        self.map = map or (
-            Map(
-                mol_init=mol_map_init,
-                size=map_size,
+        self.kinetics = kinetics or Kinetics(
+            **(kinetics_kwargs or {}),
+            device=device,
+            itype=itype,
+            ftype=ftype,
+        )
+        self.culture = culture or (
+            Culture(
+                **(culture_kwargs or {}),
                 chemistry=chemistry,
                 device=device,
+                itype=itype,
                 ftype=ftype,
             )
         )
 
         if not cells:
-            genomics = Genomics()
+            genomics = Genomics(**(genomics_kwargs or {}))
             proteomics = Proteomics(
+                **(proteomics_kwargs or {}),
                 chemistry=chemistry,
-                device=device,
                 scalar_enc_size=max(genomics.one_codon_map.values()),
                 vector_enc_size=max(genomics.two_codon_map.values()),
+                device=device,
+                itype=itype,
+                ftype=ftype,
             )
             self.cells = Cells(
-                c_max=self.map.size**2,
+                **(cells_kwargs or {}),
+                c_max=self.culture.pixels,
                 chemistry=chemistry,
                 genomics=genomics,
                 proteomics=proteomics,
@@ -94,7 +104,6 @@ class World(TensorClass):
         n_molecules = len(chemistry.molecules)
         self._int_mol_idxs = list(range(n_molecules))
         self._ext_mol_idxs = list(range(n_molecules, n_molecules * 2))
-        self.n_cells = 0
 
     def get_cell(
         self,
@@ -144,7 +153,7 @@ class World(TensorClass):
             from_idxs=from_idxs,
             to_idxs=to_idxs,
             positions=positions,
-            map_size=self.map.size,
+            map_size=self.culture.size,
         )
         return nghbrs
 
@@ -153,7 +162,7 @@ class World(TensorClass):
         if n_new_cells == 0:
             return []
 
-        free_pos = self.map.find_free_random_positions(n=n_new_cells)
+        free_pos = self.culture.find_free_random_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             _log.warning("No free positions to spawn %d cells", n_new_cells)
@@ -176,13 +185,13 @@ class World(TensorClass):
         new_pos = free_pos[:n_new_cells]
         xs = new_pos[:, 0]
         ys = new_pos[:, 1]
-        self.map.cells[xs, ys] = True
+        self.culture.cells[xs, ys] = True
         self.cells.positions[new_idxs] = new_pos
 
         # cell is picking up half the molecules of the pxl it is born on
-        pickup = self.map.molecules[:, xs, ys] * 0.5
+        pickup = self.culture.molecules[:, xs, ys] * 0.5
         self.cells.molecules[new_idxs, :] = pickup.T
-        self.map.molecules[:, xs, ys] = pickup
+        self.culture.molecules[:, xs, ys] = pickup
 
         # update parameters from genomes
         self.cells.update_genomes(genomes=genomes, idxs=new_idxs)
@@ -198,7 +207,7 @@ class World(TensorClass):
         if n_new_cells == 0:
             return []
 
-        free_pos = self.map.find_free_random_positions(n=n_new_cells)
+        free_pos = self.culture.find_free_random_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             _log.warning("No free positions to add %d cells", n_new_cells)
@@ -221,7 +230,7 @@ class World(TensorClass):
         new_pos = free_pos[:n_new_cells]
         xs = new_pos[:, 0]
         ys = new_pos[:, 1]
-        self.map.cells[xs, ys] = True
+        self.culture.cells[xs, ys] = True
         self.cells.positions[new_idxs] = new_pos
 
         # update parameters from genomes
@@ -253,7 +262,7 @@ class World(TensorClass):
             cell_idxs=cell_idxs,
             positions=occupied_positions,
             n_cells=n_cells,
-            map_size=self.map.size,
+            map_size=self.culture.size,
         )
 
         n_new_cells = len(child_idxs)
@@ -272,7 +281,7 @@ class World(TensorClass):
 
         # position new cells
         child_pos = self.idxtensor(child_pos_)
-        self.map.cells[child_pos[:, 0], child_pos[:, 1]] = True
+        self.culture.cells[child_pos[:, 0], child_pos[:, 1]] = True
         self.cells.positions[child_idxs] = child_pos
 
         # cells share molecules, increment generations, reset lifetimes
@@ -294,7 +303,7 @@ class World(TensorClass):
 
     def kill_cells(self, cell_idxs: list[int] | None = None) -> None:
         if cell_idxs is None:
-            cell_idxs = list(range(self.n_cells))
+            cell_idxs = self.cells.get_cell_idxs().tolist()
 
         if len(cell_idxs) == 0:
             return
@@ -305,11 +314,11 @@ class World(TensorClass):
         # free up map
         xs = self.cells.positions[cell_idxs, 0]
         ys = self.cells.positions[cell_idxs, 1]
-        self.map.cells[xs, ys] = False
+        self.culture.cells[xs, ys] = False
 
         # spill out molecules
         spillout = self.cells.molecules[cell_idxs, :]
-        self.map.molecules[:, xs, ys] += spillout.T
+        self.culture.molecules[:, xs, ys] += spillout.T
 
         # unset parameters
         self.cells.genomes[cell_idxs] = [""] * len(cell_idxs)
@@ -328,9 +337,9 @@ class World(TensorClass):
         self.cells.N_h[cell_idxs] = 0
         self.cells.N[cell_idxs] = 0
 
-    def migrate_cells(self, cell_idxs: list[int] | None = None):
+    def migrate_cells(self, cell_idxs: list[int] | None = None) -> None:
         if cell_idxs is None:
-            cell_idxs = list(range(self.n_cells))
+            cell_idxs = self.cells.get_cell_idxs().tolist()
 
         if len(cell_idxs) == 0:
             return
@@ -341,51 +350,42 @@ class World(TensorClass):
         xs = self.cells.positions[:, 0].tolist()
         ys = self.cells.positions[:, 1].tolist()
         positions = [(x, y) for x, y in zip(xs, ys)]
-        new_pos_, moved_idxs = rs.move_cells(
-            cell_idxs=cell_idxs, positions=positions, map_size=self.map.size
+
+        new_pos_, moved_idxs = self.culture.move_cells(
+            cell_idxs=cell_idxs, positions=positions
         )
 
         # reposition cells
         old_pos = self.cells.positions[moved_idxs]
-        self.map.cells[old_pos[:, 0], old_pos[:, 1]] = False
+        self.culture.cells[old_pos[:, 0], old_pos[:, 1]] = False
         new_pos = self.idxtensor(new_pos_)
-        self.map.cells[new_pos[:, 0], new_pos[:, 1]] = True
+        self.culture.cells[new_pos[:, 0], new_pos[:, 1]] = True
         self.cells.positions[moved_idxs] = new_pos
 
-    def resuspend_cells(self, cell_idxs: list[int] | None = None):
-        if cell_idxs is None:
-            cell_idxs = list(range(self.n_cells))
-
-        if len(cell_idxs) == 0:
-            return
-
-        # duplicates could lead to unexpected results
-        cell_idxs = list(set(cell_idxs))
+    def resuspend_cells(self, cell_idxs: list[int] | None = None) -> None:
+        n_cells = self.cells.get_alive_cells()
 
         # unoccupy current positions
-        old_xs = self.cells.positions[cell_idxs, 0]
-        old_ys = self.cells.positions[cell_idxs, 1]
-        self.map.cells[old_xs, old_ys] = False
+        old_xs = self.cells.positions[:, 0]
+        old_ys = self.cells.positions[:, 1]
+        self.culture.cells[old_xs, old_ys] = False
 
         # find new unoccupied positions
-        new_pos = self.map.find_free_random_positions(n=len(cell_idxs))
+        new_pos = self.culture.find_free_random_positions(n=n_cells)
         new_xs = new_pos[:, 0]
         new_ys = new_pos[:, 1]
 
-        self.map.cells[new_xs, new_ys] = True
+        self.culture.cells[new_xs, new_ys] = True
         self.cells.positions[cell_idxs] = new_pos
 
-    def enzymatic_activity(self):
-        if self.n_cells == 0:
-            return
-
+    def enzymatic_activity(self) -> None:
         alive = self.cells.alive
         xs = self.cells.positions[alive, 0]
         ys = self.cells.positions[alive, 1]
 
         # collect internal and external molecules for x0
         x0 = torch.cat(
-            [self.cells.molecules[alive], self.map.molecules[alive, xs, ys].T],
+            [self.cells.molecules[alive], self.culture.molecules[:, xs, ys].T],
             dim=1,
         )
 
@@ -404,11 +404,14 @@ class World(TensorClass):
         )
 
         # distribute x1 to internal and external molecules
-        self.map.molecules[alive, xs, ys] = x1[:, self._ext_mol_idxs].T
+        self.culture.molecules[:, xs, ys] = x1[:, self._ext_mol_idxs].T
         self.cells.molecules[alive] = x1[:, self._int_mol_idxs]
 
         # age cells
         self.cells.ages += self.time_step
+
+    def diffuse_molecules(self) -> None:
+        self.culture.diffuse_molecules()
 
     def mutate_cells(
         self,
@@ -416,14 +419,16 @@ class World(TensorClass):
         p: float = 1e-6,
         p_indel: float = 0.4,
         p_del: float = 0.66,
-    ):
+    ) -> None:
         idxs = cell_idxs or (self.cells.get_available_idxs().tolist())
         seqs = self.cells.genomes[idxs]
         mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
         pairs = [(d, idxs[i]) for d, i in mutated]
         self.update_cells(genome_idx_pairs=pairs)
 
-    def recombinate_cells(self, cell_idxs: list[int] | None = None, p: float = 1e-7):
+    def recombinate_cells(
+        self, cell_idxs: list[int] | None = None, p: float = 1e-7
+    ) -> None:
         idxs = cell_idxs or (self.cells.get_available_idxs().tolist())
         nghbrs = self.get_neighbors(cell_idxs=idxs)
         genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
@@ -439,7 +444,7 @@ class World(TensorClass):
 
         self.update_cells(genome_idx_pairs=genome_idx_pairs)
 
-    def save(self, rundir: Path, name: str = "world.pkl"):
+    def save(self, rundir: Path, name: str = "world.pkl") -> None:
         rundir.mkdir(parents=True, exist_ok=True)
         with open(rundir / name, "wb") as fh:
             pickle.dump(self, fh)
@@ -463,18 +468,9 @@ class World(TensorClass):
 
     def save_state(self, statedir: Path):
         statedir.mkdir(parents=True, exist_ok=True)
-        self.map.save_state(statedir=statedir)
+        self.culture.save_state(statedir=statedir)
         self.cells.save_state(statedir=statedir)
 
     def load_state(self, statedir: Path):
-        self.map.load_state(statedir=statedir)
+        self.culture.load_state(statedir=statedir)
         self.cells.load_state(statedir=statedir)
-
-    def __repr__(self) -> str:
-        kwargs = {
-            "map_size": self.map.size,
-            "abs_temp": self.abs_temp,
-            "device": self.device,
-        }
-        args = [f"{k}:{d!r}" for k, d in kwargs.items()]
-        return f"{type(self).__name__}({','.join(args)})"

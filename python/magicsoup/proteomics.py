@@ -1,15 +1,15 @@
 import math
 import random
 from collections import defaultdict
+from typing import TypedDict
 
 import torch
 
 from magicsoup import rs
+from magicsoup.biology import Protein
+from magicsoup.chemistry import Chemistry, Molecule
+from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
 from magicsoup.util import TensorClass
-
-from .cellular import Protein
-from .chemistry import Chemistry, Molecule
-from .constants import GAS_CONSTANT, ProteinSpecType
 
 
 def _get_hill_map(max_token: int, none_value: int = 0) -> dict[int, int]:
@@ -165,6 +165,14 @@ def _get_inverse[T](m: dict[int, T]) -> dict[T, list[int]]:
     return inv
 
 
+class ProteomicsKwargs(TypedDict, total=False):
+    abs_temp: float
+    km_range: tuple[float, float]
+    vmax_range: tuple[float, float]
+    max_k: float
+    eps: float
+
+
 class Proteomics(TensorClass):
 
     def __init__(
@@ -299,6 +307,6 @@ class Proteomics(TensorClass):
         # k_e<1   => k_f=Km/k_e,      k_b=Km
         # this operation can create again Inf or 0.0, avoided with clamp, limits K_e
         is_fwd = k_e >= 1.0
-        k_f = torch.where(is_fwd, k_m, k_m / k_e).clamp(eps, max_k)
-        k_b = torch.where(is_fwd, k_m * k_e, k_m).clamp(eps, max_k)
+        k_f = torch.where(is_fwd, k_m, k_m / k_e).clamp(max=max_k)
+        k_b = torch.where(is_fwd, k_m * k_e, k_m).clamp(max=max_k)
         return k_f, k_b

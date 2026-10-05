@@ -3,7 +3,7 @@ import random
 
 import pytest
 import torch
-from magicsoup.cellular import CatalyticDomain, RegulatoryDomain, TransporterDomain
+from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.chemistry import Chemistry, Molecule
 from magicsoup.constants import GAS_CONSTANT, DomainSpecType, ProteinSpecType
 from magicsoup.proteomics import Proteomics

@@ -57,38 +57,6 @@ fn recombinations(
 // Genomics
 
 #[pyfunction]
-fn get_coding_regions(
-    seq: &str,
-    min_cds_size: u8,
-    start_codons: Vec<String>,
-    stop_codons: Vec<String>,
-    is_fwd: bool,
-) -> Vec<(usize, usize, bool)> {
-    genomics::get_coding_regions(seq, &min_cds_size, &start_codons, &stop_codons, is_fwd)
-}
-
-#[pyfunction]
-fn extract_domains(
-    genome: String,
-    cdss: Vec<(usize, usize, bool)>,
-    dom_size: u8,
-    dom_type_size: u8,
-    dom_type_map: HashMap<String, u8>,
-    one_codon_map: HashMap<String, u8>,
-    two_codon_map: HashMap<String, u16>,
-) -> Vec<genetics::ProteinSpecType> {
-    genomics::extract_domains(
-        &genome,
-        &cdss,
-        &dom_size,
-        &dom_type_size,
-        &dom_type_map,
-        &one_codon_map,
-        &two_codon_map,
-    )
-}
-
-#[pyfunction]
 fn reverse_complement(seq: String) -> String {
     genomics::reverse_complement(&seq)
 }
@@ -145,9 +113,64 @@ impl Genomics {
             )
         })
     }
+
+    fn get_coding_regions(
+        &self,
+        seq: &str,
+        min_cds_size: u8,
+        is_fwd: bool,
+    ) -> Vec<(usize, usize, bool)> {
+        genomics::get_coding_regions(
+            seq,
+            &min_cds_size,
+            &self.start_codons,
+            &self.stop_codons,
+            is_fwd,
+        )
+    }
+
+    fn extract_domains(
+        &self,
+        genome: String,
+        cdss: Vec<(usize, usize, bool)>,
+    ) -> Vec<genetics::ProteinSpecType> {
+        genomics::extract_domains(
+            &genome,
+            &cdss,
+            &self.dom_size,
+            &self.dom_type_size,
+            &self.domain_map,
+            &self.one_codon_map,
+            &self.two_codon_map,
+        )
+    }
 }
 
-// world
+// Culture
+
+#[pyclass]
+struct Culture {
+    size: u16,
+}
+
+#[pymethods]
+impl Culture {
+    #[new]
+    fn new(size: u16) -> Self {
+        Culture { size }
+    }
+
+    fn move_cells(
+        &self,
+        py: Python<'_>,
+        cell_idxs: Vec<usize>,
+        positions: Vec<(u16, u16)>,
+    ) -> (Vec<(u16, u16)>, Vec<usize>) {
+        py.allow_threads(move || world::move_cells_threaded(&cell_idxs, &positions, &self.size))
+    }
+}
+
+// World
 
 #[pyfunction]
 fn get_neighbors(
@@ -324,8 +347,6 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(recombinations, m)?)?;
 
     // Genomics
-    m.add_function(wrap_pyfunction!(get_coding_regions, m)?)?;
-    m.add_function(wrap_pyfunction!(extract_domains, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     m.add_class::<Genomics>()?;
 

@@ -1,5 +1,6 @@
 import random
 import warnings
+from typing import TypedDict
 
 from magicsoup import rs
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
@@ -14,6 +15,15 @@ def _get_n(p: float, s: int, name: str) -> int:
             f" Increase dom_type_size to accomodate low probabilities of having {name}."
         )
     return n
+
+
+class GenomicsKwargs(TypedDict, total=False):
+    start_codons: tuple[str, ...]
+    stop_codons: tuple[str, ...]
+    p_catal_dom: float
+    p_transp_dom: float
+    p_reg_dom: float
+    n_dom_type_codons: int
 
 
 class Genomics:
@@ -99,9 +109,26 @@ class Genomics:
         )
 
     def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
-        if len(genomes) < 1:
+        if len(genomes) == 0:
             return []
         return self.rs.translate_genomes(genomes=genomes)
+
+    def get_coding_regions(
+        self,
+        seq: str,
+        min_cds_size: int,
+        is_fwd: bool,
+    ) -> list[tuple[int, int, bool]]:
+        return self.rs.get_coding_regions(
+            seq=seq, min_cds_size=min_cds_size, is_fwd=is_fwd
+        )
+
+    def extract_domains(
+        self,
+        genome: str,
+        cdss: list[tuple[int, int, bool]],
+    ) -> list[ProteinSpecType]:
+        return self.rs.extract_domains(genome=genome, cdss=cdss)
 
     def _get_single_codons(self) -> list[str]:
         seqs = codons(n=1)
@@ -112,3 +139,6 @@ class Genomics:
         seqs = codons(n=2)
         seqs = [d for d in seqs if d[:CODON_SIZE] not in self.stop_codons]
         return seqs
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"

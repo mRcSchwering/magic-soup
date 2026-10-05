@@ -61,36 +61,6 @@ _DATA: list[tuple[str, list[tuple[int, int]]]] = [
 ]
 
 
-def _get_coding_regions_rs(
-    seq: str,
-    min_cds_size: int,
-    start_codons: list[str],
-    stop_codons: list[str],
-    is_fwd: bool,
-) -> list[tuple[int, int, bool]]:
-    return _lib.get_coding_regions(seq, min_cds_size, start_codons, stop_codons, is_fwd)
-
-
-def _extract_domains_rs(
-    genome: str,
-    cdss: list[tuple[int, int, bool]],
-    dom_size: int,
-    dom_type_size: int,
-    dom_type_map: dict[str, int],
-    one_codon_map: dict[str, int],
-    two_codon_map: dict[str, int],
-) -> list[ProteinSpecType]:
-    return _lib.extract_domains(
-        genome,
-        cdss,
-        dom_size,
-        dom_type_size,
-        dom_type_map,
-        one_codon_map,
-        two_codon_map,
-    )
-
-
 def _reverse_complement_rs(seq: str) -> str:
     return _lib.reverse_complement(seq)
 
@@ -107,15 +77,8 @@ def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]) -> None:
     with pytest.warns(UserWarning):
         genomics = Genomics(n_dom_type_codons=1)
 
-    kwargs = {
-        "start_codons": genomics.start_codons,
-        "stop_codons": genomics.stop_codons,
-        "min_cds_size": 18,
-        "is_fwd": False,
-    }
-
     seq = "".join(seq.replace("\n", "").split())
-    res = _get_coding_regions_rs(seq, **kwargs)  # type: ignore
+    res = genomics.get_coding_regions(seq=seq, min_cds_size=18, is_fwd=False)
     exp_starts, exp_stops = map(list, zip(*exp))
 
     assert len(res) == len(exp)
@@ -133,8 +96,14 @@ def test_extract_domains() -> None:
     dom_type_map = {"AAA": 1, "GGG": 2, "CCC": 3}
     two_codon_map = {"ACTGAT": 1, "CTGTAT": 2, "CCGCGA": 3, "GGAATC": 4, "TGTCGA": 5}
     one_codon_map = {"ACT": 1, "CTG": 2, "CCG": 3, "GGA": 4, "TGT": 5}
-    dom_type_size = len(next(iter(dom_type_map)))
-    dom_size = dom_type_size + 5 * CODON_SIZE
+
+    genomics = Genomics()
+    genomics.domain_map = dom_type_map
+    genomics.one_codon_map = one_codon_map
+    genomics.two_codon_map = two_codon_map
+    genomics.dom_type_size = len(next(iter(genomics.domain_map)))
+    genomics.dom_size = genomics.dom_type_size + 5 * CODON_SIZE
+    genomics._setup_rs()
 
     # fmt: off
     genome = (
@@ -158,15 +127,7 @@ def test_extract_domains() -> None:
     # - cds 4: defines exactly 2 domains, a 3rd type 2 start is in the middle   => 2 res[3]
     # fmt: on
 
-    res = _extract_domains_rs(
-        genome=genome,
-        cdss=cdss,
-        dom_type_size=dom_type_size,
-        dom_size=dom_size,
-        dom_type_map=dom_type_map,
-        one_codon_map=one_codon_map,
-        two_codon_map=two_codon_map,
-    )
+    res = genomics.extract_domains(genome=genome, cdss=cdss)
 
     # res[i]: (domain list, cds start, cds end, is fwd)
     # res[i][0][j]: (domain spec, dom start, dom end)
@@ -188,19 +149,19 @@ def test_extract_domains() -> None:
     assert res[3][3] is True
     assert res[0][0][0][0] == (1, 2, 5, 1, 3)
     assert res[0][0][0][1] == 6
-    assert res[0][0][0][2] == 6 + dom_size
+    assert res[0][0][0][2] == 6 + genomics.dom_size
     assert res[1][0][0][0] == (2, 3, 4, 2, 3)
     assert res[1][0][0][1] == 6
-    assert res[1][0][0][2] == 6 + dom_size
+    assert res[1][0][0][2] == 6 + genomics.dom_size
     assert res[2][0][0][0] == (1, 3, 4, 5, 2)
     assert res[2][0][0][1] == 0
-    assert res[2][0][0][2] == 0 + dom_size
+    assert res[2][0][0][2] == 0 + genomics.dom_size
     assert res[3][0][0][0] == (3, 3, 4, 2, 3)
     assert res[3][0][0][1] == 0
-    assert res[3][0][0][2] == 0 + dom_size
+    assert res[3][0][0][2] == 0 + genomics.dom_size
     assert res[3][0][1][0] == (2, 1, 2, 3, 4)
     assert res[3][0][1][1] == 18
-    assert res[3][0][1][2] == 18 + dom_size
+    assert res[3][0][1][2] == 18 + genomics.dom_size
 
 
 def test_genomics() -> None:

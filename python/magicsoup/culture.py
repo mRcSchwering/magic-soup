@@ -1,34 +1,41 @@
 import random
 from pathlib import Path
+from typing import TypedDict
 
 import torch
 
+from magicsoup import rs
 from magicsoup.chemistry import Chemistry
 from magicsoup.util import TensorClass
 
 
-class Map(TensorClass):
+class CultureKwargs(TypedDict, total=False):
+    size: int
+
+
+class Culture(TensorClass):
 
     def __init__(
         self,
         chemistry: Chemistry,
         size: int = 128,
-        mol_init: str = "zeros",
         device: str = "cpu",
         ftype: torch.dtype = torch.float32,
         itype: torch.dtype = torch.int8,
     ):
         super().__init__(device=device, ftype=ftype, itype=itype)
+
         molecules = chemistry.molecules
         self.size = size
-
-        self.cells: torch.Tensor = torch.zeros(size, size).to(device).bool()
-        self.molecules: torch.Tensor = self._get_molecule_map(
-            n=len(molecules), size=size, init=mol_init
-        )
+        self.pixels = size**2
+        self.cells: torch.Tensor = self.izeros(size, size).bool()
+        self.molecules: torch.Tensor = self.fzeros(len(molecules), size, size)
         self._diffusion_funs: list[torch.nn.Conv2d] = [
             self._get_diffuse(mol_diff_rate=m.diffusivity) for m in molecules
         ]
+
+        # setup rust class
+        self._setup_rs()
 
     @torch.no_grad()
     def diffuse_molecules(self):
@@ -45,23 +52,22 @@ class Map(TensorClass):
             self.molecules[mol_i] += (total_before - total_after) / n_pxls
             self.molecules[mol_i] = self.molecules[mol_i].clamp(0.0)
 
+    def move_cells(
+        self, cell_idxs: list[int], positions: list[tuple[int, int]]
+    ) -> tuple[list[tuple[int, int]], list[int]]:
+        return self.rs.move_cells(cell_idxs=cell_idxs, positions=positions)
+
     def save_state(self, statedir: Path) -> None:
+        statedir = statedir / type(self).__name__
         statedir.mkdir(parents=True, exist_ok=True)
-        name = type(self).__name__
-        torch.save(self.cells, statedir / f"{name}.cells.pt")
-        torch.save(self.molecules, statedir / f"{name}.molecules.pt")
+        torch.save(self.cells, statedir / "cells.pt")
+        torch.save(self.molecules, statedir / "molecules.pt")
 
     def load_state(self, statedir: Path) -> None:
-        name = type(self).__name__
-        self.cells[:] = torch.load(
-            statedir / f"{name}.cells.pt",
-            map_location=self.device,
-            dtype=torch.bool,
-        )
+        statedir = statedir / type(self).__name__
+        self.cells[:] = torch.load(statedir / "cells.pt", map_location=self.device)
         self.molecules[:] = torch.load(
-            statedir / f"{name}.molecules.pt",
-            map_location=self.device,
-            dtype=self.ftype,
+            statedir / "molecules.pt", map_location=self.device
         )
 
     def find_free_random_positions(self, n: int) -> torch.Tensor:
@@ -112,15 +118,5 @@ class Map(TensorClass):
         conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
         return conv
 
-    def _get_molecule_map(self, n: int, size: int, init: str) -> torch.Tensor:
-        args = [n, size, size]
-        if init == "zeros":
-            return torch.zeros(*args, device=self.device, dtype=torch.float32)
-        if init == "randn":
-            return (
-                torch.randn(*args, dtype=torch.float32, device=self.device) + 10.0
-            ).abs()
-        raise ValueError(
-            f"Didnt recognize mol_map_init={init}."
-            " Should be one of: 'zeros', 'randn'."
-        )
+    def _setup_rs(self) -> None:
+        self.rs = rs.Culture(size=self.size)
