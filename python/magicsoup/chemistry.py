@@ -1,5 +1,8 @@
 import warnings
 
+# TODO: remove __new__
+#       make it normal
+
 
 class Molecule:
     """

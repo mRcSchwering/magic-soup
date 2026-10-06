@@ -1,3 +1,4 @@
+use crate::util::reverse_complement;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::str;
@@ -120,20 +121,6 @@ pub fn extract_domains(
         }
     }
     res
-}
-
-/// Reverse completemt of a DNA sequence (only 'A', 'C', 'T', 'G')
-pub fn reverse_complement(seq: &str) -> String {
-    seq.chars()
-        .rev()
-        .filter_map(|d| match d {
-            'A' => Some('T'),
-            'C' => Some('G'),
-            'T' => Some('A'),
-            'G' => Some('C'),
-            _ => None,
-        })
-        .collect()
 }
 
 /// For a genome, extract CDSs on forward and reverse-complement,

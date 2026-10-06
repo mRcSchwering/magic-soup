@@ -6,7 +6,7 @@ import torch
 from magicsoup.chemistry import Molecule
 
 if TYPE_CHECKING:
-    from magicsoup.world2 import World
+    from magicsoup.world import World
 
 
 class DomainType(Protocol):

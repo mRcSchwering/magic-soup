@@ -2,9 +2,8 @@ from collections.abc import Iterable
 
 import pytest
 import torch
-from magicsoup import util
+from magicsoup import rs, util
 from magicsoup.constants import CODON_SIZE
-
 
 # fmt: off
 @pytest.mark.parametrize("tmp, exp", [
@@ -105,28 +104,6 @@ def test_dist_1d(a: int, b: int, exp: int):
     assert res == exp
 
 
-@pytest.mark.parametrize(
-    "x, y, exp",
-    [
-        (2, 2, [(1, 1), (1, 2), (1, 3), (3, 1), (3, 2), (3, 3), (2, 1), (2, 3)]),
-        (0, 0, [(4, 4), (4, 0), (4, 1), (1, 4), (1, 0), (1, 1), (0, 4), (0, 1)]),
-        (4, 4, [(3, 3), (3, 4), (3, 0), (0, 3), (0, 4), (0, 0), (4, 3), (4, 0)]),
-        (0, 4, [(4, 3), (4, 4), (4, 0), (1, 3), (1, 4), (1, 0), (0, 3), (0, 0)]),
-        (4, 0, [(3, 4), (4, 4), (0, 4), (3, 1), (4, 1), (0, 1), (3, 0), (0, 0)]),
-    ],
-)
-def test_free_moores_nghbhd(x: int, y: int, exp: list[tuple[int, int]]):
-    res = util.free_moores_nghbhd(x=x, y=y, positions=[], map_size=5)
-    assert set(res) == set(exp)
-
-    occ = res[0]
-    res1 = util.free_moores_nghbhd(x=x, y=y, positions=[occ], map_size=5)
-    assert set(res1) == set(exp) - {occ}
-
-    res2 = util.free_moores_nghbhd(x=x, y=y, positions=res, map_size=5)
-    assert len(res2) == 0
-
-
 def test_array():
     arr = util.Array(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"])
     M = torch.tensor([1, 0, 1, 0, 1, 0, 1, 0, 1, 0]).bool()
@@ -146,3 +123,9 @@ def test_array():
     assert arr[:] == ["A", "B", "C", "d", "E", "f", "G", "h", "I", "j"]
     arr[torch.tensor([-2, -1])] = ["X", "X"]
     assert arr[-3:] == ["h", "X", "X"]
+
+
+def test_reverse_complement() -> None:
+    seq = "ACTGG"
+    res = rs.reverse_complement(seq=seq)
+    assert res == "CCAGT"

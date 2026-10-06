@@ -3,7 +3,7 @@ import random
 
 import pytest
 import torch
-from magicsoup.kinetics2 import Kinetics
+from magicsoup.kinetics import Kinetics
 
 from tests.config import DEVICE
 

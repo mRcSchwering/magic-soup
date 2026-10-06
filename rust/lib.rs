@@ -3,13 +3,12 @@ extern crate rand;
 extern crate rand_distr;
 extern crate rayon;
 
+mod culture;
 mod genetics;
 mod genomics;
-//mod kinetics;
 mod mutations;
 mod proteomics;
 mod util;
-mod world;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -23,13 +22,8 @@ fn dist_1d(a: u16, b: u16, m: u16) -> u16 {
 }
 
 #[pyfunction]
-fn free_moores_nghbhd(
-    x: u16,
-    y: u16,
-    positions: Vec<(u16, u16)>,
-    map_size: u16,
-) -> Vec<(u16, u16)> {
-    util::free_moores_nghbhd(&x, &y, &positions, &map_size)
+fn reverse_complement(seq: String) -> String {
+    util::reverse_complement(&seq)
 }
 
 // mutations
@@ -54,12 +48,59 @@ fn recombinations(
     py.allow_threads(move || mutations::recombinations_threaded(seq_pairs, p))
 }
 
-// Genomics
+// Culture
 
-#[pyfunction]
-fn reverse_complement(seq: String) -> String {
-    genomics::reverse_complement(&seq)
+#[pyclass]
+struct Culture {
+    size: u16,
 }
+
+#[pymethods]
+impl Culture {
+    #[new]
+    fn new(size: u16) -> Self {
+        Culture { size }
+    }
+
+    fn free_moores_nghbhd(&self, x: u16, y: u16, positions: Vec<(u16, u16)>) -> Vec<(u16, u16)> {
+        culture::free_moores_nghbhd(&x, &y, &positions, &self.size)
+    }
+
+    fn move_cells(
+        &self,
+        py: Python<'_>,
+        cell_idxs: Vec<usize>,
+        positions: Vec<(u16, u16)>,
+    ) -> (Vec<(u16, u16)>, Vec<usize>) {
+        py.allow_threads(move || culture::move_cells_threaded(&cell_idxs, &positions, &self.size))
+    }
+
+    fn get_neighbors(
+        &self,
+        py: Python<'_>,
+        from_idxs: Vec<usize>,
+        to_idxs: Vec<usize>,
+        positions: Vec<(u16, u16)>,
+    ) -> Vec<(usize, usize)> {
+        py.allow_threads(move || {
+            culture::get_neighbors_threaded(&from_idxs, &to_idxs, &positions, &self.size)
+        })
+    }
+
+    fn divide_cells_if_possible(
+        &self,
+        py: Python<'_>,
+        cell_idxs: Vec<usize>,
+        positions: Vec<(u16, u16)>,
+        n_cells: usize,
+    ) -> (Vec<usize>, Vec<usize>, Vec<(u16, u16)>) {
+        py.allow_threads(move || {
+            culture::divide_cells_if_possible_threaded(&cell_idxs, &positions, &n_cells, &self.size)
+        })
+    }
+}
+
+// Genomics
 
 #[pyclass]
 struct Genomics {
@@ -144,68 +185,6 @@ impl Genomics {
             &self.two_codon_map,
         )
     }
-}
-
-// Culture
-
-#[pyclass]
-struct Culture {
-    size: u16,
-}
-
-#[pymethods]
-impl Culture {
-    #[new]
-    fn new(size: u16) -> Self {
-        Culture { size }
-    }
-
-    fn move_cells(
-        &self,
-        py: Python<'_>,
-        cell_idxs: Vec<usize>,
-        positions: Vec<(u16, u16)>,
-    ) -> (Vec<(u16, u16)>, Vec<usize>) {
-        py.allow_threads(move || world::move_cells_threaded(&cell_idxs, &positions, &self.size))
-    }
-}
-
-// World
-
-#[pyfunction]
-fn get_neighbors(
-    py: Python<'_>,
-    from_idxs: Vec<usize>,
-    to_idxs: Vec<usize>,
-    positions: Vec<(u16, u16)>,
-    map_size: u16,
-) -> Vec<(usize, usize)> {
-    py.allow_threads(move || {
-        world::get_neighbors_threaded(&from_idxs, &to_idxs, &positions, &map_size)
-    })
-}
-
-#[pyfunction]
-fn divide_cells_if_possible(
-    py: Python<'_>,
-    cell_idxs: Vec<usize>,
-    positions: Vec<(u16, u16)>,
-    n_cells: usize,
-    map_size: u16,
-) -> (Vec<usize>, Vec<usize>, Vec<(u16, u16)>) {
-    py.allow_threads(move || {
-        world::divide_cells_if_possible_threaded(&cell_idxs, &positions, &n_cells, &map_size)
-    })
-}
-
-#[pyfunction]
-fn move_cells(
-    py: Python<'_>,
-    cell_idxs: Vec<usize>,
-    positions: Vec<(u16, u16)>,
-    map_size: u16,
-) -> (Vec<(u16, u16)>, Vec<usize>) {
-    py.allow_threads(move || world::move_cells_threaded(&cell_idxs, &positions, &map_size))
 }
 
 // Proteomics
@@ -340,14 +319,16 @@ impl Cells {
 fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // util
     m.add_function(wrap_pyfunction!(dist_1d, m)?)?;
-    m.add_function(wrap_pyfunction!(free_moores_nghbhd, m)?)?;
+    m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
 
     // mutations
     m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
     m.add_function(wrap_pyfunction!(recombinations, m)?)?;
 
+    //Culture
+    m.add_class::<Culture>()?;
+
     // Genomics
-    m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
     m.add_class::<Genomics>()?;
 
     //Proteomics
@@ -355,14 +336,6 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Cells
     m.add_class::<Cells>()?;
-
-    // world
-    m.add_function(wrap_pyfunction!(get_neighbors, m)?)?;
-    m.add_function(wrap_pyfunction!(divide_cells_if_possible, m)?)?;
-    m.add_function(wrap_pyfunction!(move_cells, m)?)?;
-
-    // kinetics
-    //m.add_function(wrap_pyfunction!(get_proteome, m)?)?;
 
     Ok(())
 }

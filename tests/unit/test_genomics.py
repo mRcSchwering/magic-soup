@@ -1,5 +1,4 @@
 import pytest
-from magicsoup import _lib  # type: ignore
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup.genomics import Genomics
 from magicsoup.util import random_genome
@@ -59,16 +58,6 @@ _DATA: list[tuple[str, list[tuple[int, int]]]] = [
         ],
     ),
 ]
-
-
-def _reverse_complement_rs(seq: str) -> str:
-    return _lib.reverse_complement(seq)
-
-
-def test_reverse_complement() -> None:
-    seq = "ACTGG"
-    res = _reverse_complement_rs(seq=seq)
-    assert res == "CCAGT"
 
 
 @pytest.mark.parametrize("seq, exp", _DATA)

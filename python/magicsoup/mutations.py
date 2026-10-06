@@ -1,4 +1,4 @@
-from magicsoup import _lib  # type: ignore
+from magicsoup import rs
 
 
 def point_mutations(
@@ -26,7 +26,7 @@ def point_mutations(
     """
     # TODO: reducing to only the sequences that experience mutations
     #       would reduce serialization from Pythont o Rust
-    return _lib.point_mutations(seqs, p, p_indel, p_del)
+    return rs.point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
 
 
 def recombinations(
@@ -50,4 +50,8 @@ def recombinations(
     """
     if len(seq_pairs) == 0:
         return []
-    return _lib.recombinations(seq_pairs, p)
+    return rs.recombinations(seq_pairs=seq_pairs, p=p)
+
+
+# TODO: duplications should be a first order feature
+#       important for evolving proteins

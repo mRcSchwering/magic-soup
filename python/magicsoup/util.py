@@ -118,17 +118,6 @@ def dist_1d(a: int, b: int, m: int) -> int:
     return _lib.dist_1d(a, b, m)
 
 
-def free_moores_nghbhd(
-    x: int, y: int, positions: list[tuple[int, int]], map_size: int
-) -> list[tuple[int, int]]:
-    """
-    For position `x, y` get positions in Moore's neighborhood
-    on circular 2D map of size `map_size`
-    which are not already occupied as indicated by `positions`
-    """
-    return _lib.free_moores_nghbhd(x, y, positions, map_size)
-
-
 class TensorClass:
 
     def __init__(

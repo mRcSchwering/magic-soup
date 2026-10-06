@@ -29,38 +29,16 @@ pub fn dist_1d(a: &u16, b: &u16, m: &u16) -> u16 {
     d1
 }
 
-// Return coordinates of Moore's neighbourhood in square circular 2D map of size m
-pub fn moores_nghbhd(x: &u16, y: &u16, m: &u16) -> [(u16, u16); 8] {
-    let e: u16 = if x + 1 == *m { 0 } else { *x + 1 };
-    let w: u16 = if x == &0 { *m - 1 } else { *x - 1 };
-    let s: u16 = if y + 1 == *m { 0 } else { *y + 1 };
-    let n: u16 = if y == &0 { *m - 1 } else { *y - 1 };
-    [
-        (w, n),
-        (w, *y),
-        (w, s),
-        (*x, n),
-        (*x, s),
-        (e, n),
-        (e, *y),
-        (e, s),
-    ]
-}
-
-// For a position (x,y) get positions in Moore's neighborhood on circular 2D map of size map_size
-// which are not already occupied as indicated by positions
-pub fn free_moores_nghbhd(
-    x: &u16,
-    y: &u16,
-    positions: &Vec<(u16, u16)>,
-    map_size: &u16,
-) -> Vec<(u16, u16)> {
-    let nghbhd = moores_nghbhd(&x, &y, map_size);
-    nghbhd
-        .iter()
-        .filter_map(|d| match positions.contains(d) {
-            true => None,
-            false => Some(*d),
+/// Reverse completemt of a DNA sequence (only 'A', 'C', 'T', 'G')
+pub fn reverse_complement(seq: &str) -> String {
+    seq.chars()
+        .rev()
+        .filter_map(|d| match d {
+            'A' => Some('T'),
+            'C' => Some('G'),
+            'T' => Some('A'),
+            'G' => Some('C'),
+            _ => None,
         })
         .collect()
 }

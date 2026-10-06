@@ -57,6 +57,22 @@ class Culture(TensorClass):
     ) -> tuple[list[tuple[int, int]], list[int]]:
         return self.rs.move_cells(cell_idxs=cell_idxs, positions=positions)
 
+    def free_moores_nghbhd(
+        self, x: int, y: int, positions: list[tuple[int, int]]
+    ) -> list[tuple[int, int]]:
+        return self.rs.free_moores_nghbhd(x, y, positions)
+
+    def get_neighbors(
+        self, from_idxs: list[int], to_idxs: list[int], positions: list[tuple[int, int]]
+    ) -> list[tuple[int, int]]:
+        return self.rs.get_neighbors(from_idxs, to_idxs, positions)
+
+    def divide_cells_if_possible(
+        self, cell_idxs: list[int], positions: list[tuple[int, int]], n_cells: int
+    ) -> tuple[list[int], list[int], list[tuple[int, int]]]:
+        """Returns divided cell idxs, their child idx, their child positions"""
+        return self.rs.divide_cells_if_possible(cell_idxs, positions, n_cells)
+
     def save_state(self, statedir: Path) -> None:
         statedir = statedir / type(self).__name__
         statedir.mkdir(parents=True, exist_ok=True)

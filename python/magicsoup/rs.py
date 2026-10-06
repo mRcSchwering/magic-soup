@@ -3,20 +3,62 @@ from typing import Any
 from magicsoup import _lib  # type: ignore
 from magicsoup.constants import ProteinSpecType
 
-
-def get_neighbors(
-    from_idxs: list[int],
-    to_idxs: list[int],
-    positions: list[tuple[int, int]],
-    map_size: int,
-) -> list[tuple[int, int]]:
-    return _lib.get_neighbors(from_idxs, to_idxs, positions, map_size)
+# util
 
 
-def divide_cells_if_possible(
-    cell_idxs: list[int], positions: list[tuple[int, int]], n_cells: int, map_size: int
-) -> tuple[list[int], list[int], list[tuple[int, int]]]:
-    return _lib.divide_cells_if_possible(cell_idxs, positions, n_cells, map_size)
+def dist_1d(a: int, b: int, m: int) -> int:
+    return _lib.dist_1d(a, b, m)
+
+
+def reverse_complement(seq: str) -> str:
+    return _lib.reverse_complement(seq)
+
+
+# mutations
+
+
+def point_mutations(
+    seqs: list[str], p: float, p_indel: float, p_del: float
+) -> list[tuple[str, int]]:
+    return _lib.point_mutations(seqs, p, p_indel, p_del)
+
+
+def recombinations(
+    seq_pairs: list[tuple[str, str]], p: float
+) -> list[tuple[str, str, int]]:
+    return _lib.recombinations(seq_pairs, p)
+
+
+# culture
+
+
+class Culture:
+
+    def __init__(self, size: int) -> None:
+        self._cls = _lib.Culture(size)
+
+    def move_cells(
+        self, cell_idxs: list[int], positions: list[tuple[int, int]]
+    ) -> tuple[list[tuple[int, int]], list[int]]:
+        return self._cls.move_cells(cell_idxs, positions)
+
+    def free_moores_nghbhd(
+        self, x: int, y: int, positions: list[tuple[int, int]]
+    ) -> list[tuple[int, int]]:
+        return self._cls.free_moores_nghbhd(x, y, positions)
+
+    def get_neighbors(
+        self, from_idxs: list[int], to_idxs: list[int], positions: list[tuple[int, int]]
+    ) -> list[tuple[int, int]]:
+        return self._cls.get_neighbors(from_idxs, to_idxs, positions)
+
+    def divide_cells_if_possible(
+        self, cell_idxs: list[int], positions: list[tuple[int, int]], n_cells: int
+    ) -> tuple[list[int], list[int], list[tuple[int, int]]]:
+        return self._cls.divide_cells_if_possible(cell_idxs, positions, n_cells)
+
+
+# genomics
 
 
 class Genomics:
@@ -60,6 +102,9 @@ class Genomics:
         return self._cls.extract_domains(genome, cdss)
 
 
+# proteomics
+
+
 class Proteomics:
 
     def __init__(
@@ -100,6 +145,9 @@ class Proteomics:
         return self._cls.get_proteome_dict(proteome, molecules)
 
 
+# cells
+
+
 class Cells:
 
     def __init__(self, genomics: Genomics, proteomics: Proteomics) -> None:
@@ -114,14 +162,3 @@ class Cells:
         list[list[list[int]]],
     ]:
         return self._cls.translate_genomes(genomes)
-
-
-class Culture:
-
-    def __init__(self, size: int) -> None:
-        self._cls = _lib.Culture(size)
-
-    def move_cells(
-        self, cell_idxs: list[int], positions: list[tuple[int, int]]
-    ) -> tuple[list[tuple[int, int]], list[int]]:
-        return self._cls.move_cells(cell_idxs, positions)
