@@ -148,6 +148,18 @@ class TensorClass:
     def fzeros(self, *args) -> torch.Tensor:
         return torch.zeros(*args, device=self.device, dtype=self.ftype)
 
+    def idxfull(self, *args, value: int) -> torch.Tensor:
+        return torch.full(args, fill_value=value, device=self.device, dtype=torch.int32)
+
+    def ifull(self, *args, value: int) -> torch.Tensor:
+        return torch.full(args, fill_value=value, device=self.device, dtype=self.itype)
+
+    def ffull(self, *args, value: float) -> torch.Tensor:
+        return torch.full(args, fill_value=value, device=self.device, dtype=self.ftype)
+
+    def idxrandperm(self, n: int) -> torch.Tensor:
+        return torch.randperm(n, device=self.device, dtype=torch.int32)
+
     def __repr__(self) -> str:
         kwargs = {
             "device": self.device,

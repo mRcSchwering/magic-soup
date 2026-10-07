@@ -87,7 +87,7 @@ class Cells(TensorClass):
     def get_available_idxs(self) -> torch.Tensor:
         return (~self.alive).nonzero(as_tuple=True)[0]
 
-    def update_genomes(self, genomes: list[str], idxs: list[int]) -> None:
+    def update_genomes(self, genomes: list[str], idxs: torch.Tensor) -> None:
         if len(genomes) == 0:
             return
 
@@ -221,7 +221,7 @@ class Cells(TensorClass):
         self.N = self.izeros(self.c, self.p, self.m)
 
         # derive kinetics parameters from genomes
-        idxs = list(range(len(self.genomes)))
+        idxs = torch.arange(len(self.genomes), device=self.device, dtype=torch.int32)
         self.update_genomes(genomes=self.genomes[idxs], idxs=idxs)
 
     def _setup_rs(self) -> None:

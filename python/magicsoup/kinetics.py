@@ -28,7 +28,7 @@ class Kinetics(TensorClass):
         xi_conv_tol: float = 1e-4,
         device: str = "cpu",
         ftype: torch.dtype = torch.float32,
-        itype: torch.dtype = torch.int32,
+        itype: torch.dtype = torch.int8,
     ):
         super().__init__(device=device, itype=itype, ftype=ftype)
 
@@ -278,7 +278,7 @@ class Kinetics(TensorClass):
         # creating float32 N once and using einsum would reduce that
 
         # initial xi
-        xi = torch.zeros((c, p), device=self.device, dtype=self.ftype)  # (c, p)
+        xi = self.fzeros(c, p)  # (c, p)
 
         for _ in range(n_max_sweeps):
             xi_prev = xi.clone()

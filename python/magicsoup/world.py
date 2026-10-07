@@ -38,6 +38,10 @@ class _CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
+# TODO: see if tensors can be used wherever indices are passed around
+#       only strs need to be lists
+
+
 class World(TensorClass):
 
     def __init__(
@@ -153,16 +157,16 @@ class World(TensorClass):
         )
         return nghbrs
 
-    def spawn_cells(self, genomes: list[str]) -> list[int]:
+    def spawn_cells(self, genomes: list[str]) -> torch.Tensor:
         n_new_cells = len(genomes)
         if n_new_cells == 0:
-            return []
+            return self.idxtensor([])
 
         free_pos = self.culture.find_free_random_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             _log.warning("No free positions to spawn %d cells", n_new_cells)
-            return []
+            return self.idxtensor([])
 
         if n_avail_pos < n_new_cells:
             _log.warning(
@@ -175,19 +179,19 @@ class World(TensorClass):
         n_living_cells = self.cells.get_alive_cells()
         self.cells.update_c(c_req=n_living_cells + n_new_cells)
         free_idxs = self.cells.get_available_idxs()
-        new_idxs = free_idxs[:n_new_cells].tolist()
+        new_idxs = free_idxs[:n_new_cells]
 
         # occupy positions
         new_pos = free_pos[:n_new_cells]
         xs = new_pos[:, 0]
         ys = new_pos[:, 1]
-        self.culture.cells[xs, ys] = True
+        self.culture.cell_map[xs, ys] = True
         self.cells.positions[new_idxs] = new_pos
 
         # cell is picking up half the molecules of the pxl it is born on
-        pickup = self.culture.molecules[:, xs, ys] * 0.5
+        pickup = self.culture.molecule_map[:, xs, ys] * 0.5
         self.cells.molecules[new_idxs, :] = pickup.T
-        self.culture.molecules[:, xs, ys] = pickup
+        self.culture.molecule_map[:, xs, ys] = pickup
 
         # update parameters from genomes
         self.cells.update_genomes(genomes=genomes, idxs=new_idxs)
@@ -198,16 +202,16 @@ class World(TensorClass):
 
         return new_idxs
 
-    def add_cells(self, cells: list["Cell"]) -> list[int]:
+    def add_cells(self, cells: list["Cell"]) -> torch.Tensor:
         n_new_cells = len(cells)
         if n_new_cells == 0:
-            return []
+            return self.idxtensor([])
 
         free_pos = self.culture.find_free_random_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             _log.warning("No free positions to add %d cells", n_new_cells)
-            return []
+            return self.idxtensor([])
 
         if n_avail_pos < n_new_cells:
             _log.warning(
@@ -220,13 +224,13 @@ class World(TensorClass):
         n_cells = self.cells.get_alive_cells()
         self.cells.update_c(c_req=n_cells + n_new_cells)
         free_idxs = self.cells.get_available_idxs()
-        new_idxs = free_idxs[:n_new_cells].tolist()
+        new_idxs = free_idxs[:n_new_cells]
 
         # occupy positions
         new_pos = free_pos[:n_new_cells]
         xs = new_pos[:, 0]
         ys = new_pos[:, 1]
-        self.culture.cells[xs, ys] = True
+        self.culture.cell_map[xs, ys] = True
         self.cells.positions[new_idxs] = new_pos
 
         # update parameters from genomes
@@ -242,43 +246,32 @@ class World(TensorClass):
 
         return new_idxs
 
-    def divide_cells(self, cell_idxs: list[int]) -> list[tuple[int, int]]:
-        if len(cell_idxs) == 0:
-            return []
-
-        # duplicates could lead to unexpected results
-        cell_idxs = list(set(cell_idxs))
-
-        n_cells = self.cells.get_alive_cells()
-
-        xs = self.cells.positions[:, 0].tolist()
-        ys = self.cells.positions[:, 1].tolist()
-        occupied_positions = [(x, y) for x, y in zip(xs, ys)]
-        parent_idxs, child_idxs, child_pos_ = self.culture.divide_cells_if_possible(
-            cell_idxs=cell_idxs, positions=occupied_positions, n_cells=n_cells
+    def divide_cells(self, cell_idxs: torch.Tensor) -> list[tuple[int, int]]:
+        # already places children on cell map
+        parent_idxs, child_positions = self.culture.divide_cells(
+            cell_idxs=cell_idxs, cell_positions=self.cells.positions
         )
 
-        n_new_cells = len(child_idxs)
+        n_cells = self.cells.get_alive_cells()
+        n_new_cells = parent_idxs.numel()
+
         if n_new_cells == 0:
             return []
 
-        self.cells.update_c(c_req=n_cells + n_new_cells)
+        self.cells.update_c(c_req=n_cells)
+        child_idxs = self.cells.get_available_idxs()[:n_new_cells]
 
-        # update child parameters from genomes
+        # update cell parameters for children
+        self.cells.alive[child_idxs] = True
+        self.cells.labels[child_idxs] = self.cells.labels[parent_idxs]
+        self.cells.positions[child_idxs] = child_positions
+
+        # update child kinetics parameters from genomes
         genomes = self.cells.genomes[parent_idxs]
         self.cells.update_genomes(genomes=genomes, idxs=child_idxs)
 
-        # update other child parameters
-        self.cells.alive[child_idxs] = True
-        self.cells.labels[child_idxs] = self.cells.labels[parent_idxs]
-
-        # position new cells
-        child_pos = self.idxtensor(child_pos_)
-        self.culture.cells[child_pos[:, 0], child_pos[:, 1]] = True
-        self.cells.positions[child_idxs] = child_pos
-
         # cells share molecules, increment generations, reset lifetimes
-        descendant_idxs = parent_idxs + child_idxs
+        descendant_idxs = torch.cat([parent_idxs, child_idxs])
         self.cells.molecules[child_idxs] = self.cells.molecules[parent_idxs]
         self.cells.molecules[descendant_idxs] *= 0.5
         self.cells.generations[child_idxs] = self.cells.generations[parent_idxs]
@@ -291,7 +284,8 @@ class World(TensorClass):
         if len(genome_idx_pairs) == 0:
             return
 
-        genomes, idxs = list(map(list, zip(*genome_idx_pairs)))
+        genomes = [d[0] for d in genome_idx_pairs]
+        idxs = self.idxtensor([d[1] for d in genome_idx_pairs])
         self.cells.update_genomes(genomes=genomes, idxs=idxs)
 
     def kill_cells(self, cell_idxs: list[int] | None = None) -> None:
@@ -307,11 +301,11 @@ class World(TensorClass):
         # free up map
         xs = self.cells.positions[cell_idxs, 0]
         ys = self.cells.positions[cell_idxs, 1]
-        self.culture.cells[xs, ys] = False
+        self.culture.cell_map[xs, ys] = False
 
         # spill out molecules
         spillout = self.cells.molecules[cell_idxs, :]
-        self.culture.molecules[:, xs, ys] += spillout.T
+        self.culture.molecule_map[:, xs, ys] += spillout.T
 
         # unset parameters
         self.cells.genomes[cell_idxs] = [""] * len(cell_idxs)
@@ -330,30 +324,17 @@ class World(TensorClass):
         self.cells.N_h[cell_idxs] = 0
         self.cells.N[cell_idxs] = 0
 
-    def migrate_cells(self, cell_idxs: list[int] | None = None) -> None:
+    def migrate_cells(self, cell_idxs: torch.Tensor | None = None) -> None:
         if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs().tolist()
+            cell_idxs = self.cells.get_cell_idxs()
 
         if len(cell_idxs) == 0:
             return
 
-        # duplicates could lead to unexpected results
-        cell_idxs = list(set(cell_idxs))
-
-        xs = self.cells.positions[:, 0].tolist()
-        ys = self.cells.positions[:, 1].tolist()
-        positions = [(x, y) for x, y in zip(xs, ys)]
-
-        new_pos_, moved_idxs = self.culture.move_cells(
-            cell_idxs=cell_idxs, positions=positions
+        # positions are updated in place
+        self.culture.migrate_cells(
+            cell_idxs=cell_idxs, cell_positions=self.cells.positions
         )
-
-        # reposition cells
-        old_pos = self.cells.positions[moved_idxs]
-        self.culture.cells[old_pos[:, 0], old_pos[:, 1]] = False
-        new_pos = self.idxtensor(new_pos_)
-        self.culture.cells[new_pos[:, 0], new_pos[:, 1]] = True
-        self.cells.positions[moved_idxs] = new_pos
 
     def resuspend_cells(self, cell_idxs: list[int] | None = None) -> None:
         n_cells = self.cells.get_alive_cells()
@@ -361,14 +342,14 @@ class World(TensorClass):
         # unoccupy current positions
         old_xs = self.cells.positions[:, 0]
         old_ys = self.cells.positions[:, 1]
-        self.culture.cells[old_xs, old_ys] = False
+        self.culture.cell_map[old_xs, old_ys] = False
 
         # find new unoccupied positions
         new_pos = self.culture.find_free_random_positions(n=n_cells)
         new_xs = new_pos[:, 0]
         new_ys = new_pos[:, 1]
 
-        self.culture.cells[new_xs, new_ys] = True
+        self.culture.cell_map[new_xs, new_ys] = True
         self.cells.positions[cell_idxs] = new_pos
 
     def enzymatic_activity(self) -> None:
@@ -378,7 +359,7 @@ class World(TensorClass):
 
         # collect internal and external molecules for x0
         x0 = torch.cat(
-            [self.cells.molecules[alive], self.culture.molecules[:, xs, ys].T],
+            [self.cells.molecules[alive], self.culture.molecule_map[:, xs, ys].T],
             dim=1,
         )
 
@@ -397,7 +378,7 @@ class World(TensorClass):
         )
 
         # distribute x1 to internal and external molecules
-        self.culture.molecules[:, xs, ys] = x1[:, self._ext_mol_idxs].T
+        self.culture.molecule_map[:, xs, ys] = x1[:, self._ext_mol_idxs].T
         self.cells.molecules[alive] = x1[:, self._int_mol_idxs]
 
         # age cells

@@ -160,7 +160,7 @@ def test_update_genomes_randomly(cells: Cells) -> None:
 
     for _ in range(100):
         n = random.randint(1, c)
-        idxs = random.sample(range(c), n)
+        idxs = torch.tensor(random.sample(range(c), n))
         genomes = [random_genome(s=500) for _ in range(n)]
         cells.update_genomes(genomes=genomes, idxs=idxs)
 
@@ -192,7 +192,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     # create interspersed cells
     c = 60
     cells.update_c(c_req=c)
-    idxs = list(range(0, c, 2))
+    idxs = torch.tensor(list(range(0, c, 2)))
     genomes_ = [random_genome() for _ in range(len(idxs))]
     cells.update_genomes(genomes=genomes_, idxs=idxs)
     cells.alive[idxs] = True
