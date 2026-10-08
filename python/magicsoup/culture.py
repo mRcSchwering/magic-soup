@@ -3,7 +3,6 @@ from typing import TypedDict
 
 import torch
 
-from magicsoup import rs
 from magicsoup.chemistry import Chemistry
 from magicsoup.util import TensorClass
 
@@ -78,9 +77,6 @@ class Culture(TensorClass):
         ]
         self._nb_offs = self._get_moores_neighborhood()
         self._hlf_nb_offs = self._get_half_moores_neighborhood()
-
-        # setup rust class
-        self._setup_rs()
 
     @torch.no_grad()
     def diffuse_molecules(self):
@@ -427,6 +423,3 @@ class Culture(TensorClass):
             ]
         )
         # fmt: on
-
-    def _setup_rs(self) -> None:
-        self.rs = rs.Culture(size=self.map_size)

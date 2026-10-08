@@ -3,7 +3,6 @@ extern crate rand;
 extern crate rand_distr;
 extern crate rayon;
 
-mod culture;
 mod genetics;
 mod genomics;
 mod mutations;
@@ -46,58 +45,6 @@ fn recombinations(
     p: f32,
 ) -> Vec<(String, String, usize)> {
     py.allow_threads(move || mutations::recombinations_threaded(seq_pairs, p))
-}
-
-// Culture
-
-#[pyclass]
-struct Culture {
-    size: u16,
-}
-
-#[pymethods]
-impl Culture {
-    #[new]
-    fn new(size: u16) -> Self {
-        Culture { size }
-    }
-
-    fn free_moores_nghbhd(&self, x: u16, y: u16, positions: Vec<(u16, u16)>) -> Vec<(u16, u16)> {
-        culture::free_moores_nghbhd(&x, &y, &positions, &self.size)
-    }
-
-    fn move_cells(
-        &self,
-        py: Python<'_>,
-        cell_idxs: Vec<usize>,
-        positions: Vec<(u16, u16)>,
-    ) -> (Vec<(u16, u16)>, Vec<usize>) {
-        py.allow_threads(move || culture::move_cells_threaded(&cell_idxs, &positions, &self.size))
-    }
-
-    fn get_neighbors(
-        &self,
-        py: Python<'_>,
-        from_idxs: Vec<usize>,
-        to_idxs: Vec<usize>,
-        positions: Vec<(u16, u16)>,
-    ) -> Vec<(usize, usize)> {
-        py.allow_threads(move || {
-            culture::get_neighbors_threaded(&from_idxs, &to_idxs, &positions, &self.size)
-        })
-    }
-
-    fn divide_cells_if_possible(
-        &self,
-        py: Python<'_>,
-        cell_idxs: Vec<usize>,
-        positions: Vec<(u16, u16)>,
-        n_cells: usize,
-    ) -> (Vec<usize>, Vec<usize>, Vec<(u16, u16)>) {
-        py.allow_threads(move || {
-            culture::divide_cells_if_possible_threaded(&cell_idxs, &positions, &n_cells, &self.size)
-        })
-    }
 }
 
 // Genomics
@@ -324,9 +271,6 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // mutations
     m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
     m.add_function(wrap_pyfunction!(recombinations, m)?)?;
-
-    //Culture
-    m.add_class::<Culture>()?;
 
     // Genomics
     m.add_class::<Genomics>()?;

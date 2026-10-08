@@ -29,35 +29,6 @@ def recombinations(
     return _lib.recombinations(seq_pairs, p)
 
 
-# culture
-
-
-class Culture:
-
-    def __init__(self, size: int) -> None:
-        self._cls = _lib.Culture(size)
-
-    def move_cells(
-        self, cell_idxs: list[int], positions: list[tuple[int, int]]
-    ) -> tuple[list[tuple[int, int]], list[int]]:
-        return self._cls.move_cells(cell_idxs, positions)
-
-    def free_moores_nghbhd(
-        self, x: int, y: int, positions: list[tuple[int, int]]
-    ) -> list[tuple[int, int]]:
-        return self._cls.free_moores_nghbhd(x, y, positions)
-
-    def get_neighbors(
-        self, from_idxs: list[int], to_idxs: list[int], positions: list[tuple[int, int]]
-    ) -> list[tuple[int, int]]:
-        return self._cls.get_neighbors(from_idxs, to_idxs, positions)
-
-    def divide_cells_if_possible(
-        self, cell_idxs: list[int], positions: list[tuple[int, int]], n_cells: int
-    ) -> tuple[list[int], list[int], list[tuple[int, int]]]:
-        return self._cls.divide_cells_if_possible(cell_idxs, positions, n_cells)
-
-
 # genomics
 
 
