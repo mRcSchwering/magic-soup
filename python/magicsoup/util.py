@@ -151,14 +151,14 @@ class TensorClass:
     def idxfull(self, *args, value: int) -> torch.Tensor:
         return torch.full(args, fill_value=value, device=self.device, dtype=torch.int32)
 
-    def ifull(self, *args, value: int) -> torch.Tensor:
-        return torch.full(args, fill_value=value, device=self.device, dtype=self.itype)
-
-    def ffull(self, *args, value: float) -> torch.Tensor:
-        return torch.full(args, fill_value=value, device=self.device, dtype=self.ftype)
+    def frand(self, *args) -> torch.Tensor:
+        return torch.rand(*args, device=self.device, dtype=torch.float32)
 
     def idxrandperm(self, n: int) -> torch.Tensor:
         return torch.randperm(n, device=self.device, dtype=torch.int32)
+
+    def idxarange(self, n: int) -> torch.Tensor:
+        return torch.arange(n, device=self.device, dtype=torch.int32)
 
     def __repr__(self) -> str:
         kwargs = {

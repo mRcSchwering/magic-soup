@@ -1,4 +1,5 @@
 import random
+from itertools import product
 from pathlib import Path
 
 import pytest
@@ -8,9 +9,428 @@ from magicsoup.culture import Culture
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 from tests.config import DEVICE
+from tests.util import fzeros, idxarange, idxfull, idxrandperm, idxtensor, seed
 
 _ATOL = 1e-4
 _RTOL = 1e-4
+
+
+def _gen_rand_cell_map(L: int, confl: float) -> torch.Tensor:
+    n = round(L * L * confl)
+    flat = idxfull(L * L, value=-1)
+    perm = idxrandperm(L * L)[:n]
+    flat[perm] = idxarange(n)
+    return flat.reshape(L, L)
+
+
+def test_maps() -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=3, device=DEVICE)
+
+    # should be mutable on both 2D and 1D
+    culture.cell_map[0, 0] = 0
+    culture.cell_map[0, 2] = 1
+    culture.cell_map[1, 1] = 2
+    culture.cell_map_flat[-1] = 9
+
+    # expected maps
+    exp_coords = idxtensor([tuple(d) for d in product(range(3), range(3))])
+    exp_cell_map = idxtensor(
+        [
+            [0, -1, 1],
+            [-1, 2, -1],
+            [-1, -1, 9],
+        ]
+    )
+    exp_cell_map_flat = idxtensor([0, -1, 1, -1, 2, -1, -1, -1, 9])
+    exp_mol_map = fzeros(len(CHEMISTRY.molecules), 3, 3)
+
+    # check expectations
+    torch.testing.assert_close(culture.coord_map, exp_coords)
+    torch.testing.assert_close(culture.cell_map, exp_cell_map)
+    torch.testing.assert_close(culture.cell_map_flat, exp_cell_map_flat)
+    torch.testing.assert_close(culture.molecule_map, exp_mol_map)
+
+
+@pytest.mark.parametrize(
+    "cell_map, exp_pos",
+    [
+        (
+            # empty map
+            [
+                [-1, -1],
+                [-1, -1],
+            ],
+            [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+        ),
+        (
+            # full map
+            [
+                [0, 1],
+                [2, 3],
+            ],
+            [(0, 0), (0, 1), (1, 0), (1, 1)],
+        ),
+        (
+            # interspersed cells
+            [
+                [0, -1],
+                [2, -1],
+            ],
+            [(0, 0), (-1, -1), (1, 0), (-1, -1)],
+        ),
+    ],
+)
+def test_get_cell_positions(cell_map: list, exp_pos: list) -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map), device=DEVICE)
+    culture.cell_map[:] = idxtensor(cell_map)
+    pos = culture.get_cell_positions()
+    torch.testing.assert_close(pos, idxtensor(exp_pos))
+
+
+@pytest.mark.parametrize(
+    "cell_map, exp_pairs",
+    [
+        (
+            [
+                [-1, 0, 1],
+                [-1, -1, -1],
+                [-1, -1, -1],
+            ],
+            [(0, 1)],
+        ),
+        (
+            [
+                [-1, 0, -1],
+                [2, -1, -1],
+                [-1, -1, 5],
+            ],
+            [(0, 2), (2, 5), (5, 0)],
+        ),
+        (
+            [
+                [0, 1, -1],
+                [2, 3, -1],
+                [-1, -1, -1],
+            ],
+            [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)],
+        ),
+    ],
+)
+def test_cell_neighbor_pairs(cell_map: list, exp_pairs: list) -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map), device=DEVICE)
+    culture.cell_map[:] = idxtensor(cell_map)
+    pairs = culture.cell_neighbor_pairs()
+    torch.testing.assert_close(pairs, idxtensor(exp_pairs))
+
+
+@pytest.mark.parametrize(
+    "cell_map, n, exp_n",
+    [
+        (
+            # empty map: ask 4, get 4
+            [
+                [-1, -1],
+                [-1, -1],
+            ],
+            4,
+            4,
+        ),
+        (
+            # empty map: ask 2, get 2
+            [
+                [-1, -1],
+                [-1, -1],
+            ],
+            2,
+            2,
+        ),
+        (
+            # full map, ask 4, get 0
+            [
+                [0, 1],
+                [2, 3],
+            ],
+            4,
+            0,
+        ),
+        (
+            # interspersed cells: ask 2 get 2
+            [
+                [0, -1],
+                [2, -1],
+            ],
+            2,
+            2,
+        ),
+        (
+            # interspersed cells: ask 4 get 2
+            [
+                [0, -1],
+                [2, -1],
+            ],
+            4,
+            2,
+        ),
+    ],
+)
+def test_random_free_positions(cell_map: list, n: int, exp_n: int) -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map), device=DEVICE)
+    culture.cell_map[:] = idxtensor(cell_map)
+    pos = culture.random_free_positions(n)
+
+    # check correct number of positions
+    assert pos.shape == (exp_n, 2)
+
+    # make sure positions are free
+    xs = pos[:, 0]
+    ys = pos[:, 1]
+    assert (culture.cell_map[xs, ys] < 0).all()
+
+
+@pytest.mark.parametrize(
+    "cell_map, parents, children, exp_cell_map, exp_succ_parents, exp_succ_children",
+    [
+        (
+            # no cell divides
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [],
+            [],
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [],
+            [],
+        ),
+        (
+            # 1 cell can divide (only 1 choice)
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [0],
+            [8],
+            [
+                [0, 8, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [0],
+            [8],
+        ),
+        (
+            # 1 cell cant divide (no free neighborhood)
+            [
+                [0, -1, 1, 2],
+                [3, 4, 5, 6],
+                [7, 8, 9, 10],
+                [11, 12, 13, 14],
+            ],
+            [10],
+            [15],
+            [
+                [0, -1, 1, 2],
+                [3, 4, 5, 6],
+                [7, 8, 9, 10],
+                [11, 12, 13, 14],
+            ],
+            [],
+            [],
+        ),
+        (
+            # 1 cell can divide (interspersed)
+            [
+                [0, -1, 5],
+                [2, 1, 7],
+                [9, 6, 8],
+            ],
+            [5],
+            [3],
+            [
+                [0, 3, 5],
+                [2, 1, 7],
+                [9, 6, 8],
+            ],
+            [5],
+            [3],
+        ),
+        (
+            # many cells can divide and there's competition
+            [
+                [0, -1, 1, -1],
+                [-1, 2, -1, -1],
+                [3, -1, 4, -1],
+                [-1, -1, -1, -1],
+            ],
+            [0, 1, 2, 3],
+            [5, 6, 7, 8],
+            [
+                [0, 5, 1, 6],
+                [-1, 2, 7, -1],
+                [3, -1, 4, -1],
+                [-1, -1, -1, 8],
+            ],
+            [0, 1, 2, 3],
+            [5, 6, 7, 8],
+        ),
+    ],
+)
+def test_divide_cells(
+    cell_map: list,
+    parents: list[int],
+    children: list[int],
+    exp_cell_map: list,
+    exp_succ_parents: list[int],
+    exp_succ_children: list[int],
+) -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map), device=DEVICE)
+    culture.cell_map[:] = idxtensor(cell_map)
+
+    seed()  # seed for RNG
+    succ_parents, succ_children = culture.divide_cells(
+        parent_idxs=idxtensor(parents), child_idxs=idxtensor(children)
+    )
+
+    # check results
+    torch.testing.assert_close(culture.cell_map, idxtensor(exp_cell_map))
+    torch.testing.assert_close(succ_parents, idxtensor(exp_succ_parents))
+    torch.testing.assert_close(succ_children, idxtensor(exp_succ_children))
+
+
+@pytest.mark.parametrize(
+    "cell_map, idxs, exp_cell_map, exp_succ_idxs",
+    [
+        (
+            # no cell migrates
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [],
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [],
+        ),
+        (
+            # 1 cell can migrate (only 1 choice)
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [0],
+            [
+                [-1, 0, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [0],
+        ),
+        (
+            # 1 cell cant migrate (no free neighborhood)
+            [
+                [0, -1, 1, 2],
+                [3, 4, 5, 6],
+                [7, 8, 9, 10],
+                [11, 12, 13, 14],
+            ],
+            [10],
+            [
+                [0, -1, 1, 2],
+                [3, 4, 5, 6],
+                [7, 8, 9, 10],
+                [11, 12, 13, 14],
+            ],
+            [],
+        ),
+        (
+            # 1 cell can migrate (interspersed)
+            [
+                [0, -1, 5],
+                [2, 1, 7],
+                [9, 6, 8],
+            ],
+            [5],
+            [
+                [0, 5, -1],
+                [2, 1, 7],
+                [9, 6, 8],
+            ],
+            [5],
+        ),
+        (
+            # many cells can migrate and there's competition
+            [
+                [0, -1, 1, -1],
+                [-1, 2, -1, -1],
+                [3, -1, 4, -1],
+                [-1, -1, -1, -1],
+            ],
+            [0, 1, 2, 3],
+            [
+                [-1, 0, -1, -1],
+                [-1, 1, 2, -1],
+                [-1, -1, 4, -1],
+                [-1, -1, -1, 3],
+            ],
+            [0, 1, 2, 3],
+        ),
+    ],
+)
+def test_migrate_cells(
+    cell_map: list,
+    idxs: list[int],
+    exp_cell_map: list,
+    exp_succ_idxs: list[int],
+) -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map), device=DEVICE)
+    culture.cell_map[:] = idxtensor(cell_map)
+
+    seed()  # seed for RNG
+    succ_idxs = culture.migrate_cells(cell_idxs=idxtensor(idxs))
+
+    # check results
+    torch.testing.assert_close(culture.cell_map, idxtensor(exp_cell_map))
+    torch.testing.assert_close(succ_idxs, idxtensor(exp_succ_idxs))
+
+
+@pytest.mark.slow
+def test_migrate_cells_randomly() -> None:
+    L = 100
+    for _ in range(100):
+        culture = Culture(chemistry=CHEMISTRY, map_size=L, device=DEVICE)
+
+        # genrate cell map
+        culture.cell_map[:] = _gen_rand_cell_map(L=L, confl=0.7)
+        n = int(culture.cell_map.max())
+
+        # remember cell map
+        cell_map_0 = culture.cell_map.clone()
+        n_cells_0 = (cell_map_0 >= 0).sum()
+
+        k = random.randint(10, n)
+        idxs = idxrandperm(n)[:k]
+        succ_idxs = culture.migrate_cells(cell_idxs=idxs)
+
+        k_succ = succ_idxs.shape[0]
+        cell_map_1 = culture.cell_map
+        n_cells_1 = (cell_map_1 >= 0).sum()
+
+        assert k_succ <= k
+        assert n_cells_0 == n_cells_1
+
+        # at least some cells should have been updated
+        assert (cell_map_0 != cell_map_1).any()
 
 
 def test_diffuse():
@@ -63,170 +483,18 @@ def test_diffuse():
     torch.testing.assert_close(culture.molecule_map, exp, atol=_ATOL, rtol=_RTOL)
 
 
-# TODO: move_cells
-# TODO: get_neighbors
-# TODO: find_free_random_positions
-
-
-@pytest.mark.parametrize(
-    "cells, idxs, migrate, exp_cells, exp_new_positions",
-    [
-        # no cell divides
-        (
-            [
-                [1, 0, 1],
-                [1, 1, 1],
-                [1, 1, 1],
-            ],
-            [],
-            False,
-            [
-                [1, 0, 1],
-                [1, 1, 1],
-                [1, 1, 1],
-            ],
-            [],
-        ),
-        # 1 cell can divide (only 1 choice)
-        (
-            [
-                [1, 0, 1],
-                [1, 1, 1],
-                [1, 1, 1],
-            ],
-            [0],
-            False,
-            [
-                [1, 1, 1],
-                [1, 1, 1],
-                [1, 1, 1],
-            ],
-            [(0, 1)],
-        ),
-        # all but one cell can divide
-        (
-            [
-                [1, 0, 1],
-                [0, 1, 0],
-                [1, 0, 1],
-            ],
-            [0, 1, 2, 3, 4],
-            False,
-            [
-                [1, 1, 1],
-                [1, 1, 1],
-                [1, 1, 1],
-            ],
-            [(0, 1), (1, 0), (1, 2), (2, 1)],
-        ),
-        # 1 cell cant divide (no free neighborhood)
-        (
-            [
-                [1, 0, 1, 1],
-                [1, 1, 1, 1],
-                [1, 1, 1, 1],
-                [1, 1, 1, 1],
-            ],
-            [10],
-            False,
-            [
-                [1, 0, 1, 1],
-                [1, 1, 1, 1],
-                [1, 1, 1, 1],
-                [1, 1, 1, 1],
-            ],
-            [],
-        ),
-        # 1 cell can migrate (only 1 choice)
-        (
-            [
-                [1, 0, 1],
-                [1, 1, 1],
-                [1, 1, 1],
-            ],
-            [0],
-            True,
-            [
-                [0, 1, 1],
-                [1, 1, 1],
-                [1, 1, 1],
-            ],
-            [(0, 1)],
-        ),
-    ],
-)
-def test_resolve_placements(
-    cells: list[list[int]],
-    idxs: list[int],
-    migrate: bool,
-    exp_cells: list[list[int]],
-    exp_new_positions: list[tuple[int, int]],
-) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=len(cells), device=DEVICE)
-    culture.cell_map[:] = torch.tensor(cells, dtype=torch.bool, device=DEVICE)
-
-    idx = torch.tensor(idxs, dtype=torch.int32, device=DEVICE)
-    pos = culture.cell_map.nonzero().to(dtype=torch.int32)
-
-    # pos will be edited in place for migrating cells
-    successful_idxs, new_positions = culture._resolve_placements(
-        cell_idxs=idx, cell_positions=pos, is_migration=migrate
-    )
-
-    # cell maps match
-    cell_map = torch.tensor(exp_cells, dtype=torch.bool, device=DEVICE)
-    torch.testing.assert_close(culture.cell_map, cell_map)
-
-    # new positions match
-    assert len(successful_idxs) == len(exp_new_positions)
-    assert {tuple(d) for d in new_positions.tolist()} == set(exp_new_positions)
-
-    # pos was correctly edited if migrating
-    if migrate:
-        cell_pos = culture.cell_map.nonzero().tolist()
-        assert {tuple(d) for d in cell_pos} == {tuple(d) for d in pos.tolist()}
-
-
 @pytest.mark.slow
-@pytest.mark.parametrize("migrate", [True, False])
-def test_resolve_placements_randomly(migrate: bool) -> None:
-    n = 100
-    for _ in range(100):
-        culture = Culture(chemistry=CHEMISTRY, map_size=n, device=DEVICE)
-        culture.cell_map[:] = torch.rand((n, n), device=DEVICE) < 0.7  # 70% confluency
-        cells_before = culture.cell_map.clone()
+def test_diffuse_randomly() -> None:
+    L = 100
+    culture = Culture(chemistry=CHEMISTRY, map_size=L, device=DEVICE)
+    culture.molecule_map[:] = torch.rand_like(culture.molecule_map) * 10
+    totals_0 = culture.molecule_map.sum(dim=(1, 2))
 
-        n_cells = int(culture.cell_map.sum().item())
-        k = random.randint(10, n_cells)
+    for _ in range(1000):
+        culture.diffuse_molecules()
 
-        idx = torch.randperm(n_cells, dtype=torch.int32, device=DEVICE)[:k]
-        pos = culture.cell_map.nonzero().to(dtype=torch.int32)
-
-        # pos will be edited in place for migrating cells
-        successful_idxs, new_positions = culture._resolve_placements(
-            cell_idxs=idx, cell_positions=pos, is_migration=migrate, n_max_rounds=5
-        )
-
-        k_succ = new_positions.shape[0]
-        cells_after = culture.cell_map
-
-        # check dimensions and numbers make sense
-        assert new_positions.shape[1] == 2
-        assert successful_idxs.numel() == k_succ
-        assert k_succ <= k
-
-        if migrate:
-            assert n_cells == cells_after.sum()
-        else:
-            assert k_succ + n_cells == cells_after.sum()
-
-        # at least some cells should have been updated
-        assert (cells_before != cells_after).any()
-
-        # positions should have been updated for migrating cells
-        if migrate:
-            cell_pos = culture.cell_map.nonzero().tolist()
-            assert {tuple(d) for d in cell_pos} == {tuple(d) for d in pos.tolist()}
+    totals_1 = culture.molecule_map.sum(dim=(1, 2))
+    torch.testing.assert_close(totals_0, totals_1, atol=_ATOL, rtol=_RTOL)
 
 
 def test_saving_loading(tmp_path: Path) -> None:
@@ -235,7 +503,7 @@ def test_saving_loading(tmp_path: Path) -> None:
     # create culture with 70% confluency
     culture = Culture(chemistry=CHEMISTRY, device=DEVICE)
     culture.molecule_map[:] = torch.rand_like(culture.molecule_map)
-    culture.cell_map[:] = torch.rand(culture.cell_map.shape, device=DEVICE) < 0.7
+    culture.cell_map[:] = _gen_rand_cell_map(L=culture.map_size, confl=0.7)
 
     # keep original state for comparison
     molecule_map = culture.molecule_map.clone()
@@ -246,7 +514,7 @@ def test_saving_loading(tmp_path: Path) -> None:
 
     # change stuff
     culture.molecule_map = torch.rand_like(culture.molecule_map)
-    culture.cell_map[:] = torch.rand(culture.cell_map.shape, device=DEVICE) < 0.5
+    culture.cell_map[:] = _gen_rand_cell_map(L=culture.map_size, confl=0.5)
 
     # load state
     culture.load_state(statedir=statedir)
