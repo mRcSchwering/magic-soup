@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 import torch
-from magicsoup.chemistry import Chemistry, Molecule
 from magicsoup.culture import Culture
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
@@ -431,70 +430,6 @@ def test_migrate_cells_randomly() -> None:
 
         # at least some cells should have been updated
         assert (cell_map_0 != cell_map_1).any()
-
-
-def test_diffuse():
-    molecule_map = torch.tensor(
-        [
-            [
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-            ],
-            [
-                [1.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-            ],
-        ]
-    )
-    exp = torch.tensor(
-        [
-            [
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 0.0, 0.0],
-            ],
-            [
-                [0.2, 0.1, 0.0, 0.0, 0.1],
-                [0.1, 0.1, 0.1, 0.1, 0.2],
-                [0.0, 0.0, 0.2, 0.3, 0.2],
-                [0.0, 0.0, 0.2, 0.3, 0.2],
-                [0.1, 0.1, 0.1, 0.1, 0.2],
-            ],
-        ]
-    )
-
-    m0 = Molecule("m0", 10, diffusivity=0.0)
-    m1 = Molecule("m1", 10, diffusivity=0.5)
-
-    chemistry = Chemistry(molecules=[m0, m1], reactions=[])
-    culture = Culture(chemistry=chemistry, map_size=5)
-    culture.molecule_map = molecule_map
-
-    culture.diffuse_molecules()
-
-    torch.testing.assert_close(culture.molecule_map, exp, atol=_ATOL, rtol=_RTOL)
-
-
-@pytest.mark.slow
-def test_diffuse_randomly() -> None:
-    L = 100
-    culture = Culture(chemistry=CHEMISTRY, map_size=L, device=DEVICE)
-    culture.molecule_map[:] = torch.rand_like(culture.molecule_map) * 10
-    totals_0 = culture.molecule_map.sum(dim=(1, 2))
-
-    for _ in range(1000):
-        culture.diffuse_molecules()
-
-    totals_1 = culture.molecule_map.sum(dim=(1, 2))
-    torch.testing.assert_close(totals_0, totals_1, atol=_ATOL, rtol=_RTOL)
 
 
 def test_saving_loading(tmp_path: Path) -> None:

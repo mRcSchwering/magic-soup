@@ -19,6 +19,13 @@ from magicsoup.util import TensorClass, randstr
 _log = logging.getLogger(__name__)
 
 
+# TODO: @torch.inference_mode()
+#       around major stepping functions may speed up things even a bit more
+#       (or outside of the simulation around sep())
+#       however it means every tensor created within inference_mode cannot be mutated
+#       but this should be the case
+
+
 def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
     return lambda b: torch.load(BytesIO(b), map_location=map_loc)

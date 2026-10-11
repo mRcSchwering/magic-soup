@@ -4,7 +4,38 @@ from typing import TypedDict
 import torch
 
 from magicsoup.chemistry import Chemistry
+from magicsoup.physics import FftDiffusion
 from magicsoup.util import TensorClass
+
+
+class MooreNeighborhood(TensorClass):
+
+    def __init__(self, L: int, device: str = "cuda") -> None:
+        super().__init__(device=device)
+        self.L = L
+
+        # fmt: off
+        self.full = self.idxtensor(
+            [
+                [-1, -1], [-1, 0], [-1, 1],
+                [ 0, -1],          [ 0, 1],
+                [ 1, -1], [ 1, 0], [ 1, 1],
+            ]
+        )
+        self.half = self.idxtensor(
+            [
+
+                                   [ 0, 1],
+                [ 1, -1], [ 1, 0], [ 1, 1],
+            ]
+        )
+        # fmt: on
+
+    def get_neighborhoods(
+        self, coords: torch.Tensor, half: bool = False
+    ) -> torch.Tensor:
+        offs = self.half if half else self.full
+        return (coords[:, None, :] + offs[None]) % self.L  # torus wrap
 
 
 class CultureKwargs(TypedDict, total=False):
@@ -48,6 +79,8 @@ class Culture(TensorClass):
         self,
         chemistry: Chemistry,
         map_size: int = 128,
+        time_step_s: float = 1.0,
+        pixel_width_um: float = 1.0,
         device: str = "cpu",
         ftype: torch.dtype = torch.float32,
         itype: torch.dtype = torch.int8,
@@ -57,6 +90,7 @@ class Culture(TensorClass):
         molecules = chemistry.molecules
         self.map_size = map_size
         self.pixels = map_size**2
+        self.n_molecules = len(molecules)
 
         # describes all coordinates
         self.coord_map = self._get_coord_map()
@@ -72,19 +106,20 @@ class Culture(TensorClass):
             len(molecules), map_size, map_size
         )
 
-        self._diffusion_funs: list[torch.nn.Conv2d] = [
-            self._get_diffuse(mol_diff_rate=m.diffusivity) for m in molecules
-        ]
-        self._nb_offs = self._get_moores_neighborhood()
-        self._hlf_nb_offs = self._get_half_moores_neighborhood()
+        self._diffusion = FftDiffusion(
+            diff_coeffs=[d.diffusivity for d in molecules],
+            map_size=self.map_size,
+            dt=time_step_s,
+            dx=pixel_width_um,
+            ftype=ftype,
+            device=device,
+        )
+
+        self._nbh = MooreNeighborhood(L=self.map_size, device=device)
 
     @torch.no_grad()
     def diffuse_molecules(self):
-        # TODO: calibrate diffusion to physics
-        for mol_i, diffuse in enumerate(self._diffusion_funs):
-            before = self.molecule_map[mol_i].unsqueeze(0).unsqueeze(1)
-            after = diffuse(before)
-            self.molecule_map[mol_i] = torch.squeeze(after, 0).squeeze(0)
+        self.molecule_map = self._diffusion.diffuse(self.molecule_map)
 
     def cell_neighbor_pairs(self) -> torch.Tensor:
         """
@@ -103,7 +138,7 @@ class Culture(TensorClass):
         valid = pos[:, 0] >= 0  # N rows which are not empty
 
         # look up half cell neighborhoods to only get unique pairs (N, 4, 2)
-        nbs = self._get_neighborhoods(coords=pos, offs=self._hlf_nb_offs)
+        nbs = self._nbh.get_neighborhoods(coords=pos, half=True)
         flat_nbs = self._flatten_coordinates(nbs)  # (N, 4)
 
         nb_cells = self.cell_map_flat[flat_nbs]  # (N, 4)
@@ -155,7 +190,7 @@ class Culture(TensorClass):
             idxs_pend = cell_idxs[pending]
 
             # 8 neighbourhoods of each pending cells (p, 8, 2)
-            nbs = self._get_neighborhoods(coords=pos[idxs_pend], offs=self._nb_offs)
+            nbs = self._nbh.get_neighborhoods(coords=pos[idxs_pend])
 
             # generate target neighbourhood and choose who gets it (p,)
             target_nbs, winners = self._choose_neighbourhood(nbs=nbs, p=p)
@@ -228,7 +263,7 @@ class Culture(TensorClass):
             idxs_pend = parent_idxs[pending]
 
             # 8 neighbourhoods of each pending cells (p, 8, 2)
-            nbs = self._get_neighborhoods(coords=pos[idxs_pend], offs=self._nb_offs)
+            nbs = self._nbh.get_neighborhoods(coords=pos[idxs_pend])
 
             # generate target neighbourhood and choose who gets it (p,)
             target_nbs, winners = self._choose_neighbourhood(nbs=nbs, p=p)
@@ -349,48 +384,6 @@ class Culture(TensorClass):
 
         return target_nbs, winners  # int (p,), bool (p,)
 
-    def _get_neighborhoods(
-        self, coords: torch.Tensor, offs: torch.Tensor
-    ) -> torch.Tensor:
-        return (coords[:, None, :] + offs[None]) % self.map_size  # torus wrap
-
-    def _get_diffuse(self, mol_diff_rate: float) -> torch.nn.Conv2d:
-        if mol_diff_rate < 0.0:
-            mol_diff_rate = -mol_diff_rate
-
-        # mol_diff_rate > 1.0 could also mean expanding the kernel
-        # so that molecules can diffuse more than just 1 pxl per round
-        mol_diff_rate = min(mol_diff_rate, 1.0)
-
-        if mol_diff_rate == 0.0:
-            a = 0.0
-            b = 1.0
-        else:
-            d = 1 / mol_diff_rate
-            a = 1 / (d + 8)
-            b = d * a
-            b = b + 1.0 - (8 * a + b)  # try correcting inaccuracy
-
-        # fmt: off
-        kernel = self.ftensor([[[
-            [a, a, a],
-            [a, b, a],
-            [a, a, a],
-        ]]])
-        # fmt: on
-
-        conv = torch.nn.Conv2d(
-            in_channels=1,
-            out_channels=1,
-            kernel_size=3,
-            padding=1,
-            padding_mode="circular",
-            bias=False,
-            device=self.device,
-        )
-        conv.weight = torch.nn.Parameter(kernel, requires_grad=False)
-        return conv
-
     def _flatten_coordinates(self, xy: torch.Tensor) -> torch.Tensor:
         return xy[..., 0] * self.map_size + xy[..., 1]
 
@@ -401,25 +394,3 @@ class Culture(TensorClass):
         L = self.map_size
         xs, ys = torch.meshgrid(self.idxarange(L), self.idxarange(L), indexing="ij")
         return torch.stack((xs, ys), dim=-1).view(-1, 2)  # (L*L, 2)
-
-    def _get_moores_neighborhood(self) -> torch.Tensor:
-        # fmt: off
-        return self.idxtensor(
-            [
-                [-1, -1], [-1, 0], [-1, 1],
-                [ 0, -1],          [ 0, 1],
-                [ 1, -1], [ 1, 0], [ 1, 1],
-            ]
-        )
-        # fmt: on
-
-    def _get_half_moores_neighborhood(self) -> torch.Tensor:
-        # fmt: off
-        return self.idxtensor(
-            [
-
-                                   [ 0, 1],
-                [ 1, -1], [ 1, 0], [ 1, 1],
-            ]
-        )
-        # fmt: on
