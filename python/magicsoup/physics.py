@@ -182,3 +182,71 @@ class FftDiffusion(TensorClass):
         scale = torch.where(after > 0, before / after, torch.ones_like(after))
         out *= scale.to(out.dtype)[:, None, None]
         return out
+
+
+class Permeation(TensorClass):
+    """
+    Cell-membrane molecule permeation model
+
+    Arguments:
+        permeabilities: Permeabilities in cm/s for each molecule species
+            in the same order as used by the molecule map.
+        dt: time of a permeation step in seconds
+        V_cell: volume of a cell in cubic micro meter
+        V_med: volume of a cell culture voxel in cubic micro meter
+        A_cell: cell membrane area in square micro meter
+        device: Device to use for tensors
+            (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
+            This has to be aligned with [World][magicsoup.world.World].
+        ftype: Dtype of float tensors used.
+            This has to be aligned with [World][magicsoup.world.World].
+
+    The defaults approximate a cell as sphere swimming in a cell culture voxel.
+    Flux `J = P (c_ext - c_int)` with permeability P creates
+    ```
+        dc_int/dt = P · A / V_cell · (c_ext - c_int)
+        dc_ext/dt = -P · A / V_medium · (c_ext - c_int)
+    ```
+    Total amount `V_cell · c_int + V_medium · c_ext` stays constant
+    and the concentration difference decays exponentially with the rate
+
+        k = P · A · (1/V_cell + 1/V_medium)
+
+    Both concentrations approach the equilibrium concentration
+
+        c_eq = (V_cell · c_int + V_medium · c_ext) / (V_cell + V_medium)
+    """
+
+    def __init__(
+        self,
+        permeabilities: list[float],
+        dt: float = 0.1,  # time step in seconds
+        V_cell: float = 1.0,  # cell volume in µm³
+        V_med: float = 1000.0,  # medium voxel volume in µm³
+        A_cell: float = 5.0,  # cell membrane area in µm² (~= sphere)
+        ftype: torch.dtype = torch.float32,
+        device: str = "cuda",
+    ) -> None:
+
+        super().__init__(device=device, ftype=ftype)
+
+        n_molecules = len(permeabilities)
+        self.int_mols = slice(0, n_molecules)
+        self.ext_mols = slice(n_molecules, n_molecules * 2)
+        self.A_cell = A_cell
+        self.V_cell = V_cell
+        self.V_total = V_cell + V_med
+        self.V_med = V_med
+
+        P = self.ftensor([d * 10_000 for d in permeabilities])  # (M,) in µm/s
+        k = P * A_cell * (1 / V_cell + 1 / V_med)  # (M,) exchange rate in 1/s
+        self.f = torch.exp(-k * dt)  # (S,) remaining fraction per step
+
+    def permeate(self, x: torch.Tensor) -> torch.Tensor:
+        """Permeate and returncell molecule concentrations (C, 2M)"""
+        xi = x[:, self.int_mols]  # (C, M) intracellular concentrations
+        xe = x[:, self.ext_mols]  # (C, M) extracellular concentrations
+        c_eq = (self.V_cell * xi + self.V_med * xe) / self.V_total
+        x[:, self.int_mols] = c_eq + (xi - c_eq) * self.f
+        x[:, self.ext_mols] = c_eq + (xe - c_eq) * self.f
+        return x
