@@ -11,7 +11,6 @@ _log = logging.getLogger(__name__)
 
 class KineticsKwargs(TypedDict, total=False):
     eps: float
-    h: float
     n_max_sweeps: int
     n_max_bisect: int
     xi_conv_tol: float

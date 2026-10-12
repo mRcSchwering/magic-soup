@@ -60,7 +60,6 @@ class Cells(TensorClass):
         self.genomes: Array[str] = Array([])  # cell genomes
         self.labels: Array[str] = Array([])  # cell labels
         self.alive = self.idxzeros(0).bool()  # which ones are alive
-        self.positions = self.idxzeros(0, 2)  # x,y positions on map
         self.ages = self.fzeros(0)  # time since last division
         self.generations = self.idxzeros(0)  # number of divisions
         self.molecules = self.fzeros(0, n_molecules)  # intracellular concentrations
@@ -142,6 +141,21 @@ class Cells(TensorClass):
         # update cellular parameters
         self.genomes[idxs] = genomes
 
+    def copy_genomes(self, from_idxs: torch.Tensor, to_idxs: torch.Tensor) -> None:
+
+        # update kinetics parameters
+        self.N[to_idxs] = self.N[from_idxs]
+        self.N_f[to_idxs] = self.N_f[from_idxs]
+        self.N_b[to_idxs] = self.N_b[from_idxs]
+        self.N_h[to_idxs] = self.N_h[from_idxs]
+        self.k_f[to_idxs] = self.k_f[from_idxs]
+        self.k_b[to_idxs] = self.k_b[from_idxs]
+        self.K_r[to_idxs] = self.K_r[from_idxs]
+        self.v_max[to_idxs] = self.v_max[from_idxs]
+
+        # update cellular parameters
+        self.genomes[to_idxs] = self.genomes[from_idxs]
+
     def update_c(self, c_req: int) -> None:
         mar = math.ceil(c_req * self.dim_scaling)
         to_c = min(c_req + mar, self.c_max)
@@ -167,7 +181,6 @@ class Cells(TensorClass):
 
         torch.save(self.alive, statedir / "alive.pt")
         torch.save(self.ages, statedir / "ages.pt")
-        torch.save(self.positions, statedir / "positions.pt")
         torch.save(self.generations, statedir / "generations.pt")
         torch.save(self.molecules, statedir / "molecules.pt")
 
@@ -189,7 +202,6 @@ class Cells(TensorClass):
 
         self.alive = torch.load(statedir / "alive.pt", map_location=self.device)
         self.ages = torch.load(statedir / "ages.pt", map_location=self.device)
-        self.positions = torch.load(statedir / "positions.pt", map_location=self.device)
         self.generations = torch.load(
             statedir / "generations.pt", map_location=self.device
         )
@@ -233,7 +245,6 @@ class Cells(TensorClass):
         self.labels.items.extend([""] * by_n)
         self.alive = self._expand_c(t=self.alive, by_n=by_n)
         self.ages = self._expand_c(t=self.ages, by_n=by_n)
-        self.positions = self._expand_c(t=self.positions, by_n=by_n, value=-1)
         self.generations = self._expand_c(t=self.generations, by_n=by_n)
         self.molecules = self._expand_c(t=self.molecules, by_n=by_n)
 
@@ -265,7 +276,6 @@ class Cells(TensorClass):
         self.labels = Array(self.labels[keep])
         self.alive = self.alive[keep]
         self.ages = self.ages[keep]
-        self.positions = self.positions[keep]
         self.generations = self.generations[keep]
         self.molecules = self.molecules[keep]
 

@@ -23,7 +23,6 @@ def _assert_empty_values(cells: Cells) -> None:
     assert all(d == "" for d in cells.labels.items)
     assert (cells.alive == False).all()
     assert (cells.ages == 0.0).all()
-    assert (cells.positions == -1).all()
     assert (cells.generations == 0).all()
     assert (cells.molecules == 0.0).all()
 
@@ -67,7 +66,6 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
     assert len(cells.labels) == cells.c
     assert cells.alive.shape == (cells.c,)
     assert cells.ages.shape == (cells.c,)
-    assert cells.positions.shape == (cells.c, 2)
     assert cells.generations.shape == (cells.c,)
     assert cells.molecules.shape == (cells.c, len(cells.chemistry.molecules))
 
@@ -135,7 +133,6 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
     assert len(cells.labels) == cells.c
     assert cells.alive.shape == (cells.c,)
     assert cells.ages.shape == (cells.c,)
-    assert cells.positions.shape == (cells.c, 2)
     assert cells.generations.shape == (cells.c,)
     assert cells.molecules.shape == (cells.c, len(cells.chemistry.molecules))
 
@@ -169,7 +166,6 @@ def test_update_genomes_randomly(cells: Cells) -> None:
         assert isinstance(cells.labels, Array)
         assert cells.alive.dtype == torch.bool
         assert cells.ages.dtype == torch.float32
-        assert cells.positions.dtype == torch.int32
         assert cells.generations.dtype == torch.int32
         assert cells.molecules.dtype == torch.float32
 
@@ -202,7 +198,6 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     labels = [d for d in cells.labels.items]
     alive = cells.alive.clone()
     ages = cells.ages.clone()
-    positions = cells.positions.clone()
     generations = cells.generations.clone()
     molecules = cells.molecules.clone()
 
@@ -231,7 +226,6 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     assert cells.labels.items == labels
     assert (cells.alive == alive).all()
     assert (cells.ages == ages).all()
-    assert (cells.positions == positions).all()
     assert (cells.generations == generations).all()
     assert (cells.molecules == molecules).all()
 

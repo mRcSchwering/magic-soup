@@ -4,7 +4,6 @@ from typing import TypedDict
 import torch
 
 from magicsoup.chemistry import Chemistry
-from magicsoup.physics import FftDiffusion
 from magicsoup.util import TensorClass
 
 
@@ -79,8 +78,6 @@ class Culture(TensorClass):
         self,
         chemistry: Chemistry,
         map_size: int = 128,
-        time_step_s: float = 1.0,
-        pixel_width_um: float = 1.0,
         device: str = "cpu",
         ftype: torch.dtype = torch.float32,
         itype: torch.dtype = torch.int8,
@@ -106,22 +103,11 @@ class Culture(TensorClass):
             len(molecules), map_size, map_size
         )
 
-        self._diffusion = FftDiffusion(
-            diff_coeffs=[d.diffusivity for d in molecules],
-            map_size=self.map_size,
-            dt=time_step_s,
-            dx=pixel_width_um,
-            ftype=ftype,
-            device=device,
-        )
-
         self._nbh = MooreNeighborhood(L=self.map_size, device=device)
 
-    @torch.no_grad()
-    def diffuse_molecules(self):
-        self.molecule_map = self._diffusion.diffuse(self.molecule_map)
-
-    def cell_neighbor_pairs(self) -> torch.Tensor:
+    def cell_neighbor_pairs(
+        self, cell_idxs: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """
         Get all unique pairs of neighbouring cells.
 
@@ -135,7 +121,10 @@ class Culture(TensorClass):
         N = L * L
 
         pos = self.get_cell_positions()  # (N, 2) with (-1, -1) for empty
-        valid = pos[:, 0] >= 0  # N rows which are not empty
+        if cell_idxs:
+            pos = pos[cell_idxs]
+
+        valid = pos[:, 0] >= 0  # rows which are not empty
 
         # look up half cell neighborhoods to only get unique pairs (N, 4, 2)
         nbs = self._nbh.get_neighborhoods(coords=pos, half=True)
@@ -146,6 +135,47 @@ class Culture(TensorClass):
 
         mask = valid[:, None] & (nb_cells >= 0)  # (N, 4) with K true
         return torch.stack((src[mask], nb_cells[mask]), dim=1)  # (K, 2)
+
+    def get_cell_positions(self) -> torch.Tensor:
+        """
+        Get current coordinates of all cells on cell map.
+
+        Returns:
+            (n, 2) tensor of n coordinates representing the cell map
+
+        All possible `n` coordinates are presented in the returned tensor.
+        Each cell is contained with its x and y coordinates at the position of its index.
+        _E.g._ if cell 5 is at (3, 0), then the tensor at index 5 contains values 3 and 0.
+        All empty/missing cells contain coordinates (-1, -1).
+        _E.g._ if there is no cell 4, then the tensor at index 4 contains values -1 and -1.
+        """
+        # build (N, 2) cell x-y cell positions from current map
+        # row is cell index, empty rows are (-1, -1)
+        N = self.map_size * self.map_size
+        flat = self.cell_map_flat
+
+        # map empty pixels into dummy row N + 1
+        pos = self.idxfull(N + 1, 2, value=-1)  # (N + 1, 2)
+        rows = torch.where(flat >= 0, flat, N)  # (N + 1, 2)
+        pos[rows] = self.coord_map
+        return pos[:N]  # (N, 2) remove dummy row
+
+    def random_free_positions(self, n: int) -> torch.Tensor:
+        """
+        Get `n` available random positions on cell map.
+        Returns fewer if less are avilable.
+
+        Arguments:
+            n: Desired number of random positions
+
+        Returns:
+            (k, 2) tensor of available coordinates with `k = min(n, number of free pixels)`
+        """
+        free = self.cell_map_flat < 0
+        score = self.frand(free.shape).masked_fill(~free, -1.0)
+        sel = score.topk(n).indices  # n distinct flat pixel indices
+        sel = sel[free[sel]]  # drop occupied ones if fewer than n were free
+        return self._unflatten_coordinates(sel)
 
     def migrate_cells(
         self,
@@ -282,47 +312,6 @@ class Culture(TensorClass):
 
         ok = success >= 0
         return parent_idxs[ok], child_idxs[ok]
-
-    def get_cell_positions(self) -> torch.Tensor:
-        """
-        Get current coordinates of all cells on cell map.
-
-        Returns:
-            (n, 2) tensor of n coordinates representing the cell map
-
-        All possible `n` coordinates are presented in the returned tensor.
-        Each cell is contained with its x and y coordinates at the position of its index.
-        _E.g._ if cell 5 is at (3, 0), then the tensor at index 5 contains values 3 and 0.
-        All empty/missing cells contain coordinates (-1, -1).
-        _E.g._ if there is no cell 4, then the tensor at index 4 contains values -1 and -1.
-        """
-        # build (N, 2) cell x-y cell positions from current map
-        # row is cell index, empty rows are (-1, -1)
-        N = self.map_size * self.map_size
-        flat = self.cell_map_flat
-
-        # map empty pixels into dummy row N + 1
-        pos = self.idxfull(N + 1, 2, value=-1)  # (N + 1, 2)
-        rows = torch.where(flat >= 0, flat, N)  # (N + 1, 2)
-        pos[rows] = self.coord_map
-        return pos[:N]  # (N, 2) remove dummy row
-
-    def random_free_positions(self, n: int) -> torch.Tensor:
-        """
-        Get `n` available random positions on cell map.
-        Returns fewer if less are avilable.
-
-        Arguments:
-            n: Desired number of random positions
-
-        Returns:
-            (k, 2) tensor of available coordinates with `k = min(n, number of free pixels)`
-        """
-        free = self.cell_map_flat < 0
-        score = self.frand(free.shape).masked_fill(~free, -1.0)
-        sel = score.topk(n).indices  # n distinct flat pixel indices
-        sel = sel[free[sel]]  # drop occupied ones if fewer than n were free
-        return self._unflatten_coordinates(sel)
 
     def save_state(self, statedir: Path) -> None:
         """

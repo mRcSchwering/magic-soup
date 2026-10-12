@@ -1,4 +1,5 @@
 import math
+from typing import TypedDict
 
 import torch
 import torch.nn.functional as F
@@ -104,6 +105,10 @@ class Diffusion(TensorClass):
         return out
 
 
+class DiffusionKwargs(TypedDict, total=False):
+    dx: float
+
+
 class FftDiffusion(TensorClass):
     r"""
     FFT Diffusion model for 2D grid of 3D voxels
@@ -139,7 +144,7 @@ class FftDiffusion(TensorClass):
         self,
         diff_coeffs: list[float],
         map_size: int,
-        dx: float = 1.0,
+        dx: float = 10.0,
         dt: float = 1.0,
         ftype: torch.dtype = torch.float32,
         device: str = "cuda",
@@ -182,6 +187,10 @@ class FftDiffusion(TensorClass):
         scale = torch.where(after > 0, before / after, torch.ones_like(after))
         out *= scale.to(out.dtype)[:, None, None]
         return out
+
+
+class PermeationKwargs(TypedDict, total=False):
+    A_cell: float
 
 
 class Permeation(TensorClass):
