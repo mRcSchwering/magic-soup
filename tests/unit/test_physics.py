@@ -5,14 +5,14 @@ import torch
 from magicsoup.physics import Diffusion, FftDiffusion, Permeation
 
 from tests.config import DEVICE, FTYPE
-from tests.util import frand
+from tests.util import frand, ftensor, fzeros
 
 _ATOL = 1e-4
 _RTOL = 1e-4
 
 
 def test_diffusion():
-    molecule_map = torch.tensor(
+    molecule_map = ftensor(
         [
             [
                 [0.0, 0.0, 0.0, 0.0, 0.0],
@@ -37,7 +37,7 @@ def test_diffusion():
             ],
         ]
     )
-    exp = torch.tensor(
+    exp = ftensor(
         [
             [
                 [0.0, 0.0, 0.0, 0.0, 0.0],
@@ -96,7 +96,7 @@ def test_random_diffusion() -> None:
 
 
 def test_fft_diffusion():
-    molecule_map = torch.tensor(
+    molecule_map = ftensor(
         [
             [
                 [0.0, 0.0, 0.0, 0.0, 0.0],
@@ -121,7 +121,7 @@ def test_fft_diffusion():
             ],
         ]
     )
-    exp = torch.tensor(
+    exp = ftensor(
         [
             [
                 [0.0, 0.0, 0.0, 0.0, 0.0],
@@ -181,21 +181,32 @@ def test_random_fft_diffusion() -> None:
     torch.testing.assert_close(totals_0, totals_1, atol=_ATOL, rtol=_RTOL)
 
 
-def test_permeation():
-    cell_molecules = torch.tensor(
-        [
-            [10.0, 0.0, 0.0, 10.0],
-            [0.0, 10.0, 10.0, 0.0],
-            [5.0, 10.0, 15.0, 20.0],
-        ]
-    )
-    exp = torch.tensor(
-        [
-            [7.6966e-02, 9.9900e00, 9.9230e-03, 9.9900e00],
-            [9.9230e00, 9.9900e-03, 9.9901e00, 9.9900e-03],
-            [1.4923e01, 1.9990e01, 1.4990e01, 1.9990e01],
-        ]
-    )
+@pytest.mark.parametrize(
+    "cellmols, expmols",
+    [
+        # no cells
+        (
+            [],
+            [],
+        ),
+        # some permeation
+        (
+            [
+                [10.0, 0.0, 0.0, 10.0],
+                [0.0, 10.0, 10.0, 0.0],
+                [5.0, 10.0, 15.0, 20.0],
+            ],
+            [
+                [7.6966e-02, 9.9900e00, 9.9230e-03, 9.9900e00],
+                [9.9230e00, 9.9900e-03, 9.9901e00, 9.9900e-03],
+                [1.4923e01, 1.9990e01, 1.4990e01, 1.9990e01],
+            ],
+        ),
+    ],
+)
+def test_permeation(cellmols: list, expmols: list):
+    cell_molecules = ftensor(cellmols) if cellmols else fzeros(0, 4)
+    exp = ftensor(expmols) if expmols else fzeros(0, 4)
 
     permeation = Permeation(permeabilities=[0.001, 0.1], ftype=FTYPE, device=DEVICE)
 

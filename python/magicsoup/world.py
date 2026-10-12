@@ -174,9 +174,6 @@ class World(TensorClass):
             generation=int(self.cells.generations[idx].item()),
         )
 
-    def get_neighbors(self, cell_idxs: torch.Tensor | None = None) -> torch.Tensor:
-        return self.culture.cell_neighbor_pairs(cell_idxs=cell_idxs)
-
     def spawn_cells(self, genomes: list[str]) -> torch.Tensor:
         n_new_cells = len(genomes)
         if n_new_cells == 0:
@@ -444,10 +441,8 @@ class World(TensorClass):
         pairs = [(d, idxs[i]) for d, i in mutated]
         self.update_cells(genome_idx_pairs=pairs)
 
-    def recombinate_cells(
-        self, cell_idxs: torch.Tensor | None = None, p: float = 1e-7
-    ) -> None:
-        nghbrs = self.get_neighbors(cell_idxs=cell_idxs)
+    def recombinate_cells(self, p: float = 1e-7) -> None:
+        nghbrs = self.get_neighbors()
         genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
         genomes1 = self.cells.genomes[[d[1] for d in nghbrs]]
         pairs = [(g0, g1) for g0, g1 in zip(genomes0, genomes1)]

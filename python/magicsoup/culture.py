@@ -105,9 +105,7 @@ class Culture(TensorClass):
 
         self._nbh = MooreNeighborhood(L=self.map_size, device=device)
 
-    def cell_neighbor_pairs(
-        self, cell_idxs: torch.Tensor | None = None
-    ) -> torch.Tensor:
+    def cell_neighbor_pairs(self) -> torch.Tensor:
         """
         Get all unique pairs of neighbouring cells.
 
@@ -121,9 +119,6 @@ class Culture(TensorClass):
         N = L * L
 
         pos = self.get_cell_positions()  # (N, 2) with (-1, -1) for empty
-        if cell_idxs:
-            pos = pos[cell_idxs]
-
         valid = pos[:, 0] >= 0  # rows which are not empty
 
         # look up half cell neighborhoods to only get unique pairs (N, 4, 2)

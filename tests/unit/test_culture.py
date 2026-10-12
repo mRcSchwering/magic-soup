@@ -8,7 +8,15 @@ from magicsoup.culture import Culture
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 from tests.config import DEVICE
-from tests.util import fzeros, idxarange, idxfull, idxrandperm, idxtensor, seed
+from tests.util import (
+    fzeros,
+    idxarange,
+    idxfull,
+    idxrandperm,
+    idxtensor,
+    idxzeros,
+    seed,
+)
 
 _ATOL = 1e-4
 _RTOL = 1e-4
@@ -89,6 +97,7 @@ def test_get_cell_positions(cell_map: list, exp_pos: list) -> None:
 @pytest.mark.parametrize(
     "cell_map, exp_pairs",
     [
+        # one possible pair
         (
             [
                 [-1, 0, 1],
@@ -97,6 +106,16 @@ def test_get_cell_positions(cell_map: list, exp_pos: list) -> None:
             ],
             [(0, 1)],
         ),
+        # no cells
+        (
+            [
+                [-1, -1, -1],
+                [-1, -1, -1],
+                [-1, -1, -1],
+            ],
+            [],
+        ),
+        # multiple cell pairs
         (
             [
                 [-1, 0, -1],
@@ -105,13 +124,15 @@ def test_get_cell_positions(cell_map: list, exp_pos: list) -> None:
             ],
             [(0, 2), (2, 5), (5, 0)],
         ),
+        # no pair possible
         (
             [
-                [0, 1, -1],
-                [2, 3, -1],
-                [-1, -1, -1],
+                [-1, 1, -1, -1],
+                [-1, -1, -1, -1],
+                [-1, 1, -1, -1],
+                [-1, -1, -1, -1],
             ],
-            [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)],
+            [],
         ),
     ],
 )
@@ -119,7 +140,8 @@ def test_cell_neighbor_pairs(cell_map: list, exp_pairs: list) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map), device=DEVICE)
     culture.cell_map[:] = idxtensor(cell_map)
     pairs = culture.cell_neighbor_pairs()
-    torch.testing.assert_close(pairs, idxtensor(exp_pairs))
+    exp = idxtensor(exp_pairs) if exp_pairs else idxzeros(0, 2)
+    torch.testing.assert_close(pairs, exp)
 
 
 @pytest.mark.parametrize(
@@ -189,6 +211,23 @@ def test_random_free_positions(cell_map: list, n: int, exp_n: int) -> None:
 @pytest.mark.parametrize(
     "cell_map, parents, children, exp_cell_map, exp_succ_parents, exp_succ_children",
     [
+        (
+            # empty map
+            [
+                [-1, -1, -1],
+                [-1, -1, -1],
+                [-1, -1, -1],
+            ],
+            [],
+            [],
+            [
+                [-1, -1, -1],
+                [-1, -1, -1],
+                [-1, -1, -1],
+            ],
+            [],
+            [],
+        ),
         (
             # no cell divides
             [
@@ -305,6 +344,21 @@ def test_divide_cells(
 @pytest.mark.parametrize(
     "cell_map, idxs, exp_cell_map, exp_succ_idxs",
     [
+        (
+            # empty map
+            [
+                [-1, -1, -1],
+                [-1, -1, -1],
+                [-1, -1, -1],
+            ],
+            [],
+            [
+                [-1, -1, -1],
+                [-1, -1, -1],
+                [-1, -1, -1],
+            ],
+            [],
+        ),
         (
             # no cell migrates
             [
