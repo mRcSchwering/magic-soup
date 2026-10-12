@@ -2,7 +2,7 @@ import random
 
 import pytest
 import torch
-from magicsoup.physics import Diffusion, FftDiffusion
+from magicsoup.physics import Diffusion, FftDiffusion, Permeation
 
 from tests.config import DEVICE, FTYPE
 from tests.util import frand
@@ -178,4 +178,50 @@ def test_random_fft_diffusion() -> None:
         assert (molecule_map > 0.0).all()
 
     totals_1 = molecule_map.sum(dim=(1, 2))
+    torch.testing.assert_close(totals_0, totals_1, atol=_ATOL, rtol=_RTOL)
+
+
+def test_permeation():
+    cell_molecules = torch.tensor(
+        [
+            [10.0, 0.0, 0.0, 10.0],
+            [0.0, 10.0, 10.0, 0.0],
+            [5.0, 10.0, 15.0, 20.0],
+        ]
+    )
+    exp = torch.tensor(
+        [
+            [7.6966e-02, 9.9900e00, 9.9230e-03, 9.9900e00],
+            [9.9230e00, 9.9900e-03, 9.9901e00, 9.9900e-03],
+            [1.4923e01, 1.9990e01, 1.4990e01, 1.9990e01],
+        ]
+    )
+
+    permeation = Permeation(permeabilities=[0.001, 0.1], ftype=FTYPE, device=DEVICE)
+
+    cell_molecules = permeation.permeate(x=cell_molecules)
+    torch.testing.assert_close(cell_molecules, exp, atol=_ATOL, rtol=_RTOL)
+
+
+@pytest.mark.slow
+def test_permeation_randomly() -> None:
+    M = 10
+    coeffs = [random.uniform(0, 1) for _ in range(M)]
+    permeation = Permeation(permeabilities=coeffs, ftype=FTYPE, device=DEVICE)
+    cell_molecules = frand(1000, M * 2) * 100
+    int_mols = slice(0, M)
+    ext_mols = slice(M, 2 * M)
+
+    totals_int_0 = cell_molecules[:, int_mols]
+    totals_ext_0 = cell_molecules[:, ext_mols]
+    totals_0 = totals_int_0 + 1000 * totals_ext_0
+
+    for _ in range(10000):
+        molecule_map = permeation.permeate(x=cell_molecules)
+        assert (molecule_map > 0.0).all()
+
+    totals_int_1 = cell_molecules[:, int_mols]
+    totals_ext_1 = cell_molecules[:, ext_mols]
+    totals_1 = totals_int_1 + 1000 * totals_ext_1
+
     torch.testing.assert_close(totals_0, totals_1, atol=_ATOL, rtol=_RTOL)
