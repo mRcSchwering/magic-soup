@@ -432,7 +432,7 @@ class Cell:
     def ext_molecules(self) -> torch.Tensor:
         if self._ext_molecules is None:
             pos = self.position
-            self._ext_molecules = self.world.culture.molecules[:, pos[0], pos[1]]
+            self._ext_molecules = self.world.culture.molecule_map[:, pos[0], pos[1]]
         return self._ext_molecules
 
     @property

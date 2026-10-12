@@ -341,13 +341,14 @@ class World(TensorClass):
 
         return parent_idxs, child_idxs
 
-    def update_cells(self, genome_idx_pairs: list[tuple[str, int]]) -> None:
-        if len(genome_idx_pairs) == 0:
+    def update_cells(self, genomes: list[str], cell_idxs: torch.Tensor) -> None:
+        if len(genomes) == 0:
             return
 
-        genomes = [d[0] for d in genome_idx_pairs]
-        idxs = self.idxtensor([d[1] for d in genome_idx_pairs])
-        self.cells.update_genomes(genomes=genomes, idxs=idxs)
+        if len(genomes) != cell_idxs.numel():
+            raise ValueError("Length of genomes of cell_idxs doesn't match")
+
+        self.cells.update_genomes(genomes=genomes, idxs=cell_idxs)
 
     def kill_cells(self, cell_idxs: torch.Tensor | None = None) -> None:
         if cell_idxs is None:
@@ -430,31 +431,31 @@ class World(TensorClass):
 
     def mutate_cells(
         self,
-        cell_idxs: list[int] | None = None,
         p: float = 1e-6,
         p_indel: float = 0.4,
         p_del: float = 0.66,
     ) -> None:
-        idxs = cell_idxs or (self.cells.get_available_idxs().tolist())
-        seqs = self.cells.genomes[idxs]
+        cell_idxs = self.cells.get_available_idxs()
+        seqs = self.cells.genomes[cell_idxs]
         mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
-        pairs = [(d, idxs[i]) for d, i in mutated]
-        self.update_cells(genome_idx_pairs=pairs)
+        genomes = [d[0] for d in mutated]
+        idxs = [d[1] for d in mutated]
+        self.update_cells(genomes=genomes, cell_idxs=cell_idxs[idxs])
 
     def recombinate_cells(self, p: float = 1e-7) -> None:
-        nghbrs = self.get_neighbors()
+        nghbrs = self.culture.cell_neighbor_pairs()
         genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
         genomes1 = self.cells.genomes[[d[1] for d in nghbrs]]
         pairs = [(g0, g1) for g0, g1 in zip(genomes0, genomes1)]
         mutated = recombinations(seq_pairs=pairs, p=p)
 
-        genome_idx_pairs = []
-        for c0, c1, idx in mutated:
-            c0_i, c1_i = nghbrs[idx]
-            genome_idx_pairs.append((c0, c0_i))
-            genome_idx_pairs.append((c1, c1_i))
+        genomes0 = [d[0] for d in mutated]
+        genomes1 = [d[1] for d in mutated]
+        idxs = [d[2] for d in mutated]
 
-        self.update_cells(genome_idx_pairs=genome_idx_pairs)
+        genomes = genomes0 + genomes1
+        cell_idxs = torch.cat([nghbrs[idxs:0], nghbrs[idxs:1]])
+        self.update_cells(genomes=genomes, cell_idxs=cell_idxs)
 
     def save(self, rundir: Path, name: str = "world.pkl") -> None:
         rundir.mkdir(parents=True, exist_ok=True)
