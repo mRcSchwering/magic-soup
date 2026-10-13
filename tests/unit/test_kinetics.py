@@ -20,7 +20,7 @@ def test_get_bounds():
     c = 2
     p = 3
     m = 4
-    h = 0.5
+    dt = 0.5
     v_max = torch.zeros((c, p), dtype=_FLOAT)
     N = torch.zeros((c, p, m), dtype=_FLOAT)
     B = torch.zeros((c, p, m), dtype=_FLOAT)
@@ -44,20 +44,20 @@ def test_get_bounds():
     # expected boundaries
     lo_exp = torch.tensor(
         [
-            [-2, -1, -v_max[0, 2] * h],
-            [-1 / 7, -1, -v_max[1, 2] * h],
+            [-2, -1, -v_max[0, 2] * dt],
+            [-1 / 7, -1, -v_max[1, 2] * dt],
         ],
         dtype=_FLOAT,
     )
     hi_exp = torch.tensor(
         [
-            [5, 1 / 10, v_max[0, 2] * h],
-            [5 / 3, 0, v_max[1, 2] * h],
+            [5, 1 / 10, v_max[0, 2] * dt],
+            [5 / 3, 0, v_max[1, 2] * dt],
         ],
         dtype=_FLOAT,
     )
 
-    lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, h=h)
+    lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, dt=dt)
 
     torch.testing.assert_close(lo, lo_exp, atol=_ATOL, rtol=_RTOL)
     torch.testing.assert_close(hi, hi_exp, atol=_ATOL, rtol=_RTOL)
@@ -69,16 +69,16 @@ def test_get_bounds_randomly():
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
         m = random.randint(2, 100)
-        h = random.uniform(0, 10)
+        dt = random.uniform(0, 10)
         v_max = torch.rand(c, p, dtype=_FLOAT) * 100
         B = torch.rand(c, p, m, dtype=_FLOAT) * 1000
         N = torch.randint(-100, 100, (c, p, m), dtype=_FLOAT)
         N[0, 0, :] = 0.0
-        lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, h=h)
+        lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, dt=dt)
         assert lo.shape == (c, p)
         assert hi.shape == (c, p)
-        assert lo[0, 0] == -v_max[0, 0] * h
-        assert hi[0, 0] == v_max[0, 0] * h
+        assert lo[0, 0] == -v_max[0, 0] * dt
+        assert hi[0, 0] == v_max[0, 0] * dt
         assert lo.isnan().sum() == 0
         assert hi.isnan().sum() == 0
         assert (lo <= hi).all()
@@ -353,7 +353,7 @@ def test_step_protein_activity():
 
     # test
     x1 = _kinetics.step_protein_activity(
-        h=1.0,
+        dt=1.0,
         x0=x0,
         N=N_b - N_f,
         N_f=N_f,
@@ -404,6 +404,74 @@ def test_step_protein_activity():
     assert xd[3, 3].abs() < xd[0, 3].abs()
 
 
+def test_step_protein_activity_different_volumes():
+    # c cells, p max proteins, m molecules (a, b, c, d)
+    c = 1
+    p = 3
+    m = 4
+
+    # molecular masses (a_int, b_int, a_ext, b_ext)
+    c_mass = torch.tensor([3.0, 6.0, 3.0, 6.0])
+
+    # volumes and concentration ratios
+    v_cell = 1
+    v_med = 10
+    v_mols = torch.tensor([v_cell, v_cell, v_med, v_med])
+
+    x0 = torch.full((c, m), 10.0, dtype=_FLOAT)
+    v_max = torch.full((c, p), 10.0, dtype=_FLOAT)
+    k_f = torch.zeros((c, p), dtype=_FLOAT)
+    k_b = torch.zeros((c, p), dtype=_FLOAT)
+    K_r = torch.zeros(c, p, m, dtype=_FLOAT)
+    N_f = torch.zeros(c, p, m, dtype=_INT)
+    N_b = torch.zeros(c, p, m, dtype=_INT)
+    N_h = torch.zeros(c, p, m, dtype=_INT)
+
+    # cell 0: P0: a_int -> a_ext, P1: b_ext -> b_int
+    N_f[0, 0, 0] = 1
+    N_b[0, 0, 2] = 1
+    k_f[0, 0] = 1.0
+    k_b[0, 0] = 10.0
+
+    N_f[0, 1, 1] = 1
+    N_b[0, 1, 3] = 1
+    k_f[0, 1] = 10.0
+    k_b[0, 1] = 1.0
+
+    # adj N for effective concentration change
+    N_eff = (N_b - N_f) / v_mols
+
+    # test
+    x1 = _kinetics.step_protein_activity(
+        dt=1.0,
+        x0=x0,
+        N=N_eff,
+        N_f=N_f,
+        N_b=N_b,
+        N_h=N_h,
+        k_f=k_f,
+        k_b=k_b,
+        K_r=K_r,
+        v_max=v_max,
+    )
+
+    # useful results
+    assert x1.shape == x0.shape
+    assert x1.isnan().sum() == 0
+    assert x1.isfinite().all()
+    assert (x1 >= 0).all()
+
+    # conservation of mass
+    xd = x1 - x0
+    assert ((xd * v_mols) @ c_mass).abs().max() < 1e-4
+
+    # cell 0: moves towards K_e
+    assert xd[0, 0] < 0
+    assert xd[0, 1] > 0
+    assert xd[0, 2] > 0
+    assert xd[0, 3] < 0
+
+
 def test_step_protein_activity_convergence():
     c = 3
     p = 1
@@ -446,7 +514,7 @@ def test_step_protein_activity_convergence():
     # should converge within 5s
     for _ in range(6):
         x1 = _kinetics.step_protein_activity(
-            h=1.0,
+            dt=1.0,
             x0=x0,
             N=N_b - N_f,
             N_f=N_f,
@@ -482,7 +550,7 @@ def test_step_protein_activity_randomly(caplog):
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
         m = random.randint(2, 100)
-        h = random.uniform(0, 10)
+        dt = random.uniform(0, 10)
         x = torch.rand(c, m, dtype=_FLOAT) * 1000
         N_f = torch.randint(-100, 100, (c, p, m), dtype=_INT)
         N_b = torch.randint(-100, 100, (c, p, m), dtype=_INT)
@@ -495,7 +563,7 @@ def test_step_protein_activity_randomly(caplog):
         for j in range(10):
             with caplog.at_level(logging.WARNING):
                 x = _kinetics.step_protein_activity(
-                    h=h,
+                    dt=dt,
                     x0=x,
                     N=N_b - N_f,
                     N_f=N_f,

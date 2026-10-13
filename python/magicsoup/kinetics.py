@@ -21,7 +21,7 @@ class Kinetics(TensorClass):
     def __init__(
         self,
         eps: float = 1e-40,
-        h: float = 1.0,
+        dt: float = 0.1,
         n_max_sweeps: int = 3,
         n_max_bisect: int = 20,
         xi_conv_tol: float = 1e-4,
@@ -32,7 +32,7 @@ class Kinetics(TensorClass):
         super().__init__(device=device, itype=itype, ftype=ftype)
 
         self.eps = eps
-        self.h = h
+        self.dt = dt
         self.n_max_sweeps = n_max_sweeps
         self.n_max_bisect = n_max_bisect
         self.xi_conv_tol = xi_conv_tol
@@ -87,7 +87,7 @@ class Kinetics(TensorClass):
         B: torch.Tensor,  # (c, p, m)
         N: torch.Tensor,  # (c, p, m)
         v_max: torch.Tensor,  # (c, p)
-        h: float,
+        dt: float,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # calculate xi bounds for bisection
         # - B represents molecule concentration per protein if all other proteins were active
@@ -111,8 +111,8 @@ class Kinetics(TensorClass):
         # which means one background protein is producing substrate
         xi_lo = torch.minimum(xi_lo, xi_hi)  # (c, p)
 
-        # since always xi <= h * v_max it can be used as limiting factor
-        max_rate = h * v_max  # (c, p)
+        # since always xi <= dt * v_max it can be used as limiting factor
+        max_rate = dt * v_max  # (c, p)
         xi_lo = torch.maximum(xi_lo, -max_rate)
         xi_hi = torch.minimum(xi_hi, max_rate)
 
@@ -187,7 +187,7 @@ class Kinetics(TensorClass):
         self,
         n_max_iters: int,
         xi_conv_tol: float,
-        h: float,
+        dt: float,
         B: torch.Tensor,  # (c, p, m)
         xi_lo: torch.Tensor,  # (c, p)
         xi_hi: torch.Tensor,  # (c, p)
@@ -209,7 +209,7 @@ class Kinetics(TensorClass):
         #
         # use bisection method so that:
         #
-        #   0 = g(xi) = xi - h * v(N * xi + B)
+        #   0 = g(xi) = xi - dt * v(N * xi + B)
         #
         # xi is chosen as midpoint between lo and hi
         # lo,hi is updated each iteration based on sign of g(xi)
@@ -241,7 +241,7 @@ class Kinetics(TensorClass):
 
             v = v_max * a_cat * a_reg  # (c, p)
 
-            too_high = xi - h * v > 0  # (c, p)
+            too_high = xi - dt * v > 0  # (c, p)
             hi = torch.where(too_high, xi, hi)  # (c, p)
             lo = torch.where(too_high, lo, xi)  # (c, p)
 
@@ -261,13 +261,13 @@ class Kinetics(TensorClass):
         k_b: torch.Tensor,  # (c, p)
         K_r: torch.Tensor,  # (c, p, m)
         v_max: torch.Tensor,  # (c, p)
-        h: float | None = None,
+        dt: float | None = None,
         n_max_sweeps: int | None = None,
         n_max_bisect: int | None = None,
         xi_conv_tol: float | None = None,
     ) -> torch.Tensor:
         c, p = v_max.shape
-        h = h or self.h
+        dt = dt or self.dt
         n_max_sweeps = n_max_sweeps or self.n_max_sweeps
         n_max_bisect = n_max_bisect or self.n_max_bisect
         xi_conv_tol = xi_conv_tol or self.xi_conv_tol
@@ -301,10 +301,10 @@ class Kinetics(TensorClass):
             self._check_nonfinite(B, "B during Jacobi sweep")
 
             xi_lo, xi_hi = self._get_bounds(
-                B=B, N=N, v_max=v_max, h=h
+                B=B, N=N, v_max=v_max, dt=dt
             )  # (c, p), (c, p)
             xi = self._bisect_xi(
-                h=h,
+                dt=dt,
                 n_max_iters=n_max_bisect,
                 xi_conv_tol=xi_conv_tol,
                 B=B,
