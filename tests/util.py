@@ -51,8 +51,16 @@ def idxfull(*args, value: int) -> torch.Tensor:
     return torch.full(args, fill_value=value, device=DEVICE, dtype=IDXTYPE)
 
 
+def ffull(*args, value: int) -> torch.Tensor:
+    return torch.full(args, fill_value=value, device=DEVICE, dtype=FTYPE)
+
+
 def frand(*args) -> torch.Tensor:
     return torch.rand(*args, device=DEVICE, dtype=FTYPE)
+
+
+def irand(low: int, high: int, *args) -> torch.Tensor:
+    return torch.randint(low, high, args, device=DEVICE, dtype=ITYPE)
 
 
 def idxrandperm(n: int) -> torch.Tensor:

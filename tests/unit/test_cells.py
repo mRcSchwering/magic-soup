@@ -9,6 +9,8 @@ from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
 from magicsoup.util import Array, random_genome
 
+from tests.util import FTYPE, IDXTYPE, ITYPE, idxtensor
+
 
 @pytest.fixture
 def cells() -> Cells:
@@ -34,7 +36,7 @@ def _assert_empty_values(cells: Cells) -> None:
     assert (cells.N_f == 0).all()
     assert (cells.N_b == 0).all()
     assert (cells.N_h == 0).all()
-    assert (cells.N == 0).all()
+    assert (cells.N_eff == 0).all()
 
 
 @pytest.mark.parametrize(
@@ -77,7 +79,7 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
     assert cells.N_f.shape == (cells.c, cells.p, cells.m)
     assert cells.N_b.shape == (cells.c, cells.p, cells.m)
     assert cells.N_h.shape == (cells.c, cells.p, cells.m)
-    assert cells.N.shape == (cells.c, cells.p, cells.m)
+    assert cells.N_eff.shape == (cells.c, cells.p, cells.m)
 
     _assert_empty_values(cells=cells)
 
@@ -144,9 +146,12 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
     assert cells.N_f.shape == (cells.c, cells.p, cells.m)
     assert cells.N_b.shape == (cells.c, cells.p, cells.m)
     assert cells.N_h.shape == (cells.c, cells.p, cells.m)
-    assert cells.N.shape == (cells.c, cells.p, cells.m)
+    assert cells.N_eff.shape == (cells.c, cells.p, cells.m)
 
     _assert_empty_values(cells=cells)
+
+
+# TODO: copy genomes
 
 
 @pytest.mark.slow
@@ -157,7 +162,7 @@ def test_update_genomes_randomly(cells: Cells) -> None:
 
     for _ in range(100):
         n = random.randint(1, c)
-        idxs = torch.tensor(random.sample(range(c), n))
+        idxs = idxtensor(random.sample(range(c), n))
         genomes = [random_genome(s=500) for _ in range(n)]
         cells.update_genomes(genomes=genomes, idxs=idxs)
 
@@ -165,19 +170,19 @@ def test_update_genomes_randomly(cells: Cells) -> None:
         assert isinstance(cells.genomes, Array)
         assert isinstance(cells.labels, Array)
         assert cells.alive.dtype == torch.bool
-        assert cells.ages.dtype == torch.float32
-        assert cells.generations.dtype == torch.int32
-        assert cells.molecules.dtype == torch.float32
+        assert cells.ages.dtype == FTYPE
+        assert cells.generations.dtype == IDXTYPE
+        assert cells.molecules.dtype == FTYPE
 
         # check exact shape of kinetics parameters
-        assert cells.v_max.dtype == torch.float32
-        assert cells.k_f.dtype == torch.float32
-        assert cells.k_b.dtype == torch.float32
-        assert cells.K_r.dtype == torch.float32
-        assert cells.N_f.dtype == torch.int8
-        assert cells.N_b.dtype == torch.int8
-        assert cells.N_h.dtype == torch.int8
-        assert cells.N.dtype == torch.int8
+        assert cells.v_max.dtype == FTYPE
+        assert cells.k_f.dtype == FTYPE
+        assert cells.k_b.dtype == FTYPE
+        assert cells.K_r.dtype == FTYPE
+        assert cells.N_f.dtype == ITYPE
+        assert cells.N_b.dtype == ITYPE
+        assert cells.N_h.dtype == ITYPE
+        assert cells.N_eff.dtype == FTYPE
 
     assert cells.p > p_init
 
@@ -188,8 +193,8 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     # create interspersed cells
     c = 60
     cells.update_c(c_req=c)
-    idxs = torch.tensor(list(range(0, c, 2)))
-    genomes_ = [random_genome() for _ in range(len(idxs))]
+    idxs = idxtensor(list(range(0, c, 2)))
+    genomes_ = [random_genome() for _ in range(idxs.numel())]
     cells.update_genomes(genomes=genomes_, idxs=idxs)
     cells.alive[idxs] = True
 
@@ -208,7 +213,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     N_f = cells.N_f.clone()
     N_b = cells.N_b.clone()
     N_h = cells.N_h.clone()
-    N = cells.N.clone()
+    N_eff = cells.N_eff.clone()
 
     # save state
     cells.save_state(statedir=statedir)
@@ -237,4 +242,4 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     assert (cells.N_f == N_f).all()
     assert (cells.N_b == N_b).all()
     assert (cells.N_h == N_h).all()
-    assert (cells.N == N).all()
+    assert (cells.N_eff == N_eff).all()

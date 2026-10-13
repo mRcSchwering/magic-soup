@@ -6,11 +6,18 @@ import torch
 from magicsoup.kinetics import Kinetics
 
 from tests.config import DEVICE
+from tests.util import (
+    ffull,
+    frand,
+    ftensor,
+    fzeros,
+    irand,
+    itensor,
+    izeros,
+)
 
 _ATOL = 1e-4
 _RTOL = 1e-4
-_INT = torch.int8
-_FLOAT = torch.float32
 
 _kinetics = Kinetics(device=DEVICE)
 
@@ -21,40 +28,38 @@ def test_get_bounds():
     p = 3
     m = 4
     dt = 0.5
-    v_max = torch.zeros((c, p), dtype=_FLOAT)
-    N = torch.zeros((c, p, m), dtype=_FLOAT)
-    B = torch.zeros((c, p, m), dtype=_FLOAT)
+    v_max = fzeros(c, p)
+    N = fzeros(c, p, m)
+    B = fzeros(c, p, m)
 
     # cell 0: P0: 2a -> 5b, P1: 10b -> d
-    v_max[0, :] = torch.tensor([10, 10, 10], dtype=_FLOAT)
-    N[0, 0, :] = torch.tensor([-2, 5, 0, 0], dtype=_FLOAT)
-    N[0, 1, :] = torch.tensor([0, -10, 0, 1], dtype=_FLOAT)
-    B[0, 0, :] = torch.tensor([10, 10, 10, 10], dtype=_FLOAT)
-    B[0, 1, :] = torch.tensor([0, 1, 0, 1], dtype=_FLOAT)
-    B[0, 2, :] = torch.tensor([10, 10, 10, 10], dtype=_FLOAT)
+    v_max[0, :] = ftensor([10, 10, 10])
+    N[0, 0, :] = ftensor([-2, 5, 0, 0])
+    N[0, 1, :] = ftensor([0, -10, 0, 1])
+    B[0, 0, :] = ftensor([10, 10, 10, 10])
+    B[0, 1, :] = ftensor([0, 1, 0, 1])
+    B[0, 2, :] = ftensor([10, 10, 10, 10])
 
     # cell 1: P0: 3c -> 7d, P1: a -> d
-    v_max[1, :] = torch.tensor([5, 5, 5], dtype=_FLOAT)
-    N[1, 0, :] = torch.tensor([0, 0, -3, 7], dtype=_FLOAT)
-    N[1, 1, :] = torch.tensor([-1, 0, 0, 1], dtype=_FLOAT)
-    B[1, 0, :] = torch.tensor([3, 7, 5, 1], dtype=_FLOAT)
-    B[1, 1, :] = torch.tensor([0, 0, 0, 1], dtype=_FLOAT)
-    B[1, 2, :] = torch.tensor([10, 10, 10, 10], dtype=_FLOAT)
+    v_max[1, :] = ftensor([5, 5, 5])
+    N[1, 0, :] = ftensor([0, 0, -3, 7])
+    N[1, 1, :] = ftensor([-1, 0, 0, 1])
+    B[1, 0, :] = ftensor([3, 7, 5, 1])
+    B[1, 1, :] = ftensor([0, 0, 0, 1])
+    B[1, 2, :] = ftensor([10, 10, 10, 10])
 
     # expected boundaries
-    lo_exp = torch.tensor(
+    lo_exp = ftensor(
         [
             [-2, -1, -v_max[0, 2] * dt],
             [-1 / 7, -1, -v_max[1, 2] * dt],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    hi_exp = torch.tensor(
+    hi_exp = ftensor(
         [
             [5, 1 / 10, v_max[0, 2] * dt],
             [5 / 3, 0, v_max[1, 2] * dt],
-        ],
-        dtype=_FLOAT,
+        ]
     )
 
     lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, dt=dt)
@@ -70,9 +75,9 @@ def test_get_bounds_randomly():
         p = random.randint(1, 100)
         m = random.randint(2, 100)
         dt = random.uniform(0, 10)
-        v_max = torch.rand(c, p, dtype=_FLOAT) * 100
-        B = torch.rand(c, p, m, dtype=_FLOAT) * 1000
-        N = torch.randint(-100, 100, (c, p, m), dtype=_FLOAT)
+        v_max = frand(c, p) * 100
+        B = frand(c, p, m) * 1000
+        N = irand(-100, 100, c, p, m)
         N[0, 0, :] = 0.0
         lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, dt=dt)
         assert lo.shape == (c, p)
@@ -89,99 +94,99 @@ def test_get_alpha_cat():
     c = 10
     p = 3
     m = 4
-    x0 = torch.zeros(c, m, dtype=_FLOAT)
-    N_f = torch.zeros(c, p, m, dtype=_INT)
-    N_b = torch.zeros(c, p, m, dtype=_INT)
-    k_f = torch.zeros(c, p, dtype=_FLOAT)
-    k_b = torch.zeros(c, p, dtype=_FLOAT)
+    x0 = fzeros(c, m)
+    N_f = izeros(c, p, m)
+    N_b = izeros(c, p, m)
+    k_f = fzeros(c, p)
+    k_b = fzeros(c, p)
 
     # simple MM kinetics
 
     # cell 0: P0: a -> b, P1: b -> d
-    x0[0, :] = torch.tensor([2.1, 1.9, 0.0, 0.8], dtype=_FLOAT)
+    x0[0, :] = ftensor([2.1, 1.9, 0.0, 0.8])
 
-    N_f[0, 0, :] = torch.tensor([1, 0, 0, 0], dtype=_INT)
-    N_b[0, 0, :] = torch.tensor([0, 1, 0, 0], dtype=_INT)
+    N_f[0, 0, :] = itensor([1, 0, 0, 0])
+    N_b[0, 0, :] = itensor([0, 1, 0, 0])
     k_f[0, 0] = 1.3
     k_b[0, 0] = 0.3
 
-    N_f[0, 1, :] = torch.tensor([0, 1, 0, 0], dtype=_INT)
-    N_b[0, 1, :] = torch.tensor([0, 0, 0, 1], dtype=_INT)
+    N_f[0, 1, :] = itensor([0, 1, 0, 0])
+    N_b[0, 1, :] = itensor([0, 0, 0, 1])
     k_f[0, 1] = 2.1
     k_b[0, 1] = 1.1
 
     # cell 1: P0: c -> d, P1: a -> d
-    x0[1, :] = torch.tensor([2.9, 3.1, 2.1, 1.0], dtype=_FLOAT)
+    x0[1, :] = ftensor([2.9, 3.1, 2.1, 1.0])
 
-    N_f[1, 0, :] = torch.tensor([0, 0, 1, 0], dtype=_INT)
-    N_b[1, 0, :] = torch.tensor([0, 0, 0, 1], dtype=_INT)
+    N_f[1, 0, :] = itensor([0, 0, 1, 0])
+    N_b[1, 0, :] = itensor([0, 0, 0, 1])
     k_f[1, 0] = 1.0
     k_b[1, 0] = 1.5
 
-    N_f[1, 1, :] = torch.tensor([1, 0, 0, 0], dtype=_INT)
-    N_b[1, 1, :] = torch.tensor([0, 0, 0, 1], dtype=_INT)
+    N_f[1, 1, :] = itensor([1, 0, 0, 0])
+    N_b[1, 1, :] = itensor([0, 0, 0, 1])
     k_f[1, 1] = 1.7
     k_b[1, 1] = 0.7
 
     # multiple substrates and products
 
     # cell 2: P0: a -> 2b, P1: 2c -> d
-    x0[2, :] = torch.tensor([1.1, 0.1, 2.9, 0.8], dtype=_FLOAT)
+    x0[2, :] = ftensor([1.1, 0.1, 2.9, 0.8])
 
-    N_f[2, 0, :] = torch.tensor([1, 0, 0, 0], dtype=_INT)
-    N_b[2, 0, :] = torch.tensor([0, 2, 0, 0], dtype=_INT)
+    N_f[2, 0, :] = itensor([1, 0, 0, 0])
+    N_b[2, 0, :] = itensor([0, 2, 0, 0])
     k_f[2, 0] = 1.3
     k_b[2, 0] = 0.3
 
-    N_f[2, 1, :] = torch.tensor([0, 0, 2, 0], dtype=_INT)
-    N_b[2, 1, :] = torch.tensor([0, 0, 0, 1], dtype=_INT)
+    N_f[2, 1, :] = itensor([0, 0, 2, 0])
+    N_b[2, 1, :] = itensor([0, 0, 0, 1])
     k_f[2, 1] = 2.1
     k_b[2, 1] = 1.1
 
     # cell 3: P0: 3b -> 2c
-    x0[3, :] = torch.tensor([1.2, 4.9, 5.1, 1.4], dtype=_FLOAT)
+    x0[3, :] = ftensor([1.2, 4.9, 5.1, 1.4])
 
-    N_f[3, 0, :] = torch.tensor([0, 3, 0, 0], dtype=_INT)
-    N_b[3, 0, :] = torch.tensor([0, 0, 2, 0], dtype=_INT)
+    N_f[3, 0, :] = itensor([0, 3, 0, 0])
+    N_b[3, 0, :] = itensor([0, 0, 2, 0])
     k_f[3, 0] = 1.4
     k_b[3, 0] = 1.5
 
     # cell 4: P0: a,b -> c, P1: b,d -> 2a,c
-    x0[4, :] = torch.tensor([1.1, 2.1, 2.9, 0.8], dtype=_FLOAT)
+    x0[4, :] = ftensor([1.1, 2.1, 2.9, 0.8])
 
-    N_f[4, 0, :] = torch.tensor([1, 1, 0, 0], dtype=_INT)
-    N_b[4, 0, :] = torch.tensor([0, 0, 1, 0], dtype=_INT)
+    N_f[4, 0, :] = itensor([1, 1, 0, 0])
+    N_b[4, 0, :] = itensor([0, 0, 1, 0])
     k_f[4, 0] = 1.3
     k_b[4, 0] = 0.3
 
-    N_f[4, 1, :] = torch.tensor([0, 1, 0, 1], dtype=_INT)
-    N_b[4, 1, :] = torch.tensor([2, 0, 1, 0], dtype=_INT)
+    N_f[4, 1, :] = itensor([0, 1, 0, 1])
+    N_b[4, 1, :] = itensor([2, 0, 1, 0])
     k_f[4, 1] = 2.1
     k_b[4, 1] = 1.1
 
     # cell 5: P0: a,d -> b
-    x0[5, :] = torch.tensor([2.3, 0.4, 0.0, 3.2], dtype=_FLOAT)
+    x0[5, :] = ftensor([2.3, 0.4, 0.0, 3.2])
 
-    N_f[5, 0, :] = torch.tensor([1, 0, 0, 1], dtype=_INT)
-    N_b[5, 0, :] = torch.tensor([0, 1, 0, 0], dtype=_INT)
+    N_f[5, 0, :] = itensor([1, 0, 0, 1])
+    N_b[5, 0, :] = itensor([0, 1, 0, 0])
     k_f[5, 0] = 1.4
     k_b[5, 0] = 1.5
 
     # co-factors involved (required but n_f+n_b=0)
 
     # cell 6: P0: a + b -> b + c
-    x0[6, :] = torch.tensor([10.0, 0.1, 3.0, 0.8], dtype=_FLOAT)
+    x0[6, :] = ftensor([10.0, 0.1, 3.0, 0.8])
 
-    N_f[6, 0, :] = torch.tensor([1, 1, 0, 0], dtype=_INT)
-    N_b[6, 0, :] = torch.tensor([0, 1, 1, 0], dtype=_INT)
+    N_f[6, 0, :] = itensor([1, 1, 0, 0])
+    N_b[6, 0, :] = itensor([0, 1, 1, 0])
     k_f[6, 0] = 2.0
     k_b[6, 0] = 1.0
 
     # cell 7: P0: a + c -> b + c
-    x0[7, :] = torch.tensor([10.0, 3.0, 0.1, 0.0], dtype=_FLOAT)
+    x0[7, :] = ftensor([10.0, 3.0, 0.1, 0.0])
 
-    N_f[7, 0, :] = torch.tensor([1, 0, 1, 0], dtype=_INT)
-    N_b[7, 0, :] = torch.tensor([0, 1, 1, 0], dtype=_INT)
+    N_f[7, 0, :] = itensor([1, 0, 1, 0])
+    N_b[7, 0, :] = itensor([0, 1, 1, 0])
     k_f[7, 0] = 2.0
     k_b[7, 0] = 1.0
 
@@ -202,11 +207,11 @@ def test_get_alpha_cat_randomly():
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
         m = random.randint(2, 100)
-        x = torch.rand(c, p, m, dtype=_FLOAT) * 1000
-        N_f = torch.randint(-100, 100, (c, p, m), dtype=_INT)
-        N_b = torch.randint(-100, 100, (c, p, m), dtype=_INT)
-        k_f = torch.rand(c, p, dtype=_FLOAT) * 10
-        k_b = torch.rand(c, p, dtype=_FLOAT) * 10
+        x = frand(c, p, m) * 1000
+        N_f = irand(-100, 100, c, p, m)
+        N_b = irand(-100, 100, c, p, m)
+        k_f = frand(c, p) * 10
+        k_b = frand(c, p) * 10
         a = _kinetics._get_alpha_cat(x=x, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
         assert a.shape == (c, p)
         assert a.isnan().sum() == 0
@@ -219,42 +224,42 @@ def test_get_alpha_reg():
     p = 3
     m = 4
 
-    x0 = torch.zeros(c, m, dtype=_FLOAT)
-    K_r = torch.zeros(c, p, m, dtype=_FLOAT)
-    N_h = torch.zeros(c, p, m, dtype=_INT)
+    x0 = fzeros(c, m)
+    K_r = fzeros(c, p, m)
+    N_h = izeros(c, p, m)
 
     # cell 0: P0: inh=c, P1: act=a, P2: inh=c, act=d
-    x0[0, :] = torch.tensor([2.1, 0.0, 1.9, 2.0], dtype=_FLOAT)
+    x0[0, :] = ftensor([2.1, 0.0, 1.9, 2.0])
 
-    N_h[0, 0, :] = torch.tensor([0, 0, -1, 0], dtype=_INT)
-    K_r[0, 0, :] = torch.tensor([0.0, 0.0, 1.3, 0.0], dtype=_FLOAT)
+    N_h[0, 0, :] = itensor([0, 0, -1, 0])
+    K_r[0, 0, :] = ftensor([0.0, 0.0, 1.3, 0.0])
 
-    N_h[0, 1, :] = torch.tensor([1, 0, 0, 0], dtype=_INT)
-    K_r[0, 1, :] = torch.tensor([2.1, 0.0, 0.0, 0.0], dtype=_FLOAT)
+    N_h[0, 1, :] = itensor([1, 0, 0, 0])
+    K_r[0, 1, :] = ftensor([2.1, 0.0, 0.0, 0.0])
 
-    N_h[0, 2, :] = torch.tensor([0, 0, -1, 1], dtype=_INT)
-    K_r[0, 2, :] = torch.tensor([0.0, 0.0, 0.9, 0.9], dtype=_FLOAT)
+    N_h[0, 2, :] = itensor([0, 0, -1, 1])
+    K_r[0, 2, :] = ftensor([0.0, 0.0, 0.9, 0.9])
 
     # cell 1: P0: inh=c,d, P1: act=a,b
-    x0[1, :] = torch.tensor([3.2, 1.6, 4.0, 1.9], dtype=_FLOAT)
+    x0[1, :] = ftensor([3.2, 1.6, 4.0, 1.9])
 
-    N_h[1, 0, :] = torch.tensor([0, 0, -1, -1], dtype=_INT)
-    K_r[1, 0, :] = torch.tensor([0.0, 0.0, 1.4, 1.4], dtype=_FLOAT)
+    N_h[1, 0, :] = itensor([0, 0, -1, -1])
+    K_r[1, 0, :] = ftensor([0.0, 0.0, 1.4, 1.4])
 
-    N_h[1, 1, :] = torch.tensor([1, 1, 0, 0], dtype=_INT)
-    K_r[1, 1, :] = torch.tensor([2.2, 2.2, 0.0, 0.0], dtype=_FLOAT)
+    N_h[1, 1, :] = itensor([1, 1, 0, 0])
+    K_r[1, 1, :] = ftensor([2.2, 2.2, 0.0, 0.0])
 
     # cell 2: P0: act=10a, inh=10b, P1: act=c (but no c), P2: inh=d (but no d)
-    x0[2, :] = torch.tensor([2.6, 1.2, 0.0, 0.0], dtype=_FLOAT)
+    x0[2, :] = ftensor([2.6, 1.2, 0.0, 0.0])
 
-    N_h[2, 0, :] = torch.tensor([10, -10, 0, 0], dtype=_INT)
-    K_r[2, 0, :] = torch.tensor([1.0, 2.0, 0.0, 0.0], dtype=_FLOAT)
+    N_h[2, 0, :] = itensor([10, -10, 0, 0])
+    K_r[2, 0, :] = ftensor([1.0, 2.0, 0.0, 0.0])
 
-    N_h[2, 1, :] = torch.tensor([0, 0, 1, 0], dtype=_INT)
-    K_r[2, 1, :] = torch.tensor([0.0, 0.0, 3.0, 0.0], dtype=_FLOAT)
+    N_h[2, 1, :] = itensor([0, 0, 1, 0])
+    K_r[2, 1, :] = ftensor([0.0, 0.0, 3.0, 0.0])
 
-    N_h[2, 2, :] = torch.tensor([0, 0, 0, -1], dtype=_INT)
-    K_r[2, 2, :] = torch.tensor([0.0, 0.0, 0.0, 4.0], dtype=_FLOAT)
+    N_h[2, 2, :] = itensor([0, 0, 0, -1])
+    K_r[2, 2, :] = ftensor([0.0, 0.0, 0.0, 4.0])
 
     # expected
     a_r = x0.unsqueeze(1) ** N_h
@@ -273,9 +278,9 @@ def test_get_alpha_reg_randomly():
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
         m = random.randint(2, 100)
-        x = torch.rand(c, p, m, dtype=_FLOAT) * 1000
-        N_h = torch.randint(-100, 100, (c, p, m), dtype=_INT)
-        K_r = torch.rand(c, p, m, dtype=_FLOAT) * 10
+        x = frand(c, p, m) * 1000
+        N_h = irand(-100, 100, c, p, m)
+        K_r = frand(c, p, m) * 10
         a = _kinetics._get_alpha_reg(x=x, N_h=N_h, K_r=K_r)
         assert a.shape == (c, p)
         assert a.isnan().sum() == 0
@@ -290,16 +295,16 @@ def test_step_protein_activity():
     m = 4
 
     # molecular masses (a, b, c, d)
-    c_mass = torch.tensor([9.0, 6.0, 3.0, 3.0])
+    c_mass = ftensor([9.0, 6.0, 3.0, 3.0])
 
-    x0 = torch.full((c, m), 10.0, dtype=_FLOAT)
-    v_max = torch.full((c, p), 10.0, dtype=_FLOAT)
-    k_f = torch.zeros((c, p), dtype=_FLOAT)
-    k_b = torch.zeros((c, p), dtype=_FLOAT)
-    K_r = torch.zeros(c, p, m, dtype=_FLOAT)
-    N_f = torch.zeros(c, p, m, dtype=_INT)
-    N_b = torch.zeros(c, p, m, dtype=_INT)
-    N_h = torch.zeros(c, p, m, dtype=_INT)
+    x0 = ffull(c, m, value=10.0)
+    v_max = ffull(c, p, value=10.0)
+    k_f = fzeros(c, p)
+    k_b = fzeros(c, p)
+    K_r = fzeros(c, p, m)
+    N_f = izeros(c, p, m)
+    N_b = izeros(c, p, m)
+    N_h = izeros(c, p, m)
 
     # cell 0: P0: a -> 3c, P1: b -> 2d (uncoupled)
     N_f[0, 0, 0] = 1
@@ -411,21 +416,21 @@ def test_step_protein_activity_different_volumes():
     m = 4
 
     # molecular masses (a_int, b_int, a_ext, b_ext)
-    c_mass = torch.tensor([3.0, 6.0, 3.0, 6.0])
+    c_mass = ftensor([3.0, 6.0, 3.0, 6.0])
 
     # volumes and concentration ratios
     v_cell = 1
     v_med = 10
-    v_mols = torch.tensor([v_cell, v_cell, v_med, v_med])
+    v_mols = ftensor([v_cell, v_cell, v_med, v_med])
 
-    x0 = torch.full((c, m), 10.0, dtype=_FLOAT)
-    v_max = torch.full((c, p), 10.0, dtype=_FLOAT)
-    k_f = torch.zeros((c, p), dtype=_FLOAT)
-    k_b = torch.zeros((c, p), dtype=_FLOAT)
-    K_r = torch.zeros(c, p, m, dtype=_FLOAT)
-    N_f = torch.zeros(c, p, m, dtype=_INT)
-    N_b = torch.zeros(c, p, m, dtype=_INT)
-    N_h = torch.zeros(c, p, m, dtype=_INT)
+    x0 = ffull(c, m, value=10.0)
+    v_max = ffull(c, p, value=10.0)
+    k_f = fzeros(c, p)
+    k_b = fzeros(c, p)
+    K_r = fzeros(c, p, m)
+    N_f = izeros(c, p, m)
+    N_b = izeros(c, p, m)
+    N_h = izeros(c, p, m)
 
     # cell 0: P0: a_int -> a_ext, P1: b_ext -> b_int
     N_f[0, 0, 0] = 1
@@ -478,16 +483,16 @@ def test_step_protein_activity_convergence():
     m = 4
 
     # molecular masses (a, b, c, d)
-    c_mass = torch.tensor([9.0, 6.0, 3.0, 3.0])
+    c_mass = ftensor([9.0, 6.0, 3.0, 3.0])
 
-    x0 = torch.full((c, m), 10.0, dtype=_FLOAT)
-    v_max = torch.full((c, p), 10.0, dtype=_FLOAT)
-    k_f = torch.zeros((c, p), dtype=_FLOAT)
-    k_b = torch.zeros((c, p), dtype=_FLOAT)
-    K_r = torch.zeros(c, p, m, dtype=_FLOAT)
-    N_f = torch.zeros(c, p, m, dtype=_INT)
-    N_b = torch.zeros(c, p, m, dtype=_INT)
-    N_h = torch.zeros(c, p, m, dtype=_INT)
+    x0 = ffull(c, m, value=10.0)
+    v_max = ffull(c, p, value=10.0)
+    k_f = fzeros(c, p)
+    k_b = fzeros(c, p)
+    K_r = fzeros(c, p, m)
+    N_f = izeros(c, p, m)
+    N_b = izeros(c, p, m)
+    N_h = izeros(c, p, m)
 
     # cell 0: P0: c -> d
     N_f[0, 0, 2] = 1
@@ -551,14 +556,14 @@ def test_step_protein_activity_randomly(caplog):
         p = random.randint(1, 100)
         m = random.randint(2, 100)
         dt = random.uniform(0, 10)
-        x = torch.rand(c, m, dtype=_FLOAT) * 1000
-        N_f = torch.randint(-100, 100, (c, p, m), dtype=_INT)
-        N_b = torch.randint(-100, 100, (c, p, m), dtype=_INT)
-        N_h = torch.randint(-100, 100, (c, p, m), dtype=_INT)
-        v_max = torch.rand(c, p, dtype=_FLOAT) * 100
-        k_f = torch.rand(c, p, dtype=_FLOAT) * 10
-        k_b = torch.rand(c, p, dtype=_FLOAT) * 10
-        K_r = torch.rand(c, p, m, dtype=_FLOAT) * 10
+        x = frand(c, m) * 1000
+        N_f = irand(-100, 100, c, p, m)
+        N_b = irand(-100, 100, c, p, m)
+        N_h = irand(-100, 100, c, p, m)
+        v_max = frand(c, p) * 100
+        k_f = frand(c, p) * 10
+        k_b = frand(c, p) * 10
+        K_r = frand(c, p, m) * 10
 
         for j in range(10):
             with caplog.at_level(logging.WARNING):

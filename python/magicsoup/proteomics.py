@@ -178,6 +178,7 @@ class Proteomics(TensorClass):
     def __init__(
         self,
         chemistry: Chemistry,
+        cell_med_ratio: float = 1e-3,
         abs_temp: float = 310.0,
         km_range: tuple[float, float] = (1e-2, 100.0),
         vmax_range: tuple[float, float] = (1e-3, 100.0),
@@ -198,7 +199,9 @@ class Proteomics(TensorClass):
         self.mol_names = [d.name for d in chemistry.molecules]
         self.mol_energies = self.ftensor([d.energy for d in chemistry.molecules] * 2)
 
-        self.m = 2 * len(chemistry.molecules)
+        n_mols = len(chemistry.molecules)
+        self.m = 2 * n_mols
+        self.cell_med_ratios = self.ftensor([1] * n_mols + [cell_med_ratio] * n_mols)
         mol_2_mi = {d: i for i, d in enumerate(chemistry.molecules)}
 
         self.km_map = _get_log_norm_weight_map(
@@ -213,10 +216,10 @@ class Proteomics(TensorClass):
             reactions=chemistry.reactions, molmap=mol_2_mi, max_token=vector_enc_size
         )
         self.transport_map = _get_transporter_map(
-            n_molecules=len(chemistry.molecules), max_token=vector_enc_size
+            n_molecules=n_mols, max_token=vector_enc_size
         )
         self.effector_map = _get_regulatory_map(
-            n_molecules=len(chemistry.molecules), max_token=vector_enc_size
+            n_molecules=n_mols, max_token=vector_enc_size
         )
 
         # derive inverse maps for genome generation
@@ -272,9 +275,10 @@ class Proteomics(TensorClass):
 
         N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
         k_f, k_b = self.derive_rates(N=N, k_m=k_m)
+        N_eff = self.derive_effective_stoichiometry(N=N)
 
         return {
-            "N": N,
+            "N": N_eff,
             "N_f": N_f,
             "N_b": N_b,
             "N_h": N_h,
@@ -295,6 +299,9 @@ class Proteomics(TensorClass):
         eps = self.eps
         max_k = self.max_k
 
+        # TODO: N has to become float32 because it now carries real
+        #       maybe call it N_eff so that change easier to do
+
         # energies define k_e which defines k_e = k_f/k_b
         # extreme energies can create Inf or 0.0, avoid them with clamp
         e = torch.einsum("cpm,m->cp", N.to(self.ftype), self.mol_energies)
@@ -310,3 +317,7 @@ class Proteomics(TensorClass):
         k_f = torch.where(is_fwd, k_m, k_m / k_e).clamp(max=max_k)
         k_b = torch.where(is_fwd, k_m * k_e, k_m).clamp(max=max_k)
         return k_f, k_b
+
+    def derive_effective_stoichiometry(self, N: torch.Tensor) -> torch.Tensor:
+        # effective stoichiometry considering volume difference of cell and medium
+        return N.to(self.ftype) * self.cell_med_ratios

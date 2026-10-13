@@ -9,12 +9,11 @@ from magicsoup.constants import GAS_CONSTANT, DomainSpecType, ProteinSpecType
 from magicsoup.proteomics import Proteomics
 
 from tests.config import DEVICE
+from tests.util import FTYPE, ITYPE, ftensor, fzeros, itensor, izeros
 
 _TOL = 1e-4
 _ATOL = 1e-4
 _RTOL = 1e-4
-_FLOAT = torch.float32
-_INT = torch.int8
 
 
 _ma = Molecule("a", energy=15 * 1e3)
@@ -85,6 +84,13 @@ _REACTION_M = [
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+]
+
+_V_CELL = 1.0
+_V_MED = 1000.0
+_V_RATIOS = [
+    1/_V_CELL,  1/_V_CELL,  1/_V_CELL,  1/_V_CELL,  
+    1/_V_MED,   1/_V_MED,   1/_V_MED,   1/_V_MED
 ]
 
 # fmt: on
@@ -197,28 +203,26 @@ def test_cell_params_with_catalytic_domains() -> None:
     ke_c0_2 = _ke([_md], [_mb, _mb])
     ke_c1_0 = _ke([_mb, _md], [_ma, _mb, _mc])
     ke_c1_1 = _ke([_mb, _mb, _mc], [_mc, _md])
-    k_f_exp = torch.tensor(
+    k_f_exp = ftensor(
         [
             [_avg(0.5, 1.5) / ke_c0_0, _avg(0.9, 1.2) / ke_c0_1, 2.9 / ke_c0_2],
             [_avg(0.3, 1.4) / ke_c1_0, _avg(0.3, 1.7), 0.0],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    k_b_exp = torch.tensor(
+    k_b_exp = ftensor(
         [
             [_avg(0.5, 1.5), _avg(0.9, 1.2), 2.9],
             [_avg(0.3, 1.4), _avg(0.3, 1.7) * ke_c1_1, 0.0],
         ]
     )
-    K_r_exp = torch.zeros(c, p, m, dtype=_FLOAT)
-    v_max_exp = torch.tensor(
+    K_r_exp = fzeros(c, p, m)
+    v_max_exp = ftensor(
         [
             [_avg(1.1, 1.2), _avg(2.0, 1.3), 2.9],
             [_avg(1.1, 2.1), _avg(1.9, 2.3), 0.0],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    N_f_exp = torch.tensor(
+    N_f_exp = itensor(
         [
             [
                 [1, 0, 0, 1, 0, 0, 0, 0],
@@ -230,10 +234,9 @@ def test_cell_params_with_catalytic_domains() -> None:
                 [0, 2, 1, 0, 0, 0, 0, 0],
                 [0, 0, 0, 0, 0, 0, 0, 0],
             ],
-        ],
-        dtype=_INT,
+        ]
     )
-    N_b_exp = torch.tensor(
+    N_b_exp = itensor(
         [
             [
                 [0, 2, 1, 0, 0, 0, 0, 0],
@@ -245,17 +248,19 @@ def test_cell_params_with_catalytic_domains() -> None:
                 [0, 0, 1, 1, 0, 0, 0, 0],
                 [0, 0, 0, 0, 0, 0, 0, 0],
             ],
-        ],
-        dtype=_INT,
+        ]
     )
-    N_h_exp = torch.zeros(c, p, m, dtype=_INT)
+    N_h_exp = izeros(c, p, m)
+
+    N = N_b_exp - N_f_exp
+    N_eff = N * ftensor(_V_RATIOS)
 
     # test cell params
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N"], N_b_exp - N_f_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
@@ -431,29 +436,26 @@ def test_cell_params_with_transporter_domains() -> None:
     params = protics.get_cell_params(proteomes=[c0, c1])
 
     # expected cell params
-    k_f_exp = torch.tensor(
+    k_f_exp = ftensor(
         [
             [0.5, _avg(0.5, 0.2)],
             [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5)],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    k_b_exp = torch.tensor(
+    k_b_exp = ftensor(
         [
             [0.5, _avg(0.5, 0.2)],
             [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) * _ke([_ma], [_mb])],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    K_r_exp = torch.zeros(c, p, 8, dtype=_FLOAT)
-    v_max_exp = torch.tensor(
+    K_r_exp = fzeros(c, p, 8)
+    v_max_exp = ftensor(
         [
             [1.5, _avg(1.5, 1.1)],
             [_avg(1.5, 1.4, 1.3, 1.2), _avg(2.0, 1.5)],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    N_f_exp = torch.tensor(
+    N_f_exp = itensor(
         [
             [
                 [1, 0, 0, 0, 0, 0, 0, 0],
@@ -463,10 +465,9 @@ def test_cell_params_with_transporter_domains() -> None:
                 [2, 1, 1, 0, 0, 0, 0, 0],
                 [2, 0, 0, 0, 0, 0, 0, 0],
             ],
-        ],
-        dtype=_INT,
+        ]
     )
-    N_b_exp = torch.tensor(
+    N_b_exp = itensor(
         [
             [
                 [0, 0, 0, 0, 1, 0, 0, 0],
@@ -476,17 +477,19 @@ def test_cell_params_with_transporter_domains() -> None:
                 [0, 0, 0, 0, 2, 1, 1, 0],
                 [0, 1, 0, 0, 1, 0, 0, 0],
             ],
-        ],
-        dtype=_INT,
+        ]
     )
-    N_h_exp = torch.zeros(c, p, m, dtype=_INT)
+    N_h_exp = izeros(c, p, m)
+
+    N = N_b_exp - N_f_exp
+    N_eff = N * ftensor(_V_RATIOS)
 
     # test cell params
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N"], N_b_exp - N_f_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
@@ -659,21 +662,19 @@ def test_cell_params_with_regulatory_domains() -> None:
 
     # expected cell params
     ke_a_b = _ke([_ma], [_mb])
-    k_f_exp = torch.tensor(
+    k_f_exp = ftensor(
         [
             [0.5, 0.5],
             [0.5, 0.5],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    k_b_exp = torch.tensor(
+    k_b_exp = ftensor(
         [
             [0.5 * ke_a_b, 0.5 * ke_a_b],
             [0.5 * ke_a_b, 0.5 * ke_a_b],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    K_r_exp = torch.tensor(
+    K_r_exp = ftensor(
         [
             [
                 [0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0],
@@ -683,17 +684,15 @@ def test_cell_params_with_regulatory_domains() -> None:
                 [0.0, 1.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0],
                 [0.0, 0.0, 0.0, 1.25, 0.0, 0.0, 0.0, 0.0],
             ],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    v_max_exp = torch.tensor(
+    v_max_exp = ftensor(
         [
             [2.0, 2.0],
             [2.0, 2.0],
-        ],
-        dtype=_FLOAT,
+        ]
     )
-    N_f_exp = torch.tensor(
+    N_f_exp = itensor(
         [
             [
                 [1, 0, 0, 0, 0, 0, 0, 0],
@@ -703,10 +702,9 @@ def test_cell_params_with_regulatory_domains() -> None:
                 [1, 0, 0, 0, 0, 0, 0, 0],
                 [1, 0, 0, 0, 0, 0, 0, 0],
             ],
-        ],
-        dtype=_INT,
+        ]
     )
-    N_b_exp = torch.tensor(
+    N_b_exp = itensor(
         [
             [
                 [0, 1, 0, 0, 0, 0, 0, 0],
@@ -716,10 +714,9 @@ def test_cell_params_with_regulatory_domains() -> None:
                 [0, 1, 0, 0, 0, 0, 0, 0],
                 [0, 1, 0, 0, 0, 0, 0, 0],
             ],
-        ],
-        dtype=_INT,
+        ]
     )
-    N_h_exp = torch.tensor(
+    N_h_exp = itensor(
         [
             [
                 [0, 0, 1, -2, 0, 0, 0, 0],
@@ -729,16 +726,18 @@ def test_cell_params_with_regulatory_domains() -> None:
                 [0, -1, 0, 0, 0, -3, 0, 0],
                 [0, 0, 0, 5, 0, 0, 0, 0],
             ],
-        ],
-        dtype=_INT,
+        ]
     )
+
+    N = N_b_exp - N_f_exp
+    N_eff = N * ftensor(_V_RATIOS)
 
     # test cell params
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N"], N_b_exp - N_f_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
@@ -908,19 +907,19 @@ def test_random_cell_params() -> None:
 
         # test
         float_np = [params["k_f"], params["k_b"], params["v_max"]]
-        float_npm = [params["K_r"]]
-        int_npm = [params["N"], params["N_f"], params["N_b"], params["N_h"]]
+        float_npm = [params["K_r"], params["N"]]
+        int_npm = [params["N_f"], params["N_b"], params["N_h"]]
 
         for t in float_np:
-            assert t.dtype == _FLOAT
+            assert t.dtype == FTYPE
             assert t.shape == (n_cells, p_max)
 
         for t in float_npm:
-            assert t.dtype == _FLOAT
+            assert t.dtype == FTYPE
             assert t.shape == (n_cells, p_max, m)
 
         for t in int_npm:
-            assert t.dtype == _INT
+            assert t.dtype == ITYPE
             assert t.shape == (n_cells, p_max, m)
 
         for t in float_np + float_npm + int_npm:

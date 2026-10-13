@@ -65,7 +65,7 @@ class World(TensorClass):
         permeation: Permeation | None = None,
         culture: Culture | None = None,
         cells: Cells | None = None,
-        time_step: float = 0.1,
+        time_step: float = 0.1,  # TODO: time resolution and time step
         v_cell: float = 1.0,
         v_medium: float = 1000.0,
         kinetics_kwargs: KineticsKwargs | None = None,
@@ -87,7 +87,7 @@ class World(TensorClass):
         self.chemistry = chemistry
         self.kinetics = kinetics or Kinetics(
             **(kinetics_kwargs or {}),
-            h=time_step,
+            dt=time_step,
             device=device,
             itype=itype,
             ftype=ftype,
