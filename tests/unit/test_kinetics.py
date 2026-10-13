@@ -6,20 +6,12 @@ import torch
 from magicsoup.kinetics import Kinetics
 
 from tests.config import DEVICE
-from tests.util import (
-    ffull,
-    frand,
-    ftensor,
-    fzeros,
-    irand,
-    itensor,
-    izeros,
-)
+from tests.util import FTYPE, ffull, frand, ftensor, fzeros, irand, itensor, izeros
 
 _ATOL = 1e-4
 _RTOL = 1e-4
 
-_kinetics = Kinetics(device=DEVICE)
+_kinetics = Kinetics(dt=1.0, device=DEVICE)
 
 
 def test_get_bounds():
@@ -357,10 +349,9 @@ def test_step_protein_activity():
     K_r[3, 1, 0] = 5.0
 
     # test
-    x1 = _kinetics.step_protein_activity(
-        dt=1.0,
+    x1 = _kinetics.get_x1(
         x0=x0,
-        N=N_b - N_f,
+        N=(N_b - N_f).to(FTYPE),
         N_f=N_f,
         N_b=N_b,
         N_h=N_h,
@@ -447,8 +438,7 @@ def test_step_protein_activity_different_volumes():
     N_eff = (N_b - N_f) / v_mols
 
     # test
-    x1 = _kinetics.step_protein_activity(
-        dt=1.0,
+    x1 = _kinetics.get_x1(
         x0=x0,
         N=N_eff,
         N_f=N_f,
@@ -518,8 +508,7 @@ def test_step_protein_activity_convergence():
 
     # should converge within 5s
     for _ in range(6):
-        x1 = _kinetics.step_protein_activity(
-            dt=1.0,
+        x1 = _kinetics.get_x1(
             x0=x0,
             N=N_b - N_f,
             N_f=N_f,
@@ -565,12 +554,13 @@ def test_step_protein_activity_randomly(caplog):
         k_b = frand(c, p) * 10
         K_r = frand(c, p, m) * 10
 
+        kinetics = Kinetics(dt=dt, device=DEVICE)
+
         for j in range(10):
             with caplog.at_level(logging.WARNING):
-                x = _kinetics.step_protein_activity(
-                    dt=dt,
+                x = kinetics.get_x1(
                     x0=x,
-                    N=N_b - N_f,
+                    N=(N_b - N_f).to(FTYPE),
                     N_f=N_f,
                     N_b=N_b,
                     N_h=N_h,
