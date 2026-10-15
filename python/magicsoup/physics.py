@@ -155,18 +155,17 @@ class FftDiffusion(TensorClass):
         self.M = len(diff_coeffs)
         D = self.ftensor(diff_coeffs)
 
-        # allowed frequencies k = 2 pi j / L with j = 0...L-1
+        # allowed frequencies in radians per pixel
         kx = 2 * math.pi * fftfreq(self.L, dtype=self.ftype, device=self.device)
         ky = 2 * math.pi * rfftfreq(self.L, dtype=self.ftype, device=self.device)
 
-        # positive eigenvalues of the discrete 5-point Laplacian (not the continuous k²)
-        # with lam = (2 - 2 cos(kx) + 2 - 2 cos(ky)) / dx
-        sx = 2 - 2 * torch.cos(kx)
-        sy = 2 - 2 * torch.cos(ky)
-        lam = (sx[:, None] + sy[None, :]) / dx**2
+        # eigenvalues for discrete Laplacian
+        lam = (
+            (2 - 2 * torch.cos(kx))[:, None] + (2 - 2 * torch.cos(ky))[None, :]
+        ) / dx**2  # (M, L, L//2 + 1)
 
-        # decay factor for c(t) = c(0) exp(-D lam t)
-        self.decay = torch.exp(-D[:, None, None] * dt * lam)  # (M, L, L//2+1)
+        # decay factor for ĉ(t) = ĉ(0) exp(-D λ dt)
+        self.decay = torch.exp(-D[:, None, None] * dt * lam)  # (M, L, L//2 + 1)
 
     def diffuse(self, molecule_map: torch.Tensor) -> torch.Tensor:
         """Diffuse and return molecule_map (M, L, L)"""
@@ -176,8 +175,8 @@ class FftDiffusion(TensorClass):
         before = molecule_map.sum(dim=(1, 2), dtype=torch.float64)
 
         # diffuse molecules for dt along dx
-        f: torch.Tensor = rfft2(molecule_map)
-        out: torch.Tensor = irfft2(f * self.decay, s=(L, L))
+        c_hat: torch.Tensor = rfft2(molecule_map)
+        out: torch.Tensor = irfft2(c_hat * self.decay, s=(L, L))
         out = out.clamp(min=0)
 
         # accurately track molecule totals after

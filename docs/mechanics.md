@@ -11,10 +11,11 @@ By selectively replicating certain cells while killing others, cells can evolve.
 - [Genetics](#genetics) explains how genetics work in this simulation
 - [Chemistry](#chemistry) explanation for molecules, reactions and energy coupling
 - [Kinetics](#kinetics) explains the reaction kinetics in this simulation
+- [Physics](#physics) explains diffusion and permeation on the world map
 
-I believe that most interesting behaviors take many time steps to evolve.
-That's why this simulation is implemented with millions of time steps in mind.
-Genetics, chemistry, physics in this simulation is simplified a lot.
+Units are exemplary.
+I believe that most interesting behaviors take time to evolve.
+That's why the mechanics in this simulation are simplified a lot.
 It is a tradeoff between a reasonable amount of complexity and performance.
 
 ## Genetics
@@ -247,3 +248,85 @@ All defaults were chosen with some assumptions in mind:
 (1) molecule values (such as in `world.molecule_map`) represent mM,
 (2) a time step represents 1 second,
 (3) molecule energies represent Joules.
+
+## Physics
+
+The world map is seen as a square periodic 2D grid of $N$ voxels.
+Each voxel is a cube of side length $\Delta x$.
+Molecule concentrations are modelled as well-mixed voxels in a finite difference system.
+Flux from voxel $i$ to an adjacent voxel $j$ is
+
+$$
+J_{i \rightarrow j} = D \frac{c_i - c_j}{\Delta x}
+$$
+
+with a constant anisotropic diffusion coefficient $D$ and concentrations $c$.
+For one voxel $(x, y)$ in the 2D grid its concentration changes with
+
+$$
+\frac{\text{d}c_{x,y}}{\text{d}t} = \frac{D}{\Delta x^2} (c_{x+1,y} + c_{x-1,y} + c_{x,y+1} + c_{x,y-1} - 4 c_{x,y})
+$$
+
+with indices in modulo $N$.
+This is the second order finite difference Laplacian with period boundaries.
+As matrix it is
+
+$$
+\frac{\text{d}\boldsymbol{C}}{\text{d}t} = D \Delta_N \boldsymbol{C}
+$$
+
+with $\Delta_N$ being the periodic 2D graph Laplacian divided by $\Delta x^2$.
+Its solution over arbitrary time intervals $\Delta t$ is
+
+$$
+\boldsymbol{C}(t + \Delta t) = \boldsymbol{C}(t) e^{D \Delta_N \Delta t}
+$$
+
+Because the finite-difference Laplacian is diagonalized by the 2D discrete Fourier Transform we can transform the concentration field, multiply each Fourier mode by its exact decay factor, then transform it back.
+On a $N \times N$ periodic grid with spacing $\Delta x$, eigenvalues $\lambda$ for discrete Laplacian with Fourier indices $(m, n)$ are
+
+$$
+\lambda_{m,n} = - \frac{4}{\Delta x^2} [\sin^2(\pi \frac{m}{N}) + \sin^2(\pi \frac{n}{N})]
+= - \frac{1}{\Delta x^2} [2 - 2 \cos(2 \pi \frac{m}{N}) + 2 - 2 \cos(2 \pi \frac{n}{N})]
+$$
+
+Then, the update in the frequency domain is
+
+$$
+ĉ_{m,n}(t + \Delta t) = ĉ_{m,n}(t) e^{D \lambda_{m,n} \Delta t}
+$$
+
+The zero mode $m = n = 0$ has $\lambda = 0$ and so the total amount of molecules is conserved over time steps. Additionally, the concentrations are guaranteed to not become negative.
+
+A cell is approximated as a sphere swimming in a voxel of medium.
+With permeability $P$ if the intracellular concentration of a molecule is $c_i$ and the extracellular concentration is $c_e$ then the flux
+$J_{e \rightarrow i} = P (c_e - c_i)$
+creates
+
+$$
+\frac{\text{d}c_i}{\text{d}t} = P \frac{A}{V_c} (c_e - c_i)
+\text{ , }
+\frac{\text{d}c_e}{\text{d}t} = -P \frac{A}{V_m} (c_e - c_i)
+$$
+
+with cell volume $V_c$, voxel volume $V_m$, and their interface area $A$.
+Substracting both from one from one another shows the concentration difference decays with
+
+$$
+\text{d}(t + \Delta t) = \text{d}(t) e^{-k \Delta t}
+\text{ , }
+k = P A (\frac{1}{V_c} + \frac{1}{V_m}) 
+$$
+
+With no change of the total number of molecules during the permeation step, $c_i$ and $c_e$ will approach the equilibrium concentration
+
+$$
+c_{\infty} = \frac{V_c c_i + V_m c_e}{V_c + V_m}
+$$
+
+Thus, for an arbitrary time step each concentration can be calculated as
+
+$$
+c_i(t + \Delta t) = c_{\infty} + (c_i - c_{\infty}) e^{-k \Delta t} \\
+c_e(t + \Delta t) = c_{\infty} + (c_e - c_{\infty}) e^{-k \Delta t}
+$$
