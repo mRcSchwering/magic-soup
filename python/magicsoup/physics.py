@@ -142,14 +142,16 @@ class FftDiffusion(TensorClass):
 
     def __init__(
         self,
-        diff_coeffs: list[float],
+        diff_coeffs: list[float],  # in cm²/s
         map_size: int,
-        dx: float = 10.0,
-        dt: float = 1.0,
+        dx: float = 10.0,  # in µm
+        dt: float = 1.0,  # in s
         ftype: torch.dtype = torch.float32,
         device: str = "cuda",
     ) -> None:
         super().__init__(device=device, ftype=ftype)
+
+        # TODO: convert cm²/s to µm²/s
 
         self.L = map_size
         self.M = len(diff_coeffs)
@@ -227,7 +229,7 @@ class Permeation(TensorClass):
 
     def __init__(
         self,
-        permeabilities: list[float],
+        permeabilities: list[float],  # cm / s
         dt: float = 0.1,  # time step in seconds
         V_cell: float = 1.0,  # cell volume in µm³
         V_med: float = 1000.0,  # medium voxel volume in µm³
@@ -235,6 +237,8 @@ class Permeation(TensorClass):
         ftype: torch.dtype = torch.float32,
         device: str = "cuda",
     ) -> None:
+
+        # TODO: its called permeability coefficient
 
         super().__init__(device=device, ftype=ftype)
 
@@ -248,13 +252,16 @@ class Permeation(TensorClass):
 
         P = self.ftensor([d * 10_000 for d in permeabilities])  # (M,) in µm/s
         k = P * A_cell * (1 / V_cell + 1 / V_med)  # (M,) exchange rate in 1/s
-        self.f = torch.exp(-k * dt)  # (S,) remaining fraction per step
+        self.decay = torch.exp(-k * dt)  # (S,) remaining fraction per step
 
     def permeate(self, x: torch.Tensor) -> torch.Tensor:
         """Permeate and returncell molecule concentrations (C, 2M)"""
         xi = x[:, self.int_mols]  # (C, M) intracellular concentrations
         xe = x[:, self.ext_mols]  # (C, M) extracellular concentrations
         c_eq = (self.V_cell * xi + self.V_med * xe) / self.V_total
-        x[:, self.int_mols] = c_eq + (xi - c_eq) * self.f
-        x[:, self.ext_mols] = c_eq + (xe - c_eq) * self.f
+        x[:, self.int_mols] = c_eq + (xi - c_eq) * self.decay
+        x[:, self.ext_mols] = c_eq + (xe - c_eq) * self.decay
         return x
+
+
+# TODO: Half-life, degradation?

@@ -181,7 +181,7 @@ class Proteomics(TensorClass):
         cell_med_ratio: float = 1e-3,
         abs_temp: float = 310.0,
         km_range: tuple[float, float] = (1e-2, 100.0),
-        vmax_range: tuple[float, float] = (1e-3, 100.0),
+        vmax_range: tuple[float, float] = (1e-3, 100.0),  # TODO: needs 10k
         device: str = "cpu",
         itype: torch.dtype = torch.int8,
         ftype: torch.dtype = torch.float32,

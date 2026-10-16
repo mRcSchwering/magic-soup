@@ -8,32 +8,53 @@ Cell proteomes can form complex networks with hubs, feedback loops, cascades, an
 When randomly changing a cell genomes, their networks change randomly, too.
 By selectively replicating certain cells while killing others, cells can evolve.
 
-- [Genetics](#genetics) explains how genetics work in this simulation
-- [Chemistry](#chemistry) explanation for molecules, reactions and energy coupling
-- [Kinetics](#kinetics) explains the reaction kinetics in this simulation
-- [Physics](#physics) explains diffusion and permeation on the world map
+- [World Map](#world-map) explains world dimensions with diffusion, permeation, cells
+- [Genetics](#genetics) explains how gene translation works in this simulation
+- [Chemistry](#chemistry) explains molecules, reactions and energy coupling
+- [Kinetics](#kinetics) explains protein reaction and transporter kinetics
 
-Units are exemplary.
 I believe that most interesting behaviors take time to evolve.
 That's why the mechanics in this simulation are simplified a lot.
 It is a tradeoff between a reasonable amount of complexity and performance.
 
+## World Map
+
+The world in which cells can divide and move around is seen as a $N^2$ periodic grid of ${\Delta x}^3$ voxels.
+By default $N$ is 128 and $\Delta x$ is 10&nbsp;µm.
+Thus the default world map spans around 1,64&nbsp;mm² and contains 16&nbsp;nL.
+Molecules can diffuse between voxels according to their [diffusion coefficient](https://en.wikipedia.org/wiki/Mass_diffusivity) (in cm²/s) however each voxel itself is regarded as a well-mixed compartment.
+See [Model > Diffusion](./model.md#diffusion) more details on diffusion.
+
+Each voxel can contain at most one cell.
+By default each cell is modelled as a 1&nbsp;fL sphere swimming in a voxel.
+Its contents are separated from the voxel's contents by a membrane.
+Molecules may permeate this membrane if their [permeability coefficient](https://en.wikipedia.org/wiki/Permeability_(porous_media)) (in cm/s) allows it.
+See [Model > Permeation](./model.md#permeation) more details on diffusion.
+
+A cell can migrate from its current voxel into an empty voxel in its [Moore neighbourhood](https://en.wikipedia.org/wiki/Moore_neighborhood).
+When a cell divides a new descendant cell appears in an empty voxel in its Moore neighbourhood.
+Upon division both cells share all molecules of its ancestor cell equally.
+Thus, molecule concentrations drop immediately after division.
+When a cell dies it spills all its contents into the inhabited voxel,
+thus leading to a small concentration uptick in the voxel.
+
+
 ## Genetics
 
-All mechanisms are similar to bacterial [translation](<https://en.wikipedia.org/wiki/Translation_(biology)>).
+Mechanisms are similar to bacterial [translation](<https://en.wikipedia.org/wiki/Translation_(biology)>).
 A cell's [genome](https://en.wikipedia.org/wiki/Genome) is a chain of [nucleotides](https://en.wikipedia.org/wiki/Nucleotide) represented by a string of letters
 T, C, G, A. There are [start and stop codons](https://en.wikipedia.org/wiki/Genetic_code) which define [coding regions (CDSs)](https://en.wikipedia.org/wiki/Coding_region).
 Transcription can start at any start codon and will end when the first [in-frame](https://en.wikipedia.org/wiki/Reading_frame) stop codon encountered.
 CDSs without a stop codon are not considered [[James NR 2016](https://pubmed.ncbi.nlm.nih.gov/27934701/)].
-This is different to [real-life transcription](https://en.wikipedia.org/wiki/Transcription_(biology)) in that there are no promotor and terminator sequences.
+It differs to [real-life transcription](https://en.wikipedia.org/wiki/Transcription_(biology)) in that there are no promotor and terminator sequences.
 Each CDS is translated into one protein, giving each cell a certain [proteome](https://en.wikipedia.org/wiki/Proteome).
 What each protein can do is defined by its [domains](https://en.wikipedia.org/wiki/Protein_domain).
 
 ![transcription and translation](./img/transc_transl.png)
 
-_A cells genome is transcribed into multiple coding regions, each of which forms a protein. Each coding region can contain multiple domains of which each has a different purpose and different kinetics. Together these proteins form signal processing networks in the cell._
+_A cells genome is transcribed into multiple coding regions, each of which forms a protein. Each coding region can contain multiple domains of which each has a different purpose and different kinetics. Together these proteins can form metabolic and transduction networks in the cell._
 
-Currently, there are three domain types: _catalytic, transporter, regulatory_.
+There are three domain types: _catalytic, transporter, regulatory_.
 Each domain consists of a region of genetic code that defines the domain type itself
 and several regions that define its further specifications.
 What these specifications are depends on the domain type.
@@ -43,10 +64,10 @@ All possible reactions are defined in the simulation's chemistry (see [Chemistry
 Specifications are the catalyzed reaction, affinities for substrates and products,
 maximum velocity, domain orientation (see [Energy](#energy)).
 
-_Transporter_ domains can move a molecule species across the cell membrane,
-_i.e._ from the outside world into the cell and _vice versa_.
+_Transporter_ domains can move molecules across the cell membrane,
+_i.e._ from the voxel medium into the cell and _vice versa_.
 All possible molecule species are defined in the simulation's chemistry (see [Chemistry](#chemistry)).
-Specifications are the molecule species, molecule affinity, maximum velocity, domain orientation (see [Energy](#energy)).
+Specifications are the molecule species, affinity, maximum velocity, domain orientation (see [Energy](#energy)).
 
 _Regulatory_ domains can regulate a protein through an effector molecule.
 A protein with only a regulatory domain has no function.
@@ -58,26 +79,23 @@ whether it is activating or inhibiting, the affinity of the effector.
 
 Affinity and maximum velocity are kinetic parameters which are described in [Kinetics](#kinetics) in more detail.
 Which specific combination of nucleotides encodes which specific parameter, _e.g._ a particular maximum velocity value,
-is defined by mappings.
-These mapping are created when the [Genetics][magicsoup.genetics.Genetics]
-and [Kinetics][magicsoup.kinetics.Kinetics] objects are initialized.
-A user can also override them later on.
+is defined by mappings generated once when the simulation [World][magicsoup.world.World] is instantiated.
 
-The rules of this genetic setup are quite simple.
-_E.g._ there is no transcriptional and post-transcriptional regulation.
-Abundance, location, and efficiency of CDSs are not taken into consideration.
-Yet still this simple genetic setup can already create complex protein networks
-with hubs, feedback loops, and cascades.
+Genes are translated instantaneously.
+So, if a genome mutates, changes immediately manifest in the proteome.
+There is also no transcriptional and post-transcriptional regulation.
+Location and efficiency of CDSs are not taken into consideration.
+Each protein is always present at a constant concentration (1&nbsp;µM by default).
+However, if a CDS is duplicated, so is it's protein and thus so is it's combined velocity.
 Some example transcriptomes and biochemical patterns are shown in
 [figures 2](./figures.md#2-transcriptomes) and [figures 7](./figures.md#7-biochemical-patterns).
 
 
 ## Chemistry
 
-As the basis of this simulation one has to define which molecule species exist
+At the beginning of a simulation the user has to define which molecule species exist
 and which reactions are possible.
-Molecule species are defined with attributes about how fast they can diffuse
-and permeate, and with an internal energy value.
+Molecule species are defined with a half-life, diffusivity, permeability, and an internal energy value.
 This energy is the hypothetical energy that this molecule would release if it was fully deconstructed.
 Reactions define how molecule species can be converted.
 They are all reversible (see [Kinetics](#kinetics) for details).
@@ -94,14 +112,13 @@ It is used to calculate an [equilibrium constant](https://en.wikipedia.org/wiki/
 $K_e$ for this reaction.
 
 $$
-\frac{-\Delta G_0}{RT} = \ln K_e
+\frac{-\Delta G_0}{\text{R}T} = \ln K_e
 $$
 
-where $R$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant) and $T$ is the absolute temperature.
-As further described in [Kinetics](#kinetics) the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) $Q$
+where $\text{R}$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant) and $T$ is the temperature (in Kelvin).
+As further described in [Kinetics](#kinetics) the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient)
 always moves towards $K_e$.
-So, reactions tend to be favourable into the direction which deconstructs high energy molecules
-and constructs low energy molecules.
+So, reactions always move in a energetically favourable direction.
 
 However, all reactions catalyzed by the same protein are considered to be energetically coupled.
 All domains are considered when calculating $\Delta G_0$.
@@ -124,15 +141,14 @@ Right shows a cell with 2 proteins with a single domain each for both reactions 
 
 Transporter domains are also involved this way.
 A transporter is seen as a reaction that converts an intracellular molecule to its extracellular version (and _vice versa_).
-For a transporter $\Delta G_0$ is always zero only $Q$ drives the reaction.
-Thus, a transporter can drive a reaction while molecules are allowed to diffuse along
-their concentration gradient, or a reaction might drive a transporter to pump molecules
+For a transporter $\Delta G_0$ is always zero.
+Thus, a transporter can drive another reaction while molecules are allowed to diffuse along
+their concentration gradient, or another reaction can drive a transporter to pump molecules
 against their concentration gratient.
 
 ## Kinetics
 
-All reactions in this simulation are based on [Michaelis-Menten-Kinetics](https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics).
-However, the possibility of a reverse reaction is allowed on the second step.
+All reactions in this simulation are based on [reversible Michaelis-Menten kinetics](https://en.wikipedia.org/wiki/Reversible_Michaelis%E2%80%93Menten_kinetics).
 In the simplest case enzyme (E) forms a complex (ES) with substrate (S) and modifies it to product (P).
 P can bind E again and react back to S.
 
@@ -141,95 +157,56 @@ $$
 \overset{k_2}{\underset{k_{-2}}{\rightleftharpoons}} \text{E} + \text{P}
 $$
 
-Where $k_1$, $k_{-1}$, $k_2$, $k_{-2}$ are the forward and reverse rates for the first and second step.
-This can be described with the reversible Michaelis-Menten equation
+Here, $k_1$, $k_{-1}$, $k_2$, $k_{-2}$ are the forward and reverse rates for the first and second step.
+If $c_E$ is the total enzyme concentration ($\text{E}$ and $\text{ES}$),
+maximum forward and backward velocities and be defined as
+$v_{max,f} = k_2 c_E$ and $v_{max,b} = k_{-1} c_E$.
+Then, reaction velocity can be described with the reversible Michaelis-Menten equation
 
 $$
-v_{\text{S} \rightleftharpoons \text{P}} = \frac{d[P]}{dt} =
-\frac{v_{max,f} \frac{[S]}{K_f} - v_{max,b} \frac{[P]}{K_b}}{1 + \frac{[S]}{K_f} + \frac{[P]}{K_b}}
+v_{\text{S} \rightleftharpoons \text{P}} =
+\frac{\text{d}c_P}{\text{d}t} =
+\frac{v_{max,f} \frac{c_S}{k_f} - v_{max,b} \frac{c_P}{k_b}}{1 + \frac{c_S}{k_f} + \frac{c_P}{k_b}}
 $$
 
-with
+where $c_S$ and $c_P$ are concentrations of substrate and product,
+$k_f = (k_{-1} + k_2) / k_1$ and $k_b = (k_{-1} + k_2) / k_{-2}$.
+In the simulation, these kinetics are further simplified by assuming a constant $c_E$ for each enzyme in all cells (1&nbsp;µM by default) and by assuming the same maximum velocity in both directions $v_{max,f} = v_{max,b} = v_{max}$.
+The equation can then be re-written as
 
 $$
-\begin{aligned}
-v_{max,f} &= k_2 [E_{total}]      && K_f = \frac{k_{-1} + k_2}{k_1}    \\
-v_{max,b} &= k_{-1} [E_{total}]   && K_b = \frac{k_{-1} + k_2}{k_{-2}}
-\end{aligned}
+v_{\text{S} \rightleftharpoons \text{P}} =
+\frac{\text{d}c_P}{\text{d}t} =
+v_{max} \frac{\frac{c_S}{k_f} - \frac{c_P}{k_b}}{1 + \frac{c_S}{k_f} + \frac{c_P}{k_b}}
+= v_{max} \alpha_{cat, \text{S} \rightleftharpoons \text{P}}
 $$
 
-where velocity $v$ is the change in $[P]$ over time,
-$[E_{total}]$ is the concentration of total enzyme ($E$ and $ES$),
-$[S]$ is the substrate concentration,
-$[P]$ is the product concentration.
-
-In the simulation S and P can be molecules, and the enzyme is a protein with at least one functional domain.
-For simplification $[E_{total}]$ is assumed to be constant for all cells and proteins,
-and $v_{max,f} = v_{max,b} = v_{max}$.
-The reversible Michaelis-Menten equation can then be re-written as
+where $\alpha_{cat}$ describes the catalytic activity of this protein.
+More generically, the catalytic activity of any protein can be described using its catalyzed reaction stoichiometry.
+With $c_i$ as the concentration of substrate $i$ with stoichiometric coefficient $n_i$
+and $c_j$ as the concentration of product $j$ with stoichiometric coefficient $n_j$
+its catalytic activity is
 
 $$
-v_{\text{S} \rightleftharpoons \text{P}} = \frac{d[P]}{dt} =
-v_{max} \frac{\frac{[S]}{K_f} - \frac{[P]}{K_b}}{1 + \frac{[S]}{K_f} + \frac{[P]}{K_b}}
+\alpha_{cat} =
+\frac{\frac{1}{k_f} \prod^{\text{substrates}} c_i^{n_i} - \frac{1}{k_b} \prod^{\text{products}} c_j^{n_j}}{1 + \frac{1}{k_f} \prod^{\text{substrates}} c_i^{n_i} + \frac{1}{k_b} \prod^{\text{products}} c_j^{n_j}}
 $$
 
-$v_{max}$ defines the maximum velocity of this protein.
-$K_f$ and $K_b$ describe reciprocal affinities to S and P.
-
-A protein can contain many functional domains catalyzing various reactions (see [Genetics](#genetics)). Transporters are treated as catalytic domains which convert a molecule species from its intracellular version to its extracellular one and _vice versa_. The catalytic activity of one protein is described as
-
-$$
-\alpha_{cat} = \frac{a_f - a_b}{1 + a_f + a_b}
-$$
-
-with
-
-$$
-a_f = \frac{1}{K_f} \prod^{\text{substrates}} [S]_i^{n_i}
-\text{  ,  }
-a_b = \frac{1}{K_b} \prod^{\text{products}} [P]_j^{n_j}
-$$
-
-where $[S]_i$ is the concentration of substrate $i$ with its stoichiometric coefficient $n_i$, and $[P]_j$ is the concentration of product $j$ with  its stoichiometric coefficient $n_j$.
-Over time the reaction will approach an equilibrium state
-where $v_{cat} = 0$ and $a_f = a_f$, and its [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient)
-$Q = K_e$ (the [equilibirum constant](https://en.wikipedia.org/wiki/Equilibrium_constant)):
-
-$$
-\lim_{t \to \infty} Q = \frac{K_b}{K_f} = K_e
-$$
-
-Thus, $K_e = K_b/K_f$ defines in which direction the reaction will proceed.
-As described in [Chemistry](#chemistry) $K_e$ is calculated from an analogy of the reaction's Gibbs free energy.
-Actual values for $v_{max}$, $K_f$, $K_b$ are derived from the domain specifications (see [Genetics](#genetics)).
-One part of of the domain specification encodes maximum velocity $v_{max}$.
-Another part encodes affinity $K_m$ from which $K_f$ and $K_b$ are derived.
-
-$$
-K_f = \begin{cases}
-K_m,             & \text{if } K_e \ge 1 \\
-\frac{K_m}{K_e}, & \text{if } K_e < 1
-\end{cases}
-\text{  ,  }
-K_b = \begin{cases}
-K_e K_m,  & \text{if } K_e \ge 1 \\
-K_m,      & \text{if } K_e < 1
-\end{cases}
-$$
-
-In addition, a protein can contain
+As mentioned in [Genetics](#genetics) a protein can contain
 regulatory domains which regulate the protein [non-competitively](https://en.wikipedia.org/wiki/Non-competitive_inhibition).
-Allosteric regulation $\alpha_{reg}$ with effector molecules A is modeled as
+Allosteric regulation $\alpha_{reg}$ is modeled as
 
 $$
-\alpha_{reg} = \prod^{\text{effectors}} \frac{[A]_l^{h_l}}{[A]_l^{h_l} + K_{r,l}^{h_l}}
+\alpha_{reg} =
+\prod^{\text{effectors}} \frac{c_l^{h_l}}{c_l^{h_l} + k_{r,l}^{h_l}}
 $$
 
-where $[A]_l$ is the concentration of effector molecule $l$,
+where $c_l$ is the concentration of effector molecule $l$,
 $h_l$ is its hill coefficient,
-and $K_{r,l}$ is its effector concentration producing half occupation.
-$h_l > 0$ for activating effectors, $h_l < 0$ for inhibiting effectors.
-Proteins without regulatory domains are always active. With this, the catalytic velocity of a protein in a cell is modeled as
+and $k_{r,l}$ is its effector concentration producing half occupation.
+$h_l > 0$ creates activating effectors, $h_l < 0$ inhibiting effectors.
+Proteins without regulatory domains are always active.
+As a result, the velocity of a protein in a cell is modeled as
 
 $$
 v = \begin{cases}
@@ -238,95 +215,12 @@ v = \begin{cases}
 \end{cases}
 $$
 
-Some kinetics examples are given in [figures 6](./figures.md#6-simple-reaction-kinetics). When values for the mappings of nucleotide sequences to values for maximum velocities and affinities
-are created, they are sampled from distributions with user defined boundaries.
-For multiple domains specifications with overlapping
-values for $v_{max}$, $K_m$, $K_a$ are averaged.
-The resulting distributions of these values are shown in
-[figures 11](./figures.md#11-kinetics-constants).
-All defaults were chosen with some assumptions in mind:
-(1) molecule values (such as in `world.molecule_map`) represent mM,
-(2) a time step represents 1 second,
-(3) molecule energies represent Joules.
-
-## Physics
-
-The world map is seen as a square periodic 2D grid of $N$ voxels.
-Each voxel is a cube of side length $\Delta x$.
-Molecule concentrations are modelled as well-mixed voxels in a finite difference system.
-Flux from voxel $i$ to an adjacent voxel $j$ is
+Values for $v_{max}$, $n$, $k_r$, $h$ are derived from domain specifications of the gene that encodes the protein (see [Genetics](#genetics)).
+Another domain specification defines an affinity from which $k_f$ and $k_b$ is derived so that
 
 $$
-J_{i \rightarrow j} = D \frac{c_i - c_j}{\Delta x}
+\frac{k_b}{k_f} = K_e
 $$
 
-with a constant anisotropic diffusion coefficient $D$ and concentrations $c$.
-For one voxel $(x, y)$ in the 2D grid its concentration changes with
-
-$$
-\frac{\text{d}c_{x,y}}{\text{d}t} = \frac{D}{\Delta x^2} (c_{x+1,y} + c_{x-1,y} + c_{x,y+1} + c_{x,y-1} - 4 c_{x,y})
-$$
-
-with indices in modulo $N$.
-This is the second order finite difference Laplacian with period boundaries.
-As matrix it is
-
-$$
-\frac{\text{d}\boldsymbol{C}}{\text{d}t} = D \Delta_N \boldsymbol{C}
-$$
-
-with $\Delta_N$ being the periodic 2D graph Laplacian divided by $\Delta x^2$.
-Its solution over arbitrary time intervals $\Delta t$ is
-
-$$
-\boldsymbol{C}(t + \Delta t) = \boldsymbol{C}(t) e^{D \Delta_N \Delta t}
-$$
-
-Because the finite-difference Laplacian is diagonalized by the 2D discrete Fourier Transform we can transform the concentration field, multiply each Fourier mode by its exact decay factor, then transform it back.
-On a $N \times N$ periodic grid with spacing $\Delta x$, eigenvalues $\lambda$ for discrete Laplacian with Fourier indices $(m, n)$ are
-
-$$
-\lambda_{m,n} = - \frac{4}{\Delta x^2} [\sin^2(\pi \frac{m}{N}) + \sin^2(\pi \frac{n}{N})]
-= - \frac{1}{\Delta x^2} [2 - 2 \cos(2 \pi \frac{m}{N}) + 2 - 2 \cos(2 \pi \frac{n}{N})]
-$$
-
-Then, the update in the frequency domain is
-
-$$
-ĉ_{m,n}(t + \Delta t) = ĉ_{m,n}(t) e^{D \lambda_{m,n} \Delta t}
-$$
-
-The zero mode $m = n = 0$ has $\lambda = 0$ and so the total amount of molecules is conserved over time steps. Additionally, the concentrations are guaranteed to not become negative.
-
-A cell is approximated as a sphere swimming in a voxel of medium.
-With permeability $P$ if the intracellular concentration of a molecule is $c_i$ and the extracellular concentration is $c_e$ then the flux
-$J_{e \rightarrow i} = P (c_e - c_i)$
-creates
-
-$$
-\frac{\text{d}c_i}{\text{d}t} = P \frac{A}{V_c} (c_e - c_i)
-\text{ , }
-\frac{\text{d}c_e}{\text{d}t} = -P \frac{A}{V_m} (c_e - c_i)
-$$
-
-with cell volume $V_c$, voxel volume $V_m$, and their interface area $A$.
-Substracting both from one from one another shows the concentration difference decays with
-
-$$
-\text{d}(t + \Delta t) = \text{d}(t) e^{-k \Delta t}
-\text{ , }
-k = P A (\frac{1}{V_c} + \frac{1}{V_m}) 
-$$
-
-With no change of the total number of molecules during the permeation step, $c_i$ and $c_e$ will approach the equilibrium concentration
-
-$$
-c_{\infty} = \frac{V_c c_i + V_m c_e}{V_c + V_m}
-$$
-
-Thus, for an arbitrary time step each concentration can be calculated as
-
-$$
-c_i(t + \Delta t) = c_{\infty} + (c_i - c_{\infty}) e^{-k \Delta t} \\
-c_e(t + \Delta t) = c_{\infty} + (c_e - c_{\infty}) e^{-k \Delta t}
-$$
+This ensures that over time the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) progresses towards the [equilibirum constant](https://en.wikipedia.org/wiki/Equilibrium_constant) $K_e$ and thus reactions always progress into an energetically favourable direction (also see [Chemistry](#chemistry)).
+For more details see [Model > Kinetics](./model.md#kinetics)
