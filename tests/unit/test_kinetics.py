@@ -21,21 +21,21 @@ def test_get_bounds():
     m = 4
     dt = 0.5
     v_max = fzeros(c, p)
-    N = fzeros(c, p, m)
+    N_e = fzeros(c, p, m)
     B = fzeros(c, p, m)
 
     # cell 0: P0: 2a -> 5b, P1: 10b -> d
     v_max[0, :] = ftensor([10, 10, 10])
-    N[0, 0, :] = ftensor([-2, 5, 0, 0])
-    N[0, 1, :] = ftensor([0, -10, 0, 1])
+    N_e[0, 0, :] = ftensor([-2, 5, 0, 0])
+    N_e[0, 1, :] = ftensor([0, -10, 0, 1])
     B[0, 0, :] = ftensor([10, 10, 10, 10])
     B[0, 1, :] = ftensor([0, 1, 0, 1])
     B[0, 2, :] = ftensor([10, 10, 10, 10])
 
     # cell 1: P0: 3c -> 7d, P1: a -> d
     v_max[1, :] = ftensor([5, 5, 5])
-    N[1, 0, :] = ftensor([0, 0, -3, 7])
-    N[1, 1, :] = ftensor([-1, 0, 0, 1])
+    N_e[1, 0, :] = ftensor([0, 0, -3, 7])
+    N_e[1, 1, :] = ftensor([-1, 0, 0, 1])
     B[1, 0, :] = ftensor([3, 7, 5, 1])
     B[1, 1, :] = ftensor([0, 0, 0, 1])
     B[1, 2, :] = ftensor([10, 10, 10, 10])
@@ -54,7 +54,7 @@ def test_get_bounds():
         ]
     )
 
-    lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, dt=dt)
+    lo, hi = _kinetics._get_bounds(B=B, N_e=N_e, v_max=v_max, dt=dt)
 
     torch.testing.assert_close(lo, lo_exp, atol=_ATOL, rtol=_RTOL)
     torch.testing.assert_close(hi, hi_exp, atol=_ATOL, rtol=_RTOL)
@@ -67,11 +67,11 @@ def test_get_bounds_randomly():
         p = random.randint(1, 100)
         m = random.randint(2, 100)
         dt = random.uniform(0, 10)
-        v_max = frand(c, p) * 100
+        v_max = frand(c, p) * 1e4
         B = frand(c, p, m) * 1000
-        N = irand(-100, 100, c, p, m)
-        N[0, 0, :] = 0.0
-        lo, hi = _kinetics._get_bounds(B=B, N=N, v_max=v_max, dt=dt)
+        N_e = irand(-100, 100, c, p, m)
+        N_e[0, 0, :] = 0.0
+        lo, hi = _kinetics._get_bounds(B=B, N_e=N_e, v_max=v_max, dt=dt)
         assert lo.shape == (c, p)
         assert hi.shape == (c, p)
         assert lo[0, 0] == -v_max[0, 0] * dt
@@ -351,7 +351,7 @@ def test_step_protein_activity():
     # test
     x1 = _kinetics.get_x1(
         x0=x0,
-        N=(N_b - N_f).to(FTYPE),
+        N_e=(N_b - N_f).to(FTYPE),
         N_f=N_f,
         N_b=N_b,
         N_h=N_h,
@@ -368,36 +368,36 @@ def test_step_protein_activity():
     assert (x1 >= 0).all()
 
     # conservation of mass
-    xd = x1 - x0
-    assert (xd @ c_mass).abs().max() < 1e-4
+    dx = x1 - x0
+    assert (dx @ c_mass).abs().max() < 1e-4
 
     # cell 0: moves towards K_e
-    assert xd[0, 0] > 0
-    assert xd[0, 1] > 0
-    assert xd[0, 2] < 0
-    assert xd[0, 3] < 0
+    assert dx[0, 0] > 0
+    assert dx[0, 1] > 0
+    assert dx[0, 2] < 0
+    assert dx[0, 3] < 0
 
     # cell 1: moves towards K_e
-    assert xd[1, 0] > 0
-    assert xd[1, 1] > 0
-    assert xd[1, 2] < 0
-    assert xd[1, 3] < 0
+    assert dx[1, 0] > 0
+    assert dx[1, 1] > 0
+    assert dx[1, 2] < 0
+    assert dx[1, 3] < 0
 
     # cell 3: already at K_e
-    assert xd[2, 0] == 0
-    assert xd[2, 1] == 0
-    assert xd[2, 2].abs() < 0.01
-    assert xd[2, 3].abs() < 0.01
+    assert dx[2, 0] == 0
+    assert dx[2, 1] == 0
+    assert dx[2, 2].abs() < 0.01
+    assert dx[2, 3].abs() < 0.01
 
     # cell 4: like cell 0 but regulated (so should be slower)
-    assert xd[3, 0] > 0
-    assert xd[3, 1] > 0
-    assert xd[3, 2] < 0
-    assert xd[3, 3] < 0
-    assert xd[3, 0].abs() < xd[0, 0].abs()
-    assert xd[3, 1].abs() < xd[0, 1].abs()
-    assert xd[3, 2].abs() < xd[0, 2].abs()
-    assert xd[3, 3].abs() < xd[0, 3].abs()
+    assert dx[3, 0] > 0
+    assert dx[3, 1] > 0
+    assert dx[3, 2] < 0
+    assert dx[3, 3] < 0
+    assert dx[3, 0].abs() < dx[0, 0].abs()
+    assert dx[3, 1].abs() < dx[0, 1].abs()
+    assert dx[3, 2].abs() < dx[0, 2].abs()
+    assert dx[3, 3].abs() < dx[0, 3].abs()
 
 
 def test_step_protein_activity_different_volumes():
@@ -434,13 +434,13 @@ def test_step_protein_activity_different_volumes():
     k_f[0, 1] = 10.0
     k_b[0, 1] = 1.0
 
-    # adj N for effective concentration change
+    # adj N_e for effective concentration change
     N_eff = (N_b - N_f) / v_mols
 
     # test
     x1 = _kinetics.get_x1(
         x0=x0,
-        N=N_eff,
+        N_e=N_eff,
         N_f=N_f,
         N_b=N_b,
         N_h=N_h,
@@ -457,14 +457,14 @@ def test_step_protein_activity_different_volumes():
     assert (x1 >= 0).all()
 
     # conservation of mass
-    xd = x1 - x0
-    assert ((xd * v_mols) @ c_mass).abs().max() < 1e-4
+    dx = x1 - x0
+    assert ((dx * v_mols) @ c_mass).abs().max() < 1e-4
 
     # cell 0: moves towards K_e
-    assert xd[0, 0] < 0
-    assert xd[0, 1] > 0
-    assert xd[0, 2] > 0
-    assert xd[0, 3] < 0
+    assert dx[0, 0] < 0
+    assert dx[0, 1] > 0
+    assert dx[0, 2] > 0
+    assert dx[0, 3] < 0
 
 
 def test_step_protein_activity_convergence():
@@ -476,7 +476,7 @@ def test_step_protein_activity_convergence():
     c_mass = ftensor([9.0, 6.0, 3.0, 3.0])
 
     x0 = ffull(c, m, value=10.0)
-    v_max = ffull(c, p, value=10.0)
+    v_max = ffull(c, p, value=1e4)
     k_f = fzeros(c, p)
     k_b = fzeros(c, p)
     K_r = fzeros(c, p, m)
@@ -510,7 +510,7 @@ def test_step_protein_activity_convergence():
     for _ in range(6):
         x1 = _kinetics.get_x1(
             x0=x0,
-            N=N_b - N_f,
+            N_e=N_b - N_f,
             N_f=N_f,
             N_b=N_b,
             N_h=N_h,
@@ -527,14 +527,14 @@ def test_step_protein_activity_convergence():
         assert (x1 >= 0).all()
 
         # conservation of mass
-        xd = x1 - x0
-        assert (xd @ c_mass).abs().max() < 1e-4
+        dx = x1 - x0
+        assert (dx @ c_mass).abs().max() < 1e-4
 
         x0 = x1
 
     # should have converged by now
-    N = (N_b - N_f).float()
-    q = torch.prod(x0.unsqueeze(1) ** N, dim=2)
+    N_e = (N_b - N_f).float()
+    q = torch.prod(x0.unsqueeze(1) ** N_e, dim=2)
     torch.testing.assert_close(k_b / k_f, q, atol=0.1, rtol=0.1)
 
 
@@ -549,7 +549,7 @@ def test_step_protein_activity_randomly(caplog):
         N_f = irand(-100, 100, c, p, m)
         N_b = irand(-100, 100, c, p, m)
         N_h = irand(-100, 100, c, p, m)
-        v_max = frand(c, p) * 100
+        v_max = frand(c, p) * 1e3
         k_f = frand(c, p) * 10
         k_b = frand(c, p) * 10
         K_r = frand(c, p, m) * 10
@@ -560,7 +560,7 @@ def test_step_protein_activity_randomly(caplog):
             with caplog.at_level(logging.WARNING):
                 x = kinetics.get_x1(
                     x0=x,
-                    N=(N_b - N_f).to(FTYPE),
+                    N_e=(N_b - N_f).to(FTYPE),
                     N_f=N_f,
                     N_b=N_b,
                     N_h=N_h,

@@ -21,9 +21,9 @@ class Kinetics(TensorClass):
     Solving ODE system that describes reaction kinetics
 
     Arguments:
-        dt: time of a time step in seconds
+        dt: time interval of a step in s (seconds)
         n_max_sweeps: maximum number of block Jacobi sweeps to perform when solving ODEs
-        n_max_bisects: maximum number of bisections when solving for xi
+        n_max_bisect: maximum number of bisections when solving for xi
         xi_conv_tol: xi convergence tolerance when solving ODEs.
             Bisection steps and Jacobi sweeps stop once xi doesn't change for than this tolerance.
         eps: Smallest possible non-zero positive value
@@ -63,7 +63,7 @@ class Kinetics(TensorClass):
     def get_x1(
         self,
         x0: torch.Tensor,  # (c, m)
-        N: torch.Tensor,  # (c, p, m)
+        N_e: torch.Tensor,  # (c, p, m)
         N_h: torch.Tensor,  # (c, p, m)
         N_f: torch.Tensor,  # (c, p, m)
         N_b: torch.Tensor,  # (c, p, m)
@@ -76,23 +76,22 @@ class Kinetics(TensorClass):
         Calculate concentrations after one time step
 
         Arguments:
-            x0: (c, m) float tensor of initial concentrations (in milli molar)
-            N: (c, p, m) float tensor of effective stoichiometric numbers for calculating concentration changes
+            x0: (c, m) float tensor of initial concentrations in mM (milli molar)
+            N_e: (c, p, m) float tensor of effective stoichiometric numbers for calculating concentration changes
             N_h: (c, p, m) integer tensor of hill coefficients of regulatory effectors
             N_f: (c, p, m) integer tensor of stoichiometric coefficients of substrates for calculating MM kinetics
             N_b: (c, p, m) integer tensor of stoichiometric coefficients of products for calculating MM kinetics
-            k_f: (c, p) float tensor of reaction rates in forward direction
-            k_b: (c, p) float tensor of reaction rates in backward direction
-            K_r: (c, p, m) float tensor of half occupancy concentrations of regulatory domains (in milli molar)
-            v_max: (c, p) float tensor maximum velocity of proteins (in milli molar per second assuming 1 micro molar of enzyme)
+            k_f: (c, p) float tensor of reactant affinity in forward direction
+            k_b: (c, p) float tensor of reactant affinity in backward direction
+            K_r: (c, p, m) float tensor of half occupancy concentrations of regulatory domains
+            v_max: (c, p) float tensor maximum velocity of assuming 1 µM (micro molar) of protein in mM/s (milli molar per second)
 
         Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
         `m` includes both all intracellular molecule species, then all extracellular molecule species.
 
-        Units are exemplary to help interpreting numbers.
-        They assume all molecule concentrations are given in milli molar,
-        enzyme concentrations in the cell are constant at 1 micro molar,
-        and maximum velocities of enzymes are given in milli molar per second.
+        Effective stoichiometric numbers means stoichiometric numbers adjusted to volume differences between cell and voxel.
+        `N_f` and `N_b` is used to calculate catalytic activity from concentrations,
+        `N_e` is used to calculate the resulting concentrations.
         """
         c, p = v_max.shape
         dt = self.dt
@@ -107,7 +106,7 @@ class Kinetics(TensorClass):
             xi_prev = xi.clone()
 
             # concentration delta
-            dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
+            dx = torch.einsum("cpm,cp->cm", N_e, xi)  # (c, m)
 
             # per cell dampening helps background convergence here
             xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
@@ -117,12 +116,12 @@ class Kinetics(TensorClass):
             x0_ = x0.unsqueeze(1)  # (c, 1, m)
 
             # substract contribution of each protein from total concentration change
-            B = x0_ + (dx_ - N * xi_)  # (c, p, m)
+            B = x0_ + (dx_ - N_e * xi_)  # (c, p, m)
 
             self._check_nonfinite(B, "B during Jacobi sweep")
 
             xi_lo, xi_hi = self._get_bounds(
-                B=B, N=N, v_max=v_max, dt=dt
+                B=B, N_e=N_e, v_max=v_max, dt=dt
             )  # (c, p), (c, p)
             xi = self._bisect_xi(
                 dt=dt,
@@ -131,7 +130,7 @@ class Kinetics(TensorClass):
                 B=B,
                 xi_lo=xi_lo,
                 xi_hi=xi_hi,
-                N=N,
+                N=N_e,
                 N_h=N_h,
                 N_f=N_f,
                 N_b=N_b,
@@ -145,7 +144,7 @@ class Kinetics(TensorClass):
                 break
 
         # concentration delta
-        dx = torch.einsum("cpm,cp->cm", N, xi)  # (c, m)
+        dx = torch.einsum("cpm,cp->cm", N_e, xi)  # (c, m)
 
         # per cell dampening for final result
         xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
@@ -340,7 +339,7 @@ class Kinetics(TensorClass):
     def _get_bounds(
         cls,
         B: torch.Tensor,  # (c, p, m)
-        N: torch.Tensor,  # (c, p, m)
+        N_e: torch.Tensor,  # (c, p, m)
         v_max: torch.Tensor,  # (c, p)
         dt: float,
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -355,10 +354,10 @@ class Kinetics(TensorClass):
         #
         inf = float("inf")
 
-        ratio_lo = torch.where(N > 0, -B / N, -inf)
+        ratio_lo = torch.where(N_e > 0, -B / N_e, -inf)
         xi_lo = ratio_lo.max(dim=2).values  # (c, p)
 
-        ratio_hi = torch.where(N < 0, B / -N, inf)
+        ratio_hi = torch.where(N_e < 0, B / -N_e, inf)
         xi_hi = ratio_hi.min(dim=2).values  # (c, p)
 
         # guard against infeasible per-protein brackets
