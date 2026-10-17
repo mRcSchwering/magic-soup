@@ -86,12 +86,12 @@ class Kinetics(TensorClass):
             K_r: (c, p, m) float tensor of half occupancy concentrations of regulatory domains
             v_max: (c, p) float tensor maximum velocity of assuming 1 µM (micro molar) of protein in mM/s (milli molar per second)
 
-        Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
-        `m` includes both all intracellular molecule species, then all extracellular molecule species.
-
         Effective stoichiometric numbers means stoichiometric numbers adjusted to volume differences between cell and voxel.
         `N_f` and `N_b` is used to calculate catalytic activity from concentrations,
         `N_e` is used to calculate the resulting concentrations.
+
+        Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
+        `m` includes both all intracellular molecule species, then all extracellular molecule species.
         """
         c, p = v_max.shape
         dt = self.dt

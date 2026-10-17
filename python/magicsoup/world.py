@@ -14,8 +14,9 @@ from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.kinetics import Kinetics, KineticsKwargs
 from magicsoup.mutations import point_mutations, recombinations
 from magicsoup.physics import (
+    Degradation,
+    Diffusion,
     DiffusionKwargs,
-    FftDiffusion,
     Permeation,
     PermeationKwargs,
 )
@@ -61,8 +62,9 @@ class World(TensorClass):
         self,
         chemistry: Chemistry,
         kinetics: Kinetics | None = None,
-        diffusion: FftDiffusion | None = None,
+        diffusion: Diffusion | None = None,
         permeation: Permeation | None = None,
+        degradation: Degradation | None = None,
         culture: Culture | None = None,
         cells: Cells | None = None,
         time_step: float = 0.1,  # TODO: time resolution and time step
@@ -101,7 +103,7 @@ class World(TensorClass):
                 ftype=ftype,
             )
         )
-        self.diffusion = diffusion or FftDiffusion(
+        self.diffusion = diffusion or Diffusion(
             **(diffusion_kwargs or {}),
             diff_coeffs=[d.diffusivity for d in chemistry.molecules],
             map_size=self.culture.map_size,
@@ -111,9 +113,15 @@ class World(TensorClass):
         )
         self.permeation = permeation or Permeation(
             **(permeation_kwargs or {}),
-            permeabilities=[d.permeability for d in chemistry.molecules],
-            V_cell=v_cell,
-            V_med=v_medium,
+            perm_coeffs=[d.permeability for d in chemistry.molecules],
+            v_cell=v_cell,
+            v_med=v_medium,
+            dt=time_step,
+            ftype=ftype,
+            device=device,
+        )
+        self.degradation = degradation or Degradation(
+            half_lifes=[d.half_life for d in chemistry.molecules],
             dt=time_step,
             ftype=ftype,
             device=device,
@@ -384,7 +392,7 @@ class World(TensorClass):
         self.cells.N_f[cell_idxs] = 0
         self.cells.N_b[cell_idxs] = 0
         self.cells.N_h[cell_idxs] = 0
-        self.cells.N[cell_idxs] = 0
+        self.cells.N_eff[cell_idxs] = 0
 
     def advance_time(self, dt: float = 1.0) -> None:
         n = int(dt / self.time_step)
@@ -395,6 +403,14 @@ class World(TensorClass):
         ys = cell_positions[alive, 1]
 
         for _ in range(n):
+            # degradation
+            self.culture.molecule_map = self.degradation.degrade(
+                x=self.culture.molecule_map, m_dim=0
+            )
+            self.cells.molecules = self.degradation.degrade(
+                x=self.cells.molecules, m_dim=1
+            )
+
             # diffusion
             self.culture.molecule_map = self.diffusion.diffuse(
                 self.culture.molecule_map
@@ -410,9 +426,9 @@ class World(TensorClass):
             x = self.permeation.permeate(x)
 
             # enzymatic activity
-            x = self.kinetics.step_protein_activity(
+            x = self.kinetics.get_x1(
                 x0=x,
-                N=self.cells.N[alive],
+                N_e=self.cells.N_eff[alive],
                 N_f=self.cells.N_f[alive],
                 N_b=self.cells.N_b[alive],
                 N_h=self.cells.N_h[alive],

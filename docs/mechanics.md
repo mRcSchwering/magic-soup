@@ -23,13 +23,13 @@ The world in which cells can divide and move around is seen as a $N^2$ periodic 
 By default $N$ is 128 and $\Delta x$ is 10&nbsp;µm.
 Thus the default world map spans around 1,64&nbsp;mm² and contains 16&nbsp;nL.
 Molecules can diffuse between voxels according to their [diffusion coefficient](https://en.wikipedia.org/wiki/Mass_diffusivity) (in cm²/s) however each voxel itself is regarded as a well-mixed compartment.
-See [Model > Diffusion](./model.md#diffusion) more details on diffusion.
+See [Model > Diffusion](./methods.md#diffusion) more details on diffusion.
 
 Each voxel can contain at most one cell.
 By default each cell is modelled as a 1&nbsp;fL sphere swimming in a voxel.
 Its contents are separated from the voxel's contents by a membrane.
 Molecules may permeate this membrane if their [permeability coefficient](https://en.wikipedia.org/wiki/Permeability_(porous_media)) (in cm/s) allows it.
-See [Model > Permeation](./model.md#permeation) more details on diffusion.
+See [Model > Permeation](./methods.md#permeation) more details on diffusion.
 
 A cell can migrate from its current voxel into an empty voxel in its [Moore neighbourhood](https://en.wikipedia.org/wiki/Moore_neighborhood).
 When a cell divides a new descendant cell appears in an empty voxel in its Moore neighbourhood.
@@ -223,4 +223,4 @@ $$
 $$
 
 This ensures that over time the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) progresses towards the [equilibirum constant](https://en.wikipedia.org/wiki/Equilibrium_constant) $K_e$ and thus reactions always progress into an energetically favourable direction (also see [Chemistry](#chemistry)).
-For more details see [Model > Kinetics](./model.md#kinetics)
+For more details see [Model > Kinetics](./methods.md#kinetics)

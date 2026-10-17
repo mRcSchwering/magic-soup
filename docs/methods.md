@@ -1,4 +1,4 @@
-# Model
+# Methods
 
 ## Diffusion
 
@@ -26,6 +26,7 @@ As matrix it is
 $$
 \frac{\text{d}\boldsymbol{C}}{\text{d}t} =
 D \boldsymbol{\Delta}_N \boldsymbol{C}
+\in \mathbb{R}^{N \times N}
 $$
 
 with $\boldsymbol{\Delta}_N$ being the periodic 2D graph Laplacian divided by ${\Delta x}^2$.
@@ -94,11 +95,7 @@ $$
 
 [Mechanics > Kinetics](./mechanics.md#kinetics) explains how each cell can contain proteins which catalyze reactions.
 The reaction velocity of a protein (or its catalyzed reaction) at any moment in time depends on the concentrations of involved molecules at that moment in time.
-Since there can be multiple proteins in a cell with multiple molecule species a differential equation system is formed.
-
-### Cell ODE
-
-Let  $\boldsymbol{N}$ be a matrix describing the reaction stoichiometry of all reactions catalyzed by proteins in a cell
+Since there can be multiple proteins in a cell with multiple molecule species a differential equation system is formed. Let  $\boldsymbol{N}$ be a matrix describing the reaction stoichiometry of all reactions catalyzed by proteins in a cell
 
 $$
 \boldsymbol{N} = \begin{pmatrix}
@@ -132,19 +129,15 @@ $$
 
 $\Delta \boldsymbol{\xi}$ is the change of molecule concentrations normalized by their stoichiometric number between time points
 $t_n$ and $t_{n+1}$ with $t_{n+1} = t_n + \Delta t$.
-When integrating the ODE $\text{d}\boldsymbol{x}/\text{d}t$ from above and substituting $\Delta \boldsymbol{\xi}$ molecule concentrations can be described as
+When integrating the ODE $\text{d}\boldsymbol{x}/\text{d}t$ from above and substituting with $\Delta \boldsymbol{\xi}$ molecule concentrations $\boldsymbol{x_{n+1}}$ at time point $t_{n+1}$ can be described using molecule concentrations $\boldsymbol{x_n}$ at time point $t_n$
 
 $$
 \boldsymbol{x_{n+1}} = \boldsymbol{N} \Delta \boldsymbol{\xi} + \boldsymbol{x_n}
 $$
 
-with molecule concentrations $\boldsymbol{x_n}$ at time point $t_n$ and molecule concentrations $\boldsymbol{x_{n+1}}$ at time point $t_{n + 1}$.
-
-### Approximation
-
 With realistic reaction stoichiometry $\boldsymbol{v}(\boldsymbol{x})$ usually creates stiff ODEs.
 However, within one time step $\boldsymbol{v}(\boldsymbol{x})$ is monotonously decreasing.
-Thus, using the [backward Euler method](https://en.wikipedia.org/wiki/Backward_Euler_method) can prevent overshooting the fix point at $\boldsymbol{K_e}$ (see [mechanics](./mechanics.md)) and possibly generating negative concentrations.
+Thus, using the [backward Euler method](https://en.wikipedia.org/wiki/Backward_Euler_method) can prevent overshooting the fix point at $\boldsymbol{K_e}$ and possibly generating negative concentrations.
 
 $$
 \Delta \boldsymbol{\xi} = \int_{t_n}^{t_{n+1}} \boldsymbol{v}(\boldsymbol{x}(t)) \text{d}t \approx \Delta t \boldsymbol{v}(\boldsymbol{x_{n+t1}})

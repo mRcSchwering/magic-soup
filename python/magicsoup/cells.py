@@ -15,6 +15,9 @@ from magicsoup.util import Array, TensorClass
 _log = logging.getLogger(__name__)
 
 
+# TODO: N_e instead of N_eff?
+
+
 class CellsKwargs(TypedDict, total=False):
     dim_scaling: float
     p_max: int

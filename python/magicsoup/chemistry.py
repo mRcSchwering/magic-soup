@@ -6,24 +6,15 @@ import warnings
 
 class Molecule:
     """
-    Represents a molecule species which is part of the world, can diffuse, degrade,
-    and be converted into other molecules.
+    Represents a molecule species
 
     Parameters:
         name: Used to uniquely identify this molecule species.
-        energy: Energy for 1 mol of this molecule species (in J).
+        energy: Energy of this molecule species in kJ/mol (kilo joule per mol)
             The hypothetical amount of energy that is released if the molecule would be fully deconstructed.
-        half_life: Half life of this molecule species in time steps (s by default).
-            Molecules degrade by one step if you call [degrade_molecules()][magicsoup.world.World.degrade_molecules].
-            Must be > 0.0.
-        diffusivity: A measure for how quick this molecule species diffuses over the molecule map during each time step (s by default).
-            Molecules diffuse when calling [diffuse_molecules()][magicsoup.world.World.diffuse_molecules].
-            0.0 means it doesn't diffuse at all.
-            1.0 means it is spread out equally around its Moore's neighborhood within one time step.
-        permeability: A measure for how quick this molecule species permeates cell membranes during each time step (s by default).
-            Molecules permeate cell membranes when calling [diffuse_molecules()][magicsoup.world.World.diffuse_molecules].
-            0.0 means it can't permeate cell membranes.
-            1.0 means it spreads equally between cell and molecule map pixel within one time step.
+        half_life: Half-life of this molecule species in days (-1 for no degradation).
+        diffusivity: Diffusion coefficient of this molecule species in water at used temperature in cm²/s (square centi meter per second)
+        permeability: Permeation coefficient of this molecule species through cell membranes at used temperature in cm/s (centi meter per second)
 
     Each molecule species which is supposed to be unique should have a unique `name`.
     In fact, if you initialize a molecule with the same name multiple times,
@@ -90,7 +81,7 @@ class Molecule:
         cls,
         name: str,
         energy: float,
-        half_life: int = 100_000,
+        half_life: int = -1,
         diffusivity: float = 0.1,
         permeability: float = 0.0,
     ):
@@ -147,13 +138,13 @@ class Molecule:
     def __init__(
         self,
         name: str,
-        energy: float,
-        half_life: int = 100_000,
-        diffusivity: float = 0.1,
-        permeability: float = 0.0,
+        energy: float,  # kJ/mol
+        half_life: int = -1,  # days
+        diffusivity: float = 6.7 * 1e-6,  # cm²/s
+        permeability: float = 2.4 * 1e-10,  # cm/s
     ):
         self.name = name
-        self.energy = float(energy)  # int would error out in kinetics
+        self.energy = energy
         self.half_life = half_life
         self.diffusivity = diffusivity
         self.permeability = permeability
