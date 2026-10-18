@@ -4,7 +4,7 @@ from typing import TypedDict
 import torch
 import torch.nn.functional as F
 
-from magicsoup.util import TensorClass
+from magicsoup.util import TensorClass, TensorKwargs
 
 _log = logging.getLogger(__name__)
 
@@ -27,19 +27,17 @@ class Kinetics(TensorClass):
         xi_conv_tol: xi convergence tolerance when solving ODEs.
             Bisection steps and Jacobi sweeps stop once xi doesn't change for than this tolerance.
         eps: Smallest possible non-zero positive value
-        device: Device to use for tensors
-            (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-            This has to be aligned with [World][magicsoup.world.World].
-        ftype: Dtype of float tensors used.
-            This has to be aligned with [World][magicsoup.world.World].
-        ftype: Dtype of integer tensors used.
-            This has to be aligned with [World][magicsoup.world.World].
+        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
 
     Reaction kinetics are modelled as reversible Michaelis-Menten (MM) kinetics.
     Parameters were optimized for realistic values when assuming the following units.
     All molecule concentrations are given in milli molar,
     enzyme concentrations in the cell are constant at 1 micro molar,
     and maximum velocities of enzymes are given in milli molar per second.
+
+    During the simulation all proteomes are represented as tensors of dimensions `c`, `p`, `m`.
+    Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
+    In tensors intracellular molecules are represented first, then extracellular ones, hence `2m`.
     """
 
     def __init__(
@@ -49,11 +47,10 @@ class Kinetics(TensorClass):
         n_max_bisect: int = 20,
         xi_conv_tol: float = 1e-4,
         eps: float = 1e-40,
-        device: str = "cpu",
-        ftype: torch.dtype = torch.float32,
-        itype: torch.dtype = torch.int8,
+        tensor_kwargs: TensorKwargs | None = None,
     ):
-        super().__init__(device=device, itype=itype, ftype=ftype)
+        super().__init__(**(tensor_kwargs or {}))
+
         self.eps = eps
         self.dt = dt
         self.n_max_sweeps = n_max_sweeps
@@ -62,36 +59,33 @@ class Kinetics(TensorClass):
 
     def get_x1(
         self,
-        x0: torch.Tensor,  # (c, m)
-        N_e: torch.Tensor,  # (c, p, m)
-        N_h: torch.Tensor,  # (c, p, m)
-        N_f: torch.Tensor,  # (c, p, m)
-        N_b: torch.Tensor,  # (c, p, m)
+        x0: torch.Tensor,  # (c, 2m)
+        N_e: torch.Tensor,  # (c, p, 2m)
+        N_h: torch.Tensor,  # (c, p, 2m)
+        N_f: torch.Tensor,  # (c, p, 2m)
+        N_b: torch.Tensor,  # (c, p, 2m)
         k_f: torch.Tensor,  # (c, p)
         k_b: torch.Tensor,  # (c, p)
-        K_r: torch.Tensor,  # (c, p, m)
+        K_r: torch.Tensor,  # (c, p, 2m)
         v_max: torch.Tensor,  # (c, p)
     ) -> torch.Tensor:
         """
         Calculate concentrations after one time step
 
         Arguments:
-            x0: (c, m) float tensor of initial concentrations in mM (milli molar)
-            N_e: (c, p, m) float tensor of effective stoichiometric numbers for calculating concentration changes
-            N_h: (c, p, m) integer tensor of hill coefficients of regulatory effectors
-            N_f: (c, p, m) integer tensor of stoichiometric coefficients of substrates for calculating MM kinetics
-            N_b: (c, p, m) integer tensor of stoichiometric coefficients of products for calculating MM kinetics
+            x0: (c, 2m) float tensor of initial concentrations in mM (milli molar)
+            N_e: (c, p, 2m) float tensor of effective stoichiometric numbers for calculating concentration changes
+            N_h: (c, p, 2m) integer tensor of hill coefficients of regulatory effectors
+            N_f: (c, p, 2m) integer tensor of stoichiometric coefficients of substrates for calculating MM kinetics
+            N_b: (c, p, 2m) integer tensor of stoichiometric coefficients of products for calculating MM kinetics
             k_f: (c, p) float tensor of reactant affinity in forward direction
             k_b: (c, p) float tensor of reactant affinity in backward direction
-            K_r: (c, p, m) float tensor of half occupancy concentrations of regulatory domains
+            K_r: (c, p, 2m) float tensor of half occupancy concentrations of regulatory domains
             v_max: (c, p) float tensor maximum velocity of assuming 1 µM (micro molar) of protein in mM/s (milli molar per second)
 
         Effective stoichiometric numbers means stoichiometric numbers adjusted to volume differences between cell and voxel.
         `N_f` and `N_b` is used to calculate catalytic activity from concentrations,
         `N_e` is used to calculate the resulting concentrations.
-
-        Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
-        `m` includes both all intracellular molecule species, then all extracellular molecule species.
         """
         c, p = v_max.shape
         dt = self.dt
@@ -106,17 +100,17 @@ class Kinetics(TensorClass):
             xi_prev = xi.clone()
 
             # concentration delta
-            dx = torch.einsum("cpm,cp->cm", N_e, xi)  # (c, m)
+            dx = torch.einsum("cpm,cp->cm", N_e, xi)  # (c, 2m)
 
             # per cell dampening helps background convergence here
             xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
 
-            dx_ = dx.unsqueeze(1)  # (c, 1, m)
+            dx_ = dx.unsqueeze(1)  # (c, 1, 2m)
             xi_ = xi.unsqueeze(-1)  # (c, p, 1)
-            x0_ = x0.unsqueeze(1)  # (c, 1, m)
+            x0_ = x0.unsqueeze(1)  # (c, 1, 2m)
 
             # substract contribution of each protein from total concentration change
-            B = x0_ + (dx_ - N_e * xi_)  # (c, p, m)
+            B = x0_ + (dx_ - N_e * xi_)  # (c, p, 2m)
 
             self._check_nonfinite(B, "B during Jacobi sweep")
 
@@ -144,12 +138,12 @@ class Kinetics(TensorClass):
                 break
 
         # concentration delta
-        dx = torch.einsum("cpm,cp->cm", N_e, xi)  # (c, m)
+        dx = torch.einsum("cpm,cp->cm", N_e, xi)  # (c, 2m)
 
         # per cell dampening for final result
         xi, dx = self._dampen_cells(x0=x0, dx=dx, xi=xi)
 
-        x1 = x0 + dx  # (c, m)
+        x1 = x0 + dx  # (c, 2m)
 
         x1 = self._fix_nonfinite(x1, "x1 after Jacobi sweep")
         x1 = self._fix_negative(x1, "x1 after Jacobi sweep")
@@ -157,23 +151,23 @@ class Kinetics(TensorClass):
         if x1.min() < 0.0:
             raise ValueError("Fix didnt work")
 
-        return x1.clamp(min=0.0)  # (c, m)
+        return x1.clamp(min=0.0)  # (c, 2m)
 
     def _bisect_xi(
         self,
         n_max_iters: int,
         xi_conv_tol: float,
         dt: float,
-        B: torch.Tensor,  # (c, p, m)
+        B: torch.Tensor,  # (c, p, 2m)
         xi_lo: torch.Tensor,  # (c, p)
         xi_hi: torch.Tensor,  # (c, p)
-        N: torch.Tensor,  # (c, p, m)
-        N_h: torch.Tensor,  # (c, p, m)
-        N_f: torch.Tensor,  # (c, p, m)
-        N_b: torch.Tensor,  # (c, p, m)
+        N: torch.Tensor,  # (c, p, 2m)
+        N_h: torch.Tensor,  # (c, p, 2m)
+        N_f: torch.Tensor,  # (c, p, 2m)
+        N_b: torch.Tensor,  # (c, p, 2m)
         k_f: torch.Tensor,  # (c, p)
         k_b: torch.Tensor,  # (c, p)
-        K_r: torch.Tensor,  # (c, p, m)
+        K_r: torch.Tensor,  # (c, p, 2m)
         v_max: torch.Tensor,  # (c, p)
     ) -> torch.Tensor:
         # solve for xi per protein
@@ -204,10 +198,10 @@ class Kinetics(TensorClass):
             xi = xi.nan_to_num(0.0)
 
             # broadcast into a per-reaction shifted concentration
-            x1 = B + N * xi.unsqueeze(-1)  # (c, p, m)
+            x1 = B + N * xi.unsqueeze(-1)  # (c, p, 2m)
 
             # only for numerical safety, not for mass bookkeeping
-            x1 = x1.clamp(min=0.0)  # (c, p, m)
+            x1 = x1.clamp(min=0.0)  # (c, p, 2m)
 
             # calculate per protein catalytic activity
             a_cat = self._get_alpha_cat(x=x1, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
@@ -228,9 +222,9 @@ class Kinetics(TensorClass):
 
     def _get_alpha_reg(
         self,
-        x: torch.Tensor,  # (c, p, m)
-        N_h: torch.Tensor,  # (c, p, m)
-        K_r: torch.Tensor,  # (c, p, m)
+        x: torch.Tensor,  # (c, p, 2m)
+        N_h: torch.Tensor,  # (c, p, 2m)
+        K_r: torch.Tensor,  # (c, p, 2m)
     ) -> torch.Tensor:
         # calculate per protein regulatory activity
         # - N_h defines hill coefficients
@@ -248,16 +242,16 @@ class Kinetics(TensorClass):
         #   alpha = exp(-sum(softplus(z_i)))  i in 1..m
         #
         eps = self.eps
-        z = N_h * (torch.log(K_r) - torch.log(x + eps))  # (c, p, m)
+        z = N_h * (torch.log(K_r) - torch.log(x + eps))  # (c, p, 2m)
         s = F.softplus(z, beta=1.0, threshold=20.0)  # pylint: disable=E1102
         alpha = torch.exp(-s.nansum(dim=2))  # (c, p)
         return alpha  # (c, p)
 
     def _get_alpha_cat(
         self,
-        x: torch.Tensor,  # (c, p, m)
-        N_f: torch.Tensor,  # (c, p, m)
-        N_b: torch.Tensor,  # (c, p, m)
+        x: torch.Tensor,  # (c, p, 2m)
+        N_f: torch.Tensor,  # (c, p, 2m)
+        N_b: torch.Tensor,  # (c, p, 2m)
         k_f: torch.Tensor,  # (c, p)
         k_b: torch.Tensor,  # (c, p)
     ) -> torch.Tensor:
@@ -306,7 +300,7 @@ class Kinetics(TensorClass):
         inf = float("inf")
         ratio = torch.where(dx < 0, x0 / (-dx + pad), torch.full_like(dx, inf))
         lam = ratio.min(dim=1, keepdim=True).values.clamp(max=1.0)  # (c, 1)
-        return xi * lam, dx * lam  # (c, p), (c, m)
+        return xi * lam, dx * lam  # (c, p), (c, 2m)
 
     def _fix_negative(self, t: torch.Tensor, where: str) -> torch.Tensor:
         is_neg = t < -self.eps  # error < eps is negligible
@@ -338,8 +332,8 @@ class Kinetics(TensorClass):
     @classmethod
     def _get_bounds(
         cls,
-        B: torch.Tensor,  # (c, p, m)
-        N_e: torch.Tensor,  # (c, p, m)
+        B: torch.Tensor,  # (c, p, 2m)
+        N_e: torch.Tensor,  # (c, p, 2m)
         v_max: torch.Tensor,  # (c, p)
         dt: float,
     ) -> tuple[torch.Tensor, torch.Tensor]:

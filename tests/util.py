@@ -51,7 +51,7 @@ def idxfull(*args, value: int) -> torch.Tensor:
     return torch.full(args, fill_value=value, device=DEVICE, dtype=IDXTYPE)
 
 
-def ffull(*args, value: int) -> torch.Tensor:
+def ffull(*args, value: float) -> torch.Tensor:
     return torch.full(args, fill_value=value, device=DEVICE, dtype=FTYPE)
 
 

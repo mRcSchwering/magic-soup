@@ -8,7 +8,6 @@ from magicsoup.chemistry import Chemistry, Molecule
 from magicsoup.constants import GAS_CONSTANT, DomainSpecType, ProteinSpecType
 from magicsoup.proteomics import Proteomics
 
-from tests.config import DEVICE
 from tests.util import FTYPE, ITYPE, ftensor, fzeros, itensor, izeros
 
 _TOL = 1e-4
@@ -97,7 +96,7 @@ _V_RATIOS = [
 
 
 def _get_proteomics() -> Proteomics:
-    protics = Proteomics(chemistry=_CHEMISTRY, abs_temp=310, device=DEVICE)
+    protics = Proteomics(chemistry=_CHEMISTRY, abs_temp=310)
     protics.km_map = {i: d for i, d in enumerate(_KM_WEIGHTS)}
     protics.vmax_map = {i: d for i, d in enumerate(_VMAX_WEIGHTS)}
     protics.sign_map = {i: d for i, d in enumerate(_SIGNS)}
@@ -260,7 +259,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N"], N_eff, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
@@ -489,7 +488,7 @@ def test_cell_params_with_transporter_domains() -> None:
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N"], N_eff, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
@@ -737,7 +736,7 @@ def test_cell_params_with_regulatory_domains() -> None:
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["N"], N_eff, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
@@ -902,12 +901,12 @@ def test_random_cell_params() -> None:
         proteomes, p_max = _get_random_proteomes(n_cells)
 
         # setup proteomics
-        protics = Proteomics(chemistry=_CHEMISTRY, device=DEVICE)
+        protics = Proteomics(chemistry=_CHEMISTRY)
         params = protics.get_cell_params(proteomes=proteomes)
 
         # test
         float_np = [params["k_f"], params["k_b"], params["v_max"]]
-        float_npm = [params["K_r"], params["N"]]
+        float_npm = [params["K_r"], params["N_e"]]
         int_npm = [params["N_f"], params["N_b"], params["N_h"]]
 
         for t in float_np:
@@ -929,7 +928,7 @@ def test_random_cell_params() -> None:
 
 def test_random_cell_reprs() -> None:
     proteomes, _ = _get_random_proteomes(1000)
-    protics = Proteomics(chemistry=_CHEMISTRY, device=DEVICE)
+    protics = Proteomics(chemistry=_CHEMISTRY)
 
     # test
     for proteome in proteomes:

@@ -36,7 +36,7 @@ def _assert_empty_values(cells: Cells) -> None:
     assert (cells.N_f == 0).all()
     assert (cells.N_b == 0).all()
     assert (cells.N_h == 0).all()
-    assert (cells.N_eff == 0).all()
+    assert (cells.N_e == 0).all()
 
 
 @pytest.mark.parametrize(
@@ -79,7 +79,7 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
     assert cells.N_f.shape == (cells.c, cells.p, cells.m)
     assert cells.N_b.shape == (cells.c, cells.p, cells.m)
     assert cells.N_h.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_eff.shape == (cells.c, cells.p, cells.m)
+    assert cells.N_e.shape == (cells.c, cells.p, cells.m)
 
     _assert_empty_values(cells=cells)
 
@@ -146,7 +146,7 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
     assert cells.N_f.shape == (cells.c, cells.p, cells.m)
     assert cells.N_b.shape == (cells.c, cells.p, cells.m)
     assert cells.N_h.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_eff.shape == (cells.c, cells.p, cells.m)
+    assert cells.N_e.shape == (cells.c, cells.p, cells.m)
 
     _assert_empty_values(cells=cells)
 
@@ -182,7 +182,7 @@ def test_update_genomes_randomly(cells: Cells) -> None:
         assert cells.N_f.dtype == ITYPE
         assert cells.N_b.dtype == ITYPE
         assert cells.N_h.dtype == ITYPE
-        assert cells.N_eff.dtype == FTYPE
+        assert cells.N_e.dtype == FTYPE
 
     assert cells.p > p_init
 
@@ -213,7 +213,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     N_f = cells.N_f.clone()
     N_b = cells.N_b.clone()
     N_h = cells.N_h.clone()
-    N_eff = cells.N_eff.clone()
+    N_e = cells.N_e.clone()
 
     # save state
     cells.save_state(statedir=statedir)
@@ -242,4 +242,4 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     assert (cells.N_f == N_f).all()
     assert (cells.N_b == N_b).all()
     assert (cells.N_h == N_h).all()
-    assert (cells.N_eff == N_eff).all()
+    assert (cells.N_e == N_e).all()

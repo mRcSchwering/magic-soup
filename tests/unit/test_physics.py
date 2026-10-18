@@ -5,7 +5,6 @@ import pytest
 import torch
 from magicsoup.physics import Degradation, Diffusion, Permeation
 
-from tests.config import DEVICE, FTYPE
 from tests.util import frand, ftensor, fzeros
 
 _ATOL = 1e-4
@@ -69,9 +68,7 @@ def test_diffusion():
         diff_coeffs=coeffs,
         dx=10.0,  # target molecule map voxel side length
         dt=0.1,  # target diffusion time step
-        map_size=molecule_map.shape[1],
-        ftype=FTYPE,
-        device=DEVICE,
+        N=molecule_map.shape[1],
     )
 
     molecule_map = diffusion.diffuse(molecule_map=molecule_map)
@@ -83,7 +80,7 @@ def test_diffusion_randomly() -> None:
     m = 10
     N = 100
     coeffs = [random.uniform(0, 10) for _ in range(m)]
-    diffusion = Diffusion(diff_coeffs=coeffs, map_size=N, ftype=FTYPE, device=DEVICE)
+    diffusion = Diffusion(diff_coeffs=coeffs, N=N)
     molecule_map = frand(m, N, N) * 100
 
     totals_0 = molecule_map.sum(dim=(1, 2))
@@ -123,7 +120,7 @@ def test_permeation(cellmols: list, expmols: list):
     cell_molecules = ftensor(cellmols) if cellmols else fzeros(0, 4)
     exp = ftensor(expmols) if expmols else fzeros(0, 4)
 
-    permeation = Permeation(perm_coeffs=[0.001, 0.1], ftype=FTYPE, device=DEVICE)
+    permeation = Permeation(perm_coeffs=[0.001, 0.1])
 
     cell_molecules = permeation.permeate(x=cell_molecules)
     torch.testing.assert_close(cell_molecules, exp, atol=_ATOL, rtol=_RTOL)
@@ -133,7 +130,7 @@ def test_permeation(cellmols: list, expmols: list):
 def test_permeation_randomly() -> None:
     M = 10
     coeffs = [random.uniform(0, 1) for _ in range(M)]
-    permeation = Permeation(perm_coeffs=coeffs, ftype=FTYPE, device=DEVICE)
+    permeation = Permeation(perm_coeffs=coeffs)
     cell_molecules = frand(1000, M * 2) * 100
     int_mols = slice(0, M)
     ext_mols = slice(M, 2 * M)
@@ -220,8 +217,6 @@ def test_degradation(x_: list, exp_: list) -> None:
     degradation = Degradation(
         half_lifes=[-1, 0.1, 1.0],
         dt=1.0,  # 1 second
-        ftype=FTYPE,
-        device=DEVICE,
     )
 
     # degrade for a day

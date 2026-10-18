@@ -10,12 +10,9 @@ from magicsoup import rs
 from magicsoup.chemistry import Chemistry
 from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
-from magicsoup.util import Array, TensorClass
+from magicsoup.util import Array, TensorClass, TensorKwargs
 
 _log = logging.getLogger(__name__)
-
-
-# TODO: N_e instead of N_eff?
 
 
 class CellsKwargs(TypedDict, total=False):
@@ -24,6 +21,25 @@ class CellsKwargs(TypedDict, total=False):
 
 
 class Cells(TensorClass):
+    """
+    Manage all cell states throughout the simulation
+
+    Arguments:
+        chemistry: simulation [Chemistry][magicsoup.chemistry.Chemistry]
+        genomics: simulation [Genomics][magicsoup.genomics.Genomics]
+        proteomics: simulation [Proteomics][magicsoup.proteomics.Proteomics]
+        dim_scaling: Scaling hysteresis used for all cell states.
+            Increase to reduce number of memory allocations per time.
+            Reduce to reduce memory and compute during simulation.
+        c_max: Maximum possible number of cells.
+        p_max: Maximum possible number of proteins.
+            Overflowing proteins will be ignored.
+        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
+
+    During the simulation all proteomes are represented as tensors of dimensions `c`, `p`, `2m`.
+    Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
+    In tensors intracellular molecules are represented first, then extracellular ones, hence `2m`.
+    """
 
     def __init__(
         self,
@@ -33,12 +49,9 @@ class Cells(TensorClass):
         dim_scaling: float = 0.2,
         c_max: int = 100_000,
         p_max: int = 1_000,
-        device: str = "cpu",
-        itype: torch.dtype = torch.int8,
-        ftype: torch.dtype = torch.float32,
+        tensor_kwargs: TensorKwargs | None = None,
     ):
-        super().__init__(device=device, itype=itype, ftype=ftype)
-
+        super().__init__(**(tensor_kwargs or {}))
         self.chemistry = chemistry
         self.genomics = genomics
         self.proteomics = proteomics
@@ -72,7 +85,7 @@ class Cells(TensorClass):
         self.k_b = self.fzeros(0, 0)  # backward reaction rates
         self.K_r = self.fzeros(0, 0, self.m)  # effector affinities
         self.v_max = self.fzeros(0, 0)  # maximum reaction rates
-        self.N_eff = self.fzeros(0, 0, self.m)  # effective stoichiometric numbers
+        self.N_e = self.fzeros(0, 0, self.m)  # effective stoichiometric numbers
         self.N_f = self.izeros(0, 0, self.m)  # forward stoichiometric coefficients
         self.N_b = self.izeros(0, 0, self.m)  # backward stoichiometric coefficients
         self.N_h = self.izeros(0, 0, self.m)  # Hill coefficients
@@ -130,10 +143,10 @@ class Cells(TensorClass):
         # derive final tensors
         N = self.proteomics.derive_stoichiometry(N_f=N_f, N_b=N_b)
         k_f, k_b = self.proteomics.derive_rates(N=N, k_m=k_m)
-        N_eff = self.proteomics.derive_effective_stoichiometry(N=N)
+        N_e = self.proteomics.derive_effective_stoichiometry(N=N)
 
         # update kinetics parameters
-        self.N_eff[idxs] = N_eff
+        self.N_e[idxs] = N_e
         self.N_f[idxs] = N_f
         self.N_b[idxs] = N_b
         self.N_h[idxs] = N_h
@@ -148,7 +161,7 @@ class Cells(TensorClass):
     def copy_genomes(self, from_idxs: torch.Tensor, to_idxs: torch.Tensor) -> None:
 
         # update kinetics parameters
-        self.N_eff[to_idxs] = self.N_eff[from_idxs]
+        self.N_e[to_idxs] = self.N_e[from_idxs]
         self.N_f[to_idxs] = self.N_f[from_idxs]
         self.N_b[to_idxs] = self.N_b[from_idxs]
         self.N_h[to_idxs] = self.N_h[from_idxs]
@@ -234,7 +247,7 @@ class Cells(TensorClass):
         self.N_f = self.izeros(self.c, self.p, self.m)
         self.N_b = self.izeros(self.c, self.p, self.m)
         self.N_h = self.izeros(self.c, self.p, self.m)
-        self.N_eff = self.fzeros(self.c, self.p, self.m)
+        self.N_e = self.fzeros(self.c, self.p, self.m)
 
         # derive kinetics parameters from genomes
         idxs = torch.arange(len(self.genomes), device=self.device, dtype=torch.int32)
@@ -260,7 +273,7 @@ class Cells(TensorClass):
         self.N_f = self._expand_c(t=self.N_f, by_n=by_n)
         self.N_b = self._expand_c(t=self.N_b, by_n=by_n)
         self.N_h = self._expand_c(t=self.N_h, by_n=by_n)
-        self.N_eff = self._expand_c(t=self.N_eff, by_n=by_n)
+        self.N_e = self._expand_c(t=self.N_e, by_n=by_n)
 
         # set new c
         self.c = len(self.genomes)
@@ -291,7 +304,7 @@ class Cells(TensorClass):
         self.N_f = self.N_f[keep]
         self.N_b = self.N_b[keep]
         self.N_h = self.N_h[keep]
-        self.N_eff = self.N_eff[keep]
+        self.N_e = self.N_e[keep]
 
         # set new c
         self.c = len(self.genomes)
@@ -305,7 +318,7 @@ class Cells(TensorClass):
         self.N_f = self._expand_p(t=self.N_f, by_n=by_n)
         self.N_b = self._expand_p(t=self.N_b, by_n=by_n)
         self.N_h = self._expand_p(t=self.N_h, by_n=by_n)
-        self.N_eff = self._expand_p(t=self.N_eff, by_n=by_n)
+        self.N_e = self._expand_p(t=self.N_e, by_n=by_n)
 
         # set new p
         self.p = self.v_max.shape[1]
@@ -319,7 +332,7 @@ class Cells(TensorClass):
         self.N_f = self.N_f[:, :-by_n]
         self.N_b = self.N_b[:, :-by_n]
         self.N_h = self.N_h[:, :-by_n]
-        self.N_eff = self.N_eff[:, :-by_n]
+        self.N_e = self.N_e[:, :-by_n]
 
         # set new p
         self.p = self.v_max.shape[1]

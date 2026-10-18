@@ -89,21 +89,6 @@ def test_closest_value(vals: Iterable, key: float, exp: float):
     assert res == exp
 
 
-@pytest.mark.parametrize(
-    "a, b, exp",
-    [
-        (0, 1, 1),
-        (0, 2, 2),
-        (0, 3, 2),
-        (0, 4, 1),
-        (0, 0, 0),
-    ],
-)
-def test_dist_1d(a: int, b: int, exp: int):
-    res = util.dist_1d(a=a, b=b, m=5)
-    assert res == exp
-
-
 def test_array():
     arr = util.Array(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"])
     M = torch.tensor([1, 0, 1, 0, 1, 0, 1, 0, 1, 0]).bool()

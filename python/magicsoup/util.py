@@ -3,12 +3,17 @@ import random
 import string
 from collections.abc import Iterable, Sequence
 from itertools import product
-from typing import Any
+from typing import Any, TypedDict
 
 import torch
 
-from magicsoup import _lib  # type: ignore
-from magicsoup.constants import ALL_NTS, CODON_SIZE
+from magicsoup.constants import (
+    ALL_NTS,
+    CODON_SIZE,
+    DEFAULT_DEVICE,
+    DEFAULT_FTYPE,
+    DEFAULT_ITYPE,
+)
 
 
 def round_down(d: float, to: int = 3) -> int:
@@ -113,18 +118,31 @@ def codons(n: int, excl_codons: list[str] | None = None) -> list[str]:
     return seqs
 
 
-def dist_1d(a: int, b: int, m: int) -> int:
-    """Distance between `a` and `b` on circular 1D line of size `m`"""
-    return _lib.dist_1d(a, b, m)
+class TensorKwargs(TypedDict, total=False):
+    device: torch.device | str
+    itype: torch.dtype
+    ftype: torch.dtype
 
 
 class TensorClass:
+    """
+    Setup pytorch tensors
+
+    Arguments:
+        device: Device to use for tensors
+            (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
+        ftype: Dtype of float tensors used.
+        ftype: Dtype of integer tensors used.
+
+    Tensor device and dtypes have to be aligned between the different classes
+    used in the simulation.
+    """
 
     def __init__(
         self,
-        device: torch.device | str = "cpu",
-        itype: torch.dtype = torch.int32,
-        ftype: torch.dtype = torch.float32,
+        device: torch.device | str = DEFAULT_DEVICE,
+        itype: torch.dtype = DEFAULT_ITYPE,
+        ftype: torch.dtype = DEFAULT_FTYPE,
     ) -> None:
         self.device = device
         self.itype = itype

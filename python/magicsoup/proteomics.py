@@ -8,8 +8,8 @@ import torch
 from magicsoup import rs
 from magicsoup.biology import Protein
 from magicsoup.chemistry import Chemistry, Molecule
-from magicsoup.constants import GAS_CONSTANT, ProteinSpecType
-from magicsoup.util import TensorClass
+from magicsoup.constants import GAS_CONSTANT, ROOM_TEMP, ProteinSpecType
+from magicsoup.util import TensorClass, TensorKwargs
 
 
 def _get_hill_map(max_token: int, none_value: int = 0) -> dict[int, int]:
@@ -174,23 +174,46 @@ class ProteomicsKwargs(TypedDict, total=False):
 
 
 class Proteomics(TensorClass):
+    """
+    Manage parameters that make up proteomes of all cells
+
+    Arguments:
+        chemistry: simulation [Chemistry][magicsoup.chemistry.Chemistry]
+        cv_ratio: ratio of cell volume to surrounding voxel volume
+        abs_temp: temperature in K (Kelvin)
+        km_range: Sampling range for enzyme affinity constants in mM (milli molar)
+        vmax_range: Sampling range for enzyme maximum velocities in mM/s (milli molar per second)
+            assuming 1 µM (micro molar) protein concentration
+        scalar_enc_size: Number of unique codons encoding scalar protein domain specifications
+        vector_enc_size: Number of unique codons encoding vector protein domain specifications
+        max_k: Upper bound for k_f and k_b (effectively limiting equilibrium constant K_e)
+        eps: Smallest possible non-zero positive value
+        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
+
+    Constant intracellular protein concentration of 1 µM (micro molar) is assumed for each protein.
+    Affinities and maximum velocities are sampled from log-normal distributions,
+    all others from uniform distributions.
+
+    During the simulation all proteomes are represented as tensors of dimensions `c`, `p`, `2m`.
+    Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
+    In tensors intracellular molecules are represented first, then extracellular ones, hence `2m`.
+    To get a more interpretable representation of proteomes use [get_proteome()][.get_proteome].
+    """
 
     def __init__(
         self,
         chemistry: Chemistry,
-        cell_med_ratio: float = 1e-3,
-        abs_temp: float = 310.0,
-        km_range: tuple[float, float] = (1e-2, 100.0),
-        vmax_range: tuple[float, float] = (1e-3, 100.0),  # TODO: needs 10k
-        device: str = "cpu",
-        itype: torch.dtype = torch.int8,
-        ftype: torch.dtype = torch.float32,
+        cv_ratio: float = 1e-3,
+        abs_temp: float = ROOM_TEMP,  # in K
+        km_range: tuple[float, float] = (1e-2, 1.0),  # in mM
+        vmax_range: tuple[float, float] = (1e-3, 1e4),  # in mM/s
         scalar_enc_size: int = 64 - 3,  # 1 codon w/o stop
         vector_enc_size: int = 4096 - 3 * 64,  # 2 codons w/o stop in 1st
         max_k: float = 1e36,
         eps: float = 1e-40,
+        tensor_kwargs: TensorKwargs | None = None,
     ) -> None:
-        super().__init__(device=device, itype=itype, ftype=ftype)
+        super().__init__(**(tensor_kwargs or {}))
 
         self.abs_temp = abs_temp
         self.max_k = max_k
@@ -201,7 +224,7 @@ class Proteomics(TensorClass):
 
         n_mols = len(chemistry.molecules)
         self.m = 2 * n_mols
-        self.cell_med_ratios = self.ftensor([1] * n_mols + [cell_med_ratio] * n_mols)
+        self.cv_ratio = self.ftensor([1] * n_mols + [cv_ratio] * n_mols)
         mol_2_mi = {d: i for i, d in enumerate(chemistry.molecules)}
 
         self.km_map = _get_log_norm_weight_map(
@@ -234,28 +257,19 @@ class Proteomics(TensorClass):
         # init rust class
         self._setup_rs()
 
-    def _setup_rs(self) -> None:
-        self.rs = rs.Proteomics(
-            km_map=self.km_map,
-            vmax_map=self.vmax_map,
-            sign_map=self.sign_map,
-            hill_map=self.hill_map,
-            reaction_map=self.reaction_map,
-            transporter_map=self.transport_map,
-            effector_map=self.effector_map,
-            m=self.m,
-        )
-
     def get_proteome(self, proteome: list[ProteinSpecType]) -> list[Protein]:
         """
-        Translate and return cell parameters for a single proteome
+        Translate proteome of a single cell
 
-        Parameters:
-            proteome: proteome which should be translated and returned
+        Arguments:
+            proteome: list of proteins which should be translated and returned
 
         Retruns:
-            List [Proteins][magicsoup.containers.Protein] that describe
+            List of [Proteins][magicsoup.containers.Protein] that describe
             the cell's proteome.
+
+        The returned list of proteins is purely for inspecting a cell.
+        The simulation uses [get_cell_params()][.get_cell_params].
         """
         proteome_kwargs = self.rs.get_proteome_dict(
             proteome=proteome, molecules=self.mol_names
@@ -265,6 +279,20 @@ class Proteomics(TensorClass):
     def get_cell_params(
         self, proteomes: list[list[ProteinSpecType]]
     ) -> dict[str, torch.Tensor]:
+        """
+        Translate and return cell parameters for many proteomes
+
+        Arguments:
+            proteomes: nested list of proteome specifications for each cell
+                where each proteome specification is a list of protein specifications
+
+        Returns:
+            Dict of all tensors necessary to describe cell proteomes.
+
+        This function is used by the simulation.
+        To get a more interpretable representation of proteomes
+        use [get_proteome()][.get_proteome].
+        """
         v_max_, k_m_, K_r_, N_f_, N_b_, N_h_ = self.rs.get_proteome_params(proteomes)
         v_max = self.ftensor(v_max_)
         k_m = self.ftensor(k_m_)
@@ -275,10 +303,10 @@ class Proteomics(TensorClass):
 
         N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
         k_f, k_b = self.derive_rates(N=N, k_m=k_m)
-        N_eff = self.derive_effective_stoichiometry(N=N)
+        N_e = self.derive_effective_stoichiometry(N=N)
 
         return {
-            "N": N_eff,
+            "N_e": N_e,
             "N_f": N_f,
             "N_b": N_b,
             "N_h": N_h,
@@ -291,20 +319,42 @@ class Proteomics(TensorClass):
     def derive_stoichiometry(
         self, N_f: torch.Tensor, N_b: torch.Tensor
     ) -> torch.Tensor:
-        return N_b - N_f  # (c,p,m)
+        """
+        Get stoichiometric numbers from stoichiometric coeffcients.
+
+        Arguments:
+            N_f: (c,p,2m) integer tensor of stoichiometric coefficients of substrates
+            N_b: (c,p,2m) integer tensor of stoichiometric coefficients of products
+
+        Returns:
+            (c,p,2m) float tensor of stoichiometric numbers
+
+        Signs of stoichiometric numbers and coefficients are viewed from forward
+        direction as of protein specifications.
+        """
+        # N_b and N_f is kept separate for MM-kinetics
+        # otherwise co-factors (with N=0) would be ignored
+        return (N_b - N_f).to(self.ftype)  # (c,p,2m)
 
     def derive_rates(
         self, N: torch.Tensor, k_m: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Get reaction rates from stoichiometric numbers and affinities
+
+        Arguments:
+            N: (c, p, m) float tensor of stoichiometric numbers
+            k_m: (c, p) float tensor of reaction affinities
+
+        Returns:
+            Tuple (k_f, k_b) each a (c,p) float tensor describing reaction rates.
+        """
         eps = self.eps
         max_k = self.max_k
 
-        # TODO: N has to become float32 because it now carries real
-        #       maybe call it N_eff so that change easier to do
-
         # energies define k_e which defines k_e = k_f/k_b
         # extreme energies can create Inf or 0.0, avoid them with clamp
-        e = torch.einsum("cpm,m->cp", N.to(self.ftype), self.mol_energies)
+        e = torch.einsum("cpm,m->cp", N, self.mol_energies)
         k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(eps, max_k)
 
         # Km is sampled between a defined range
@@ -319,5 +369,28 @@ class Proteomics(TensorClass):
         return k_f, k_b
 
     def derive_effective_stoichiometry(self, N: torch.Tensor) -> torch.Tensor:
+        """
+        Get effective stoichiometric numbers from stoichiometric numbers.
+
+        Arguments:
+            N: (c,p,2m) float tensor of stoichiometric numbers
+
+        Returns:
+            (c,p,2m) float tensor of effective stoichiometric numbers
+
+        Effective stoichiometric numbers means stoichiometric numbers adjusted to volume differences between cell and voxel.
+        """
         # effective stoichiometry considering volume difference of cell and medium
-        return N.to(self.ftype) * self.cell_med_ratios
+        return N * self.cv_ratio
+
+    def _setup_rs(self) -> None:
+        self.rs = rs.Proteomics(
+            km_map=self.km_map,
+            vmax_map=self.vmax_map,
+            sign_map=self.sign_map,
+            hill_map=self.hill_map,
+            reaction_map=self.reaction_map,
+            transporter_map=self.transport_map,
+            effector_map=self.effector_map,
+            m=self.m,
+        )

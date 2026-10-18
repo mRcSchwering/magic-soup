@@ -5,16 +5,18 @@ import pytest
 import torch
 from magicsoup.kinetics import Kinetics
 
-from tests.config import DEVICE
 from tests.util import FTYPE, ffull, frand, ftensor, fzeros, irand, itensor, izeros
 
 _ATOL = 1e-4
 _RTOL = 1e-4
 
-_kinetics = Kinetics(dt=1.0, device=DEVICE)
+
+@pytest.fixture
+def kinetics() -> Kinetics:
+    return Kinetics(dt=1.0)
 
 
-def test_get_bounds():
+def test_get_bounds(kinetics: Kinetics):
     # 2 cells, 3 proteins, 4 molecules (a, b, c, d)
     c = 2
     p = 3
@@ -54,14 +56,14 @@ def test_get_bounds():
         ]
     )
 
-    lo, hi = _kinetics._get_bounds(B=B, N_e=N_e, v_max=v_max, dt=dt)
+    lo, hi = kinetics._get_bounds(B=B, N_e=N_e, v_max=v_max, dt=dt)
 
     torch.testing.assert_close(lo, lo_exp, atol=_ATOL, rtol=_RTOL)
     torch.testing.assert_close(hi, hi_exp, atol=_ATOL, rtol=_RTOL)
 
 
 @pytest.mark.slow
-def test_get_bounds_randomly():
+def test_get_bounds_randomly(kinetics: Kinetics):
     for _ in range(100):
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
@@ -71,7 +73,7 @@ def test_get_bounds_randomly():
         B = frand(c, p, m) * 1000
         N_e = irand(-100, 100, c, p, m)
         N_e[0, 0, :] = 0.0
-        lo, hi = _kinetics._get_bounds(B=B, N_e=N_e, v_max=v_max, dt=dt)
+        lo, hi = kinetics._get_bounds(B=B, N_e=N_e, v_max=v_max, dt=dt)
         assert lo.shape == (c, p)
         assert hi.shape == (c, p)
         assert lo[0, 0] == -v_max[0, 0] * dt
@@ -81,7 +83,7 @@ def test_get_bounds_randomly():
         assert (lo <= hi).all()
 
 
-def test_get_alpha_cat():
+def test_get_alpha_cat(kinetics: Kinetics):
     # 10 cells, 3 max proteins, 4 molecules (a, b, c, d)
     c = 10
     p = 3
@@ -189,12 +191,12 @@ def test_get_alpha_cat():
 
     # test
     x0_ = torch.broadcast_to(x0.unsqueeze(1), (c, p, m))
-    a = _kinetics._get_alpha_cat(x=x0_, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
+    a = kinetics._get_alpha_cat(x=x0_, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
     torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
 
 
 @pytest.mark.slow
-def test_get_alpha_cat_randomly():
+def test_get_alpha_cat_randomly(kinetics: Kinetics):
     for _ in range(100):
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
@@ -204,13 +206,13 @@ def test_get_alpha_cat_randomly():
         N_b = irand(-100, 100, c, p, m)
         k_f = frand(c, p) * 10
         k_b = frand(c, p) * 10
-        a = _kinetics._get_alpha_cat(x=x, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
+        a = kinetics._get_alpha_cat(x=x, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
         assert a.shape == (c, p)
         assert a.isnan().sum() == 0
         assert a.isfinite().all()
 
 
-def test_get_alpha_reg():
+def test_get_alpha_reg(kinetics: Kinetics):
     # 6 cells, 3 max proteins, 4 molecules (a, b, c, d)
     c = 6
     p = 3
@@ -260,12 +262,12 @@ def test_get_alpha_reg():
 
     # test
     x0_ = torch.broadcast_to(x0.unsqueeze(1), (c, p, m))
-    a = _kinetics._get_alpha_reg(x=x0_, N_h=N_h, K_r=K_r)
+    a = kinetics._get_alpha_reg(x=x0_, N_h=N_h, K_r=K_r)
     torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
 
 
 @pytest.mark.slow
-def test_get_alpha_reg_randomly():
+def test_get_alpha_reg_randomly(kinetics: Kinetics):
     for _ in range(100):
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
@@ -273,14 +275,14 @@ def test_get_alpha_reg_randomly():
         x = frand(c, p, m) * 1000
         N_h = irand(-100, 100, c, p, m)
         K_r = frand(c, p, m) * 10
-        a = _kinetics._get_alpha_reg(x=x, N_h=N_h, K_r=K_r)
+        a = kinetics._get_alpha_reg(x=x, N_h=N_h, K_r=K_r)
         assert a.shape == (c, p)
         assert a.isnan().sum() == 0
         assert a.isfinite().all()
         assert (a >= 0).all()
 
 
-def test_step_protein_activity():
+def test_step_protein_activity(kinetics: Kinetics):
     # c cells, p max proteins, m molecules (a, b, c, d)
     c = 4
     p = 3
@@ -349,7 +351,7 @@ def test_step_protein_activity():
     K_r[3, 1, 0] = 5.0
 
     # test
-    x1 = _kinetics.get_x1(
+    x1 = kinetics.get_x1(
         x0=x0,
         N_e=(N_b - N_f).to(FTYPE),
         N_f=N_f,
@@ -400,7 +402,7 @@ def test_step_protein_activity():
     assert dx[3, 3].abs() < dx[0, 3].abs()
 
 
-def test_step_protein_activity_different_volumes():
+def test_step_protein_activity_different_volumes(kinetics: Kinetics):
     # c cells, p max proteins, m molecules (a, b, c, d)
     c = 1
     p = 3
@@ -438,7 +440,7 @@ def test_step_protein_activity_different_volumes():
     N_eff = (N_b - N_f) / v_mols
 
     # test
-    x1 = _kinetics.get_x1(
+    x1 = kinetics.get_x1(
         x0=x0,
         N_e=N_eff,
         N_f=N_f,
@@ -467,7 +469,7 @@ def test_step_protein_activity_different_volumes():
     assert dx[0, 3] < 0
 
 
-def test_step_protein_activity_convergence():
+def test_step_protein_activity_convergence(kinetics: Kinetics):
     c = 3
     p = 1
     m = 4
@@ -508,7 +510,7 @@ def test_step_protein_activity_convergence():
 
     # should converge within 5s
     for _ in range(6):
-        x1 = _kinetics.get_x1(
+        x1 = kinetics.get_x1(
             x0=x0,
             N_e=N_b - N_f,
             N_f=N_f,
@@ -554,7 +556,7 @@ def test_step_protein_activity_randomly(caplog):
         k_b = frand(c, p) * 10
         K_r = frand(c, p, m) * 10
 
-        kinetics = Kinetics(dt=dt, device=DEVICE)
+        kinetics = Kinetics(dt=dt)
 
         for j in range(10):
             with caplog.at_level(logging.WARNING):

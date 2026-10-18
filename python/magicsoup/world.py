@@ -21,7 +21,7 @@ from magicsoup.physics import (
     PermeationKwargs,
 )
 from magicsoup.proteomics import Proteomics, ProteomicsKwargs
-from magicsoup.util import TensorClass, randstr
+from magicsoup.util import TensorClass, TensorKwargs, randstr
 
 _log = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class World(TensorClass):
         cells: Cells | None = None,
         time_step: float = 0.1,  # TODO: time resolution and time step
         v_cell: float = 1.0,
-        v_medium: float = 1000.0,
+        v_voxel: float = 1000.0,
         kinetics_kwargs: KineticsKwargs | None = None,
         diffusion_kwargs: DiffusionKwargs | None = None,
         permeation_kwargs: PermeationKwargs | None = None,
@@ -77,54 +77,43 @@ class World(TensorClass):
         cells_kwargs: CellsKwargs | None = None,
         genomics_kwargs: GenomicsKwargs | None = None,
         proteomics_kwargs: ProteomicsKwargs | None = None,
-        device: str = "cpu",
-        ftype: torch.dtype = torch.float32,
-        itype: torch.dtype = torch.int8,
+        tensor_kwargs: TensorKwargs | None = None,
     ):
-        super().__init__(device=device, itype=itype, ftype=ftype)
+        super().__init__(**(tensor_kwargs or {}))
 
         self.time_step = time_step
         self.v_cell = v_cell
-        self.v_medium = v_medium
+        self.v_voxel = v_voxel
         self.chemistry = chemistry
         self.kinetics = kinetics or Kinetics(
-            **(kinetics_kwargs or {}),
-            dt=time_step,
-            device=device,
-            itype=itype,
-            ftype=ftype,
+            **(kinetics_kwargs or {}), dt=time_step, tensor_kwargs=tensor_kwargs
         )
         self.culture = culture or (
             Culture(
                 **(culture_kwargs or {}),
                 chemistry=chemistry,
-                device=device,
-                itype=itype,
-                ftype=ftype,
+                tensor_kwargs=tensor_kwargs,
             )
         )
         self.diffusion = diffusion or Diffusion(
             **(diffusion_kwargs or {}),
             diff_coeffs=[d.diffusivity for d in chemistry.molecules],
-            map_size=self.culture.map_size,
+            N=self.culture.map_size,
             dt=time_step,
-            ftype=ftype,
-            device=device,
+            tensor_kwargs=tensor_kwargs,
         )
         self.permeation = permeation or Permeation(
             **(permeation_kwargs or {}),
             perm_coeffs=[d.permeability for d in chemistry.molecules],
             v_cell=v_cell,
-            v_med=v_medium,
+            v_vox=v_voxel,
             dt=time_step,
-            ftype=ftype,
-            device=device,
+            tensor_kwargs=tensor_kwargs,
         )
         self.degradation = degradation or Degradation(
             half_lifes=[d.half_life for d in chemistry.molecules],
             dt=time_step,
-            ftype=ftype,
-            device=device,
+            tensor_kwargs=tensor_kwargs,
         )
 
         if not cells:
@@ -134,9 +123,7 @@ class World(TensorClass):
                 chemistry=chemistry,
                 scalar_enc_size=max(genomics.one_codon_map.values()),
                 vector_enc_size=max(genomics.two_codon_map.values()),
-                device=device,
-                itype=itype,
-                ftype=ftype,
+                tensor_kwargs=tensor_kwargs,
             )
             self.cells = Cells(
                 **(cells_kwargs or {}),
@@ -144,9 +131,7 @@ class World(TensorClass):
                 chemistry=chemistry,
                 genomics=genomics,
                 proteomics=proteomics,
-                device=device,
-                itype=itype,
-                ftype=ftype,
+                tensor_kwargs=tensor_kwargs,
             )
         else:
             self.cells = cells
@@ -214,7 +199,7 @@ class World(TensorClass):
 
         # cell is picking up the molecules of the pxl it is born on
         # it receives the same concentration, total volume increases
-        f = self.v_medium / (self.v_medium + self.v_cell)
+        f = self.v_voxel / (self.v_voxel + self.v_cell)
         pickup = self.culture.molecule_map[:, xs, ys]
         self.cells.molecules[new_idxs, :] = pickup.T * f
         self.culture.molecule_map[:, xs, ys] = pickup * f
@@ -374,7 +359,7 @@ class World(TensorClass):
         # spill out molecules
         # cell is spilling out molecules into the vxl it is
         # volume decreases, vxl concentration increases
-        f = (self.v_medium + self.v_cell) / self.v_medium
+        f = (self.v_voxel + self.v_cell) / self.v_voxel
         spillout = self.cells.molecules[cell_idxs, :]
         self.culture.molecule_map[:, xs, ys] += spillout.T * f
 
@@ -392,7 +377,7 @@ class World(TensorClass):
         self.cells.N_f[cell_idxs] = 0
         self.cells.N_b[cell_idxs] = 0
         self.cells.N_h[cell_idxs] = 0
-        self.cells.N_eff[cell_idxs] = 0
+        self.cells.N_e[cell_idxs] = 0
 
     def advance_time(self, dt: float = 1.0) -> None:
         n = int(dt / self.time_step)
@@ -428,7 +413,7 @@ class World(TensorClass):
             # enzymatic activity
             x = self.kinetics.get_x1(
                 x0=x,
-                N_e=self.cells.N_eff[alive],
+                N_e=self.cells.N_e[alive],
                 N_f=self.cells.N_f[alive],
                 N_b=self.cells.N_b[alive],
                 N_h=self.cells.N_h[alive],
