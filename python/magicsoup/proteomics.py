@@ -7,7 +7,7 @@ import torch
 
 from magicsoup import rs
 from magicsoup.biology import Protein
-from magicsoup.chemistry import Chemistry, Molecule
+from magicsoup.chemistry import Chemistry, Molecule, Reaction
 from magicsoup.constants import GAS_CONSTANT, ROOM_TEMP, ProteinSpecType
 from magicsoup.util import TensorClass, TensorKwargs
 
@@ -95,7 +95,7 @@ def _get_vector_map(
 
 def _get_reaction_map(
     molmap: dict[Molecule, int],
-    reactions: list[tuple[list[Molecule], list[Molecule]]],
+    reactions: list[Reaction],
     max_token: int,
     none_value: int = 0,
 ) -> dict[int, tuple[int, ...]]:
@@ -109,11 +109,11 @@ def _get_reaction_map(
 
     # careful, only copy [0] to avoid having references to the same list
     vectors = [[0] * n_mols for _ in range(len(reactions))]
-    for ri, (lft, rgt) in enumerate(reactions):
-        for mol in lft:
+    for ri, react in enumerate(reactions):
+        for mol in react.substrates:
             mol_i = molmap[mol]
             vectors[ri][mol_i] -= 1
-        for mol in rgt:
+        for mol in react.products:
             mol_i = molmap[mol]
             vectors[ri][mol_i] += 1
 
@@ -218,14 +218,19 @@ class Proteomics(TensorClass):
         self.abs_temp = abs_temp
         self.max_k = max_k
         self.eps = eps
+        self.chemistry = chemistry
 
-        self.mol_names = [d.name for d in chemistry.molecules]
-        self.mol_energies = self.ftensor([d.energy for d in chemistry.molecules] * 2)
-
-        n_mols = len(chemistry.molecules)
+        molecules = chemistry.molecules
+        reactions = chemistry.reactions
+        n_mols = len(molecules)
         self.m = 2 * n_mols
+        mol_2_mi = {d: i for i, d in enumerate(molecules)}
+
+        # cell-volume-to-voxel-volume ratios for ext mols (2m,)
         self.cv_ratio = self.ftensor([1] * n_mols + [cv_ratio] * n_mols)
-        mol_2_mi = {d: i for i, d in enumerate(chemistry.molecules)}
+
+        # energies (kJ/mol -> J/mol) for all mols (2m,)
+        self.mol_energies = self.ftensor([d.energy for d in molecules] * 2) * 1e3
 
         self.km_map = _get_log_norm_weight_map(
             max_token=scalar_enc_size, weight_range=km_range
@@ -236,7 +241,7 @@ class Proteomics(TensorClass):
         self.sign_map = _get_sign_map(max_token=scalar_enc_size)
         self.hill_map = _get_hill_map(max_token=scalar_enc_size)
         self.reaction_map = _get_reaction_map(
-            reactions=chemistry.reactions, molmap=mol_2_mi, max_token=vector_enc_size
+            reactions=reactions, molmap=mol_2_mi, max_token=vector_enc_size
         )
         self.transport_map = _get_transporter_map(
             n_molecules=n_mols, max_token=vector_enc_size
@@ -272,9 +277,13 @@ class Proteomics(TensorClass):
         The simulation uses [get_cell_params()][.get_cell_params].
         """
         proteome_kwargs = self.rs.get_proteome_dict(
-            proteome=proteome, molecules=self.mol_names
+            proteome=proteome,
+            molecules=[d.name for d in self.chemistry.molecules],
         )
-        return [Protein.from_dict(d) for d in proteome_kwargs]
+        return [
+            Protein.from_dict(d, molmap=self.chemistry.molname_2_mol)
+            for d in proteome_kwargs
+        ]
 
     def get_cell_params(
         self, proteomes: list[list[ProteinSpecType]]

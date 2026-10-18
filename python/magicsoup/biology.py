@@ -1,9 +1,8 @@
-from collections import Counter
 from typing import TYPE_CHECKING, Protocol
 
 import torch
 
-from magicsoup.chemistry import Molecule
+from magicsoup.chemistry import Molecule, Reaction
 
 if TYPE_CHECKING:
     from magicsoup.world import World
@@ -18,7 +17,7 @@ class DomainType(Protocol):
     def to_dict(self) -> dict: ...
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "DomainType": ...
+    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "DomainType": ...
 
 
 class CatalyticDomain:
@@ -46,7 +45,7 @@ class CatalyticDomain:
 
     def __init__(
         self,
-        reaction: tuple[list[Molecule], list[Molecule]],
+        reaction: Reaction,
         km: float,
         vmax: float,
         start: int,
@@ -54,17 +53,15 @@ class CatalyticDomain:
     ):
         self.start = start
         self.end = end
-        subs, prods = reaction
-        self.substrates = subs
-        self.products = prods
+        self.reaction = reaction
         self.km = km
         self.vmax = vmax
 
     def to_dict(self) -> dict:
         """Get dict representation of domain"""
         reaction = (
-            [d.name for d in self.substrates],
-            [d.name for d in self.products],
+            [d.name for d in self.reaction.substrates],
+            [d.name for d in self.reaction.products],
         )
         kwargs = {
             "reaction": reaction,
@@ -76,16 +73,16 @@ class CatalyticDomain:
         return {"type": "C", "spec": kwargs}
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "CatalyticDomain":
+    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "CatalyticDomain":
         """
         Convencience method for creating an instance from a dict.
         All parameters must be present as keys.
         Molecules are provided by their name.
         """
         lft, rgt = dct["reaction"]
-        reaction = (
-            [Molecule.from_name(name=d) for d in lft],
-            [Molecule.from_name(name=d) for d in rgt],
+        reaction = Reaction(
+            substrates=[molmap[d] for d in lft],
+            products=[molmap[d] for d in rgt],
         )
         return cls(
             reaction=reaction,
@@ -96,16 +93,10 @@ class CatalyticDomain:
         )
 
     def __repr__(self) -> str:
-        ins = ",".join(str(d) for d in self.substrates)
-        outs = ",".join(str(d) for d in self.products)
-        return f"CatalyticDomain({ins}<->{outs},Km={self.km:.2e},Vmax={self.vmax:.2e})"
+        return f"CatalyticDomain({self.reaction},Km={self.km:.2e},Vmax={self.vmax:.2e})"
 
     def __str__(self) -> str:
-        subs_cnts = Counter(str(d) for d in self.substrates)
-        prods_cnts = Counter([str(d) for d in self.products])
-        subs_str = " + ".join([f"{d} {k}" for k, d in subs_cnts.items()])
-        prods_str = " + ".join([f"{d} {k}" for k, d in prods_cnts.items()])
-        return f"{subs_str} <-> {prods_str} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
+        return f"{self.reaction} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
 class TransporterDomain:
@@ -162,14 +153,14 @@ class TransporterDomain:
         return {"type": "T", "spec": kwargs}
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "TransporterDomain":
+    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "TransporterDomain":
         """
         Convencience method for creating an instance from a dict.
         All parameters must be present as keys.
         Molecules are provided by their name.
         """
         return cls(
-            molecule=Molecule.from_name(name=dct["molecule"]),
+            molecule=molmap[dct["molecule"]],
             km=dct["km"],
             vmax=dct["vmax"],
             is_exporter=dct["is_exporter"],
@@ -242,14 +233,14 @@ class RegulatoryDomain:
         return {"type": "R", "spec": kwargs}
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "RegulatoryDomain":
+    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "RegulatoryDomain":
         """
         Convencience method for creating an instance from a dict.
         All parameters must be present as keys.
         Molecules are provided by their name.
         """
         return cls(
-            effector=Molecule.from_name(name=dct["effector"]),
+            effector=molmap[dct["effector"]],
             km=dct["km"],
             hill=dct["hill"],
             is_inhibiting=dct["is_inhibiting"],
@@ -317,7 +308,7 @@ class Protein:
         }
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "Protein":
+    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "Protein":
         """
         Create Protein instance from dict. Key must match arguments.
         Domains are set as a list of dicts `{"type": ".", "spec": {})` where
@@ -329,11 +320,11 @@ class Protein:
             dom_type = dom["type"]
             dom_spec = dom["spec"]
             if dom_type == "C":
-                doms.append(CatalyticDomain.from_dict(dom_spec))
+                doms.append(CatalyticDomain.from_dict(dom_spec, molmap=molmap))
             elif dom_type == "T":
-                doms.append(TransporterDomain.from_dict(dom_spec))
+                doms.append(TransporterDomain.from_dict(dom_spec, molmap=molmap))
             elif dom_type == "R":
-                doms.append(RegulatoryDomain.from_dict(dom_spec))
+                doms.append(RegulatoryDomain.from_dict(dom_spec, molmap=molmap))
 
         return Protein(
             cds_start=dct["cds_start"],

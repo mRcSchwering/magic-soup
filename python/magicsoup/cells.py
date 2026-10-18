@@ -15,6 +15,12 @@ from magicsoup.util import Array, TensorClass, TensorKwargs
 _log = logging.getLogger(__name__)
 
 
+# TODO: what about checking that 2 inputs match
+#       e.g. 2 tensors that should have same length
+#       or that a tensor is (k,)
+#       check it here? or in world?
+
+
 class CellsKwargs(TypedDict, total=False):
     dim_scaling: float
     p_max: int

@@ -127,7 +127,7 @@ class World(TensorClass):
             )
             self.cells = Cells(
                 **(cells_kwargs or {}),
-                c_max=self.culture.pixels,
+                c_max=self.culture.map_size**2,
                 chemistry=chemistry,
                 genomics=genomics,
                 proteomics=proteomics,
@@ -172,7 +172,7 @@ class World(TensorClass):
         if n_new_cells == 0:
             return self.idxtensor([])
 
-        free_pos = self.culture.random_free_positions(n=n_new_cells)
+        free_pos = self.culture.get_free_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             _log.warning("No free positions to spawn %d cells", n_new_cells)
@@ -186,9 +186,9 @@ class World(TensorClass):
             random.shuffle(genomes)
             genomes = genomes[:n_new_cells]
 
-        n_living_cells = self.cells.get_alive_cells()
+        n_living_cells = self.cells.get_n_cells()
         self.cells.update_c(c_req=n_living_cells + n_new_cells)
-        free_idxs = self.cells.get_available_idxs()
+        free_idxs = self.cells.get_free_idxs()
         new_idxs = free_idxs[:n_new_cells]
 
         # occupy positions
@@ -218,7 +218,7 @@ class World(TensorClass):
         if n_new_cells == 0:
             return self.idxtensor([])
 
-        free_pos = self.culture.random_free_positions(n=n_new_cells)
+        free_pos = self.culture.get_free_positions(n=n_new_cells)
         n_avail_pos = free_pos.size(0)
         if n_avail_pos == 0:
             _log.warning("No free positions to add %d cells", n_new_cells)
@@ -232,9 +232,9 @@ class World(TensorClass):
             random.shuffle(cells)
             cells = cells[:n_new_cells]
 
-        n_cells = self.cells.get_alive_cells()
+        n_cells = self.cells.get_n_cells()
         self.cells.update_c(c_req=n_cells + n_new_cells)
-        free_idxs = self.cells.get_available_idxs()
+        free_idxs = self.cells.get_free_idxs()
         new_idxs = free_idxs[:n_new_cells]
 
         # occupy positions
@@ -263,7 +263,7 @@ class World(TensorClass):
         if cell_idxs.numel() == 0:
             return
 
-        n_cells = self.cells.get_alive_cells()
+        n_cells = self.cells.get_n_cells()
 
         # unoccupy current positions
         cell_positions = self.culture.get_cell_positions()
@@ -272,7 +272,7 @@ class World(TensorClass):
         self.culture.cell_map[old_xs, old_ys] = -1
 
         # find new unoccupied positions
-        new_pos = self.culture.random_free_positions(n=n_cells)
+        new_pos = self.culture.get_free_positions(n=n_cells)
         new_xs = new_pos[:, 0]
         new_ys = new_pos[:, 1]
 
@@ -286,7 +286,7 @@ class World(TensorClass):
             return self.idxtensor([])
 
         # positions are updated in place
-        migrated_idxs = self.culture.migrate_cells(cell_idxs=cell_idxs)
+        migrated_idxs = self.culture.undirected_cell_migration(cell_idxs=cell_idxs)
 
         return migrated_idxs
 
@@ -298,18 +298,18 @@ class World(TensorClass):
             return self.idxtensor([]), self.idxtensor([])
 
         # prepare for children
-        avail_idxs = self.cells.get_available_idxs()
+        avail_idxs = self.cells.get_free_idxs()
         n_avail = avail_idxs.numel()
 
         if n_avail >= n_req:
             child_idxs = avail_idxs
         else:
-            n_alive = self.cells.get_alive_cells()
+            n_alive = self.cells.get_n_cells()
             self.cells.update_c(c_req=n_req + n_alive)
-            child_idxs = self.cells.get_available_idxs()
+            child_idxs = self.cells.get_free_idxs()
 
         # already places children on cell map
-        parent_idxs, child_idxs = self.culture.divide_cells(
+        parent_idxs, child_idxs = self.culture.cell_division(
             parent_idxs=cell_idxs, child_idxs=child_idxs
         )
 
@@ -436,7 +436,7 @@ class World(TensorClass):
         p_indel: float = 0.4,
         p_del: float = 0.66,
     ) -> None:
-        cell_idxs = self.cells.get_available_idxs()
+        cell_idxs = self.cells.get_free_idxs()
         seqs = self.cells.genomes[cell_idxs]
         mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
         genomes = [d[0] for d in mutated]
@@ -444,7 +444,7 @@ class World(TensorClass):
         self.update_cells(genomes=genomes, cell_idxs=cell_idxs[idxs])
 
     def recombinate_cells(self, p: float = 1e-7) -> None:
-        nghbrs = self.culture.cell_neighbor_pairs()
+        nghbrs = self.culture.get_cell_neighbor_pairs()
         genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
         genomes1 = self.cells.genomes[[d[1] for d in nghbrs]]
         pairs = [(g0, g1) for g0, g1 in zip(genomes0, genomes1)]

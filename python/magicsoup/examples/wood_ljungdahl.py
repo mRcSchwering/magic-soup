@@ -13,7 +13,7 @@ CO dehydrogenase / acetyl-CoA synthetase: CO2 + HS-CoA + methyl-Ni-ACS -> Ni-ACS
 (skipped Co step)
 """
 
-from magicsoup.chemistry import Chemistry, Molecule
+from magicsoup.chemistry import Chemistry, Molecule, Reaction
 
 # TODO: normal K_e should be roughly in [-1e3, 1e3]
 #       (K_e = E[J/mol] / T[K] / G[J/(K*mol)])
@@ -56,12 +56,12 @@ MOLECULES = [
 ]
 
 REACTIONS = [
-    ([co2, NADPH], [formiat, NADP]),  # -90k
-    ([formiat, FH4, ATP], [formylFH4, ADP]),  # -10k
-    ([formylFH4, NADPH], [methylenFH4, NADP]),  # -40k
-    ([methylenFH4, NADPH], [methylFH4, NADP]),  # -40k
-    ([methylFH4, NiACS], [FH4, methylNiACS]),  # -60k
-    ([methylNiACS, co2, HSCoA], [NiACS, acetylCoA]),  # -50k
+    Reaction([co2, NADPH], [formiat, NADP]),  # -90k
+    Reaction([formiat, FH4, ATP], [formylFH4, ADP]),  # -10k
+    Reaction([formylFH4, NADPH], [methylenFH4, NADP]),  # -40k
+    Reaction([methylenFH4, NADPH], [methylFH4, NADP]),  # -40k
+    Reaction([methylFH4, NiACS], [FH4, methylNiACS]),  # -60k
+    Reaction([methylNiACS, co2, HSCoA], [NiACS, acetylCoA]),  # -50k
 ]
 
 CHEMISTRY = Chemistry(molecules=MOLECULES, reactions=REACTIONS)

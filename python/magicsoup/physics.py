@@ -44,7 +44,9 @@ class Diffusion(TensorClass):
         super().__init__(**(tensor_kwargs or {}))
 
         self.N = N
-        D = self.ftensor(diff_coeffs) * 100 * 1e6
+
+        # diffusion coefficients cm²/s -> µm²/s
+        D = self.ftensor(diff_coeffs) * 1e8
 
         # allowed frequencies in radians per pixel
         kx = 2 * math.pi * fftfreq(self.N, dtype=self.ftype, device=self.device)
@@ -130,7 +132,7 @@ class Permeation(TensorClass):
         self.v_vox = v_vox
         self.v_total = v_cell + v_vox
 
-        P = self.ftensor([d * 10_000 for d in perm_coeffs])  # (m,) in µm/s
+        P = self.ftensor([d for d in perm_coeffs]) * 1e4  # (m,) in µm/s
         k = P * a_cell * (1 / v_cell + 1 / v_vox)  # (m,) exchange rate in 1/s
         self.decay = torch.exp(-k * dt)  # (m,) remaining fraction per step
 

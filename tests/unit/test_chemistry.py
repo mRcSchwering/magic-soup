@@ -1,42 +1,71 @@
-import warnings
-
 import pytest
-from magicsoup.chemistry import Chemistry, Molecule
-
-_X = Molecule(name="X", energy=10)
-_Y = Molecule(name="Y", energy=100)
+from magicsoup.chemistry import Chemistry, Molecule, Reaction
 
 
-def test_same_molecules_get_same_instance():
-    X2 = Molecule(name="X", energy=10)
-    Y2 = Molecule(name="Y", energy=100)
-    assert _X is X2
-    assert _Y is Y2
-    assert _Y is not _X
+def test_molecule_equality() -> None:
+    m1 = Molecule("A", energy=10.0)
+    m2 = Molecule("A", energy=10.0)
+    m3 = Molecule("B", energy=15.0, half_life=10, diffusivity=2e-5, permeability=2e-10)
+
+    assert m1 == m2
+    assert m1 != m3
 
 
-def test_raise_if_same_molecule_with_different_energy():
+def test_reaction_equality() -> None:
+    m1 = Molecule("A", energy=10.0)
+    m2 = Molecule("B", energy=15.0)
+
+    # all equal
+    r1 = Reaction([m1, m1, m2], [m2])  # Reaction: 2A + B -> B
+    r2 = Reaction([m1, m2, m1], [m2])  # Reaction: A + B + A -> B
+    r3 = Reaction([m2], [m2] + 2 * [m1])  # Reaction: B -> B + 2A
+
+    # not equal
+    r4 = Reaction([m1, m2], [m2])  # Reaction: A + B -> B
+
+    assert r1 == r2
+    assert r2 == r3
+    assert r3 != r4
+
+
+def test_chemistry_initialization() -> None:
+    m1 = Molecule("A", energy=10.0)
+    m2 = Molecule("B", energy=15.0)
+    m3 = Molecule("C", energy=20.0)
+
+    # r1 ^= r2
+    r1 = Reaction([m1], [m2])  # Reaction: A -> B
+    r2 = Reaction([m2], [m1])  # Reaction: B -> A
+
+    # r3 ^= r4 ^= r5
+    r3 = Reaction([m1] * 3 + [m2], [m2])  # Reaction: 3A + B -> B
+    r4 = Reaction([m2], [m1] * 3 + [m2])  # Reaction: B -> 3A + B
+    r5 = Reaction([m1, m2, m1, m1], [m2])  # Reaction: A + B + 2A -> B
+
+    chem = Chemistry(
+        molecules=[m3, m2, m1, m2, m3],
+        reactions=[r2, r3, r1, r4, r3, r2, r1, r5],
+    )
+
+    assert chem.molecules == [m3, m2, m1]
+    assert chem.reactions == [r1, r3]
+
+
+def test_chemistry_raises_wrong_duplicate_molecule() -> None:
+    m1 = Molecule("A", energy=10.0)
+    m2 = Molecule("A", energy=20.0)  # Same name, different energy
+
     with pytest.raises(ValueError):
-        Molecule(name="X", energy=20)
+        Chemistry(molecules=[m1, m2], reactions=[])
 
 
-def test_similar_molecule_warning():
-    with warnings.catch_warnings(record=True) as warn:
-        Molecule(name="x", energy=10)
-    assert len(warn) > 0
-    assert issubclass(warn[-1].category, UserWarning)
+def test_chemistry_raises_missing_molecule() -> None:
+    m1 = Molecule("A", energy=10.0)
+    m2 = Molecule("B", energy=15.0)
+    m3 = Molecule("C", energy=20.0)
 
+    r1 = Reaction([m1], [m2])  # Reaction: A -> B
+    r2 = Reaction([m2], [m3])  # Reaction: B -> C
 
-def test_molecule_mappings():
-    chem = Chemistry(molecules=[_X, _Y], reactions=[])
-    assert chem.mol_2_idx[_X] == 0
-    assert chem.mol_2_idx[_Y] == 1
-    assert chem.molname_2_idx["X"] == 0
-    assert chem.molname_2_idx["Y"] == 1
-
-
-def test_molecule_from_name():
-    X2 = Molecule.from_name(name="X")
-    Y2 = Molecule.from_name(name="Y")
-    assert X2 is _X
-    assert Y2 is _Y
+    with pytest.raises(ValueError):
+        Chemistry(molecules=[m1, m2], reactions=[r1, r2])
