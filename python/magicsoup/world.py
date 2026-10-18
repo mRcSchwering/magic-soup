@@ -12,7 +12,6 @@ from magicsoup.chemistry import Chemistry
 from magicsoup.culture import Culture, CultureKwargs
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.kinetics import Kinetics, KineticsKwargs
-from magicsoup.mutations import point_mutations, recombinations
 from magicsoup.physics import (
     Degradation,
     Diffusion,
@@ -52,10 +51,6 @@ class _CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
-# TODO: see if tensors can be used wherever indices are passed around
-#       only strs need to be lists
-
-
 class World(TensorClass):
 
     def __init__(
@@ -67,7 +62,8 @@ class World(TensorClass):
         degradation: Degradation | None = None,
         culture: Culture | None = None,
         cells: Cells | None = None,
-        time_step: float = 0.1,  # TODO: time resolution and time step
+        time_step: float = 1.0,  # s
+        time_resolution: float = 0.1,  # s
         v_cell: float = 1.0,
         v_voxel: float = 1000.0,
         kinetics_kwargs: KineticsKwargs | None = None,
@@ -81,12 +77,21 @@ class World(TensorClass):
     ):
         super().__init__(**(tensor_kwargs or {}))
 
+        if not (time_step / time_resolution).is_integer():
+            raise ValueError(
+                f"Time per step {time_step:.2f}s"
+                f"is not divisible by time resolution {time_resolution:.2f}s"
+            )
+
+        self.steps_per_time_step = int(time_step / time_resolution)
         self.time_step = time_step
+        self.time_resolution = time_resolution
         self.v_cell = v_cell
         self.v_voxel = v_voxel
+
         self.chemistry = chemistry
         self.kinetics = kinetics or Kinetics(
-            **(kinetics_kwargs or {}), dt=time_step, tensor_kwargs=tensor_kwargs
+            **(kinetics_kwargs or {}), dt=time_resolution, tensor_kwargs=tensor_kwargs
         )
         self.culture = culture or (
             Culture(
@@ -99,7 +104,7 @@ class World(TensorClass):
             **(diffusion_kwargs or {}),
             diff_coeffs=[d.diffusivity for d in chemistry.molecules],
             N=self.culture.map_size,
-            dt=time_step,
+            dt=time_resolution,
             tensor_kwargs=tensor_kwargs,
         )
         self.permeation = permeation or Permeation(
@@ -107,12 +112,12 @@ class World(TensorClass):
             perm_coeffs=[d.permeability for d in chemistry.molecules],
             v_cell=v_cell,
             v_vox=v_voxel,
-            dt=time_step,
+            dt=time_resolution,
             tensor_kwargs=tensor_kwargs,
         )
         self.degradation = degradation or Degradation(
             half_lifes=[d.half_life for d in chemistry.molecules],
-            dt=time_step,
+            dt=time_resolution,
             tensor_kwargs=tensor_kwargs,
         )
 
@@ -302,11 +307,12 @@ class World(TensorClass):
         n_avail = avail_idxs.numel()
 
         if n_avail >= n_req:
-            child_idxs = avail_idxs
+            child_idxs = avail_idxs[:n_req]
         else:
             n_alive = self.cells.get_n_cells()
             self.cells.update_c(c_req=n_req + n_alive)
-            child_idxs = self.cells.get_free_idxs()
+            avail_idxs = self.cells.get_free_idxs()
+            child_idxs = avail_idxs[:n_req]
 
         # already places children on cell map
         parent_idxs, child_idxs = self.culture.cell_division(
@@ -322,7 +328,7 @@ class World(TensorClass):
 
         # update cell parameters for children
         descendant_idxs = torch.cat([parent_idxs, child_idxs])
-        self.cells.alive[child_idxs] = child_idxs
+        self.cells.alive[child_idxs] = True
         self.cells.labels[child_idxs] = self.cells.labels[parent_idxs]
         self.cells.generations[child_idxs] = self.cells.generations[parent_idxs]
         self.cells.generations[descendant_idxs] += 1
@@ -379,31 +385,25 @@ class World(TensorClass):
         self.cells.N_h[cell_idxs] = 0
         self.cells.N_e[cell_idxs] = 0
 
-    def advance_time(self, dt: float = 1.0) -> None:
-        n = int(dt / self.time_step)
-
+    def advance_time(self) -> None:
         alive = self.cells.alive
+        molecule_map = self.culture.molecule_map
+        cell_molecules = self.cells.molecules
         cell_positions = self.culture.get_cell_positions()
         xs = cell_positions[alive, 0]
         ys = cell_positions[alive, 1]
 
-        for _ in range(n):
+        for _ in range(self.steps_per_time_step):
             # degradation
-            self.culture.molecule_map = self.degradation.degrade(
-                x=self.culture.molecule_map, m_dim=0
-            )
-            self.cells.molecules = self.degradation.degrade(
-                x=self.cells.molecules, m_dim=1
-            )
+            molecule_map[:] = self.degradation.degrade(x=molecule_map, m_dim=0)
+            cell_molecules[:] = self.degradation.degrade(x=cell_molecules, m_dim=1)
 
             # diffusion
-            self.culture.molecule_map = self.diffusion.diffuse(
-                self.culture.molecule_map
-            )
+            molecule_map[:] = self.diffusion.diffuse(molecule_map)
 
             # collect internal and external molecules for x
             x = torch.cat(
-                [self.cells.molecules[alive], self.culture.molecule_map[:, xs, ys].T],
+                [cell_molecules[alive], molecule_map[:, xs, ys].T],
                 dim=1,
             )
 
@@ -424,39 +424,39 @@ class World(TensorClass):
             )
 
             # distribute x1 to internal and external molecules
-            self.culture.molecule_map[:, xs, ys] = x[:, self._ext_mol_idxs].T
-            self.cells.molecules[alive] = x[:, self._int_mol_idxs]
+            molecule_map[:, xs, ys] = x[:, self._ext_mol_idxs].T
+            cell_molecules[alive] = x[:, self._int_mol_idxs]
 
         # age cells
-        self.cells.ages += n * self.time_step
+        self.cells.ages += self.time_step
 
-    def mutate_cells(
-        self,
-        p: float = 1e-6,
-        p_indel: float = 0.4,
-        p_del: float = 0.66,
-    ) -> None:
-        cell_idxs = self.cells.get_free_idxs()
-        seqs = self.cells.genomes[cell_idxs]
-        mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
-        genomes = [d[0] for d in mutated]
-        idxs = [d[1] for d in mutated]
-        self.update_cells(genomes=genomes, cell_idxs=cell_idxs[idxs])
+    # def mutate_cells(
+    #     self,
+    #     p: float = 1e-6,
+    #     p_indel: float = 0.4,
+    #     p_del: float = 0.66,
+    # ) -> None:
+    #     cell_idxs = self.cells.get_free_idxs()
+    #     seqs = self.cells.genomes[cell_idxs]
+    #     mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
+    #     genomes = [d[0] for d in mutated]
+    #     idxs = [d[1] for d in mutated]
+    #     self.update_cells(genomes=genomes, cell_idxs=cell_idxs[idxs])
 
-    def recombinate_cells(self, p: float = 1e-7) -> None:
-        nghbrs = self.culture.get_cell_neighbor_pairs()
-        genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
-        genomes1 = self.cells.genomes[[d[1] for d in nghbrs]]
-        pairs = [(g0, g1) for g0, g1 in zip(genomes0, genomes1)]
-        mutated = recombinations(seq_pairs=pairs, p=p)
+    # def recombinate_cells(self, p: float = 1e-7) -> None:
+    #     nghbrs = self.culture.get_cell_neighbor_pairs()
+    #     genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
+    #     genomes1 = self.cells.genomes[[d[1] for d in nghbrs]]
+    #     pairs = [(g0, g1) for g0, g1 in zip(genomes0, genomes1)]
+    #     mutated = recombinations(seq_pairs=pairs, p=p)
 
-        genomes0 = [d[0] for d in mutated]
-        genomes1 = [d[1] for d in mutated]
-        idxs = [d[2] for d in mutated]
+    #     genomes0 = [d[0] for d in mutated]
+    #     genomes1 = [d[1] for d in mutated]
+    #     idxs = [d[2] for d in mutated]
 
-        genomes = genomes0 + genomes1
-        cell_idxs = torch.cat([nghbrs[idxs:0], nghbrs[idxs:1]])
-        self.update_cells(genomes=genomes, cell_idxs=cell_idxs)
+    #     genomes = genomes0 + genomes1
+    #     cell_idxs = torch.cat([nghbrs[idxs:0], nghbrs[idxs:1]])
+    #     self.update_cells(genomes=genomes, cell_idxs=cell_idxs)
 
     def save(self, rundir: Path, name: str = "world.pkl") -> None:
         rundir.mkdir(parents=True, exist_ok=True)

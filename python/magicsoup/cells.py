@@ -112,11 +112,11 @@ class Cells(TensorClass):
 
     def get_cell_idxs(self) -> torch.Tensor:
         """Get (n,) cell index tensor of currently living cells"""
-        return self.alive.nonzero(as_tuple=True)[0]
+        return self.alive.nonzero(as_tuple=True)[0].int()
 
     def get_free_idxs(self) -> torch.Tensor:
         """Get (k,) cell index tensor of unused cell indices"""
-        return (~self.alive).nonzero(as_tuple=True)[0]
+        return (~self.alive).nonzero(as_tuple=True)[0].int()
 
     def update_genomes(self, genomes: list[str], idxs: torch.Tensor) -> None:
         """

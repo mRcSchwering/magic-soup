@@ -29,6 +29,25 @@ def point_mutations(
     return rs.point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
 
 
+# TODO: test likelihoods again
+def slippage(
+    seqs: list[str], p: float = 1e-7, p_length: float = 10.0
+) -> list[tuple[str, int]]:
+    # TODO: implement, important for evolution
+    return []
+
+
+# TODO: check likelihoods again
+def nahr(
+    seqs: list[str], k: int = 5, min_homology: int = 10, max_occurences: int = 20
+) -> list[tuple[str, int]]:
+    # 5-mers occur reasonably often in random sequences of 100-1000 bp
+    # min_homology would only allow a recombination if 2 sequences share a 10 bp stretch
+    # and are not overlapping and don't occure more than 20 times (do avoid very repetitive sequences)
+    # TODO: implement, important for evolution
+    return []
+
+
 def recombinations(
     seq_pairs: list[tuple[str, str]], p: float = 1e-7
 ) -> list[tuple[str, str, int]]:
@@ -48,10 +67,19 @@ def recombinations(
     The new sequence paris are returned and in addition to that their `seq_pairs` index.
     E.g. if it's 5, it means `seq_pairs[5]` was mutated and the resulting sequences are in this 3-tuple.
     """
+    # TODO: here I could also add a homology check to better imitate homologous recombination
+    #       currently it rather resembles random strand breaks and re-joining
+    # TODO: CGPT recommended p=1e-5 for 1k bp genomes
     if len(seq_pairs) == 0:
         return []
     return rs.recombinations(seq_pairs=seq_pairs, p=p)
 
 
-# TODO: duplications should be a first order feature
-#       important for evolving proteins
+class Mutations:
+
+    def __init__(
+        self, p_point: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66
+    ) -> None:
+        self.p_point = p_point
+        self.p_indel = p_indel
+        self.p_del = p_del

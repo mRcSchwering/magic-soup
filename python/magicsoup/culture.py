@@ -258,7 +258,7 @@ class Culture(TensorClass):
 
         Arguments:
             parent_idxs: (n,) cell index tensor of n cells that want to divide
-            child_idxs: (n,) cell index tensor for new cells to assume if division is successful
+            child_idxs: (l,) cell index tensor for new cells to assume if division is successful
             n_max_rounds: how many rounds to resolve possible conflicts among cells
 
         Returns:
@@ -267,8 +267,8 @@ class Culture(TensorClass):
             - `child_idxs`: (k,) cell index tensor of respective descendant cells
 
         A cell can only divide if it finds a free voxel in its Moore neighbourhood.
-        Position `i` of `parent_idxs` relates to position `i` of `child_indxs` in both inputs and outputs.
-        _I.e._ if `parent_idxs=[1, 2]` and `child_idxs=[3, 4]` is provided but only cell `2` can divide,
+        Position `i` of `parent_idxs` relates to position `i` of `child_indxs` in outputs.
+        _I.e._ if `parent_idxs=[1, 2, 3]` and `child_idxs=[4, 5]` is provided but only cell `2` can divide,
         the returned values will be `parent_idxs=[2]` and `child_idxs=[4]`.
         """
         # For each cell:
@@ -277,6 +277,7 @@ class Culture(TensorClass):
         # Gather all chosen voxels (let one cell win in case of collisions)
         # Commit winners
         # Repeat with left overs
+        l = child_idxs.numel()
 
         # snapshot of current positions, read-only below
         pos = self.get_cell_positions()
@@ -286,11 +287,13 @@ class Culture(TensorClass):
         remaining = self.idxrandperm(n)
 
         # target voxel indices (flattened) of successful cells
-        success = self.idxfull(n, value=-1)
+        succ_parents = self.idxfull(n, value=-1)
+        succ_children = self.idxfull(l, value=-1)
 
         for _ in range(n_max_rounds):
+            s = (succ_parents >= 0).sum()  # number succeeded cells
             r = remaining.numel()  # number of cells still trying to act
-            if r == 0:
+            if r == 0 or s >= l:
                 break
 
             # cell idxs of remaining cells
@@ -303,19 +306,22 @@ class Culture(TensorClass):
             target_nbs, winners = self._choose_neighbourhood(nbs=nbs, r=r)
 
             # commit winners
-            w_idxs = remaining[winners]  # indices for idx
-            w_tgts = target_nbs[winners]  # indices for target voxel
+            w_idxs = remaining[winners]  # indices for idx (r,)
+            w_tgts = target_nbs[winners]  # indices for target voxel (r,)
 
             # occupy voxel (also affects 2d cells)
             self.cell_map_flat[w_tgts] = child_idxs[w_idxs]
+            # FIXME: child_idxs is (l,) but w_idxs is (r,) and r can be > l, so this indexing may fail
+            #        why doesn't my culture test not find this
+            #        I get it in world test with 90% confluency when trying to divide all cells
 
-            success[w_idxs] = w_tgts  # add target voxel index to result
+            succ_parents[w_idxs] = w_tgts  # mark successful parents
+            succ_children[w_idxs] = w_tgts  # mark successful children
 
             # cells with no free neighbor stay too, migrate may vacate nearby
             remaining = remaining[~winners]  # (r,)
 
-        ok = success >= 0
-        return parent_idxs[ok], child_idxs[ok]
+        return parent_idxs[succ_parents >= 0], child_idxs[succ_children >= 0]
 
     def save_state(self, statedir: Path) -> None:
         """

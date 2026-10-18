@@ -60,23 +60,23 @@ class Diffusion(TensorClass):
         # decay factor for ĉ(t) = ĉ(0) exp(-D λ dt)
         self.decay = torch.exp(-D[:, None, None] * dt * lam)  # (m, N, N//2 + 1)
 
-    def diffuse(self, molecule_map: torch.Tensor) -> torch.Tensor:
+    def diffuse(self, x: torch.Tensor) -> torch.Tensor:
         """
         Diffuse molecule map
 
         Arguments:
-            molecule_map: (m, N, N) float tensor of concentrations
+            x: (m, N, N) float tensor of concentrations
 
         Returns:
-            molecule_map (m, N, N) float tensor of diffused concentrations
+            x (m, N, N) float tensor of diffused concentrations
         """
         N = self.N
 
         # accurately track molecule totals before
-        before = molecule_map.sum(dim=(1, 2), dtype=torch.float64)
+        before = x.sum(dim=(1, 2), dtype=torch.float64)
 
         # diffuse molecules for dt along dx
-        c_hat: torch.Tensor = rfft2(molecule_map)
+        c_hat: torch.Tensor = rfft2(x)
         out: torch.Tensor = irfft2(c_hat * self.decay, s=(N, N))
         out = out.clamp(min=0)
 

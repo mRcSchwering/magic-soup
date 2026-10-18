@@ -17,9 +17,6 @@ from tests.util import (
     seed,
 )
 
-_ATOL = 1e-4
-_RTOL = 1e-4
-
 
 def _gen_rand_cell_map(L: int, confl: float) -> torch.Tensor:
     n = round(L * L * confl)
@@ -260,6 +257,40 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
             ],
             [0],
             [8],
+        ),
+        (
+            # 1 cell can divide but many wanted to
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [3, 4, 6],
+            [8],
+            [
+                [0, 8, 1],
+                [2, 3, 4],
+                [5, 6, 7],
+            ],
+            [3],
+            [8],
+        ),
+        (
+            # many children available 2 divide
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [-1, 6, -1],
+            ],
+            [0, 6],
+            [5, 7, 8],
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [7, 6, 5],
+            ],
+            [0, 6],
+            [5, 7],
         ),
         (
             # 1 cell cant divide (no free neighborhood)

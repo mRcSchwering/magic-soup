@@ -71,7 +71,7 @@ def test_diffusion():
         N=molecule_map.shape[1],
     )
 
-    molecule_map = diffusion.diffuse(molecule_map=molecule_map)
+    molecule_map = diffusion.diffuse(x=molecule_map)
     torch.testing.assert_close(molecule_map, exp, atol=_ATOL, rtol=_RTOL)
 
 
@@ -86,7 +86,7 @@ def test_diffusion_randomly() -> None:
     totals_0 = molecule_map.sum(dim=(1, 2))
 
     for _ in range(10000):
-        molecule_map = diffusion.diffuse(molecule_map=molecule_map)
+        molecule_map = diffusion.diffuse(x=molecule_map)
         assert (molecule_map > 0.0).all()
 
     totals_1 = molecule_map.sum(dim=(1, 2))
