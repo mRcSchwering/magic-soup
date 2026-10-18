@@ -7,9 +7,9 @@ from magicsoup.cells import Cells
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
-from magicsoup.util import Array, random_genome
+from magicsoup.util import random_genome
 
-from tests.util import FTYPE, IDXTYPE, ITYPE, idxtensor
+from tests.util import FTYPE, ITYPE, idxtensor
 
 
 @pytest.fixture
@@ -151,9 +151,6 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
     _assert_empty_values(cells=cells)
 
 
-# TODO: copy genomes
-
-
 @pytest.mark.slow
 def test_update_genomes_randomly(cells: Cells) -> None:
     c = 100
@@ -161,28 +158,61 @@ def test_update_genomes_randomly(cells: Cells) -> None:
     p_init = cells.p
 
     for _ in range(100):
-        n = random.randint(1, c)
+        n = random.randint(10, c)
         idxs = idxtensor(random.sample(range(c), n))
         genomes = [random_genome(s=500) for _ in range(n)]
         cells.update_genomes(genomes=genomes, idxs=idxs)
 
-        # assert types of cell parameters
-        assert isinstance(cells.genomes, Array)
-        assert isinstance(cells.labels, Array)
-        assert cells.alive.dtype == torch.bool
-        assert cells.ages.dtype == FTYPE
-        assert cells.generations.dtype == IDXTYPE
-        assert cells.molecules.dtype == FTYPE
+        # check genomes set
+        assert cells.genomes[idxs] == genomes
 
-        # check exact shape of kinetics parameters
-        assert cells.v_max.dtype == FTYPE
-        assert cells.k_f.dtype == FTYPE
-        assert cells.k_b.dtype == FTYPE
-        assert cells.K_r.dtype == FTYPE
-        assert cells.N_f.dtype == ITYPE
-        assert cells.N_b.dtype == ITYPE
-        assert cells.N_h.dtype == ITYPE
-        assert cells.N_e.dtype == FTYPE
+        # check kinetics parameters types
+        ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.K_r, cells.N_e]
+        itensors = [cells.N_b, cells.N_f, cells.N_h]
+        for tens in ftensors:
+            assert tens.dtype == FTYPE
+        for tens in itensors:
+            assert tens.dtype == ITYPE
+
+        # check at least some non-placeholder values
+        denstensors = [cells.v_max, cells.k_b, cells.k_f, cells.N_f, cells.N_b]
+        for tens in denstensors:
+            per_cell = (tens[idxs] != 0).sum(tuple(range(1, tens.ndim)))
+            assert (per_cell > 0).sum() / n > 0.8  # a few empty proteomes possible
+
+    assert cells.p > p_init
+
+
+@pytest.mark.slow
+def test_copy_genomes_randomly(cells: Cells) -> None:
+    c = 100
+    cells.update_c(c_req=c)
+    p_init = cells.p
+
+    for _ in range(100):
+        n = random.randint(1, c // 2)
+        idxs0 = idxtensor(random.sample(range(c), n))
+        genomes0 = [random_genome(s=500) for _ in range(n)]
+        cells.update_genomes(genomes=genomes0, idxs=idxs0)
+
+        idxs_left = list(set(range(c)) - set(idxs0.tolist()))
+        idxs1 = idxtensor(random.sample(idxs_left, n))
+        cells.copy_genomes(from_idxs=idxs0, to_idxs=idxs1)
+
+        # check genomes set
+        assert cells.genomes[idxs0] == cells.genomes[idxs1]
+
+        # check kinetics parameters types
+        ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.K_r, cells.N_e]
+        itensors = [cells.N_b, cells.N_f, cells.N_h]
+        for tens in ftensors:
+            assert tens.dtype == FTYPE
+        for tens in itensors:
+            assert tens.dtype == ITYPE
+
+        # check at least some non-placeholder values
+        for tens in ftensors + itensors:
+            torch.testing.assert_close(tens[idxs0], tens[idxs1])
 
     assert cells.p > p_init
 

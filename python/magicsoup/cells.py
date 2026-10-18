@@ -28,17 +28,24 @@ class Cells(TensorClass):
         chemistry: simulation [Chemistry][magicsoup.chemistry.Chemistry]
         genomics: simulation [Genomics][magicsoup.genomics.Genomics]
         proteomics: simulation [Proteomics][magicsoup.proteomics.Proteomics]
-        dim_scaling: Scaling hysteresis used for all cell states.
-            Increase to reduce number of memory allocations per time.
-            Reduce to reduce memory and compute during simulation.
-        c_max: Maximum possible number of cells.
-        p_max: Maximum possible number of proteins.
-            Overflowing proteins will be ignored.
+        dim_scaling: Scaling hysteresis used for dimensions `c` and `p` in all cell states.
+            Increase to reduce number of memory allocations,
+            reduce to reduce memory and compute during simulation.
+        c_max: Maximum possible number of cells (number of voxels on cell map)
+        p_max: Maximum possible number of proteins (pruned if more)
         tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
 
     During the simulation all proteomes are represented as tensors of dimensions `c`, `p`, `2m`.
     Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
     In tensors intracellular molecules are represented first, then extracellular ones, hence `2m`.
+
+    Dimensions `c` and `p` can change during the simulation.
+    If their sizes have to be increased or decreased use [update_c()][.update_c()] and [update_p()][.update_p].
+    According to `dim_scaling` the dimension can increase more or decrease less than the provided number.
+    This also means some element in dimension `c` can be empty.
+    Thus, the size of `c` is not the number of cells (use [get_n_cells()][.get_n_cells] for that).
+    Use [get_cell_idxs()][.get_cell_idxs] to get all indices of `c` which currently contain cells.
+    And use [get_free_idxs()][.get_free_idxs] to get all indices of `c` which currently don't contain cells.
     """
 
     def __init__(
@@ -93,16 +100,32 @@ class Cells(TensorClass):
         # setup rust class
         self._setup_rs()
 
-    def get_alive_cells(self) -> int:
+    def get_n_cells(self) -> int:
+        """Get number of currently living cells"""
         return int(self.alive.sum().item())
 
     def get_cell_idxs(self) -> torch.Tensor:
+        """Get (n,) cell index tensor of currently living cells"""
         return self.alive.nonzero(as_tuple=True)[0]
 
-    def get_available_idxs(self) -> torch.Tensor:
+    def get_free_idxs(self) -> torch.Tensor:
+        """Get (k,) cell index tensor of unused cell indices"""
         return (~self.alive).nonzero(as_tuple=True)[0]
 
     def update_genomes(self, genomes: list[str], idxs: torch.Tensor) -> None:
+        """
+        Update cell genomes and proteomes
+
+        Arguments:
+            genomes: list of k new cell genomes
+            idxs: (k,) cell index tensor of respective cells to be updated
+
+        Position `i` of `genomes` relates to position `i` of `idxs`.
+        Genomes are updated and translated.
+        New proteomes are immediately active.
+        Prefer [copy_genomes()][.copy_genomes] over [update_genomes()][.update_genomes]
+        if possible as it's much faster.
+        """
         if len(genomes) == 0:
             return
 
@@ -159,7 +182,18 @@ class Cells(TensorClass):
         self.genomes[idxs] = genomes
 
     def copy_genomes(self, from_idxs: torch.Tensor, to_idxs: torch.Tensor) -> None:
+        """
+        Copy cell genomes and proteomes
 
+        Arguments:
+            from_idxs: (k,) cell index tensor of cells to copy from
+            to_idxs: (k,) cell index tensor of cells to copy to
+
+        Position `i` of `genomes` relates to position `i` of `idxs`.
+        New proteomes are immediately active.
+        Prefer [copy_genomes()][.copy_genomes] over [update_genomes()][.update_genomes]
+        if possible as it's much faster.
+        """
         # update kinetics parameters
         self.N_e[to_idxs] = self.N_e[from_idxs]
         self.N_f[to_idxs] = self.N_f[from_idxs]
@@ -174,6 +208,7 @@ class Cells(TensorClass):
         self.genomes[to_idxs] = self.genomes[from_idxs]
 
     def update_c(self, c_req: int) -> None:
+        """Update `c` dimension by providing a new required size"""
         mar = math.ceil(c_req * self.dim_scaling)
         to_c = min(c_req + mar, self.c_max)
         if to_c < self.c:
@@ -182,6 +217,7 @@ class Cells(TensorClass):
             self._increase_c(by_n=to_c - self.c)
 
     def update_p(self, p_req: int) -> None:
+        """Update `p` dimension by providing a new required size"""
         mar = math.ceil(p_req * self.dim_scaling)
         to_p = min(p_req + mar, self.p_max)
         if to_p < self.p:
@@ -190,6 +226,14 @@ class Cells(TensorClass):
             self._increase_p(by_n=to_p - self.p)
 
     def save_state(self, statedir: Path) -> None:
+        """
+        Save current state
+
+        Arguments:
+            statedir: Directory to store files in
+
+        Only attributes which update during the simulation are saved.
+        """
         statedir = statedir / type(self).__name__
         statedir.mkdir(parents=True, exist_ok=True)
 
@@ -210,6 +254,13 @@ class Cells(TensorClass):
             fh.write("\n".join(lines))
 
     def load_state(self, statedir: Path) -> None:
+        """
+        Load a saved state.
+        The state had to be saved with [save_state()][.save_state] previously.
+
+        Arguments:
+            statedir: Directory that contains all files of that state
+        """
         statedir = statedir / type(self).__name__
 
         shape = json.loads((statedir / "shape.json").read_text(encoding="utf-8"))
@@ -279,7 +330,7 @@ class Cells(TensorClass):
         self.c = len(self.genomes)
 
     def _decrease_c(self, by_n: int) -> None:
-        avail = self.get_available_idxs()
+        avail = self.get_free_idxs()
         n_avail = avail.numel()
         if n_avail < by_n:
             raise ValueError(f"Cannot decrease c by {by_n}, only {n_avail} available")

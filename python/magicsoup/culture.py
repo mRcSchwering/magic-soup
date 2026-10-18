@@ -267,7 +267,7 @@ class Culture(TensorClass):
             - `child_idxs`: (k,) cell index tensor of respective descendant cells
 
         A cell can only divide if it finds a free voxel in its Moore neighbourhood.
-        Position `i` of `parent_idxs` always relates to position `i` of `child_indxs` in both inputs and outputs.
+        Position `i` of `parent_idxs` relates to position `i` of `child_indxs` in both inputs and outputs.
         _I.e._ if `parent_idxs=[1, 2]` and `child_idxs=[3, 4]` is provided but only cell `2` can divide,
         the returned values will be `parent_idxs=[2]` and `child_idxs=[4]`.
         """
