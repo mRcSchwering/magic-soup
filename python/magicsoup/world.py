@@ -272,14 +272,14 @@ class World(TensorClass):
 
         # unoccupy current positions
         cell_positions = self.culture.get_cell_positions()
-        old_xs = cell_positions[:, 0]
-        old_ys = cell_positions[:, 1]
+        old_xs = cell_positions[cell_idxs, 0]
+        old_ys = cell_positions[cell_idxs, 1]
         self.culture.cell_map[old_xs, old_ys] = -1
 
         # find new unoccupied positions
         new_pos = self.culture.get_free_positions(n=n_cells)
-        new_xs = new_pos[:, 0]
-        new_ys = new_pos[:, 1]
+        new_xs = new_pos[cell_idxs, 0]
+        new_ys = new_pos[cell_idxs, 1]
 
         self.culture.cell_map[new_xs, new_ys] = cell_idxs
 
@@ -362,16 +362,15 @@ class World(TensorClass):
         ys = cell_positions[cell_idxs, 1]
         self.culture.cell_map[xs, ys] = -1
 
-        # spill out molecules
-        # cell is spilling out molecules into the vxl it is
-        # volume decreases, vxl concentration increases
-        f = (self.v_voxel + self.v_cell) / self.v_voxel
-        spillout = self.cells.molecules[cell_idxs, :]
-        self.culture.molecule_map[:, xs, ys] += spillout.T * f
+        # all molecules are spilled onto voxel
+        n_voxel = self.culture.molecule_map[:, xs, ys] * self.v_voxel
+        n_cell = self.cells.molecules[cell_idxs, :].T * self.v_cell
+        self.culture.molecule_map[:, xs, ys] = (n_voxel + n_cell) / self.v_voxel
 
         # unset parameters
         self.cells.genomes[cell_idxs] = [""] * len(cell_idxs)
         self.cells.labels[cell_idxs] = [""] * len(cell_idxs)
+        self.cells.alive[cell_idxs] = False
         self.cells.ages[cell_idxs] = 0.0
         self.cells.generations[cell_idxs] = 0
         self.cells.molecules[cell_idxs] = 0.0
@@ -386,12 +385,13 @@ class World(TensorClass):
         self.cells.N_e[cell_idxs] = 0
 
     def advance_time(self) -> None:
-        alive = self.cells.alive
-        molecule_map = self.culture.molecule_map
-        cell_molecules = self.cells.molecules
-        cell_positions = self.culture.get_cell_positions()
-        xs = cell_positions[alive, 0]
-        ys = cell_positions[alive, 1]
+        alive = self.cells.alive  # (c,)
+        cell_molecules = self.cells.molecules  # (c, m)
+        cell_idxs = self.cells.get_cell_idxs()  # (c,)
+        molecule_map = self.culture.molecule_map  # (m, N, N)
+        cell_positions = self.culture.get_cell_positions()  # (N², 2)
+        xs = cell_positions[cell_idxs, 0]
+        ys = cell_positions[cell_idxs, 1]
 
         for _ in range(self.steps_per_time_step):
             # degradation
@@ -400,6 +400,9 @@ class World(TensorClass):
 
             # diffusion
             molecule_map[:] = self.diffusion.diffuse(molecule_map)
+
+            if not alive.any():
+                continue
 
             # collect internal and external molecules for x
             x = torch.cat(
