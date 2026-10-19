@@ -19,6 +19,20 @@ def load_test_file(filename: str) -> bytes:
     return path.read_bytes()
 
 
+def is_moore_nbd(a: tuple[int, int], b: tuple[int, int], n: int) -> bool:
+    """
+    Check if two points are neighbors in a Moore neighborhood on a period n x n grid.
+    """
+    dx = abs(a[0] - b[0])
+    dy = abs(a[1] - b[1])
+
+    # Shortest wrapped distance on each axis
+    dx = min(dx, n - dx)
+    dy = min(dy, n - dy)
+
+    return max(dx, dy) <= 1 and (dx, dy) != (0, 0)
+
+
 def load_test_json(filename: str) -> dict:
     return json.loads(load_test_file(filename).decode("utf-8"))
 

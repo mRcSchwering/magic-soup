@@ -14,16 +14,16 @@ from tests.util import (
     idxrandperm,
     idxtensor,
     idxzeros,
-    seed,
+    is_moore_nbd,
 )
 
 
-def _gen_rand_cell_map(L: int, confl: float) -> torch.Tensor:
-    n = round(L * L * confl)
-    flat = idxfull(L * L, value=-1)
-    perm = idxrandperm(L * L)[:n]
+def _gen_rand_cell_map(N: int, confl: float) -> torch.Tensor:
+    n = round(N * N * confl)
+    flat = idxfull(N * N, value=-1)
+    perm = idxrandperm(N * N)[:n]
     flat[perm] = idxarange(n)
-    return flat.reshape(L, L)
+    return flat.reshape(N, N)
 
 
 def test_maps() -> None:
@@ -48,7 +48,7 @@ def test_maps() -> None:
     exp_mol_map = fzeros(len(CHEMISTRY.molecules), 3, 3)
 
     # check expectations
-    torch.testing.assert_close(culture.coord_map, exp_coords)
+    torch.testing.assert_close(culture.all_positions, exp_coords)
     torch.testing.assert_close(culture.cell_map, exp_cell_map)
     torch.testing.assert_close(culture.cell_map_flat, exp_cell_map_flat)
     torch.testing.assert_close(culture.molecule_map, exp_mol_map)
@@ -205,7 +205,7 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "cell_map, parents, children, exp_cell_map, exp_succ_parents, exp_succ_children",
+    "cell_map, parents, children, n_exp",
     [
         (
             # empty map
@@ -216,13 +216,7 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
             ],
             [],
             [],
-            [
-                [-1, -1, -1],
-                [-1, -1, -1],
-                [-1, -1, -1],
-            ],
-            [],
-            [],
+            0,
         ),
         (
             # no cell divides
@@ -233,67 +227,21 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
             ],
             [],
             [],
-            [
-                [0, -1, 1],
-                [2, 3, 4],
-                [5, 6, 7],
-            ],
-            [],
-            [],
+            0,
         ),
         (
-            # 1 cell can divide (only 1 choice)
+            # 1 cell wants to divide (only 1 choice)
             [
-                [0, -1, 1],
-                [2, 3, 4],
-                [5, 6, 7],
+                [3, -1, 1],
+                [7, 0, 4],
+                [5, 6, 2],
             ],
             [0],
             [8],
-            [
-                [0, 8, 1],
-                [2, 3, 4],
-                [5, 6, 7],
-            ],
-            [0],
-            [8],
+            1,
         ),
         (
-            # 1 cell can divide but many wanted to
-            [
-                [0, -1, 1],
-                [2, 3, 4],
-                [5, 6, 7],
-            ],
-            [3, 4, 6],
-            [8],
-            [
-                [0, 8, 1],
-                [2, 3, 4],
-                [5, 6, 7],
-            ],
-            [3],
-            [8],
-        ),
-        (
-            # many children available 2 divide
-            [
-                [0, -1, 1],
-                [2, 3, 4],
-                [-1, 6, -1],
-            ],
-            [0, 6],
-            [5, 7, 8],
-            [
-                [0, -1, 1],
-                [2, 3, 4],
-                [7, 6, 5],
-            ],
-            [0, 6],
-            [5, 7],
-        ),
-        (
-            # 1 cell cant divide (no free neighborhood)
+            # 1 cell wants to devide but cant (no free neighborhood)
             [
                 [0, -1, 1, 2],
                 [3, 4, 5, 6],
@@ -302,31 +250,7 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
             ],
             [10],
             [15],
-            [
-                [0, -1, 1, 2],
-                [3, 4, 5, 6],
-                [7, 8, 9, 10],
-                [11, 12, 13, 14],
-            ],
-            [],
-            [],
-        ),
-        (
-            # 1 cell can divide (interspersed)
-            [
-                [0, -1, 5],
-                [2, 1, 7],
-                [9, 6, 8],
-            ],
-            [5],
-            [3],
-            [
-                [0, 3, 5],
-                [2, 1, 7],
-                [9, 6, 8],
-            ],
-            [5],
-            [3],
+            0,
         ),
         (
             # many cells can divide and there's competition
@@ -338,41 +262,155 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
             ],
             [0, 1, 2, 3],
             [5, 6, 7, 8],
+            4,
+        ),
+        (
+            # many cells want to divide, only 1 available
             [
-                [0, 5, 1, 6],
-                [-1, 2, 7, -1],
-                [3, -1, 4, -1],
-                [-1, -1, -1, 8],
+                [0, 7, 1],
+                [2, 3, 4],
+                [5, 6, -1],
             ],
-            [0, 1, 2, 3],
-            [5, 6, 7, 8],
+            [3, 4, 6],
+            [8],
+            1,
+        ),
+        (
+            # many children available only 2 want to divide
+            [
+                [0, -1, 1],
+                [2, 3, 4],
+                [-1, 6, -1],
+            ],
+            [0, 6],
+            [5, 7, 8],
+            2,
+        ),
+        (
+            # many can divide but only 1 child available
+            [
+                [-1, -1, 1],
+                [2, -1, -1],
+                [-1, 6, -1],
+            ],
+            [1, 2, 6],
+            [5],
+            1,
         ),
     ],
 )
 def test_cell_division(
-    cell_map: list,
-    parents: list[int],
-    children: list[int],
-    exp_cell_map: list,
-    exp_succ_parents: list[int],
-    exp_succ_children: list[int],
+    cell_map: list, parents: list[int], children: list[int], n_exp: int
 ) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
 
-    seed()  # seed for RNG
-    succ_parents, succ_children = culture.cell_division(
-        parent_idxs=idxtensor(parents), child_idxs=idxtensor(children)
+    parents_0 = idxtensor(parents)
+    children_0 = idxtensor(children)
+
+    # remember idxs and positions before
+    cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+    cell_pos_0 = culture.get_cell_positions()
+
+    # divide cells
+    scc_parents, scc_children = culture.cell_division(
+        parent_idxs=parents_0, child_idxs=children_0
     )
 
-    # check results
-    torch.testing.assert_close(culture.cell_map, idxtensor(exp_cell_map))
-    torch.testing.assert_close(succ_parents, idxtensor(exp_succ_parents))
-    torch.testing.assert_close(succ_children, idxtensor(exp_succ_children))
+    # remember idxs and positions after
+    cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+    cell_pos_1 = culture.get_cell_positions()
+    fld_parents = parents_0[~torch.isin(parents_0, scc_parents)]
+
+    # check expected number of successful divisions
+    assert scc_parents.numel() == n_exp
+    assert scc_children.numel() == n_exp
+
+    # basic consistency checks
+    assert set(fld_parents.tolist()) & set(scc_parents.tolist()) == set()
+    assert set(scc_parents.tolist()) & set(scc_children.tolist()) == set()
+    assert set(fld_parents.tolist() + scc_parents.tolist()) == set(parents_0.tolist())
+    assert fld_parents.numel() + scc_parents.numel() == parents_0.numel()
+
+    # test only provided parents and children are in the results
+    assert set(children_0.tolist()) >= set(scc_children.tolist())
+    assert set(parents_0.tolist()) >= set(scc_parents.tolist())
+
+    # test map now contains new idxs
+    assert set(cell_idxs_0.tolist()) | set(scc_children.tolist()) == set(
+        cell_idxs_1.tolist()
+    )
+
+    # test all original cells are unchanged
+    assert torch.equal(cell_pos_0[cell_idxs_0], cell_pos_1[cell_idxs_0])
+
+    # test all children are in Moore neighborhood of their parents
+    for p0, p1 in zip(
+        cell_pos_0[scc_parents].tolist(),
+        cell_pos_1[scc_children].tolist(),
+    ):
+        assert is_moore_nbd(p0, p1, n=culture.map_size)
+
+
+@pytest.mark.slow
+def test_cell_division_randomly() -> None:
+    N = 100
+    for _ in range(100):
+        culture = Culture(chemistry=CHEMISTRY, map_size=N)
+
+        # genrate cell map
+        culture.cell_map[:] = _gen_rand_cell_map(N=N, confl=0.7)
+        n = int(culture.cell_map.max()) + 1
+
+        # remember idxs and positions before
+        cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+        cell_pos_0 = culture.get_cell_positions()
+
+        # migrate
+        parents_0 = idxrandperm(n)[: random.randint(5, n)]
+        free = [i for i in range(n, N * N) if i not in parents_0.tolist()]
+        children_0 = idxtensor(free)[: random.randint(0, len(free))]
+
+        # divide cells
+        scc_parents, scc_children = culture.cell_division(
+            parent_idxs=parents_0, child_idxs=children_0
+        )
+
+        # remember idxs and positions after
+        cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+        cell_pos_1 = culture.get_cell_positions()
+        fld_parents = parents_0[~torch.isin(parents_0, scc_parents)]
+
+        # basic consistency checks
+        assert set(fld_parents.tolist()) & set(scc_parents.tolist()) == set()
+        assert set(scc_parents.tolist()) & set(scc_children.tolist()) == set()
+        assert set(fld_parents.tolist() + scc_parents.tolist()) == set(
+            parents_0.tolist()
+        )
+        assert fld_parents.numel() + scc_parents.numel() == parents_0.numel()
+
+        # test only provided parents and children are in the results
+        assert set(children_0.tolist()) >= set(scc_children.tolist())
+        assert set(parents_0.tolist()) >= set(scc_parents.tolist())
+
+        # test map now contains new idxs
+        assert set(cell_idxs_0.tolist()) | set(scc_children.tolist()) == set(
+            cell_idxs_1.tolist()
+        )
+
+        # test all original cells are unchanged
+        assert torch.equal(cell_pos_0[cell_idxs_0], cell_pos_1[cell_idxs_0])
+
+        # test all children are in Moore neighborhood of their parents
+        for p0, p1 in zip(
+            cell_pos_0[scc_parents].tolist(),
+            cell_pos_1[scc_children].tolist(),
+        ):
+            assert is_moore_nbd(p0, p1, n=culture.map_size)
 
 
 @pytest.mark.parametrize(
-    "cell_map, idxs, exp_cell_map, exp_succ_idxs",
+    "cell_map, idxs, exp_n",
     [
         (
             # empty map
@@ -382,27 +420,17 @@ def test_cell_division(
                 [-1, -1, -1],
             ],
             [],
-            [
-                [-1, -1, -1],
-                [-1, -1, -1],
-                [-1, -1, -1],
-            ],
-            [],
+            0,
         ),
         (
-            # no cell migrates
+            # no cell wants to migrate
             [
                 [0, -1, 1],
                 [2, 3, 4],
                 [5, 6, 7],
             ],
             [],
-            [
-                [0, -1, 1],
-                [2, 3, 4],
-                [5, 6, 7],
-            ],
-            [],
+            0,
         ),
         (
             # 1 cell can migrate (only 1 choice)
@@ -412,12 +440,7 @@ def test_cell_division(
                 [5, 6, 7],
             ],
             [0],
-            [
-                [-1, 0, 1],
-                [2, 3, 4],
-                [5, 6, 7],
-            ],
-            [0],
+            1,
         ),
         (
             # 1 cell cant migrate (no free neighborhood)
@@ -428,28 +451,17 @@ def test_cell_division(
                 [11, 12, 13, 14],
             ],
             [10],
-            [
-                [0, -1, 1, 2],
-                [3, 4, 5, 6],
-                [7, 8, 9, 10],
-                [11, 12, 13, 14],
-            ],
-            [],
+            0,
         ),
         (
-            # 1 cell can migrate (interspersed)
+            # 1 cell can migrate
             [
                 [0, -1, 5],
                 [2, 1, 7],
                 [9, 6, 8],
             ],
             [5],
-            [
-                [0, 5, -1],
-                [2, 1, 7],
-                [9, 6, 8],
-            ],
-            [5],
+            1,
         ),
         (
             # many cells can migrate and there's competition
@@ -460,60 +472,92 @@ def test_cell_division(
                 [-1, -1, -1, -1],
             ],
             [0, 1, 2, 3],
-            [
-                [-1, 0, -1, -1],
-                [-1, 1, 2, -1],
-                [-1, -1, 4, -1],
-                [-1, -1, -1, 3],
-            ],
-            [0, 1, 2, 3],
+            4,
         ),
     ],
 )
-def test_undirected_cell_migration(
-    cell_map: list,
-    idxs: list[int],
-    exp_cell_map: list,
-    exp_succ_idxs: list[int],
-) -> None:
+def test_undirected_cell_migration(cell_map: list, idxs: list[int], exp_n: int) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
+    cell_idxs = idxtensor(idxs)
 
-    seed()  # seed for RNG
-    succ_idxs = culture.undirected_cell_migration(cell_idxs=idxtensor(idxs))
+    # remember idxs and positions before
+    cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+    cell_pos_0 = culture.get_cell_positions()
 
-    # check results
-    torch.testing.assert_close(culture.cell_map, idxtensor(exp_cell_map))
-    torch.testing.assert_close(succ_idxs, idxtensor(exp_succ_idxs))
+    # migrate
+    succ_idxs = culture.undirected_cell_migration(cell_idxs=cell_idxs)
+
+    # remember idxs and positions after
+    cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+    cell_pos_1 = culture.get_cell_positions()
+    unsucc_idxs = cell_idxs[~torch.isin(cell_idxs, succ_idxs)]
+
+    # check expected number of successful migrations
+    assert succ_idxs.numel() == exp_n
+
+    # successful idxs are subset of requested idxs
+    assert set(idxs) >= set(succ_idxs.tolist())
+
+    # cell idxs are unchanged
+    assert torch.equal(cell_idxs_0, cell_idxs_1)
+
+    # unsuccessful cells are still in same positions
+    assert torch.equal(cell_pos_0[unsucc_idxs], cell_pos_1[unsucc_idxs])
+
+    # successful cells all have new positions
+    assert ((cell_pos_0[succ_idxs] != cell_pos_1[succ_idxs]).sum(dim=1) > 0).all()
+
+    # they are all in Moore neighborhood of each other
+    for p0, p1 in zip(cell_pos_0[succ_idxs].tolist(), cell_pos_1[succ_idxs].tolist()):
+        assert is_moore_nbd(p0, p1, n=culture.map_size)
 
 
 @pytest.mark.slow
 def test_undirected_cell_migration_randomly() -> None:
-    L = 100
+    N = 100
     for _ in range(100):
-        culture = Culture(chemistry=CHEMISTRY, map_size=L)
+        culture = Culture(chemistry=CHEMISTRY, map_size=N)
 
         # genrate cell map
-        culture.cell_map[:] = _gen_rand_cell_map(L=L, confl=0.7)
+        culture.cell_map[:] = _gen_rand_cell_map(N=N, confl=0.7)
         n = int(culture.cell_map.max())
 
-        # remember cell map
-        cell_map_0 = culture.cell_map.clone()
-        n_cells_0 = (cell_map_0 >= 0).sum()
+        # remember idxs and positions before
+        cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+        cell_pos_0 = culture.get_cell_positions()
 
+        # migrate
         k = random.randint(10, n)
-        idxs = idxrandperm(n)[:k]
-        succ_idxs = culture.undirected_cell_migration(cell_idxs=idxs)
+        cell_idxs = idxrandperm(n)[:k]
+        succ_idxs = culture.undirected_cell_migration(cell_idxs=cell_idxs)
 
-        k_succ = succ_idxs.shape[0]
-        cell_map_1 = culture.cell_map
-        n_cells_1 = (cell_map_1 >= 0).sum()
+        # remember idxs and positions after
+        cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+        cell_pos_1 = culture.get_cell_positions()
+        unsucc_idxs = cell_idxs[~torch.isin(cell_idxs, succ_idxs)]
 
-        assert k_succ <= k
-        assert n_cells_0 == n_cells_1
+        # at least some should have migrated
+        assert succ_idxs.numel() > 0
 
-        # at least some cells should have been updated
-        assert (cell_map_0 != cell_map_1).any()
+        # successful idxs are subset of requested idxs
+        assert set(cell_idxs.tolist()) >= set(succ_idxs.tolist())
+
+        # cell idxs are unchanged
+        assert torch.equal(cell_idxs_0, cell_idxs_1)
+
+        # unsuccessful cells are still in same positions
+        assert torch.equal(cell_pos_0[unsucc_idxs], cell_pos_1[unsucc_idxs])
+
+        # successful cells all have new positions
+        assert ((cell_pos_0[succ_idxs] != cell_pos_1[succ_idxs]).sum(dim=1) > 0).all()
+
+        # they are all in Moore neighborhood of each other
+        for p0, p1 in zip(
+            cell_pos_0[succ_idxs].tolist(),
+            cell_pos_1[succ_idxs].tolist(),
+        ):
+            assert is_moore_nbd(p0, p1, n=culture.map_size)
 
 
 def test_saving_loading(tmp_path: Path) -> None:
@@ -522,7 +566,7 @@ def test_saving_loading(tmp_path: Path) -> None:
     # create culture with 70% confluency
     culture = Culture(chemistry=CHEMISTRY)
     culture.molecule_map[:] = torch.rand_like(culture.molecule_map)
-    culture.cell_map[:] = _gen_rand_cell_map(L=culture.map_size, confl=0.7)
+    culture.cell_map[:] = _gen_rand_cell_map(N=culture.map_size, confl=0.7)
 
     # keep original state for comparison
     molecule_map = culture.molecule_map.clone()
@@ -533,7 +577,7 @@ def test_saving_loading(tmp_path: Path) -> None:
 
     # change stuff
     culture.molecule_map = torch.rand_like(culture.molecule_map)
-    culture.cell_map[:] = _gen_rand_cell_map(L=culture.map_size, confl=0.5)
+    culture.cell_map[:] = _gen_rand_cell_map(N=culture.map_size, confl=0.5)
 
     # load state
     culture.load_state(statedir=statedir)

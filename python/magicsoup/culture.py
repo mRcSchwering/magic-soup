@@ -48,8 +48,8 @@ class MooreNeighborhood(TensorClass):
             half: whether to use only half Moore neighborhood (e.g. to get unique paris)
 
         Returns:
-            (k, 8, 2) or index tensor of all Moore neighborhoods for each provided coordinate,
-                (k, 4, 2) if `half`
+            (k, 8, 2) or index tensor of all Moore neighborhoods for each provided position
+                ((k, 4, 2) if `half`)
         """
         offs = self.half if half else self.full
         return (coords[:, None, :] + offs[None]) % self.N  # torus wrap
@@ -94,25 +94,25 @@ class Culture(TensorClass):
         tensor_kwargs: TensorKwargs | None = None,
     ):
         super().__init__(**(tensor_kwargs or {}))
-        molecules = chemistry.molecules
-        self.map_size = map_size
-        self.n_molecules = len(molecules)
+        N = map_size
+        m = len(chemistry.molecules)
+        self.map_size = N
+        self.n_molecules = m
 
-        # describes all coordinates
-        self.coord_map = self._get_coord_map()  # (N², 2)
+        # all possible voxel positions (row, col)
+        self.all_positions = self._get_all_positions()  # (N², 2)
 
-        # holds cell idxs, -1 for empty voxels
-        self.cell_map: torch.Tensor = self.idxfull(map_size, map_size, value=-1)
+        # all N x N voxels with cell idxs, -1 for empty voxels (N, N)
+        self.cell_map: torch.Tensor = self.idxfull(N, N, value=-1)
 
-        # flat representation of cell idxs (shares memory)
+        # flat representation of cell idxs in N x N map (shares memory)
         self.cell_map_flat = self.cell_map.view(-1)  # (N²,)
 
-        # holds molecule concentrations
-        self.molecule_map: torch.Tensor = self.fzeros(
-            len(molecules), map_size, map_size
-        )  # (m, N, N)
+        # all N x N voxels with molecule concentrations (m, N, N)
+        self.molecule_map: torch.Tensor = self.fzeros(m, N, N)
 
-        self._nbh = MooreNeighborhood(N=self.map_size, tensor_kwargs=tensor_kwargs)
+        # manage Moore Neighborhoods
+        self._nbh = MooreNeighborhood(N=N, tensor_kwargs=tensor_kwargs)
 
     def get_cell_neighbor_pairs(self) -> torch.Tensor:
         """
@@ -132,13 +132,21 @@ class Culture(TensorClass):
 
         # look up half cell neighborhoods to only get unique pairs (N², 4, 2)
         nbs = self._nbh.get_neighborhoods(coords=pos, half=True)
-        flat_nbs = self._flatten_positions(nbs)  # (N², 4)
 
-        nb_cells = self.cell_map_flat[flat_nbs]  # (N², 4)
-        src = self.idxarange(N2)[:, None].expand_as(nb_cells)
+        # represent neighborhoods as flat indices of the N x N map
+        nbh_idxs = self._positions_to_idxs(nbs)  # (N², 4)
 
-        mask = valid[:, None] & (nb_cells >= 0)  # (N², 4) with k true
-        return torch.stack((src[mask], nb_cells[mask]), dim=1)  # (k, 2)
+        # select neighbor voxels on flat cell idx map
+        nb_voxels = self.cell_map_flat[nbh_idxs]  # (N², 4)
+
+        # create mask of k cells that do have a neighbour
+        mask = valid[:, None] & (nb_voxels >= 0)  # (N², 4)
+
+        # generate (N², 4) source cell indices for each neighbor voxel
+        src = self.idxarange(N2)[:, None].expand_as(nb_voxels)
+
+        # return only valid pairs of cell indices (k, 2)
+        return torch.stack((src[mask], nb_voxels[mask]), dim=1)  # (k, 2)
 
     def get_cell_positions(self) -> torch.Tensor:
         """
@@ -161,7 +169,7 @@ class Culture(TensorClass):
         # map empty voxels into dummy row N² + 1
         pos = self.idxfull(N2 + 1, 2, value=-1)  # (N²+1, 2)
         rows = torch.where(flat >= 0, flat, N2)  # (N²+1, 2)
-        pos[rows] = self.coord_map
+        pos[rows] = self.all_positions
         return pos[:N2]  # (N², 2) remove dummy row
 
     def get_free_positions(self, n: int) -> torch.Tensor:
@@ -175,11 +183,11 @@ class Culture(TensorClass):
         Returns:
             (k, 2) position index tensor of available positions with `k = min(n, number of free voxels)`
         """
-        free = self.cell_map_flat < 0
-        score = self.frand(free.shape).masked_fill(~free, -1.0)
-        sel = score.topk(n).indices  # n distinct flat voxel indices
+        free = self.cell_map_flat < 0  # idxs of free voxels
+        score = self.frand(free.shape).masked_fill(~free, -1.0)  # score free foxels
+        sel = score.topk(n).indices  # n distinct flat voxel idxs (prefer free ones)
         sel = sel[free[sel]]  # drop occupied ones if fewer than n were free
-        return self._unflatten_positions(sel)
+        return self._idxs_to_positions(sel)  # convert into row-col (k, 2)
 
     def undirected_cell_migration(
         self,
@@ -206,46 +214,47 @@ class Culture(TensorClass):
         # Repeat with left-overs
 
         # snapshot of current positions, read-only below
-        pos = self.get_cell_positions()
+        pos = self.get_cell_positions()  # (N², 2) of row-col ((-1, -1 ) empty)
 
-        # generate shuffled indices for cell_idxs
+        # generate shuffled idxs -> cell_idxs
         n = cell_idxs.numel()
-        remaining = self.idxrandperm(n)
+        remaining = self.idxrandperm(n)  # (n,)
 
-        # target voxel indices (flattened) of successful cells
-        success = self.idxfull(n, value=-1)
+        # target voxel idxs (on flat map) of successful cells
+        success = self.idxfull(n, value=-1)  # -1 for none
 
         for _ in range(n_max_rounds):
-            r = remaining.numel()  # number of cells still trying to act
+            r = remaining.numel()  # r<=n cells still trying to act
             if r == 0:
                 break
 
-            # cell idxs of remaining cells
-            idxs_pend = cell_idxs[remaining]
+            # cell_idxs of remaining cells
+            idxs_rem = cell_idxs[remaining]  # (r,)
 
-            # 8 neighbourhoods of each remaining cells (r, 8, 2)
-            nbs = self._nbh.get_neighborhoods(coords=pos[idxs_pend])
+            # 8 row-col neighbourhoods of each remaining cells (r, 8, 2)
+            nbs = self._nbh.get_neighborhoods(coords=pos[idxs_rem])
 
-            # generate target neighbourhood and choose who gets it (r,)
+            # generate target neighbourhood as flat idx and choose who gets it (r,)
             target_nbs, winners = self._choose_neighbourhood(nbs=nbs, r=r)
 
-            # commit winners
-            w_idxs = remaining[winners]  # indices for idx
-            w_tgts = target_nbs[winners]  # indices for target voxel
+            # commit winners (w,)
+            w_idxs = remaining[winners]  # idxs -> cell_idxs
+            w_tgts = target_nbs[winners]  # idxs -> target voxel (on flat map)
 
-            # set cell idx on voxel (also affects 2d map)
-            self.cell_map_flat[w_tgts] = cell_idxs[w_idxs]
+            # set cell idx on voxel (also affects NxN map)
+            self.cell_map_flat[w_tgts] = cell_idxs[w_idxs]  # (w,)
 
-            success[w_idxs] = w_tgts  # add target voxel index to result
+            # add target voxel idx to result
+            success[w_idxs] = w_tgts  # (n,) <- (w,)
 
             # migrants vacate their old voxel
-            old = pos[cell_idxs[w_idxs]]
-            self.cell_map_flat[self._flatten_positions(old)] = -1
+            old = pos[cell_idxs[w_idxs]]  # (w, 2)
+            self.cell_map_flat[self._positions_to_idxs(old)] = -1
 
             # cells with no free neighbor stay too, migrate may vacate nearby
-            remaining = remaining[~winners]  # (r,)
+            remaining = remaining[~winners]  # (r-w,)
 
-        return cell_idxs[success >= 0]
+        return cell_idxs[success >= 0]  # (k,)
 
     def cell_division(
         self,
@@ -278,50 +287,53 @@ class Culture(TensorClass):
         # Commit winners
         # Repeat with left overs
         l = child_idxs.numel()
+        n = parent_idxs.numel()
 
         # snapshot of current positions, read-only below
-        pos = self.get_cell_positions()
+        pos = self.get_cell_positions()  # (N², 2) of row-col ((-1, -1 ) empty)
 
-        # generate shuffled indices for cell_idxs
-        n = parent_idxs.numel()
-        remaining = self.idxrandperm(n)
+        # generate shuffled idxs -> cell_idxs
+        remaining = self.idxrandperm(n)  # (n,)
 
-        # target voxel indices (flattened) of successful cells
-        succ_parents = self.idxfull(n, value=-1)
-        succ_children = self.idxfull(l, value=-1)
+        # which parent idx produced child idx
+        child_parent = self.idxfull(l, value=-1)  # (l,) <- (n,)
+        c = 0
 
         for _ in range(n_max_rounds):
-            s = (succ_parents >= 0).sum()  # number succeeded cells
             r = remaining.numel()  # number of cells still trying to act
-            if r == 0 or s >= l:
+            if r == 0 or c >= l:
                 break
 
             # cell idxs of remaining cells
-            idxs_pend = parent_idxs[remaining]
+            idxs_rem = parent_idxs[remaining]  # (r,)
 
-            # 8 neighbourhoods of each remaining cells (r, 8, 2)
-            nbs = self._nbh.get_neighborhoods(coords=pos[idxs_pend])
+            # 8 row-col neighbourhoods of each remaining cells (r, 8, 2)
+            nbs = self._nbh.get_neighborhoods(coords=pos[idxs_rem])
 
-            # generate target neighbourhood and choose who gets it (r,)
+            # generate target neighbourhood as flat idx and choose who gets it (r,)
             target_nbs, winners = self._choose_neighbourhood(nbs=nbs, r=r)
 
-            # commit winners
-            w_idxs = remaining[winners]  # indices for idx (r,)
-            w_tgts = target_nbs[winners]  # indices for target voxel (r,)
+            # give each winner the next free child slot, only keep up to l winners
+            slots = c + winners.cumsum(0) - 1  # (r,) -> (l,)
+            winners = winners & (slots < l)  # (r)
 
-            # occupy voxel (also affects 2d cells)
-            self.cell_map_flat[w_tgts] = child_idxs[w_idxs]
-            # FIXME: child_idxs is (l,) but w_idxs is (r,) and r can be > l, so this indexing may fail
-            #        why doesn't my culture test not find this
-            #        I get it in world test with 90% confluency when trying to divide all cells
+            # commit winners (w,) from (r,)
+            w_idxs = remaining[winners]  # idxs -> cell_idxs
+            w_tgts = target_nbs[winners]  # idxs -> target voxel (on flat map)
+            w_slots = slots[winners]  # idxs -> child_idxs
 
-            succ_parents[w_idxs] = w_tgts  # mark successful parents
-            succ_children[w_idxs] = w_tgts  # mark successful children
+            # set cell idx on voxel (also affects NxN map)
+            self.cell_map_flat[w_tgts] = child_idxs[w_slots]  # (w,) from (l,)
+
+            # set parent cell idxs into child slots
+            child_parent[w_slots] = w_idxs  # (l,) <- (w,)
+            c += int(winners.sum())  # keep track of occupied slots
 
             # cells with no free neighbor stay too, migrate may vacate nearby
             remaining = remaining[~winners]  # (r,)
 
-        return parent_idxs[succ_parents >= 0], child_idxs[succ_children >= 0]
+        ok = child_parent >= 0  # (l,) which child slots were filled
+        return parent_idxs[child_parent[ok]], child_idxs[ok]  # (k,), (k,)
 
     def save_state(self, statedir: Path) -> None:
         """
@@ -356,8 +368,11 @@ class Culture(TensorClass):
     def _choose_neighbourhood(
         self, nbs: torch.Tensor, r: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        # (r, 8, 2) or (r, 4, 2) row-col neighborhoods of r cells
         N2 = self.map_size * self.map_size
-        flat_nbs = self._flatten_positions(nbs)  # (r, 8)
+
+        # represent neighborhoods as flat idxs of the N x N map
+        flat_nbs = self._positions_to_idxs(nbs)  # (r, 8)
 
         # find free indexes on flat map for each neighborhood
         free_nbs = self.cell_map_flat[flat_nbs] < 0  # (r, 8)
@@ -382,15 +397,18 @@ class Culture(TensorClass):
         )  # (r,)
         winners = can_act_mask & (best[target_nbs] == prios)  # (r,)
 
-        return target_nbs, winners  # int (r,), bool (r,)
+        # (r,) target voxel indices of all r cells and which (r,) cells won
+        return target_nbs, winners  # idx (r,), bool (r,)
 
-    def _flatten_positions(self, xy: torch.Tensor) -> torch.Tensor:
-        return xy[..., 0] * self.map_size + xy[..., 1]
+    def _positions_to_idxs(self, rc: torch.Tensor) -> torch.Tensor:
+        # represent (n, 2) positions on N x N map as (n,) flat indices of the map
+        return rc[..., 0] * self.map_size + rc[..., 1]
 
-    def _unflatten_positions(self, z: torch.Tensor) -> torch.Tensor:
+    def _idxs_to_positions(self, z: torch.Tensor) -> torch.Tensor:
+        # represent flat indices of N x N map as (n, 2) positions on the map
         return torch.stack((z // self.map_size, z % self.map_size), dim=1)
 
-    def _get_coord_map(self) -> torch.Tensor:
+    def _get_all_positions(self) -> torch.Tensor:
         L = self.map_size
         xs, ys = torch.meshgrid(self.idxarange(L), self.idxarange(L), indexing="ij")
         return torch.stack((xs, ys), dim=-1).view(-1, 2)  # (N², 2)
