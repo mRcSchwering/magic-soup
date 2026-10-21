@@ -3,6 +3,20 @@ from typing import Any
 from magicsoup import _lib  # type: ignore
 from magicsoup.constants import ProteinSpecType
 
+
+class _ReduceMixin:
+    """
+    Instead of trying to pickle rust instances re-initialize them
+    when un-pickling (__reduce__). Therefore, save __init__ values
+    (_state). Must be tuple so keep order!
+    """
+
+    _state: tuple
+
+    def __reduce__(self):
+        return (self.__class__, self._state)
+
+
 # util
 
 
@@ -29,10 +43,7 @@ def recombinations(
     return _lib.recombinations(seq_pairs, p)
 
 
-# genomics
-
-
-class Genomics:
+class Genomics(_ReduceMixin):
 
     def __init__(
         self,
@@ -45,6 +56,15 @@ class Genomics:
         dom_type_size: int,
     ) -> None:
         self._cls = _lib.Genomics(
+            start_codons,
+            stop_codons,
+            domain_map,
+            one_codon_map,
+            two_codon_map,
+            dom_size,
+            dom_type_size,
+        )
+        self._state = (
             start_codons,
             stop_codons,
             domain_map,
@@ -73,10 +93,7 @@ class Genomics:
         return self._cls.extract_domains(genome, cdss)
 
 
-# proteomics
-
-
-class Proteomics:
+class Proteomics(_ReduceMixin):
 
     def __init__(
         self,
@@ -90,6 +107,16 @@ class Proteomics:
         m: int,
     ) -> None:
         self._cls = _lib.Proteomics(
+            km_map,
+            vmax_map,
+            sign_map,
+            hill_map,
+            reaction_map,
+            transporter_map,
+            effector_map,
+            m,
+        )
+        self._state = (
             km_map,
             vmax_map,
             sign_map,
@@ -116,13 +143,11 @@ class Proteomics:
         return self._cls.get_proteome_dict(proteome, molecules)
 
 
-# cells
-
-
-class Cells:
+class Cells(_ReduceMixin):
 
     def __init__(self, genomics: Genomics, proteomics: Proteomics) -> None:
         self._cls = _lib.Cells(genomics._cls, proteomics._cls)
+        self._state = (genomics, proteomics)
 
     def translate_genomes(self, genomes: list[str]) -> tuple[
         list[list[float]],

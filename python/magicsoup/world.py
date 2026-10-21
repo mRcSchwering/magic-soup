@@ -209,11 +209,13 @@ class World(TensorClass):
         self.cells.molecules[new_idxs, :] = pickup.T * f
         self.culture.molecule_map[:, xs, ys] = pickup * f
 
-        # update parameters from genomes
+        # update genomes and proteomes
         self.cells.update_genomes(genomes=genomes, idxs=new_idxs)
 
         # update other values
         self.cells.alive[new_idxs] = True
+        self.cells.ages[new_idxs] = 0.0
+        self.cells.generations[new_idxs] = 0
         self.cells.labels[new_idxs] = [randstr(n=12) for _ in range(n_new_cells)]
 
         return new_idxs
