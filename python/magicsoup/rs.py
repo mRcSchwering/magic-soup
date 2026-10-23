@@ -1,7 +1,9 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from magicsoup import _lib  # type: ignore
-from magicsoup.constants import ProteinSpecType
+
+if TYPE_CHECKING:
+    from magicsoup.genomics import ProteinSpec
 
 
 class _ReduceMixin:
@@ -74,7 +76,7 @@ class Genomics(_ReduceMixin):
             dom_type_size_nt,
         )
 
-    def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
+    def translate_genomes(self, genomes: list[str]) -> "list[list[ProteinSpec]]":
         return self._cls.translate_genomes(genomes)
 
     def get_coding_regions(
@@ -89,7 +91,7 @@ class Genomics(_ReduceMixin):
         self,
         genome: str,
         cdss: list[tuple[int, int, bool]],
-    ) -> list[ProteinSpecType]:
+    ) -> "list[ProteinSpec]":
         return self._cls.extract_domains(genome, cdss)
 
 
@@ -127,7 +129,7 @@ class Proteomics(_ReduceMixin):
             m,
         )
 
-    def get_proteome_params(self, proteomes: list[list[ProteinSpecType]]) -> tuple[
+    def get_proteome_params(self, proteomes: "list[list[ProteinSpec]]") -> tuple[
         list[list[float]],
         list[list[float]],
         list[list[list[float]]],
@@ -138,7 +140,7 @@ class Proteomics(_ReduceMixin):
         return self._cls.get_proteome_params(proteomes)
 
     def get_proteome_dict(
-        self, proteome: list[ProteinSpecType], molecules: list[str]
+        self, proteome: "list[ProteinSpec]", molecules: list[str]
     ) -> list[dict[str, Any]]:
         return self._cls.get_proteome_dict(proteome, molecules)
 

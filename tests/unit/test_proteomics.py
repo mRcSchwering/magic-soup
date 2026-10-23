@@ -5,7 +5,8 @@ import pytest
 import torch
 from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
-from magicsoup.constants import GAS_CONSTANT, DomainSpecType, ProteinSpecType
+from magicsoup.constants import GAS_CONSTANT
+from magicsoup.genomics import DomainSpec, ProteinSpec
 from magicsoup.proteomics import Proteomics
 
 from tests.util import FTYPE, ITYPE, ftensor, fzeros, itensor, izeros
@@ -123,7 +124,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     # Domain: (domain_spec, dom_start, dom_end)
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-    c0: list[ProteinSpecType] = [
+    c0: list[ProteinSpec] = [
         (
             [
                 (
@@ -160,7 +161,7 @@ def test_cell_params_with_catalytic_domains() -> None:
             3, 300, False
         )
     ]
-    c1: list[ProteinSpecType] = [
+    c1: list[ProteinSpec] = [
         (
             [
                 (
@@ -365,7 +366,7 @@ def test_cell_params_with_transporter_domains() -> None:
     # Domain: (domain_spec, dom_start, dom_end)
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-    c0: list[ProteinSpecType] = [
+    c0: list[ProteinSpec] = [
         (
             [
                 (
@@ -390,7 +391,7 @@ def test_cell_params_with_transporter_domains() -> None:
             36, 74, False
         ),
     ]
-    c1: list[ProteinSpecType] = [
+    c1: list[ProteinSpec] = [
         (
             [
                 (
@@ -581,7 +582,7 @@ def test_cell_params_with_regulatory_domains() -> None:
     # Domain: (domain_spec, dom_start, dom_end)
     # Domain spec indexes: (dom_types, reacts_trnspts_effctrs, Vmaxs, Kms, signs)
     # fmt: off
-    c0: list[ProteinSpecType] = [
+    c0: list[ProteinSpec] = [
         (
             [
                 (
@@ -618,7 +619,7 @@ def test_cell_params_with_regulatory_domains() -> None:
         )
     ]
 
-    c1: list[ProteinSpecType] = [
+    c1: list[ProteinSpec] = [
         (
             [
                 (
@@ -861,16 +862,16 @@ def test_cell_params_with_regulatory_domains() -> None:
     assert p1.domains[2].end == 120
 
 
-def _get_random_proteomes(n_cells: int) -> tuple[list[list[ProteinSpecType]], int]:
-    proteomes: list[list[ProteinSpecType]] = []
+def _get_random_proteomes(n_cells: int) -> tuple[list[list[ProteinSpec]], int]:
+    proteomes: list[list[ProteinSpec]] = []
     p_max = 0
 
     for _ in range(n_cells):
-        prots: list[ProteinSpecType] = []
+        prots: list[ProteinSpec] = []
         n_prots = random.choice(range(1, 10))
 
         for _ in range(n_prots):
-            doms: list[DomainSpecType] = []
+            doms: list[DomainSpec] = []
             n_doms = random.choice(range(1, 4))
 
             for _ in range(n_doms):

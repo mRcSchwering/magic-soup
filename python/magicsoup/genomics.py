@@ -6,7 +6,7 @@ from enum import IntEnum
 from typing import TypedDict
 
 from magicsoup import rs
-from magicsoup.constants import CODON_SIZE, ProteinSpecType
+from magicsoup.constants import CODON_SIZE
 from magicsoup.util import codons, random_genome
 
 
@@ -64,6 +64,10 @@ class _DomainTypeMap:
 
         # nt sequence -> domain type token
         self.seq_2_token = {d: k.value for k, v in self.type_2_seqs.items() for d in v}
+
+
+type DomainSpec = tuple[tuple[int, int, int, int, int], int, int]
+type ProteinSpec = tuple[list[DomainSpec], int, int, bool]
 
 
 class GenomicsKwargs(TypedDict, total=False):
@@ -174,7 +178,7 @@ class Genomics:
             dom_type_size_nt=self.dom_type_size_nt,
         )
 
-    def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
+    def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpec]]:
         """Get proteomes in form of domain specifications from genomes"""
         if len(genomes) == 0:
             return []
@@ -195,7 +199,7 @@ class Genomics:
         self,
         genome: str,
         cdss: list[tuple[int, int, bool]],
-    ) -> list[ProteinSpecType]:
+    ) -> list[ProteinSpec]:
         """Get proteome in form of domain specifications for a genome and CDS markers"""
         return self.rs.extract_domains(genome=genome, cdss=cdss)
 

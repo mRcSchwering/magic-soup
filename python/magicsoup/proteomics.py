@@ -1,15 +1,18 @@
 import math
 import random
 from collections import defaultdict
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 import torch
 
 from magicsoup import rs
 from magicsoup.biology import Protein
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
-from magicsoup.constants import GAS_CONSTANT, ROOM_TEMP, ProteinSpecType
+from magicsoup.constants import GAS_CONSTANT, ROOM_TEMP
 from magicsoup.util import TensorClass, TensorKwargs
+
+if TYPE_CHECKING:
+    from magicsoup.genomics import ProteinSpec
 
 
 def _get_vector_map(
@@ -322,7 +325,7 @@ class Proteomics(TensorClass):
         # init rust class
         self._setup_rs()
 
-    def get_proteome(self, proteome: list[ProteinSpecType]) -> list[Protein]:
+    def get_proteome(self, proteome: "list[ProteinSpec]") -> list[Protein]:
         """
         Translate proteome of a single cell
 
@@ -346,7 +349,7 @@ class Proteomics(TensorClass):
         ]
 
     def get_cell_params(
-        self, proteomes: list[list[ProteinSpecType]]
+        self, proteomes: "list[list[ProteinSpec]]"
     ) -> dict[str, torch.Tensor]:
         """
         Translate and return cell parameters for many proteomes

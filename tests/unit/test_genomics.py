@@ -1,6 +1,6 @@
 import pytest
-from magicsoup.constants import CODON_SIZE, ProteinSpecType
-from magicsoup.genomics import Genomics
+from magicsoup.constants import CODON_SIZE
+from magicsoup.genomics import Genomics, ProteinSpec
 from magicsoup.util import random_genome
 
 from tests.util import load_test_json
@@ -187,7 +187,7 @@ def test_genomics() -> None:
     assert proteome == exp_proteome
 
 
-def _sum_dom_type(data: list[list[ProteinSpecType]], type_: int) -> int:
+def _sum_dom_type(data: list[list[ProteinSpec]], type_: int) -> int:
     out = 0
     for cell in data:
         for protein, *_ in cell:
