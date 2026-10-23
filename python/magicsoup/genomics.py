@@ -139,16 +139,15 @@ class Genomics:
         # setup rust class
         self._setup_rs()
 
-    # TODO: give rust arguments better names
     def _setup_rs(self) -> None:
         self.rs = rs.Genomics(
             start_codons=self.start_codons,
             stop_codons=self.stop_codons,
-            domain_map=self.domain_type_map.seq_2_token,
-            one_codon_map=self.one_codon_map.seq_2_token,
-            two_codon_map=self.two_codon_map.seq_2_token,
-            dom_size=self.dom_size_nt,
-            dom_type_size=self.dom_type_size_nt,
+            domain_type_2_token=self.domain_type_map.seq_2_token,
+            one_codon_2_token=self.one_codon_map.seq_2_token,
+            two_codon_2_token=self.two_codon_map.seq_2_token,
+            dom_size_nt=self.dom_size_nt,
+            dom_type_size_nt=self.dom_type_size_nt,
         )
 
     def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:

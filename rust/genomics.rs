@@ -61,9 +61,9 @@ pub fn extract_domains(
     cdss: &Vec<(usize, usize, bool)>,
     dom_size: &u8,
     dom_type_size: &u8,
-    dom_type_map: &HashMap<String, u8>,
-    one_codon_map: &HashMap<String, u8>,
-    two_codon_map: &HashMap<String, u16>,
+    domain_type_2_token: &HashMap<String, u8>,
+    one_codon_2_token: &HashMap<String, u8>,
+    two_codon_2_token: &HashMap<String, u16>,
 ) -> Vec<ProteinSpecType> {
     let n_cdss = cdss.len();
     let mut res: Vec<ProteinSpecType> = Vec::with_capacity(n_cdss);
@@ -89,25 +89,25 @@ pub fn extract_domains(
             let dom_type_end = dom_start + *dom_type_size as usize;
             let dom_type_seq = &genome[dom_start..dom_type_end];
 
-            if let Some(dom_type) = dom_type_map.get(dom_type_seq) {
+            if let Some(dom_type) = domain_type_2_token.get(dom_type_seq) {
                 // 1=catal, 2=trnsp, 3=reg
                 if *dom_type != 3 {
                     is_useful_prot = true;
                 }
                 let dom_end = dom_start + *dom_size as usize;
                 let dom_spec_seq = &genome[dom_type_end..dom_end];
-                let i0 = one_codon_map
+                let i0 = one_codon_2_token
                     .get(&dom_spec_seq[0..i0e])
-                    .expect("Incomplete one_codon_map");
-                let i1 = one_codon_map
+                    .expect("Incomplete one_codon_2_token");
+                let i1 = one_codon_2_token
                     .get(&dom_spec_seq[i0e..i1e])
-                    .expect("Incomplete one_codon_map");
-                let i2 = one_codon_map
+                    .expect("Incomplete one_codon_2_token");
+                let i2 = one_codon_2_token
                     .get(&dom_spec_seq[i1e..i2e])
-                    .expect("Incomplete one_codon_map");
-                let i3 = two_codon_map
+                    .expect("Incomplete one_codon_2_token");
+                let i3 = two_codon_2_token
                     .get(&dom_spec_seq[i2e..i3e])
-                    .expect("Incomplete two_codon_map");
+                    .expect("Incomplete two_codon_2_token");
                 doms.push(((*dom_type, *i0, *i1, *i2, *i3), i, i + *dom_size as usize));
                 i += *dom_size as usize;
             } else {
@@ -129,9 +129,9 @@ fn translate_genome(
     genome: &str,
     start_codons: &Vec<String>,
     stop_codons: &Vec<String>,
-    domain_map: &HashMap<String, u8>,
-    one_codon_map: &HashMap<String, u8>,
-    two_codon_map: &HashMap<String, u16>,
+    domain_type_2_token: &HashMap<String, u8>,
+    one_codon_2_token: &HashMap<String, u8>,
+    two_codon_2_token: &HashMap<String, u16>,
     dom_size: &u8,
     dom_type_size: &u8,
 ) -> Vec<ProteinSpecType> {
@@ -141,9 +141,9 @@ fn translate_genome(
         &cds_fwd,
         dom_size,
         dom_type_size,
-        domain_map,
-        one_codon_map,
-        two_codon_map,
+        domain_type_2_token,
+        one_codon_2_token,
+        two_codon_2_token,
     );
 
     let bwd = reverse_complement(genome);
@@ -153,9 +153,9 @@ fn translate_genome(
         &cds_bwd,
         dom_size,
         dom_type_size,
-        domain_map,
-        one_codon_map,
-        two_codon_map,
+        domain_type_2_token,
+        one_codon_2_token,
+        two_codon_2_token,
     );
 
     doms_fwd.append(&mut doms_bwd);
@@ -167,9 +167,9 @@ pub fn translate_genomes_threaded(
     genomes: &Vec<String>,
     start_codons: &Vec<String>,
     stop_codons: &Vec<String>,
-    domain_map: &HashMap<String, u8>,
-    one_codon_map: &HashMap<String, u8>,
-    two_codon_map: &HashMap<String, u16>,
+    domain_type_2_token: &HashMap<String, u8>,
+    one_codon_2_token: &HashMap<String, u8>,
+    two_codon_2_token: &HashMap<String, u16>,
     dom_size: &u8,
     dom_type_size: &u8,
 ) -> Vec<Vec<ProteinSpecType>> {
@@ -180,9 +180,9 @@ pub fn translate_genomes_threaded(
                 d,
                 start_codons,
                 stop_codons,
-                domain_map,
-                one_codon_map,
-                two_codon_map,
+                domain_type_2_token,
+                one_codon_2_token,
+                two_codon_2_token,
                 dom_size,
                 &dom_type_size,
             )

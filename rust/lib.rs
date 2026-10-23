@@ -53,9 +53,9 @@ fn recombinations(
 struct Genomics {
     start_codons: Vec<String>,
     stop_codons: Vec<String>,
-    domain_map: HashMap<String, u8>,
-    one_codon_map: HashMap<String, u8>,
-    two_codon_map: HashMap<String, u16>,
+    domain_type_2_token: HashMap<String, u8>,
+    one_codon_2_token: HashMap<String, u8>,
+    two_codon_2_token: HashMap<String, u16>,
     dom_size: u8,
     dom_type_size: u8,
 }
@@ -66,18 +66,18 @@ impl Genomics {
     fn new(
         start_codons: Vec<String>,
         stop_codons: Vec<String>,
-        domain_map: HashMap<String, u8>,
-        one_codon_map: HashMap<String, u8>,
-        two_codon_map: HashMap<String, u16>,
+        domain_type_2_token: HashMap<String, u8>,
+        one_codon_2_token: HashMap<String, u8>,
+        two_codon_2_token: HashMap<String, u16>,
         dom_size: u8,
         dom_type_size: u8,
     ) -> Self {
         Genomics {
             start_codons,
             stop_codons,
-            domain_map,
-            one_codon_map,
-            two_codon_map,
+            domain_type_2_token,
+            one_codon_2_token,
+            two_codon_2_token,
             dom_size,
             dom_type_size,
         }
@@ -93,9 +93,9 @@ impl Genomics {
                 &genomes,
                 &self.start_codons,
                 &self.stop_codons,
-                &self.domain_map,
-                &self.one_codon_map,
-                &self.two_codon_map,
+                &self.domain_type_2_token,
+                &self.one_codon_2_token,
+                &self.two_codon_2_token,
                 &self.dom_size,
                 &self.dom_type_size,
             )
@@ -127,9 +127,9 @@ impl Genomics {
             &cdss,
             &self.dom_size,
             &self.dom_type_size,
-            &self.domain_map,
-            &self.one_codon_map,
-            &self.two_codon_map,
+            &self.domain_type_2_token,
+            &self.one_codon_2_token,
+            &self.two_codon_2_token,
         )
     }
 }
