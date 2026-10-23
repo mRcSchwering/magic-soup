@@ -126,8 +126,8 @@ class World(TensorClass):
             proteomics = Proteomics(
                 **(proteomics_kwargs or {}),
                 chemistry=chemistry,
-                scalar_enc_size=max(genomics.one_codon_map.values()),
-                vector_enc_size=max(genomics.two_codon_map.values()),
+                scalar_enc_size=genomics.one_codon_map.encoding_size,
+                vector_enc_size=genomics.two_codon_map.encoding_size,
                 tensor_kwargs=tensor_kwargs,
             )
             self.cells = Cells(

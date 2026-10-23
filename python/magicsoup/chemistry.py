@@ -1,4 +1,5 @@
 from collections import Counter
+from collections.abc import Iterable
 
 
 class Molecule:
@@ -94,12 +95,12 @@ class Reaction:
     E.g. for `2A + B <-> C` use `Reaction([A, A, B], [C])` or equally `Reaction([A]*2 + [B], [C])`.
     """
 
-    def __init__(self, substrates: list[Molecule], products: list[Molecule]) -> None:
-        self.substrates = substrates
-        self.products = products
-        self._hash = hash(
-            tuple(sorted([tuple(sorted(substrates)), tuple(sorted(products))]))
-        )
+    def __init__(
+        self, substrates: Iterable[Molecule], products: Iterable[Molecule]
+    ) -> None:
+        self.substrates = tuple(sorted(substrates))
+        self.products = tuple(sorted(products))
+        self._hash = hash(tuple(sorted([self.substrates, self.products])))
 
     def __hash__(self) -> int:
         return self._hash
@@ -155,8 +156,8 @@ class Chemistry:
 
     def __init__(
         self,
-        molecules: list[Molecule],
-        reactions: list[Reaction],
+        molecules: Iterable[Molecule],
+        reactions: Iterable[Reaction],
     ) -> None:
         # remove duplicates while keeping order
         self.molecules = list(dict.fromkeys(molecules))

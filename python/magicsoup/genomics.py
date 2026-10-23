@@ -1,10 +1,12 @@
 import random
 import warnings
+from collections.abc import Iterable
 from typing import TypedDict
 
 from magicsoup import rs
+from magicsoup.chemistry import Reaction
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
-from magicsoup.util import codons
+from magicsoup.util import codons, random_genome
 
 
 def _get_n(p: float, s: int, name: str) -> int:
@@ -17,6 +19,22 @@ def _get_n(p: float, s: int, name: str) -> int:
     return n
 
 
+class _CodonMap:
+
+    def __init__(
+        self, n_codons: int, stop_codons: Iterable[str], allow_last_stop: bool = False
+    ) -> None:
+        seqs = codons(n=n_codons)
+        check_nts = CODON_SIZE * n_codons
+        if allow_last_stop:
+            check_nts -= CODON_SIZE
+
+        seqs = [d for d in seqs if d[:check_nts] not in stop_codons]
+        self.seq_2_token = {d: i + 1 for i, d in enumerate(seqs)}
+        self.token_2_seq = {v: k for k, v in self.seq_2_token.items()}
+        self.encoding_size = max(self.seq_2_token.values())
+
+
 class GenomicsKwargs(TypedDict, total=False):
     start_codons: tuple[str, ...]
     stop_codons: tuple[str, ...]
@@ -24,6 +42,10 @@ class GenomicsKwargs(TypedDict, total=False):
     p_transp_dom: float
     p_reg_dom: float
     n_dom_type_codons: int
+
+
+# TODO: defaults should lead to ~20% 3 domains
+#       so that proteins have decent promiscuity
 
 
 class Genomics:
@@ -85,14 +107,12 @@ class Genomics:
         self.domain_map = {d: k for k, v in self.domain_types.items() for d in v}
 
         # pre-mature stop codons are excluded
-        self.one_codon_map = {d: i + 1 for i, d in enumerate(self._get_single_codons())}
+        self.one_codon_map = _CodonMap(n_codons=1, stop_codons=stop_codons)
 
-        # the second codon is allowed to be a stop codon
-        self.two_codon_map = {d: i + 1 for i, d in enumerate(self._get_double_codons())}
-
-        # inverse maps for genome generation
-        self.idx_2_one_codon = {v: k for k, v in self.one_codon_map.items()}
-        self.idx_2_two_codon = {v: k for k, v in self.two_codon_map.items()}
+        # because at domain end the second codon is allowed to be a stop codon
+        self.two_codon_map = _CodonMap(
+            n_codons=2, stop_codons=stop_codons, allow_last_stop=True
+        )
 
         # setup rust class
         self._setup_rs()
@@ -102,8 +122,8 @@ class Genomics:
             start_codons=self.start_codons,
             stop_codons=self.stop_codons,
             domain_map=self.domain_map,
-            one_codon_map=self.one_codon_map,
-            two_codon_map=self.two_codon_map,
+            one_codon_map=self.one_codon_map.seq_2_token,
+            two_codon_map=self.two_codon_map.seq_2_token,
             dom_size=self.dom_size,
             dom_type_size=self.dom_type_size,
         )
@@ -129,6 +149,29 @@ class Genomics:
         cdss: list[tuple[int, int, bool]],
     ) -> list[ProteinSpecType]:
         return self.rs.extract_domains(genome=genome, cdss=cdss)
+
+    def get_catalytic_domain_seq(
+        self,
+        reaction: Reaction,
+        react_2_tokens: dict[Reaction, list[int]],
+    ) -> str:
+        """Generate a nucleotide sequence for a catalytic domain"""
+        token_2_two_codon = self.one_codon_map.token_2_seq
+        domain_types = self.domain_types
+
+        # catalytic domain type: 1
+        # idx0: Vmax (1 codon, no stop)
+        # idx1: Km (1 codon, no stop)
+        # idx2: direction (1 codon, no stop)
+        # idx3: reaction (2 codon, 2nd can be stop)
+        dom_seq = random.choice(domain_types[1])
+        i0_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
+        i1_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
+        i2_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
+        i3 = random.choice(react_2_tokens[reaction])
+        i3_seq = token_2_two_codon[i3]
+
+        return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
 
     def _get_single_codons(self) -> list[str]:
         seqs = codons(n=1)

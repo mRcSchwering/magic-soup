@@ -98,13 +98,13 @@ _V_RATIOS = [
 
 def _get_proteomics() -> Proteomics:
     protics = Proteomics(chemistry=_CHEMISTRY, abs_temp=310)
-    protics.km_map = {i: d for i, d in enumerate(_KM_WEIGHTS)}
-    protics.vmax_map = {i: d for i, d in enumerate(_VMAX_WEIGHTS)}
-    protics.sign_map = {i: d for i, d in enumerate(_SIGNS)}
-    protics.transport_map = {i: d for i, d in enumerate(_TRANSPORT_M)}
-    protics.effector_map = {i: d for i, d in enumerate(_EFFECTOR_M)}
-    protics.reaction_map = {i: d for i, d in enumerate(_REACTION_M)}
-    protics.hill_map = {i: d for i, d in enumerate(_HILLS)}
+    protics.km_map.token_2_scalar = {i: d for i, d in enumerate(_KM_WEIGHTS)}
+    protics.vmax_map.token_2_scalar = {i: d for i, d in enumerate(_VMAX_WEIGHTS)}
+    protics.sign_map.token_2_scalar = {i: d for i, d in enumerate(_SIGNS)}
+    protics.transport_map.token_2_vector = {i: d for i, d in enumerate(_TRANSPORT_M)}
+    protics.effector_map.token_2_vector = {i: d for i, d in enumerate(_EFFECTOR_M)}
+    protics.reaction_map.token_2_vector = {i: d for i, d in enumerate(_REACTION_M)}
+    protics.hill_map.token_2_scalar = {i: d for i, d in enumerate(_HILLS)}
     protics._setup_rs()
     return protics
 
@@ -274,15 +274,15 @@ def test_cell_params_with_catalytic_domains() -> None:
     assert p0.cds_end == 100
     assert p0.is_fwd is False
     assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].reaction.substrates == [_ma]
-    assert p0.domains[0].reaction.products == [_mb]
+    assert p0.domains[0].reaction.substrates == (_ma,)
+    assert p0.domains[0].reaction.products == (_mb,)
     assert p0.domains[0].vmax == pytest.approx(1.1, abs=_TOL)
     assert p0.domains[0].km == pytest.approx(0.5, abs=_TOL)
     assert p0.domains[0].start == 1
     assert p0.domains[0].end == 10
     assert isinstance(p0.domains[1], CatalyticDomain)
-    assert p0.domains[1].reaction.substrates == [_md]
-    assert p0.domains[1].reaction.products == [_mb, _mc]
+    assert p0.domains[1].reaction.substrates == (_md,)
+    assert p0.domains[1].reaction.products == (_mb, _mc)
     assert p0.domains[1].vmax == pytest.approx(1.2, abs=_TOL)
     assert p0.domains[1].km == pytest.approx(1.5, abs=_TOL)
     assert p0.domains[1].start == 2
@@ -293,15 +293,15 @@ def test_cell_params_with_catalytic_domains() -> None:
     assert p1.cds_end == 200
     assert p1.is_fwd is True
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].reaction.substrates == [_mb]
-    assert p1.domains[0].reaction.products == [_mc]
+    assert p1.domains[0].reaction.substrates == (_mb,)
+    assert p1.domains[0].reaction.products == (_mc,)
     assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOL)
     assert p1.domains[0].km == pytest.approx(0.9, abs=_TOL)
     assert p1.domains[0].start == 3
     assert p1.domains[0].end == 30
     assert isinstance(p1.domains[1], CatalyticDomain)
-    assert p1.domains[1].reaction.substrates == [_md]
-    assert p1.domains[1].reaction.products == [_mb, _mc]
+    assert p1.domains[1].reaction.substrates == (_md,)
+    assert p1.domains[1].reaction.products == (_mb, _mc)
     assert p1.domains[1].vmax == pytest.approx(1.3, abs=_TOL)
     assert p1.domains[1].km == pytest.approx(1.2, abs=_TOL)
     assert p1.domains[1].start == 4
@@ -312,8 +312,8 @@ def test_cell_params_with_catalytic_domains() -> None:
     assert p2.cds_end == 300
     assert p2.is_fwd is False
     assert isinstance(p2.domains[0], CatalyticDomain)
-    assert p2.domains[0].reaction.substrates == [_md]
-    assert p2.domains[0].reaction.products == [_mb, _mb]
+    assert p2.domains[0].reaction.substrates == (_md,)
+    assert p2.domains[0].reaction.products == (_mb, _mb)
     assert p2.domains[0].vmax == pytest.approx(2.9, abs=_TOL)
     assert p2.domains[0].km == pytest.approx(2.9, abs=_TOL)
     assert p2.domains[0].start == 5
@@ -326,15 +326,15 @@ def test_cell_params_with_catalytic_domains() -> None:
     assert p0.cds_end == 400
     assert p0.is_fwd is True
     assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].reaction.substrates == [_mb]
-    assert p0.domains[0].reaction.products == [_ma]
+    assert p0.domains[0].reaction.substrates == (_mb,)
+    assert p0.domains[0].reaction.products == (_ma,)
     assert p0.domains[0].vmax == pytest.approx(1.1, abs=_TOL)
     assert p0.domains[0].km == pytest.approx(0.3, abs=_TOL)
     assert p0.domains[0].start == 6
     assert p0.domains[0].end == 60
     assert isinstance(p0.domains[1], CatalyticDomain)
-    assert p0.domains[1].reaction.substrates == [_md]
-    assert p0.domains[1].reaction.products == [_mb, _mc]
+    assert p0.domains[1].reaction.substrates == (_md,)
+    assert p0.domains[1].reaction.products == (_mb, _mc)
     assert p0.domains[1].vmax == pytest.approx(2.1, abs=_TOL)
     assert p0.domains[1].km == pytest.approx(1.4, abs=_TOL)
     assert p0.domains[1].start == 7
@@ -345,15 +345,15 @@ def test_cell_params_with_catalytic_domains() -> None:
     assert p1.cds_end == 500
     assert p1.is_fwd is False
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].reaction.substrates == [_mb]
-    assert p1.domains[0].reaction.products == [_mc]
+    assert p1.domains[0].reaction.substrates == (_mb,)
+    assert p1.domains[0].reaction.products == (_mc,)
     assert p1.domains[0].vmax == pytest.approx(1.9, abs=_TOL)
     assert p1.domains[0].km == pytest.approx(0.3, abs=_TOL)
     assert p1.domains[0].start == 8
     assert p1.domains[0].end == 80
     assert isinstance(p1.domains[1], CatalyticDomain)
-    assert p1.domains[1].reaction.substrates == [_mb, _mc]
-    assert p1.domains[1].reaction.products == [_md]
+    assert p1.domains[1].reaction.substrates == (_mb, _mc)
+    assert p1.domains[1].reaction.products == (_md,)
     assert p1.domains[1].vmax == pytest.approx(2.3, abs=_TOL)
     assert p1.domains[1].km == pytest.approx(1.7, abs=_TOL)
     assert p1.domains[1].start == 9
@@ -562,8 +562,8 @@ def test_cell_params_with_transporter_domains() -> None:
     assert p1.cds_end == 10
     assert p1.is_fwd is False
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].reaction.substrates == [_ma]
-    assert p1.domains[0].reaction.products == [_mb]
+    assert p1.domains[0].reaction.substrates == (_ma,)
+    assert p1.domains[0].reaction.products == (_mb,)
     assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOL)
     assert p1.domains[0].km == pytest.approx(0.5, abs=_TOL)
     assert p1.domains[0].start == 5
@@ -751,8 +751,8 @@ def test_cell_params_with_regulatory_domains() -> None:
     assert p0.cds_end == 100
     assert p0.is_fwd is False
     assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].reaction.substrates == [_ma]
-    assert p0.domains[0].reaction.products == [_mb]
+    assert p0.domains[0].reaction.substrates == (_ma,)
+    assert p0.domains[0].reaction.products == (_mb,)
     assert p0.domains[0].vmax == pytest.approx(2.0, abs=_TOL)
     assert p0.domains[0].km == pytest.approx(0.5, abs=_TOL)
     assert p0.domains[0].start == 1
@@ -779,8 +779,8 @@ def test_cell_params_with_regulatory_domains() -> None:
     assert p1.cds_end == 200
     assert p1.is_fwd is True
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].reaction.substrates == [_ma]
-    assert p1.domains[0].reaction.products == [_mb]
+    assert p1.domains[0].reaction.substrates == (_ma,)
+    assert p1.domains[0].reaction.products == (_mb,)
     assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOL)
     assert p1.domains[0].km == pytest.approx(0.5, abs=_TOL)
     assert p1.domains[0].start == 4
@@ -809,8 +809,8 @@ def test_cell_params_with_regulatory_domains() -> None:
     assert p0.cds_end == 300
     assert p0.is_fwd is False
     assert isinstance(p0.domains[0], CatalyticDomain)
-    assert p0.domains[0].reaction.substrates == [_ma]
-    assert p0.domains[0].reaction.products == [_mb]
+    assert p0.domains[0].reaction.substrates == (_ma,)
+    assert p0.domains[0].reaction.products == (_mb,)
     assert p0.domains[0].vmax == pytest.approx(2.0, abs=_TOL)
     assert p0.domains[0].km == pytest.approx(0.5, abs=_TOL)
     assert p0.domains[0].start == 7
@@ -837,8 +837,8 @@ def test_cell_params_with_regulatory_domains() -> None:
     assert p1.cds_end == 400
     assert p1.is_fwd is True
     assert isinstance(p1.domains[0], CatalyticDomain)
-    assert p1.domains[0].reaction.substrates == [_ma]
-    assert p1.domains[0].reaction.products == [_mb]
+    assert p1.domains[0].reaction.substrates == (_ma,)
+    assert p1.domains[0].reaction.products == (_mb,)
     assert p1.domains[0].vmax == pytest.approx(2.0, abs=_TOL)
     assert p1.domains[0].km == pytest.approx(0.5, abs=_TOL)
     assert p1.domains[0].start == 10

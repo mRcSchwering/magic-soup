@@ -12,53 +12,6 @@ from magicsoup.constants import GAS_CONSTANT, ROOM_TEMP, ProteinSpecType
 from magicsoup.util import TensorClass, TensorKwargs
 
 
-def _get_hill_map(max_token: int, none_value: int = 0) -> dict[int, int]:
-    """
-    Get a map that maps tokens to 1, 2, 3, 4, 5
-    with chances 52%, 26%, 13%, 6%, 3% respectively.
-    """
-    choices = [5] + 2 * [4] + 4 * [3] + 8 * [2] + 16 * [1]
-    numbers = [none_value] + random.choices(choices, k=max_token)
-    return {i: n for i, n in enumerate(numbers)}
-
-
-def _get_log_norm_weight_map(
-    max_token: int, weight_range: tuple[float, float], none_value: float = 0.0
-) -> dict[int, float]:
-    """
-    Get a map that maps tokens to a float
-    which is sampled from a log normal distribution.
-    """
-    min_w = min(weight_range)
-    max_w = max(weight_range)
-    l_min_w = math.log(min_w)
-    l_max_w = math.log(max_w)
-    mu = (l_min_w + l_max_w) / 2
-    sig = l_max_w - l_min_w
-
-    non_zero_weights: list[float] = []
-    for _ in range(max_token):
-        sample = math.exp(random.gauss(mu, sig))
-
-        while not min_w <= sample <= max_w:
-            sample = math.exp(random.gauss(mu, sig))
-
-        non_zero_weights.append(sample)
-
-    weights = [none_value] + non_zero_weights
-    return {i: w for i, w in enumerate(weights)}
-
-
-def _get_sign_map(max_token: int, none_value: int = 0) -> dict[int, int]:
-    """
-    Get a map that maps tokens to 1 or -1
-    with 50% probability of each being mapped.
-    """
-    choices = [1, -1]
-    signs = [none_value] + random.choices(choices, k=max_token)
-    return {i: s for i, s in enumerate(signs)}
-
-
 def _get_vector_map(
     max_token: int, vectors: list[list[int]], none_value: int = 0
 ) -> dict[int, tuple[int, ...]]:
@@ -93,76 +46,200 @@ def _get_vector_map(
     return {i: v for i, v in enumerate(all_vectors)}
 
 
-def _get_reaction_map(
-    molmap: dict[Molecule, int],
-    reactions: list[Reaction],
-    max_token: int,
-    none_value: int = 0,
-) -> dict[int, tuple[int, ...]]:
+def _get_inverse[T](m: dict[int, T]) -> dict[T, list[int]]:
+    inv = defaultdict(list)
+    for k, v in m.items():
+        inv[v].append(k)
+    return inv
+
+
+class _LogNormMap:
+    """
+    Get a map that maps tokens to a float
+    which is sampled from a log normal distribution.
+    """
+
+    def __init__(
+        self, max_token: int, weight_range: tuple[float, float], none_value: float = 0.0
+    ) -> None:
+
+        min_w = min(weight_range)
+        max_w = max(weight_range)
+        l_min_w = math.log(min_w)
+        l_max_w = math.log(max_w)
+        mu = (l_min_w + l_max_w) / 2
+        sig = l_max_w - l_min_w
+
+        non_zero_weights: list[float] = []
+        for _ in range(max_token):
+            sample = math.exp(random.gauss(mu, sig))
+
+            while not min_w <= sample <= max_w:
+                sample = math.exp(random.gauss(mu, sig))
+
+            non_zero_weights.append(sample)
+
+        weights = [none_value] + non_zero_weights
+        self.token_2_scalar = {i: w for i, w in enumerate(weights)}
+        self.scalar_2_tokens = _get_inverse(self.token_2_scalar)
+
+
+class _SignMap:
+    """
+    Get a map that maps tokens to 1 or -1
+    with 50% probability of each being mapped.
+    """
+
+    def __init__(self, max_token: int, none_value: int = 0) -> None:
+        choices = [1, -1]
+        signs = [none_value] + random.choices(choices, k=max_token)
+        self.token_2_scalar = {i: s for i, s in enumerate(signs)}
+        self.scalar_2_tokens = _get_inverse(self.token_2_scalar)
+
+
+class _HillMap:
+    """
+    Get a map that maps tokens to 1, 2, 3, 4, 5
+    with chances 52%, 26%, 13%, 6%, 3% respectively.
+    """
+
+    def __init__(self, max_token: int, none_value: int = 0) -> None:
+        choices = [5] + 2 * [4] + 4 * [3] + 8 * [2] + 16 * [1]
+        numbers = [none_value] + random.choices(choices, k=max_token)
+        self.token_2_scalar = {i: n for i, n in enumerate(numbers)}
+        self.scalar_2_tokens = _get_inverse(self.token_2_scalar)
+
+
+class _ReactionMap:
     """
     Get a map that maps tokens to a list of vectors.
     Each vector will be mapped with the same frequency.
     Each vector has number of molecules length and represents the
     stoichiometry of a reaction.
     """
-    n_mols = 2 * len(molmap)
 
-    # careful, only copy [0] to avoid having references to the same list
-    vectors = [[0] * n_mols for _ in range(len(reactions))]
-    for ri, react in enumerate(reactions):
-        for mol in react.substrates:
-            mol_i = molmap[mol]
-            vectors[ri][mol_i] -= 1
-        for mol in react.products:
-            mol_i = molmap[mol]
-            vectors[ri][mol_i] += 1
+    def __init__(
+        self,
+        molmap: dict[Molecule, int],
+        reactions: list[Reaction],
+        max_token: int,
+        none_value: int = 0,
+    ) -> None:
+        n_mols = 2 * len(molmap)
 
-    return _get_vector_map(max_token=max_token, vectors=vectors, none_value=none_value)
+        # careful, only copy [0] to avoid having references to the same list
+        vectors = [[0] * n_mols for _ in range(len(reactions))]
+        for ri, react in enumerate(reactions):
+            for mol in react.substrates:
+                mol_i = molmap[mol]
+                vectors[ri][mol_i] -= 1
+            for mol in react.products:
+                mol_i = molmap[mol]
+                vectors[ri][mol_i] += 1
+
+        self.token_2_vector = _get_vector_map(
+            max_token=max_token, vectors=vectors, none_value=none_value
+        )
+
+        vector_2_tokens = _get_inverse(self.token_2_vector)
+        molmap_i = {i: m for m, i in molmap.items()}
+
+        react_2_tokens: dict[Reaction, list[int]] = {}
+        for vec, tokens in vector_2_tokens.items():
+            subs = [dd for i, n in enumerate(vec) if n < 0 for dd in [molmap_i[i]] * -n]
+            prods = [dd for i, n in enumerate(vec) if n > 0 for dd in [molmap_i[i]] * n]
+            react_2_tokens[Reaction(substrates=subs, products=prods)] = tokens
+
+        self.react_2_tokens = react_2_tokens
 
 
-def _get_transporter_map(
-    n_molecules: int, max_token: int, none_value: int = 0
-) -> dict[int, tuple[int, ...]]:
+# TODO: Co-factors are regarded in kinetics, but not in token mapping
+#       tokens map to vectors which are rows in N (so Co-factors are 0)
+#       Should separate forward and reverse
+
+# TODO: I always need 2 mapping:
+#       1. token -> (vector, scalar) for translation
+#       2. (scalar, Molecule, Reaction) -> token for synthesis
+
+
+class _TransporterMap:
     """
     Get a map that maps tokens to a list of vectors.
     Each vector has number of molecules length and represents the
     stoichiometry of a molecule transport into or out of the cell.
     """
-    n_mols = 2 * n_molecules
 
-    # careful, only copy [0] to avoid having references to the same list
-    vectors = [[0] * n_mols for _ in range(n_molecules)]
-    for mi in range(n_molecules):
-        vectors[mi][mi] = -1
-        vectors[mi][mi + n_molecules] = 1
+    def __init__(
+        self,
+        molmap: dict[Molecule, int],
+        max_token: int,
+        none_value: int = 0,
+    ) -> None:
 
-    return _get_vector_map(max_token=max_token, vectors=vectors, none_value=none_value)
+        n_mols = len(molmap)
+
+        # careful, only copy [0] to avoid having references to the same list
+        vectors = [[0] * n_mols * 2 for _ in range(n_mols)]
+        for mi in range(n_mols):
+            vectors[mi][mi] = -1
+            vectors[mi][mi + n_mols] = 1
+
+        self.token_2_vector = _get_vector_map(
+            max_token=max_token, vectors=vectors, none_value=none_value
+        )
+
+        vector_2_tokens = _get_inverse(self.token_2_vector)
+        molmap_i = {i: m for m, i in molmap.items()}
+
+        mol_2_tokens: dict[Molecule, list[int]] = {}
+        for vec, tokens in vector_2_tokens.items():
+            non_zeros = [d for d in vec if d > 0]
+            if len(non_zeros) == 0:
+                continue
+
+            mol_2_tokens[molmap_i[non_zeros[0]]] = tokens
+
+        self.mol_2_tokens = mol_2_tokens
 
 
-def _get_regulatory_map(
-    n_molecules: int, max_token: int, none_value: int = 0
-) -> dict[int, tuple[int, ...]]:
+class _EffectorMap:
     """
     Get a map that maps tokens to a list of vectors.
     Each vector has number of molecules length and represents the
     either activating (+1) or inhibiting (-1) effect
     of an effector molecule.
     """
-    n_mols = 2 * n_molecules
 
-    # careful, only copy [0] to avoid having references to the same list
-    vectors = [[0] * n_mols for _ in range(n_mols)]
-    for mi in range(n_mols):
-        vectors[mi][mi] = 1
+    def __init__(
+        self,
+        molmap: dict[Molecule, int],
+        max_token: int,
+        none_value: int = 0,
+    ) -> None:
 
-    return _get_vector_map(max_token=max_token, vectors=vectors, none_value=none_value)
+        m = len(molmap) * 2
 
+        # careful, only copy [0] to avoid having references to the same list
+        vectors = [[0] * m for _ in range(m)]
+        for mi in range(m):
+            vectors[mi][mi] = 1
 
-def _get_inverse[T](m: dict[int, T]) -> dict[T, list[int]]:
-    inv = defaultdict(list)
-    for k, v in m.items():
-        inv[v].append(k)
-    return inv
+        self.token_2_vector = _get_vector_map(
+            max_token=max_token, vectors=vectors, none_value=none_value
+        )
+
+        vector_2_tokens = _get_inverse(self.token_2_vector)
+        molmap_i = {i: m for m, i in molmap.items()}
+
+        mol_2_tokens: dict[Molecule, list[int]] = {}
+        for vec, tokens in vector_2_tokens.items():
+            non_zeros = [d for d in vec if d > 0]
+            if len(non_zeros) == 0:
+                continue
+
+            mol_2_tokens[molmap_i[non_zeros[0]]] = tokens
+
+        self.mol_2_tokens = mol_2_tokens
 
 
 class ProteomicsKwargs(TypedDict, total=False):
@@ -232,32 +309,15 @@ class Proteomics(TensorClass):
         # energies (kJ/mol -> J/mol) for all mols (2m,)
         self.mol_energies = self.ftensor([d.energy for d in molecules] * 2) * 1e3
 
-        self.km_map = _get_log_norm_weight_map(
-            max_token=scalar_enc_size, weight_range=km_range
-        )
-        self.vmax_map = _get_log_norm_weight_map(
-            max_token=scalar_enc_size, weight_range=vmax_range
-        )
-        self.sign_map = _get_sign_map(max_token=scalar_enc_size)
-        self.hill_map = _get_hill_map(max_token=scalar_enc_size)
-        self.reaction_map = _get_reaction_map(
+        self.km_map = _LogNormMap(max_token=scalar_enc_size, weight_range=km_range)
+        self.vmax_map = _LogNormMap(max_token=scalar_enc_size, weight_range=vmax_range)
+        self.sign_map = _SignMap(max_token=scalar_enc_size)
+        self.hill_map = _HillMap(max_token=scalar_enc_size)
+        self.transport_map = _TransporterMap(molmap=mol_2_mi, max_token=vector_enc_size)
+        self.effector_map = _EffectorMap(molmap=mol_2_mi, max_token=vector_enc_size)
+        self.reaction_map = _ReactionMap(
             reactions=reactions, molmap=mol_2_mi, max_token=vector_enc_size
         )
-        self.transport_map = _get_transporter_map(
-            n_molecules=n_mols, max_token=vector_enc_size
-        )
-        self.effector_map = _get_regulatory_map(
-            n_molecules=n_mols, max_token=vector_enc_size
-        )
-
-        # derive inverse maps for genome generation
-        self.km_2_idxs = _get_inverse(self.km_map)
-        self.vmax_2_idxs = _get_inverse(self.vmax_map)
-        self.sign_2_idxs = _get_inverse(self.sign_map)
-        self.hill_2_idxs = _get_inverse(self.hill_map)
-        self.trnsp_2_idxs = _get_inverse(self.transport_map)
-        self.regul_2_idxs = _get_inverse(self.effector_map)
-        self.catal_2_idxs = _get_inverse(self.reaction_map)
 
         # init rust class
         self._setup_rs()
@@ -394,12 +454,12 @@ class Proteomics(TensorClass):
 
     def _setup_rs(self) -> None:
         self.rs = rs.Proteomics(
-            km_map=self.km_map,
-            vmax_map=self.vmax_map,
-            sign_map=self.sign_map,
-            hill_map=self.hill_map,
-            reaction_map=self.reaction_map,
-            transporter_map=self.transport_map,
-            effector_map=self.effector_map,
+            km_map=self.km_map.token_2_scalar,
+            vmax_map=self.vmax_map.token_2_scalar,
+            sign_map=self.sign_map.token_2_scalar,
+            hill_map=self.hill_map.token_2_scalar,
+            reaction_map=self.reaction_map.token_2_vector,
+            transporter_map=self.transport_map.token_2_vector,
+            effector_map=self.effector_map.token_2_vector,
             m=self.m,
         )

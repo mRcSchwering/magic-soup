@@ -20,6 +20,12 @@ from magicsoup.chemistry import Chemistry, Molecule, Reaction
 #       why are K_e in Figure 5 so high?
 #       is it because of ln? Maybe better use Log10 then (or absolute)
 
+# TODO: check all values again
+#       energy is in kJ/mol now
+#       diffusivity, half-life, permeability are all different
+#       maybe use reasonable realistic values
+
+
 NADPH = Molecule("NADPH", 200.0 * 1e3)
 NADP = Molecule("NADP", 100.0 * 1e3)
 ATP = Molecule("ATP", 100.0 * 1e3)

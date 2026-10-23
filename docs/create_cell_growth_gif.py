@@ -15,6 +15,7 @@ gifsicle -i image.gif --optimize=3 --colors 32 -o image_o3_32.gif
 bash scripts/serve-docs.sh
 ```
 """
+
 import argparse
 import contextlib
 import io
@@ -65,8 +66,8 @@ def create_concat_gif(
         for content_lst in content_lsts:
             img_lst = []
             for content in content_lst:
-                img = stack.enter_context(Image.open(content))
-                img = ImageOps.expand(image=img, border=border, fill="white")
+                img_file = stack.enter_context(Image.open(content))
+                img = ImageOps.expand(image=img_file, border=border, fill="white")
                 img_lst.append(img)
 
             widths, heights = zip(*(d.size for d in img_lst))

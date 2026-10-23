@@ -9,6 +9,9 @@ from magicsoup.constants import GAS_CONSTANT
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from plotnine import *
 
+# TODO: maybe in log10 instead of ln
+#       easier interpretable
+
 
 def _plot_specific_ke_distributions():
     world = ms.World(chemistry=CHEMISTRY)

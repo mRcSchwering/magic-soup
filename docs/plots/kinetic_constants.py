@@ -8,6 +8,8 @@ import torch
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from plotnine import *
 
+# TODO: show v_max distros
+
 
 def _plot_constant_distributions(gsize=1000, ncells=1000):
     world = ms.World(chemistry=CHEMISTRY)

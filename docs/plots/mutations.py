@@ -7,6 +7,10 @@ from Levenshtein import distance
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from plotnine import *
 
+# TODO: typical genomic distances:
+#       Jaccard similarity, MinHash (Sourmash GH)
+#       bi-directional Containment, ANI
+
 
 def _record_sequence_similarities(
     seqs0: list[str], seqs1: list[str], record: dict, records: list

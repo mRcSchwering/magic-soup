@@ -88,8 +88,8 @@ def test_extract_domains() -> None:
 
     genomics = Genomics()
     genomics.domain_map = dom_type_map
-    genomics.one_codon_map = one_codon_map
-    genomics.two_codon_map = two_codon_map
+    genomics.one_codon_map.seq_2_token = one_codon_map
+    genomics.two_codon_map.seq_2_token = two_codon_map
     genomics.dom_type_size = len(next(iter(genomics.domain_map)))
     genomics.dom_size = genomics.dom_type_size + 5 * CODON_SIZE
     genomics._setup_rs()
@@ -172,8 +172,8 @@ def test_genomics() -> None:
         n_dom_type_codons=2,
     )
     genomics.domain_map = load_test_json("Genomics.domain_map.json")
-    genomics.one_codon_map = load_test_json("Genomics.one_codon_map.json")
-    genomics.two_codon_map = load_test_json("Genomics.two_codon_map.json")
+    genomics.one_codon_map.seq_2_token = load_test_json("Genomics.one_codon_map.json")
+    genomics.two_codon_map.seq_2_token = load_test_json("Genomics.two_codon_map.json")
     genomics._setup_rs()
 
     exp_proteome = [

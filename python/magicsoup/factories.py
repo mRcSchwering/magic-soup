@@ -1,9 +1,8 @@
 import random
-from collections import Counter
 from typing import Protocol
 
+from magicsoup.chemistry import Molecule, Reaction
 from magicsoup.constants import CODON_SIZE
-from magicsoup.containers import Molecule
 from magicsoup.util import closest_value, random_genome, round_down
 from magicsoup.world import World
 
@@ -11,15 +10,12 @@ from magicsoup.world import World
 class DomainFactType(Protocol):
     """Protocol for domain factories"""
 
-    def validate(self, world: World):
-        ...
+    def validate(self, world: World): ...
 
-    def gen_coding_sequence(self, world: World) -> str:
-        ...
+    def gen_coding_sequence(self, world: World) -> str: ...
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "DomainFactType":
-        ...
+    def from_dict(cls, dct: dict) -> "DomainFactType": ...
 
 
 class CatalyticDomainFact:
@@ -45,28 +41,20 @@ class CatalyticDomainFact:
 
     def __init__(
         self,
-        reaction: tuple[list[Molecule], list[Molecule]],
+        reaction: Reaction,
         km: float | None = None,
         vmax: float | None = None,
     ):
-        substrates, products = reaction
-        self.substrates = sorted(substrates)
-        self.products = sorted(products)
+        self.reaction = reaction
         self.km = km
         self.vmax = vmax
 
     def validate(self, world: World):
         """Validate this domain factory's attributes"""
-        all_reacts = [
-            (tuple(sorted(s)), tuple(sorted(p))) for s, p in world.chemistry.reactions
-        ]
-        all_reacts.extend([(p, s) for s, p in all_reacts])
-        if (tuple(self.substrates), tuple(self.products)) not in all_reacts:
-            lft = " + ".join(d.name for d in self.substrates)
-            rgt = " + ".join(d.name for d in self.products)
+        if self.reaction not in world.chemistry.reactions:
             raise ValueError(
-                f"CatalyticDomainFact has this reaction defined: {lft} <-> {rgt}."
-                " This world's chemistry doesn't define this reaction."
+                f"CatalyticDomainFact has this reaction defined: {self.reaction}."
+                " But this world's chemistry doesn't define this reaction."
             )
 
     def gen_coding_sequence(self, world: World) -> str:
@@ -76,38 +64,43 @@ class CatalyticDomainFact:
         # idx1: Km (1 codon, no stop)
         # idx2: direction (1 codon, no stop)
         # idx3: reaction (2 codon, 2nd can be stop)
-        kinetics = world.kinetics
-        genetics = world.genetics
-        dom_seq = random.choice(genetics.domain_types[1])
+        proteomics = world.cells.proteomics
+        genomics = world.cells.genomics
+        dom_seq = random.choice(genomics.domain_types[1])
 
         if self.vmax is not None:
-            val = closest_value(values=kinetics.vmax_2_idxs, key=self.vmax)
-            i0 = random.choice(kinetics.vmax_2_idxs[val])
-            i0_seq = genetics.idx_2_one_codon[i0]
+            val = closest_value(values=proteomics.vmax_2_idxs, key=self.vmax)
+            i0 = random.choice(proteomics.vmax_2_idxs[val])
+            i0_seq = genomics.idx_2_one_codon[i0]
         else:
-            i0_seq = random_genome(s=CODON_SIZE, excl=genetics.stop_codons)
+            i0_seq = random_genome(s=CODON_SIZE, excl=genomics.stop_codons)
 
         if self.km is not None:
-            val = closest_value(values=kinetics.km_2_idxs, key=self.km)
-            i1 = random.choice(kinetics.km_2_idxs[val])
-            i1_seq = genetics.idx_2_one_codon[i1]
+            val = closest_value(values=proteomics.km_2_idxs, key=self.km)
+            i1 = random.choice(proteomics.km_2_idxs[val])
+            i1_seq = genomics.idx_2_one_codon[i1]
         else:
-            i1_seq = random_genome(s=CODON_SIZE, excl=genetics.stop_codons)
+            i1_seq = random_genome(s=CODON_SIZE, excl=genomics.stop_codons)
 
-        react = (tuple(self.substrates), tuple(self.products))
+        react = self.reaction
         is_fwd = True
-        if react not in kinetics.catal_2_idxs:
-            react = (tuple(self.products), tuple(self.substrates))
+        if react not in proteomics.reaction_map.react_2_tokens:
+            react = Reaction(
+                substrates=list(self.reaction.products),
+                products=list(self.reaction.substrates),
+            )
             is_fwd = False
-        i2 = random.choice(kinetics.sign_2_idxs[is_fwd])
-        i2_seq = genetics.idx_2_one_codon[i2]
-        i3 = random.choice(kinetics.catal_2_idxs[react])
-        i3_seq = genetics.idx_2_two_codon[i3]
+
+        i2 = random.choice(proteomics.sign_2_idxs[is_fwd])
+        i2_seq = genomics.idx_2_one_codon[i2]
+
+        i3 = random.choice(proteomics.reaction_map.react_2_tokens[react])
+        i3_seq = genomics.idx_2_two_codon[i3]
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
 
     @classmethod
-    def from_dict(cls, dct: dict) -> "CatalyticDomainFact":
+    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "CatalyticDomainFact":
         """
         Generate domain factory from dct representation of a domain.
         A dct representation of this domain is returned by
@@ -115,34 +108,17 @@ class CatalyticDomainFact:
         """
         dct = dct["spec"]
         subs, prods = dct["reaction"]
-        reaction = (
-            [Molecule.from_name(d) for d in subs],
-            [Molecule.from_name(d) for d in prods],
+        reaction = Reaction(
+            substrates=[molmap[d] for d in subs],
+            products=[molmap[d] for d in prods],
         )
         return cls(reaction=reaction, km=dct.get("km"), vmax=dct.get("vmax"))
 
     def __repr__(self) -> str:
-        ins = ",".join(str(d) for d in self.substrates)
-        outs = ",".join(str(d) for d in self.products)
-        args = [f"{ins}<->{outs}"]
-        if self.km is not None:
-            args.append(f"Km={self.km:.2e}")
-        if self.vmax is not None:
-            args.append(f"Vmax={self.vmax:.2e}")
-        return f"CatalyticDomain({','.join(args)})"
+        return f"CatalyticDomain({self.reaction},Km={self.km:.2e},Vmax={self.vmax:.2e})"
 
     def __str__(self) -> str:
-        subs_cnts = Counter(str(d) for d in self.substrates)
-        prods_cnts = Counter([str(d) for d in self.products])
-        subs_str = " + ".join([f"{d} {k}" for k, d in subs_cnts.items()])
-        prods_str = " + ".join([f"{d} {k}" for k, d in prods_cnts.items()])
-        optargs = []
-        if self.km is not None:
-            optargs.append(f"Km {self.km:.2e}")
-        if self.vmax is not None:
-            optargs.append(f"Vmax {self.vmax:.2e}")
-        args = f"{subs_str} <-> {prods_str}"
-        return args if len(optargs) == 0 else args + " | " + " ".join(optargs)
+        return f"{self.reaction} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
 class TransporterDomainFact:
@@ -192,32 +168,32 @@ class TransporterDomainFact:
         # idx1: Km (1 codon, no stop)
         # idx2: is_exporter (1 codon, no stop)
         # idx3: molecule (2 codon, 2nd can be stop)
-        kinetics = world.kinetics
-        genetics = world.genetics
-        dom_seq = random.choice(world.genetics.domain_types[2])
+        proteomics = world.cells.proteomics
+        genomics = world.cells.genomics
+        dom_seq = random.choice(genomics.domain_types[2])
 
         if self.vmax is not None:
-            val = closest_value(values=kinetics.vmax_2_idxs, key=self.vmax)
-            i0 = random.choice(kinetics.vmax_2_idxs[val])
-            i0_seq = genetics.idx_2_one_codon[i0]
+            val = closest_value(values=proteomics.vmax_2_idxs, key=self.vmax)
+            i0 = random.choice(proteomics.vmax_2_idxs[val])
+            i0_seq = genomics.idx_2_one_codon[i0]
         else:
-            i0_seq = random_genome(s=CODON_SIZE, excl=genetics.stop_codons)
+            i0_seq = random_genome(s=CODON_SIZE, excl=genomics.stop_codons)
 
         if self.km is not None:
-            val = closest_value(values=kinetics.km_2_idxs, key=self.km)
-            i1 = random.choice(kinetics.km_2_idxs[val])
-            i1_seq = genetics.idx_2_one_codon[i1]
+            val = closest_value(values=proteomics.km_2_idxs, key=self.km)
+            i1 = random.choice(proteomics.km_2_idxs[val])
+            i1_seq = genomics.idx_2_one_codon[i1]
         else:
-            i1_seq = random_genome(s=CODON_SIZE, excl=genetics.stop_codons)
+            i1_seq = random_genome(s=CODON_SIZE, excl=genomics.stop_codons)
 
         if self.is_exporter is not None:
-            i2 = random.choice(kinetics.sign_2_idxs[self.is_exporter])
-            i2_seq = genetics.idx_2_one_codon[i2]
+            i2 = random.choice(proteomics.sign_2_idxs[self.is_exporter])
+            i2_seq = genomics.idx_2_one_codon[i2]
         else:
-            i2_seq = random_genome(s=CODON_SIZE, excl=genetics.stop_codons)
+            i2_seq = random_genome(s=CODON_SIZE, excl=genomics.stop_codons)
 
-        i3 = random.choice(kinetics.trnsp_2_idxs[self.molecule])
-        i3_seq = genetics.idx_2_two_codon[i3]
+        i3 = random.choice(proteomics.trnsp_2_idxs[self.molecule])
+        i3_seq = genomics.idx_2_two_codon[i3]
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
 

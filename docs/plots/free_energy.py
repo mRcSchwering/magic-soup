@@ -7,6 +7,8 @@ import torch
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from plotnine import *
 
+# TODO: add physical units to plots in general
+
 
 def _plot_energy(nsteps=1000, map_size=8, confluency=0.5, gsize=1000):
     world = ms.World(map_size=map_size, chemistry=CHEMISTRY)

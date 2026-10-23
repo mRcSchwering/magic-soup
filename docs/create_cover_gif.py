@@ -25,6 +25,7 @@ bash scripts/serve-docs.sh
 gifsicle -U animation.gif `seq -f "#%g" 0 1 700` --optimize=3 -o 'animation[small].gif'
 ```
 """
+
 import argparse
 import io
 from collections import Counter
@@ -229,6 +230,7 @@ def _ggplot_2_pil(plot: ggplot, width=8, height=5, dpi=200) -> Image:
 
 def _crop_img(img: Image, pad: tuple[int, ...]) -> Image:
     w, h = img.size
+    lft, up, rgt, lo = 0, 0, 0, 0
     if len(pad) == 1:
         lft = pad[0]
         up = pad[0]
