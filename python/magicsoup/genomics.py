@@ -80,6 +80,30 @@ class GenomicsKwargs(TypedDict, total=False):
 
 
 class Genomics:
+    """
+    Defines simulation genetics and translates genomes.
+
+    Arguments:
+        start_codons: Codons which start a coding sequence
+        stop_codons: Codons which stop a coding sequence
+        p_catal_dom: Chance of encountering a [CatalyticDomain][magicsoup.biology.CatalyticDomain]
+            in a random nucleotide sequence.
+        p_transp_dom: Chance of encountering a [TransporterDomain][magicsoup.biology.TransporterDomain]
+            in a random nucleotide sequence.
+        p_reg_dom: Chance of encountering a [RegulatoryDomain][magicsoup.biology.RegulatoryDomain]
+            in a random nucleotide sequence.
+        n_dom_type_codons: Number of codons that encode the domain type:
+            [CatalyticDomain][magicsoup.biology.CatalyticDomain],
+            [TransporterDomain][magicsoup.biology.TransporterDomain], or
+            [RegulatoryDomain][magicsoup.biology.RegulatoryDomain].
+
+    Translation happens only within coding sequences (CDSs).
+    A CDS starts at every start codon and ends with the first in-frame encountered stop codon.
+    Un-stopped CDSs are discarded.
+    Both the forward and reverse complement of the nucleotide sequence are considered.
+    Each CDS represents one [Protein][magicsoup.biology.Protein].
+    All domains found within a CDS will be added as domains to that protein.
+    """
 
     def __init__(
         self,
@@ -162,7 +186,7 @@ class Genomics:
         min_cds_size: int,
         is_fwd: bool,
     ) -> list[tuple[int, int, bool]]:
-        """Get CDS marker from genome"""
+        """Get CDS markers for a genome"""
         return self.rs.get_coding_regions(
             seq=seq, min_cds_size=min_cds_size, is_fwd=is_fwd
         )
@@ -172,15 +196,15 @@ class Genomics:
         genome: str,
         cdss: list[tuple[int, int, bool]],
     ) -> list[ProteinSpecType]:
-        """Get proteome in form of domain specifications from genome and CDS markers"""
+        """Get proteome in form of domain specifications for a genome and CDS markers"""
         return self.rs.extract_domains(genome=genome, cdss=cdss)
 
     def generate_domain_seq(self, domain_type: DomainType, tokens: list[int]) -> str:
         """
-        Generate a nucleotide sequence for a domain:
+        Generate a nucleotide sequence encoding a domain:
 
         Arguments:
-            domain_type: Which domain it should be
+            domain_type: Which domain type to encode
             tokens: Tokens which encode the main entity of the domain
 
         For catalytic domains the main entity is the reaction, for transporters the
