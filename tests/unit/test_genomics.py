@@ -64,7 +64,7 @@ _DATA: list[tuple[str, list[tuple[int, int]]]] = [
 def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]) -> None:
     # 1 codon is too small to express p=0.01 domain types
     with pytest.warns(UserWarning):
-        genomics = Genomics(n_dom_type_codons=1)
+        genomics = Genomics(n_dom_type_codons=0)
 
     seq = "".join(seq.replace("\n", "").split())
     res = genomics.get_coding_regions(seq=seq, min_cds_size=18, is_fwd=False)
@@ -87,11 +87,11 @@ def test_extract_domains() -> None:
     one_codon_map = {"ACT": 1, "CTG": 2, "CCG": 3, "GGA": 4, "TGT": 5}
 
     genomics = Genomics()
-    genomics.domain_map = dom_type_map
+    genomics.domain_type_map.seq_2_token = dom_type_map
     genomics.one_codon_map.seq_2_token = one_codon_map
     genomics.two_codon_map.seq_2_token = two_codon_map
-    genomics.dom_type_size = len(next(iter(genomics.domain_map)))
-    genomics.dom_size = genomics.dom_type_size + 5 * CODON_SIZE
+    genomics.dom_type_size_nt = 3
+    genomics.dom_size_nt = genomics.dom_type_size_nt + 5 * CODON_SIZE
     genomics._setup_rs()
 
     # fmt: off
@@ -138,19 +138,19 @@ def test_extract_domains() -> None:
     assert res[3][3] is True
     assert res[0][0][0][0] == (1, 2, 5, 1, 3)
     assert res[0][0][0][1] == 6
-    assert res[0][0][0][2] == 6 + genomics.dom_size
+    assert res[0][0][0][2] == 6 + genomics.dom_size_nt
     assert res[1][0][0][0] == (2, 3, 4, 2, 3)
     assert res[1][0][0][1] == 6
-    assert res[1][0][0][2] == 6 + genomics.dom_size
+    assert res[1][0][0][2] == 6 + genomics.dom_size_nt
     assert res[2][0][0][0] == (1, 3, 4, 5, 2)
     assert res[2][0][0][1] == 0
-    assert res[2][0][0][2] == 0 + genomics.dom_size
+    assert res[2][0][0][2] == 0 + genomics.dom_size_nt
     assert res[3][0][0][0] == (3, 3, 4, 2, 3)
     assert res[3][0][0][1] == 0
-    assert res[3][0][0][2] == 0 + genomics.dom_size
+    assert res[3][0][0][2] == 0 + genomics.dom_size_nt
     assert res[3][0][1][0] == (2, 1, 2, 3, 4)
     assert res[3][0][1][1] == 18
-    assert res[3][0][1][2] == 18 + genomics.dom_size
+    assert res[3][0][1][2] == 18 + genomics.dom_size_nt
 
 
 def test_genomics() -> None:
@@ -171,7 +171,7 @@ def test_genomics() -> None:
         stop_codons=("TGA", "TAG", "TAA"),
         n_dom_type_codons=2,
     )
-    genomics.domain_map = load_test_json("Genomics.domain_map.json")
+    genomics.domain_type_map.seq_2_token = load_test_json("Genomics.domain_map.json")
     genomics.one_codon_map.seq_2_token = load_test_json("Genomics.one_codon_map.json")
     genomics.two_codon_map.seq_2_token = load_test_json("Genomics.two_codon_map.json")
     genomics._setup_rs()

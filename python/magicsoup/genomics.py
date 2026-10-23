@@ -1,22 +1,22 @@
+import math
 import random
 import warnings
 from collections.abc import Iterable
+from enum import IntEnum
 from typing import TypedDict
 
 from magicsoup import rs
-from magicsoup.chemistry import Reaction
 from magicsoup.constants import CODON_SIZE, ProteinSpecType
 from magicsoup.util import codons, random_genome
 
 
-def _get_n(p: float, s: int, name: str) -> int:
-    n = int(p * s)
-    if n == 0 and p > 0.0:
-        warnings.warn(
-            f"There will be no {name}."
-            f" Increase dom_type_size to accomodate low probabilities of having {name}."
-        )
-    return n
+class DomainType(IntEnum):
+    CATALYTIC = 1
+    TRANSPORTER = 2
+    REGULATORY = 3
+
+    def __str__(self) -> str:
+        return self.name.capitalize()
 
 
 class _CodonMap:
@@ -33,6 +33,37 @@ class _CodonMap:
         self.seq_2_token = {d: i + 1 for i, d in enumerate(seqs)}
         self.token_2_seq = {v: k for k, v in self.seq_2_token.items()}
         self.encoding_size = max(self.seq_2_token.values())
+
+
+class _DomainTypeMap:
+
+    def __init__(
+        self,
+        dom_type_probs: dict[DomainType, float],
+        n_dom_type_codons: int,
+        stop_codons: list[str],
+    ) -> None:
+        # generate all possible valid sequences for domain types
+        pool = codons(n=n_dom_type_codons, excl_codons=stop_codons)
+        random.shuffle(pool)
+
+        # domain types -> nt sequences
+        self.type_2_seqs: dict[DomainType, list[str]] = {k: [] for k in dom_type_probs}
+
+        while len(pool) > 0:
+            for dom_type, p in dom_type_probs.items():
+                if random.random() < p:
+                    self.type_2_seqs[dom_type].append(pool.pop())
+
+        for dom_type, seqs in self.type_2_seqs.items():
+            if len(seqs) == 0:
+                warnings.warn(
+                    f"There will be no {dom_type} domains."
+                    f" Increase the number of codons encoding domain type or its probability"
+                )
+
+        # nt sequence -> domain type token
+        self.seq_2_token = {d: k.value for k, v in self.type_2_seqs.items() for d in v}
 
 
 class GenomicsKwargs(TypedDict, total=False):
@@ -77,34 +108,25 @@ class Genomics:
         self.stop_codons = list(stop_codons)
 
         # Domain structure:
-        # domain type definition (domain type codons)
+        # domain type definition (n domain type codons)
         # 3 x 1-codon specifications (3 simple tokens)
         # 1 x 2-codon specification (1 complex token)
         # a domain can begin and end with start/stop codons
         # so min CDS size = dom_size
-        self.dom_size = (n_dom_type_codons + 5) * CODON_SIZE
-        self.dom_type_size = n_dom_type_codons * CODON_SIZE
+        self.dom_size_nt = (n_dom_type_codons + 5) * CODON_SIZE
+        self.dom_type_size_nt = n_dom_type_codons * CODON_SIZE
 
-        # setup domain type definitions
-        # sequences including stop codons are useless, since they would terminate the CDS
-        sets = codons(n=n_dom_type_codons, excl_codons=self.start_codons)
-        random.shuffle(sets)
-        n = len(sets)
-
-        n_catal_doms = _get_n(p=p_catal_dom, s=n, name="catalytic domains")
-        n_transp_doms = _get_n(p=p_transp_dom, s=n, name="transporter domains")
-        n_reg_doms = _get_n(p=p_reg_dom, s=n, name="allosteric domains")
-
-        # 1=catalytic, 2=transporter, 3=regulatory
-        self.domain_types: dict[int, list[str]] = {}
-        self.domain_types[1] = sets[:n_catal_doms]
-        del sets[:n_catal_doms]
-        self.domain_types[2] = sets[:n_transp_doms]
-        del sets[:n_transp_doms]
-        self.domain_types[3] = sets[:n_reg_doms]
-        del sets[:n_reg_doms]
-
-        self.domain_map = {d: k for k, v in self.domain_types.items() for d in v}
+        # setup nt sequences which start a domain
+        domain_type_probs = {
+            DomainType.CATALYTIC: p_catal_dom,
+            DomainType.TRANSPORTER: p_transp_dom,
+            DomainType.REGULATORY: p_reg_dom,
+        }
+        self.domain_type_map = _DomainTypeMap(
+            dom_type_probs=domain_type_probs,
+            n_dom_type_codons=n_dom_type_codons,
+            stop_codons=self.stop_codons,
+        )
 
         # pre-mature stop codons are excluded
         self.one_codon_map = _CodonMap(n_codons=1, stop_codons=stop_codons)
@@ -117,18 +139,20 @@ class Genomics:
         # setup rust class
         self._setup_rs()
 
+    # TODO: give rust arguments better names
     def _setup_rs(self) -> None:
         self.rs = rs.Genomics(
             start_codons=self.start_codons,
             stop_codons=self.stop_codons,
-            domain_map=self.domain_map,
+            domain_map=self.domain_type_map.seq_2_token,
             one_codon_map=self.one_codon_map.seq_2_token,
             two_codon_map=self.two_codon_map.seq_2_token,
-            dom_size=self.dom_size,
-            dom_type_size=self.dom_type_size,
+            dom_size=self.dom_size_nt,
+            dom_type_size=self.dom_type_size_nt,
         )
 
     def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpecType]]:
+        """Get proteomes in form of domain specifications from genomes"""
         if len(genomes) == 0:
             return []
         return self.rs.translate_genomes(genomes=genomes)
@@ -139,6 +163,7 @@ class Genomics:
         min_cds_size: int,
         is_fwd: bool,
     ) -> list[tuple[int, int, bool]]:
+        """Get CDS marker from genome"""
         return self.rs.get_coding_regions(
             seq=seq, min_cds_size=min_cds_size, is_fwd=is_fwd
         )
@@ -148,30 +173,65 @@ class Genomics:
         genome: str,
         cdss: list[tuple[int, int, bool]],
     ) -> list[ProteinSpecType]:
+        """Get proteome in form of domain specifications from genome and CDS markers"""
         return self.rs.extract_domains(genome=genome, cdss=cdss)
 
-    def get_catalytic_domain_seq(
-        self,
-        reaction: Reaction,
-        react_2_tokens: dict[Reaction, list[int]],
-    ) -> str:
-        """Generate a nucleotide sequence for a catalytic domain"""
-        token_2_two_codon = self.one_codon_map.token_2_seq
-        domain_types = self.domain_types
+    def generate_domain_seq(self, domain_type: DomainType, tokens: list[int]) -> str:
+        """
+        Generate a nucleotide sequence for a domain:
 
-        # catalytic domain type: 1
-        # idx0: Vmax (1 codon, no stop)
+        Arguments:
+            domain_type: Which domain it should be
+            tokens: Tokens which encode the main entity of the domain
+
+        For catalytic domains the main entity is the reaction, for transporters the
+        transported molecule, for regulatory domains the effector molecule.
+        """
+        token_2_two_codon = self.two_codon_map.token_2_seq
+        domtype_2_seqs = self.domain_type_map.type_2_seqs
+
+        # domain type: catal/trnsp/reg
+        # idx0: Vmax/hill (1 codon, no stop)
         # idx1: Km (1 codon, no stop)
-        # idx2: direction (1 codon, no stop)
-        # idx3: reaction (2 codon, 2nd can be stop)
-        dom_seq = random.choice(domain_types[1])
+        # idx2: sign/orientation (1 codon, no stop)
+        # idx3: reaction/molecule/effector (2 codon, 2nd can be stop)
+        dom_seq = random.choice(domtype_2_seqs[domain_type])
         i0_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
         i1_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
         i2_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
-        i3 = random.choice(react_2_tokens[reaction])
+        i3 = random.choice(tokens)
         i3_seq = token_2_two_codon[i3]
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
+
+    def generate_genome(self, cdss: list[list[str]], n_pad_nts: int = 10) -> str:
+        """
+        Generate a genome based on CDSs
+
+        Arguments:
+            cdss: list of proteins, each a list of CDSs
+            n_pad_nts: number of padding nucleotides between all CDSs
+
+        The generated genome has at least the provided CDSs but it may have more.
+        """
+        n_pads = len(cdss) + 1
+        pad_size = math.floor(n_pad_nts / n_pads)
+        remaining_nts = n_pad_nts - n_pads * pad_size
+
+        excl_cdss = self.start_codons + self.stop_codons
+        pads = [random_genome(s=pad_size, excl=excl_cdss) for _ in range(n_pads)]
+        tail = random_genome(s=remaining_nts, excl=excl_cdss)
+
+        parts: list[str] = []
+        for cds in cdss:
+            parts.append(pads.pop())
+            parts.append(random.choice(self.start_codons))
+            parts.extend([d for d in cds])
+            parts.append(random.choice(self.stop_codons))
+        parts.append(pads.pop())
+        parts.append(tail)
+
+        return "".join(parts)
 
     def _get_single_codons(self) -> list[str]:
         seqs = codons(n=1)
