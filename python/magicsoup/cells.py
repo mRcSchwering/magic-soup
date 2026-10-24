@@ -4,13 +4,14 @@ import math
 from pathlib import Path
 from typing import TypedDict
 
+import numpy as np
 import torch
 
 from magicsoup import rs
 from magicsoup.chemistry import Chemistry
 from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
-from magicsoup.util import Array, TensorClass, TensorKwargs
+from magicsoup.util import TensorClass, TensorKwargs
 
 _log = logging.getLogger(__name__)
 
@@ -19,6 +20,10 @@ _log = logging.getLogger(__name__)
 #       e.g. 2 tensors that should have same length
 #       or that a tensor is (k,)
 #       check it here? or in world?
+
+
+# TODO: have all genomes as str array
+#       move between rust and python using str arrays
 
 
 class CellsKwargs(TypedDict, total=False):
@@ -74,20 +79,21 @@ class Cells(TensorClass):
 
         molecules = chemistry.molecules
         n_molecules = len(molecules)
-        self._int_mol_idxs = list(range(n_molecules))
-        self._ext_mol_idxs = list(range(n_molecules, n_molecules * 2))
-        self._mol_degrad = [self._get_degrade(m.half_life) for m in molecules]
-        self._permeation = [
-            self._get_permeate(mol_perm_rate=m.permeability) for m in molecules
-        ]
+        # TODO: rm? (and functions that generate them)
+        # self._int_mol_idxs = list(range(n_molecules))
+        # self._ext_mol_idxs = list(range(n_molecules, n_molecules * 2))
+        # self._mol_degrad = [self._get_degrade(m.half_life) for m in molecules]
+        # self._permeation = [
+        #     self._get_permeate(mol_perm_rate=m.permeability) for m in molecules
+        # ]
 
         self.c = 0  # dim 0
         self.p = 0  # dim 1
         self.m = 2 * n_molecules  # dim2
 
         # cellular parameters
-        self.genomes: Array[str] = Array([])  # cell genomes
-        self.labels: Array[str] = Array([])  # cell labels
+        self.genomes = self.strempty(0)  # cell genomes
+        self.labels = self.strempty(0)  # cell labels
         self.alive = self.idxzeros(0).bool()  # which ones are alive
         self.ages = self.fzeros(0)  # time since last division
         self.generations = self.idxzeros(0)  # number of divisions
@@ -152,12 +158,12 @@ class Cells(TensorClass):
         # p have could been adjusted upwards or p_req was already < p
         if self.p > p_req:
             p_diff = self.p - p_req
-            v_max = self._expand_p(v_max, by_n=p_diff)
-            k_m = self._expand_p(k_m, by_n=p_diff)
-            K_r = self._expand_p(K_r, by_n=p_diff)
-            N_f = self._expand_p(N_f, by_n=p_diff)
-            N_b = self._expand_p(N_b, by_n=p_diff)
-            N_h = self._expand_p(N_h, by_n=p_diff)
+            v_max = self._exp_tens_p(v_max, by_n=p_diff)
+            k_m = self._exp_tens_p(k_m, by_n=p_diff)
+            K_r = self._exp_tens_p(K_r, by_n=p_diff)
+            N_f = self._exp_tens_p(N_f, by_n=p_diff)
+            N_b = self._exp_tens_p(N_b, by_n=p_diff)
+            N_h = self._exp_tens_p(N_h, by_n=p_diff)
 
         # p_req could have been > p_max
         if self.p < p_req:
@@ -252,8 +258,7 @@ class Cells(TensorClass):
         torch.save(self.molecules, statedir / "molecules.pt")
 
         lines: list[str] = [
-            f">{i} {l}\n{g}"
-            for i, (g, l) in enumerate(zip(self.genomes.items, self.labels.items))
+            f">{i} {l}\n{g}" for i, (g, l) in enumerate(zip(self.genomes, self.labels))
         ]
 
         with open(statedir / "genomes.fasta", "w", encoding="utf-8") as fh:
@@ -281,20 +286,25 @@ class Cells(TensorClass):
         )
         self.molecules = torch.load(statedir / "molecules.pt", map_location=self.device)
 
+        # TODO: hide fasta reading/writing
+
         with open(statedir / "genomes.fasta", encoding="utf-8") as fh:
             text: str = fh.read()
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
-        self.labels = Array([])
-        self.genomes = Array([])
+        labels = []
+        genomes = []
         for entry in entries:
             parts = entry.split("\n")
             descr = parts[0]
             seq = "" if len(parts) < 2 else parts[1]
             names = descr.split()
             label = names[1].strip() if len(names) > 1 else ""
-            self.genomes.items.append(seq)
-            self.labels.items.append(label)
+            genomes.append(seq)
+            labels.append(label)
+
+        self.labels = self.strarray(labels)
+        self.genomes = self.strarray(genomes)
 
         # setup kinetics parameters again
         self.v_max = self.fzeros(self.c, self.p)
@@ -307,7 +317,7 @@ class Cells(TensorClass):
         self.N_e = self.fzeros(self.c, self.p, self.m)
 
         # derive kinetics parameters from genomes
-        idxs = torch.arange(len(self.genomes), device=self.device, dtype=torch.int32)
+        idxs = self.idxarange(self.genomes.shape[0])
         self.update_genomes(genomes=self.genomes[idxs], idxs=idxs)
 
     def _setup_rs(self) -> None:
@@ -315,25 +325,25 @@ class Cells(TensorClass):
 
     def _increase_c(self, by_n: int) -> None:
         # cell paramaters
-        self.genomes.items.extend([""] * by_n)
-        self.labels.items.extend([""] * by_n)
-        self.alive = self._expand_c(t=self.alive, by_n=by_n)
-        self.ages = self._expand_c(t=self.ages, by_n=by_n)
-        self.generations = self._expand_c(t=self.generations, by_n=by_n)
-        self.molecules = self._expand_c(t=self.molecules, by_n=by_n)
+        self.genomes = self._exp_arr_c(a=self.genomes, by_n=by_n)
+        self.labels = self._exp_arr_c(a=self.labels, by_n=by_n)
+        self.alive = self._exp_tens_c(t=self.alive, by_n=by_n)
+        self.ages = self._exp_tens_c(t=self.ages, by_n=by_n)
+        self.generations = self._exp_tens_c(t=self.generations, by_n=by_n)
+        self.molecules = self._exp_tens_c(t=self.molecules, by_n=by_n)
 
         # kinetics parameters
-        self.v_max = self._expand_c(t=self.v_max, by_n=by_n)
-        self.k_f = self._expand_c(t=self.k_f, by_n=by_n)
-        self.k_b = self._expand_c(t=self.k_b, by_n=by_n)
-        self.K_r = self._expand_c(t=self.K_r, by_n=by_n)
-        self.N_f = self._expand_c(t=self.N_f, by_n=by_n)
-        self.N_b = self._expand_c(t=self.N_b, by_n=by_n)
-        self.N_h = self._expand_c(t=self.N_h, by_n=by_n)
-        self.N_e = self._expand_c(t=self.N_e, by_n=by_n)
+        self.v_max = self._exp_tens_c(t=self.v_max, by_n=by_n)
+        self.k_f = self._exp_tens_c(t=self.k_f, by_n=by_n)
+        self.k_b = self._exp_tens_c(t=self.k_b, by_n=by_n)
+        self.K_r = self._exp_tens_c(t=self.K_r, by_n=by_n)
+        self.N_f = self._exp_tens_c(t=self.N_f, by_n=by_n)
+        self.N_b = self._exp_tens_c(t=self.N_b, by_n=by_n)
+        self.N_h = self._exp_tens_c(t=self.N_h, by_n=by_n)
+        self.N_e = self._exp_tens_c(t=self.N_e, by_n=by_n)
 
         # set new c
-        self.c = len(self.genomes)
+        self.c = self.genomes.shape[0]
 
     def _decrease_c(self, by_n: int) -> None:
         avail = self.get_free_idxs()
@@ -346,8 +356,8 @@ class Cells(TensorClass):
         keep[avail] = False
 
         # cell parameters
-        self.genomes = Array(self.genomes[keep])
-        self.labels = Array(self.labels[keep])
+        self.genomes = self.genomes[keep]
+        self.labels = self.labels[keep]
         self.alive = self.alive[keep]
         self.ages = self.ages[keep]
         self.generations = self.generations[keep]
@@ -364,18 +374,18 @@ class Cells(TensorClass):
         self.N_e = self.N_e[keep]
 
         # set new c
-        self.c = len(self.genomes)
+        self.c = self.genomes.shape[0]
 
     def _increase_p(self, by_n: int) -> None:
         # kinetics parameters
-        self.v_max = self._expand_p(t=self.v_max, by_n=by_n)
-        self.k_f = self._expand_p(t=self.k_f, by_n=by_n)
-        self.k_b = self._expand_p(t=self.k_b, by_n=by_n)
-        self.K_r = self._expand_p(t=self.K_r, by_n=by_n)
-        self.N_f = self._expand_p(t=self.N_f, by_n=by_n)
-        self.N_b = self._expand_p(t=self.N_b, by_n=by_n)
-        self.N_h = self._expand_p(t=self.N_h, by_n=by_n)
-        self.N_e = self._expand_p(t=self.N_e, by_n=by_n)
+        self.v_max = self._exp_tens_p(t=self.v_max, by_n=by_n)
+        self.k_f = self._exp_tens_p(t=self.k_f, by_n=by_n)
+        self.k_b = self._exp_tens_p(t=self.k_b, by_n=by_n)
+        self.K_r = self._exp_tens_p(t=self.K_r, by_n=by_n)
+        self.N_f = self._exp_tens_p(t=self.N_f, by_n=by_n)
+        self.N_b = self._exp_tens_p(t=self.N_b, by_n=by_n)
+        self.N_h = self._exp_tens_p(t=self.N_h, by_n=by_n)
+        self.N_e = self._exp_tens_p(t=self.N_e, by_n=by_n)
 
         # set new p
         self.p = self.v_max.shape[1]
@@ -409,13 +419,19 @@ class Cells(TensorClass):
     def _get_degrade(self, half_life: float) -> float:
         return math.exp(-math.log(2) / half_life)
 
-    def _expand_c(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
+    def _exp_tens_c(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
         size = t.size()
         shape = (by_n, *size[1:])
         zeros = torch.full(shape, value, device=t.device, dtype=t.dtype)
         return torch.cat([t, zeros], dim=0)
 
-    def _expand_p(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
+    def _exp_arr_c(self, a: np.ndarray, by_n: int, value: str = "") -> np.ndarray:
+        shape = a.shape
+        shape = (by_n, *shape[1:])
+        zeros = np.full(shape, value, dtype=a.dtype)
+        return np.concatenate([a, zeros], axis=0)
+
+    def _exp_tens_p(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
         size = t.size()
         shape = (size[0], by_n, *size[2:])
         zeros = torch.full(shape, value, device=t.device, dtype=t.dtype)

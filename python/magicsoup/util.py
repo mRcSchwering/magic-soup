@@ -1,10 +1,11 @@
 import math
 import random
 import string
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from itertools import product
 from typing import Any, TypedDict
 
+import numpy as np
 import torch
 
 from magicsoup.constants import (
@@ -13,6 +14,7 @@ from magicsoup.constants import (
     DEFAULT_DEVICE,
     DEFAULT_FTYPE,
     DEFAULT_ITYPE,
+    DEFAULT_STYPE,
 )
 
 
@@ -129,12 +131,13 @@ class TensorClass:
     Setup pytorch tensors
 
     Arguments:
-        device: Device to use for tensors
+        device: Device to use for torch tensors
             (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-        ftype: Dtype of float tensors used.
-        ftype: Dtype of integer tensors used.
+        ftype: Dtype of float torch tensors used.
+        ftype: Dtype of integer torch tensors used.
+        ftype: Dtype for string numpy arrays
 
-    Tensor device and dtypes have to be aligned between the different classes
+    Device and dtypes have to be aligned between the different classes
     used in the simulation.
     """
 
@@ -143,10 +146,12 @@ class TensorClass:
         device: torch.device | str = DEFAULT_DEVICE,
         itype: torch.dtype = DEFAULT_ITYPE,
         ftype: torch.dtype = DEFAULT_FTYPE,
+        stype: np.dtype | str = DEFAULT_STYPE,
     ) -> None:
         self.device = device
         self.itype = itype
         self.ftype = ftype
+        self.stype = stype
 
     def idxtensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=torch.int32)
@@ -178,101 +183,8 @@ class TensorClass:
     def idxarange(self, n: int) -> torch.Tensor:
         return torch.arange(n, device=self.device, dtype=torch.int32)
 
-    def __repr__(self) -> str:
-        kwargs = {
-            "device": self.device,
-            "itype": self.itype,
-            "ftype": self.ftype,
-        }
-        args = [f"{k}:{d!r}" for k, d in kwargs.items()]
-        return f"{type(self).__name__}({','.join(args)})"
+    def strarray(self, d: Iterable[str]) -> np.ndarray:
+        return np.array(d, dtype=self.stype)
 
-
-IndexLike = slice | list[int] | tuple[int] | torch.Tensor
-
-
-class Array[T]:
-    """Convenience class for indexing a list like a tensor"""
-
-    def __init__(self, items: list[T]) -> None:
-        self.items = items
-
-    def __len__(self) -> int:
-        return len(self.items)
-
-    def __getitem__(self, idx: IndexLike) -> list[T]:
-        items = self.items
-
-        if isinstance(idx, torch.Tensor):
-
-            # 1) Boolean tensor mask
-            if idx.dtype == torch.bool:
-                if idx.ndim != 1:
-                    raise ValueError("Boolean mask must be 1D")
-                if idx.numel() != len(items):
-                    raise ValueError("Boolean mask length must match items length")
-                idxs = idx.nonzero(as_tuple=True)[0].tolist()
-                return [items[i] for i in idxs]
-
-            # 2) Integer tensor indices
-            if idx.dtype in (torch.int32, torch.int64):
-                if idx.ndim != 1:
-                    raise ValueError("Integer index tensor must be 1D")
-                idxs = idx.tolist()
-                return [items[i] for i in idxs]
-
-            raise TypeError(f"Unsupported tensor dtype for indexing: {idx.dtype}")
-
-        # 3) Python list / tuple of ints
-        if isinstance(idx, (list, tuple)):
-            return [items[i] for i in idx]
-
-        # 4) Plain slice: l[idx] (standard behavior)
-        if isinstance(idx, slice):
-            return items[idx]
-
-        raise ValueError(f"Unsupported index type: {type(idx)}")
-
-    def __setitem__(self, idx: IndexLike, value: Sequence[T]) -> None:
-        items = self.items
-
-        if isinstance(idx, torch.Tensor):
-
-            # 1) Boolean tensor mask
-            if idx.dtype == torch.bool:
-                if idx.ndim != 1 or idx.numel() != len(items):
-                    raise ValueError("Boolean mask must be 1D and match value length")
-                idxs = idx.nonzero(as_tuple=True)[0].tolist()
-                if len(idxs) != len(value):
-                    raise ValueError("Number of True elements must match value length")
-                for i, val in zip(idxs, value):
-                    items[i] = val
-                return
-
-            # 2) Integer tensor indices
-            if idx.dtype in (torch.int32, torch.int64):
-                if idx.ndim != 1:
-                    raise ValueError("Integer index tensor must be 1D")
-                idxs = idx.tolist()
-                if len(idxs) != len(value):
-                    raise ValueError("Number of indices must match value length")
-                for i, val in zip(idxs, value):
-                    items[i] = val
-                return
-
-            raise ValueError(f"Unsupported index type: {type(idx)}")
-
-        # 3) Python list / tuple of ints
-        if isinstance(idx, (list, tuple)):
-            if len(idx) != len(value):
-                raise ValueError("Number of indices must match value length")
-            for i, val in zip(idx, value):
-                items[i] = val
-            return
-
-        # 4) Plain slice: l[idx] (standard behavior)
-        if isinstance(idx, (int, slice)):
-            items[idx] = value
-            return
-
-        raise ValueError(f"Unsupported index type: {type(idx)}")
+    def strempty(self, n: int) -> np.ndarray:
+        return np.zeros((n,), dtype=self.stype)

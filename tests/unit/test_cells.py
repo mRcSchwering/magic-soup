@@ -1,6 +1,7 @@
 import random
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 from magicsoup.cells import Cells
@@ -21,8 +22,8 @@ def cells() -> Cells:
 
 def _assert_empty_values(cells: Cells) -> None:
     # test empty values of cell parameters
-    assert all(d == "" for d in cells.genomes.items)
-    assert all(d == "" for d in cells.labels.items)
+    assert np.all(cells.genomes == "")
+    assert np.all(cells.labels == "")
     assert (cells.alive == False).all()
     assert (cells.ages == 0.0).all()
     assert (cells.generations == 0).all()
@@ -64,8 +65,8 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
     assert cells.c == c_exp
 
     # check exact shape of cell parameters
-    assert len(cells.genomes) == cells.c
-    assert len(cells.labels) == cells.c
+    assert cells.genomes.shape == (cells.c,)
+    assert cells.labels.shape == (cells.c,)
     assert cells.alive.shape == (cells.c,)
     assert cells.ages.shape == (cells.c,)
     assert cells.generations.shape == (cells.c,)
@@ -131,8 +132,8 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
     assert cells.p == p_exp
 
     # check exact shape of cell parameters
-    assert len(cells.genomes) == cells.c
-    assert len(cells.labels) == cells.c
+    assert cells.genomes.shape == (cells.c,)
+    assert cells.labels.shape == (cells.c,)
     assert cells.alive.shape == (cells.c,)
     assert cells.ages.shape == (cells.c,)
     assert cells.generations.shape == (cells.c,)
@@ -164,7 +165,7 @@ def test_update_genomes_randomly(cells: Cells) -> None:
         cells.update_genomes(genomes=genomes, idxs=idxs)
 
         # check genomes set
-        assert cells.genomes[idxs] == genomes
+        assert np.all(cells.genomes[idxs] == genomes)
 
         # check kinetics parameters types
         ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.K_r, cells.N_e]
@@ -200,7 +201,7 @@ def test_copy_genomes_randomly(cells: Cells) -> None:
         cells.copy_genomes(from_idxs=idxs0, to_idxs=idxs1)
 
         # check genomes set
-        assert cells.genomes[idxs0] == cells.genomes[idxs1]
+        assert np.all(cells.genomes[idxs0] == cells.genomes[idxs1])
 
         # check kinetics parameters types
         ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.K_r, cells.N_e]
@@ -229,8 +230,8 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     cells.alive[idxs] = True
 
     # keep original state for comparison
-    genomes = [d for d in cells.genomes.items]
-    labels = [d for d in cells.labels.items]
+    genomes = cells.genomes.copy()
+    labels = cells.labels.copy()
     alive = cells.alive.clone()
     ages = cells.ages.clone()
     generations = cells.generations.clone()
@@ -257,8 +258,8 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     cells.load_state(statedir=statedir)
 
     # check that the loaded state matches the original state
-    assert cells.genomes.items == genomes
-    assert cells.labels.items == labels
+    assert np.all(cells.genomes == genomes)
+    assert np.all(cells.labels == labels)
     assert (cells.alive == alive).all()
     assert (cells.ages == ages).all()
     assert (cells.generations == generations).all()

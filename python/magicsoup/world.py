@@ -148,6 +148,7 @@ class World(TensorClass):
     def get_cell(
         self,
         by_idx: int | None = None,
+        by_label: str | None = None,  # TODO
         by_position: tuple[int, int] | None = None,
     ) -> "Cell":
         idx = -1
@@ -162,14 +163,25 @@ class World(TensorClass):
                 raise ValueError(f"Cell at {by_position} not found")
             idx = idxs[0]
 
+        genome = self.cells.genomes[idx]
+        (cdss,) = self.cells.genomics.translate_genomes(genomes=[genome])
+        proteome = []
+        if len(cdss) > 0:
+            proteome = self.cells.proteomics.get_proteome(proteome=cdss)
+
+        pos = cell_positions[idx]
+
+        # TODO: this in a from_world?
+
         return Cell(
-            world=self,
-            idx=idx,
-            genome=self.cells.genomes.items[idx],
-            position=tuple(cell_positions[idx].tolist()),  # type: ignore
-            label=self.cells.labels.items[idx],
-            age=int(self.cells.ages[idx].item()),
-            generation=int(self.cells.generations[idx].item()),
+            genome=genome,
+            proteome=proteome,
+            position=(int(pos[0]), int(pos[1])),
+            label=self.cells.labels[idx],
+            age=float(self.cells.ages[idx]),
+            generation=int(self.cells.generations[idx]),
+            ext_molecules=self.culture.molecule_map[:, pos[0], pos[1]],
+            int_molecules=self.cells.molecules[idx, :],
         )
 
     def spawn_cells(self, genomes: list[str]) -> torch.Tensor:
@@ -370,8 +382,8 @@ class World(TensorClass):
         self.culture.molecule_map[:, xs, ys] = (n_voxel + n_cell) / self.v_voxel
 
         # unset parameters
-        self.cells.genomes[cell_idxs] = [""] * len(cell_idxs)
-        self.cells.labels[cell_idxs] = [""] * len(cell_idxs)
+        self.cells.genomes[cell_idxs] = ""
+        self.cells.labels[cell_idxs] = ""
         self.cells.alive[cell_idxs] = False
         self.cells.ages[cell_idxs] = 0.0
         self.cells.generations[cell_idxs] = 0

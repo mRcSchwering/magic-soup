@@ -1,11 +1,8 @@
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import torch
 
 from magicsoup.chemistry import Molecule, Reaction
-
-if TYPE_CHECKING:
-    from magicsoup.world import World
 
 
 class DomainType(Protocol):
@@ -355,7 +352,6 @@ class Cell:
         world: Reference to the origin [World][magicsoup.world.World] object.
         genome: Genome sequence string of this cell.
         position: Position on the cell map as tuple `(x, y)`.
-        idx: Current cell index in [World][magicsoup.world.World].
         label: Label of origin which can be used to track cells.
         n_steps_alive: Number of time steps this cell has lived since last division.
         n_divisions: Number of times this cell's ancestors already divided.
@@ -390,60 +386,34 @@ class Cell:
 
     def __init__(
         self,
-        world: "World",
         genome: str,
-        position: tuple[int, int] = (-1, -1),
-        idx: int = -1,
-        label: str = "C",
-        age: float = 0.0,
-        generation: int = 0,
-        proteome: list[Protein] | None = None,
-        int_molecules: torch.Tensor | None = None,
-        ext_molecules: torch.Tensor | None = None,
+        position: tuple[int, int],
+        label: str,
+        age: float,
+        generation: int,
+        proteome: list[Protein],
+        int_molecules: torch.Tensor,
+        ext_molecules: torch.Tensor,
     ):
-        self.world = world
         self.genome = genome
         self.label = label
         self.position = position
-        self.idx = idx
         self.age = age
         self.generation = generation
-
-        self._proteome = proteome
-        self._int_molecules = int_molecules
-        self._ext_molecules = ext_molecules
-
-    @property
-    def int_molecules(self) -> torch.Tensor:
-        if self._int_molecules is None:
-            self._int_molecules = self.world.cells.molecules[self.idx, :]
-        return self._int_molecules
-
-    @property
-    def ext_molecules(self) -> torch.Tensor:
-        if self._ext_molecules is None:
-            pos = self.position
-            self._ext_molecules = self.world.culture.molecule_map[:, pos[0], pos[1]]
-        return self._ext_molecules
-
-    @property
-    def proteome(self) -> list[Protein]:
-        if self._proteome is None:
-            (cdss,) = self.world.cells.genomics.translate_genomes(genomes=[self.genome])
-            if len(cdss) > 0:
-                self._proteome = self.world.cells.proteomics.get_proteome(proteome=cdss)
-            else:
-                self._proteome = []
-        return self._proteome
+        self.proteome = proteome
+        self.int_molecules = int_molecules
+        self.ext_molecules = ext_molecules
 
     def __repr__(self) -> str:
         kwargs = {
             "genome": self.genome,
             "position": self.position,
-            "idx": self.idx,
             "label": self.label,
             "age": self.age,
             "generation": self.generation,
         }
         args = [f"{k}:{d!r}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
+
+    def __str__(self) -> str:
+        return f"{type(self).__name__} {self.label}"

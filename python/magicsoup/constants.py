@@ -13,3 +13,4 @@ ALL_CODONS = {"".join(d) for d in product(ALL_NTS, ALL_NTS, ALL_NTS)}
 DEFAULT_DEVICE = os.getenv("DEVICE", "cpu")
 DEFAULT_FTYPE = torch.float32
 DEFAULT_ITYPE = torch.int8
+DEFAULT_STYPE = "T"

@@ -4,12 +4,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 from magicsoup.cells import Cells
 from magicsoup.culture import Culture
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
-from magicsoup.util import Array, random_genome
+from magicsoup.util import random_genome
 from magicsoup.world import World
 
 _ATOL = 1e-4
@@ -39,10 +40,10 @@ def _get_mol_mass(world: World) -> torch.Tensor:
     )
 
 
-def _get_cell_arrays(cells: Cells) -> dict[str, Array]:
+def _get_cell_arrays(cells: Cells) -> dict[str, np.ndarray]:
     return {
-        "genomes": Array([d for d in cells.genomes.items]),
-        "labels": Array([d for d in cells.labels.items]),
+        "genomes": cells.genomes.copy(),
+        "labels": cells.labels.copy(),
     }
 
 
@@ -82,7 +83,7 @@ class _State:
     pos: torch.Tensor
     mass: torch.Tensor
     cell_tensors: dict[str, torch.Tensor]
-    cell_arrays: dict[str, Array]
+    cell_arrays: dict[str, np.ndarray]
     proteome_tensors: dict[str, torch.Tensor]
     culture_tensors: dict[str, torch.Tensor]
 
@@ -156,7 +157,7 @@ def test_spawn_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> No
     for key in t0.cell_arrays:
         arr0 = t0.cell_arrays[key][t0.idx]
         arr1 = t1.cell_arrays[key][t0.idx]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
     if n_spawn == 0:
         return
@@ -181,6 +182,74 @@ def test_spawn_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> No
 
 
 # TODO: test add cells
+
+
+@pytest.mark.parametrize(
+    "n_spawn, exp_n_spawn",
+    [],
+)
+def atest_add_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> None:
+    _spawn_cells(world, n=n_spawn)
+
+    # spawn cells
+    with caplog.at_level(logging.WARNING), _capture_state_change(world) as state:
+        world.spawn_cells(genomes=[random_genome() for _ in range(n_spawn)])
+
+    t0 = state["t0"]
+    t1 = state["t1"]
+
+    # check warning
+    if exp_n_spawn != n_spawn:
+        assert len(caplog.records) > 0
+    else:
+        assert len(caplog.records) == 0
+
+    # new cells were created
+    assert t0.idx.numel() + exp_n_spawn == t1.idx.numel()
+    new_idx = t1.idx[~torch.isin(t1.idx, t0.idx)]
+
+    # mass is conserved
+    torch.testing.assert_close(t0.mass, t1.mass, atol=_ATOL, rtol=_RTOL)
+
+    # old cells didn't change
+    assert torch.equal(t0.pos[t0.idx], t1.pos[t0.idx])
+    p = min(t0.p, t1.p) - 1
+
+    for key in t0.cell_tensors:
+        ten0 = t0.cell_tensors[key][t0.idx]
+        ten1 = t1.cell_tensors[key][t0.idx]
+        assert torch.equal(ten0, ten1), key
+
+    for key in t0.proteome_tensors:
+        ten0 = t0.proteome_tensors[key][t0.idx, p]
+        ten1 = t1.proteome_tensors[key][t0.idx, p]
+        assert torch.equal(ten0, ten1), key
+
+    for key in t0.cell_arrays:
+        arr0 = t0.cell_arrays[key][t0.idx]
+        arr1 = t1.cell_arrays[key][t0.idx]
+        assert np.all(arr0 == arr1), key
+
+    if n_spawn == 0:
+        return
+
+    # new cells are sound
+    assert t1.cell_tensors["alive"][new_idx].all()
+    assert (t1.cell_tensors["ages"][new_idx] == 0.0).all()
+    assert (t1.cell_tensors["generations"][new_idx] == 0).all()
+    assert (t1.proteome_tensors["v_max"][new_idx] != 0).any()
+    assert all(len(d) > 0 for d in t1.cell_arrays["genomes"][new_idx])
+    assert all(len(d) > 0 for d in t1.cell_arrays["labels"][new_idx])
+
+    # molecules were picked up
+    molmap = world.culture.molecule_map
+    cellmap = world.culture.cell_map
+    cellmols = world.cells.molecules
+    xs = t1.pos[new_idx, 0]
+    ys = t1.pos[new_idx, 1]
+    assert ((molmap[:, xs, ys] - 9.99).abs()).max() < _ATOL
+    assert (cellmols[new_idx] - 9.99).abs().max() < _ATOL
+    assert set(cellmap[xs, ys].tolist()) == set(new_idx.tolist())
 
 
 @pytest.mark.parametrize(
@@ -224,7 +293,7 @@ def test_resuspend_cells(world: World, n_spawn: int, n_resp: int) -> None:
     for key in t0.cell_arrays:
         arr0 = t0.cell_arrays[key][t0.idx]
         arr1 = t1.cell_arrays[key][t0.idx]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
     # non-resuspended cells didn't change position
     assert torch.equal(t0.pos[non_susp_idxs], t1.pos[non_susp_idxs])
@@ -279,7 +348,7 @@ def test_migrate_cells(world: World, n_spawn: int, n_migrate: int, n_succ: int) 
     for key in t0.cell_arrays:
         arr0 = t0.cell_arrays[key][:]
         arr1 = t1.cell_arrays[key][:]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
     # non-migrated and non-successful cells didn't change position
     non_succ_idxs = migrate_idxs[~torch.isin(migrate_idxs, scc_idx)]
@@ -333,7 +402,7 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
     for key in t0.cell_arrays:
         arr0 = t0.cell_arrays[key][t0.idx]
         arr1 = t1.cell_arrays[key][t0.idx]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
     # original cells didn't change position
     torch.equal(t0.pos[t0.idx], t1.pos[t0.idx])
@@ -362,7 +431,7 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
     for key in t1.cell_arrays:
         arr0 = t1.cell_arrays[key][parent_idxs]
         arr1 = t1.cell_arrays[key][child_idxs]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
     for key in t1.proteome_tensors:
         ten0 = t1.proteome_tensors[key][parent_idxs, :p]
@@ -401,7 +470,7 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
 
     arr0 = t0.cell_arrays["labels"][:]
     arr1 = t1.cell_arrays["labels"][:]
-    assert arr0 == arr1
+    assert np.all(arr0 == arr1)
 
     for key in t0.cell_tensors:
         ten0 = t0.cell_tensors[key]
@@ -416,7 +485,7 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
     # non-updated cells have same genomes and proteome
     arr0 = t0.cell_arrays["genomes"][no_update_idxs]
     arr1 = t1.cell_arrays["genomes"][no_update_idxs]
-    assert arr0 == arr1
+    assert np.all(arr0 == arr1)
 
     for key in t0.proteome_tensors:
         ten0 = t0.proteome_tensors[key][no_update_idxs, :p]
@@ -429,7 +498,7 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
     # updated cells have different genomes and proteomes
     arr0 = t0.cell_arrays["genomes"][update_idxs]
     arr1 = t1.cell_arrays["genomes"][update_idxs]
-    assert arr0 != arr1
+    assert not np.all(arr0 == arr1)
 
     for key in t0.proteome_tensors:
         ten0 = t0.proteome_tensors[key][update_idxs, :p]
@@ -481,7 +550,7 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
     for key in t0.cell_arrays:
         arr0 = t0.cell_arrays[key][no_kill_idxs]
         arr1 = t1.cell_arrays[key][no_kill_idxs]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
     if n_kill == 0:
         return
@@ -497,7 +566,7 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
         assert (tens[kill_idxs] == 0).all(), key
 
     for key, arr in t1.cell_arrays.items():
-        assert arr[kill_idxs] == [""] * len(kill_idxs), key
+        assert np.all(arr[kill_idxs] == ""), key
 
     for key in t0.culture_tensors:
         ten0 = t0.culture_tensors[key]
@@ -541,7 +610,7 @@ def test_advance_time(world: World, n_spawn: int) -> None:
     for key in t0.cell_arrays:
         arr0 = t0.cell_arrays[key][:]
         arr1 = t1.cell_arrays[key][:]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
     if n_spawn == 0:
         return
@@ -605,7 +674,7 @@ def test_saving_loading_state(world: World, tmp_path: Path) -> None:
     for key in t0.cell_arrays:
         arr0 = t0.cell_arrays[key][:]
         arr1 = t1.cell_arrays[key][:]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
 
 def test_saving_loading_obj(tmp_path: Path) -> None:
@@ -655,7 +724,7 @@ def test_saving_loading_obj(tmp_path: Path) -> None:
     for key in t0.cell_arrays:
         arr0 = t0.cell_arrays[key][:]
         arr1 = t1.cell_arrays[key][:]
-        assert arr0 == arr1, key
+        assert np.all(arr0 == arr1), key
 
     # check class attrs
     assert world.kinetics.eps == 1e-3
