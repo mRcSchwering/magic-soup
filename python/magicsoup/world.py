@@ -4,6 +4,7 @@ import random
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from magicsoup.biology import Cell
@@ -148,40 +149,40 @@ class World(TensorClass):
     def get_cell(
         self,
         by_idx: int | None = None,
-        by_label: str | None = None,  # TODO
         by_position: tuple[int, int] | None = None,
     ) -> "Cell":
         idx = -1
-        cell_positions = self.culture.get_cell_positions()
+        positions = self.culture.get_cell_positions()
+
         if by_idx is not None:
+            idxs = np.where(self.cells.get_cell_idxs() == by_idx)[0]
+            if idxs.shape[0] == 0:
+                raise ValueError(f"Cell with idx {by_idx} not found")
             idx = by_idx
-        if by_position is not None:
-            pos = self.idxtensor(by_position)
-            mask = (cell_positions == pos).all(dim=1)
-            idxs = torch.argwhere(mask).flatten().tolist()
-            if len(idxs) == 0:
+
+        if by_position is not None and by_position != (-1, -1):
+            cellpos = self.idxtensor([by_position])
+            positions = self.culture.get_cell_positions()
+            mask = (positions == cellpos).all(dim=1)
+            if not mask.any():
                 raise ValueError(f"Cell at {by_position} not found")
-            idx = idxs[0]
+            idx = int(torch.argwhere(mask)[0].item())
 
-        genome = self.cells.genomes[idx]
-        (cdss,) = self.cells.genomics.translate_genomes(genomes=[genome])
-        proteome = []
-        if len(cdss) > 0:
-            proteome = self.cells.proteomics.get_proteome(proteome=cdss)
-
-        pos = cell_positions[idx]
-
-        # TODO: this in a from_world?
+        genome = str(self.cells.genomes[idx])
+        proteome_specs = self.cells.genomics.translate_genomes(genomes=[genome])
+        proteome = (
+            self.cells.proteomics.get_proteome(proteome=proteome_specs[0])
+            if len(proteome_specs[0]) > 0
+            else []
+        )
 
         return Cell(
             genome=genome,
             proteome=proteome,
-            position=(int(pos[0]), int(pos[1])),
-            label=self.cells.labels[idx],
+            label=str(self.cells.labels[idx]),
             age=float(self.cells.ages[idx]),
             generation=int(self.cells.generations[idx]),
-            ext_molecules=self.culture.molecule_map[:, pos[0], pos[1]],
-            int_molecules=self.cells.molecules[idx, :],
+            molecules=self.cells.molecules[idx, :],
         )
 
     def spawn_cells(self, genomes: list[str]) -> torch.Tensor:
@@ -266,12 +267,11 @@ class World(TensorClass):
         self.cells.update_genomes(genomes=[d.genome for d in cells], idxs=new_idxs)
 
         # update other parameters
-        int_mols = [self.ftensor(d.int_molecules) for d in cells]
         self.cells.alive[new_idxs] = True
         self.cells.labels[new_idxs] = [d.label for d in cells]
-        self.cells.molecules[new_idxs, :] = torch.stack(int_mols)
+        self.cells.molecules[new_idxs, :] = torch.stack([d.molecules for d in cells])
         self.cells.ages[new_idxs] = self.ftensor([d.age for d in cells])
-        self.cells.generations[new_idxs] = self.itensor([d.generation for d in cells])
+        self.cells.generations[new_idxs] = self.idxtensor([d.generation for d in cells])
 
         return new_idxs
 

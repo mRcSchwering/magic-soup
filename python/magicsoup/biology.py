@@ -349,20 +349,14 @@ class Cell:
     Object describing a cell and its environment.
 
     Parameters:
-        world: Reference to the origin [World][magicsoup.world.World] object.
         genome: Genome sequence string of this cell.
-        position: Position on the cell map as tuple `(x, y)`.
         label: Label of origin which can be used to track cells.
         n_steps_alive: Number of time steps this cell has lived since last division.
         n_divisions: Number of times this cell's ancestors already divided.
         proteome: List of [Protein][magicsoup.containers.Protein] objects.
-        int_molecules: Intracellular molecule concentrations. A 1D tensor that describes
+        molecules: Intracellular molecule concentrations. A 1D tensor that describes
             each [Molecule][magicsoup.containers.Molecule]
             in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
-        ext_molecules: Extracellular molecule concentrations. A 1D tensor that describes
-            each [Molecule][magicsoup.containers.Molecule]
-            in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
-            These are the molecules in `world.molecule_map` of the pixel the cell is currently living on.
 
     The simulation works with tensor representations of cell proteomes and molecule concentrations.
     This class is a helper which makes interpreting a cell easier.
@@ -387,27 +381,24 @@ class Cell:
     def __init__(
         self,
         genome: str,
-        position: tuple[int, int],
         label: str,
         age: float,
         generation: int,
         proteome: list[Protein],
-        int_molecules: torch.Tensor,
-        ext_molecules: torch.Tensor,
+        molecules: torch.Tensor,
     ):
         self.genome = genome
         self.label = label
-        self.position = position
         self.age = age
         self.generation = generation
         self.proteome = proteome
-        self.int_molecules = int_molecules
-        self.ext_molecules = ext_molecules
+        self.molecules = molecules
+        # TODO: label is misleading because multiple can have it
+        #       more like a strain or cell marker
 
     def __repr__(self) -> str:
         kwargs = {
             "genome": self.genome,
-            "position": self.position,
             "label": self.label,
             "age": self.age,
             "generation": self.generation,

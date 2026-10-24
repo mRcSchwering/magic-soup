@@ -181,35 +181,60 @@ def test_spawn_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> No
     assert set(cellmap[xs, ys].tolist()) == set(new_idx.tolist())
 
 
-# TODO: test add cells
+def test_get_cell(world: World) -> None:
+    _spawn_cells(world, n=50)
+
+    pos = world.culture.get_cell_positions()
+
+    c0 = world.get_cell(by_idx=25)
+    assert c0.label == world.cells.labels[25]
+    assert c0.genome == world.cells.genomes[25]
+    assert torch.equal(c0.molecules, world.cells.molecules[25])
+    assert len(c0.proteome) > 0
+
+    c1 = world.get_cell(by_position=(int(pos[20, 0]), int(pos[20, 1])))
+    assert c1.label == world.cells.labels[20]
+    assert c1.genome == world.cells.genomes[20]
+    assert torch.equal(c1.molecules, world.cells.molecules[20])
+    assert len(c1.proteome) > 0
 
 
 @pytest.mark.parametrize(
-    "n_spawn, exp_n_spawn",
-    [],
+    "n_add, exp_n_add",
+    [
+        (0, 0),  # add none
+        (50, 50),  # to 100% confl
+        (60, 50),  # 10 won't have space
+    ],
 )
-def atest_add_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> None:
-    _spawn_cells(world, n=n_spawn)
+def test_add_cells(caplog, world: World, n_add: int, exp_n_add: int) -> None:
+    _spawn_cells(world, n=50)
+
+    # get clones of the first cell
+    cell = world.get_cell(by_idx=0)
 
     # spawn cells
     with caplog.at_level(logging.WARNING), _capture_state_change(world) as state:
-        world.spawn_cells(genomes=[random_genome() for _ in range(n_spawn)])
+        world.add_cells(cells=[cell] * n_add)
 
     t0 = state["t0"]
     t1 = state["t1"]
 
-    # check warning
-    if exp_n_spawn != n_spawn:
+    # check warning and mass
+    if exp_n_add != n_add:
         assert len(caplog.records) > 0
     else:
         assert len(caplog.records) == 0
 
     # new cells were created
-    assert t0.idx.numel() + exp_n_spawn == t1.idx.numel()
+    assert t0.idx.numel() + exp_n_add == t1.idx.numel()
     new_idx = t1.idx[~torch.isin(t1.idx, t0.idx)]
 
-    # mass is conserved
-    torch.testing.assert_close(t0.mass, t1.mass, atol=_ATOL, rtol=_RTOL)
+    # mass was added if cells were added
+    if n_add == 0:
+        torch.testing.assert_close(t0.mass, t1.mass, atol=_ATOL, rtol=_RTOL)
+    else:
+        assert t0.mass < t1.mass
 
     # old cells didn't change
     assert torch.equal(t0.pos[t0.idx], t1.pos[t0.idx])
@@ -230,26 +255,24 @@ def atest_add_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> Non
         arr1 = t1.cell_arrays[key][t0.idx]
         assert np.all(arr0 == arr1), key
 
-    if n_spawn == 0:
+    if n_add == 0:
         return
 
     # new cells are sound
     assert t1.cell_tensors["alive"][new_idx].all()
-    assert (t1.cell_tensors["ages"][new_idx] == 0.0).all()
-    assert (t1.cell_tensors["generations"][new_idx] == 0).all()
+    assert (t1.cell_tensors["ages"][new_idx] == 1.0).all()
+    assert (t1.cell_tensors["generations"][new_idx] == 1).all()
     assert (t1.proteome_tensors["v_max"][new_idx] != 0).any()
     assert all(len(d) > 0 for d in t1.cell_arrays["genomes"][new_idx])
     assert all(len(d) > 0 for d in t1.cell_arrays["labels"][new_idx])
 
-    # molecules were picked up
-    molmap = world.culture.molecule_map
-    cellmap = world.culture.cell_map
-    cellmols = world.cells.molecules
-    xs = t1.pos[new_idx, 0]
-    ys = t1.pos[new_idx, 1]
-    assert ((molmap[:, xs, ys] - 9.99).abs()).max() < _ATOL
-    assert (cellmols[new_idx] - 9.99).abs().max() < _ATOL
-    assert set(cellmap[xs, ys].tolist()) == set(new_idx.tolist())
+    # molecule map is as before
+    assert torch.equal(
+        t0.culture_tensors["molecule_map"], t1.culture_tensors["molecule_map"]
+    )
+
+    # molecules were carried over
+    assert (world.cells.molecules[new_idx] == cell.molecules).all()
 
 
 @pytest.mark.parametrize(

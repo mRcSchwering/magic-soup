@@ -54,6 +54,8 @@ class _DomainTypeMap:
             for dom_type, p in dom_type_probs.items():
                 if random.random() < p:
                     self.type_2_seqs[dom_type].append(pool.pop())
+                    if len(pool) == 0:
+                        break
 
         for dom_type, seqs in self.type_2_seqs.items():
             if len(seqs) == 0:
