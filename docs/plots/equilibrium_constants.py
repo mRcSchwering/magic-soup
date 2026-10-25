@@ -1,4 +1,3 @@
-# type: ignore
 from itertools import combinations
 from pathlib import Path
 

@@ -3,7 +3,7 @@ import pandas as pd
 
 
 def generate_cell(
-    ggen: ms.GenomeFact, world: ms.World, max_tries=3, allow_more_prots=False
+    ggen: ms.GenomeSynthesizer, world: ms.World, max_tries=3, allow_more_prots=False
 ) -> int:
     n_prots = len(ggen.proteome)
     prot_dom_counts = [

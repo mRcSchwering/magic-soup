@@ -1,17 +1,21 @@
-# type: ignore
 from pathlib import Path
 
 import magicsoup as ms
+import matplotlib.patheffects as path_effects
+import numpy as np
 import pandas as pd
-from plotnine import *
+from magicsoup.genomics import Genomics, ProteinSpec
+from mizani.formatters import percent_format
+from plotnine import *  # pylint: disable=W0614,W0401
 
-_IMGS_DIR = Path(__file__).parent.parent / "docs" / "img" / "supporting"
-if not _IMGS_DIR.is_dir():
-    raise ValueError(f"{_IMGS_DIR} is not a directory")
+PE_WHITE_OUTLINE = [
+    path_effects.Stroke(linewidth=3, foreground="white"),
+    path_effects.Normal(),
+]
 
 
 def _record_proteome_stats(
-    proteomes: list[list[ms.ProteinSpecType]],
+    proteomes: list[list[ProteinSpec]],
     records: list[dict],
     size: int,
     record: dict,
@@ -28,9 +32,7 @@ def _record_proteome_stats(
             )
 
 
-def _get_proteome_stat_avgs(
-    df: pd.DataFrame, by: str, pad_coding=0.5, pad_doms=0.5, pad_prots=10.0
-) -> pd.DataFrame:
+def _plot(df: pd.DataFrame, by: str, facet: str) -> ggplot:
     df["v"] = pd.Categorical(
         df["v"],
         categories=["proteins/genome", "domains/protein", "coding bps/bp"],
@@ -38,74 +40,64 @@ def _get_proteome_stat_avgs(
     )
     avgs = df.groupby([by, "v"])["n"].median().reset_index()
     avgs["l"] = [f"{d:.1f}" for d in avgs["n"]]
-    avgs.loc[:, "x"] = avgs["n"]
-    avgs.loc[avgs["v"] == "coding bps/bp", "x"] += pad_coding
-    avgs.loc[avgs["v"] == "domains/protein", "x"] += pad_doms
-    avgs.loc[avgs["v"] == "proteins/genome", "x"] += pad_prots
-    return avgs
+    return (
+        ggplot(df)
+        + geom_vline(aes(xintercept="n"), data=avgs, linetype="dashed", alpha=0.5)
+        + geom_histogram(aes(x="n", y=after_stat("width*density")), bins=10)
+        + geom_text(
+            aes(x=np.inf, y=np.inf, label="l"),
+            ha="right",
+            va="top",
+            data=avgs,
+            size=8,
+            path_effects=PE_WHITE_OUTLINE,
+        )
+        + scale_y_continuous(labels=percent_format())
+        + facet_grid(facet, scales="free")
+        + theme(
+            figure_size=(8, 6),
+            axis_title_y=element_blank(),
+            axis_title_x=element_blank(),
+        )
+    )
 
 
 def _plot_genome_sizes(ncells: int):
-    records = []
-    for size in (200, 500, 1000, 2000):
-        genetics = ms.Genetics()
+    records: list[dict] = []
+    for size in (500, 1000, 2000):
+        genomics = Genomics()
         genomes = [ms.random_genome(s=size) for _ in range(ncells)]
-        proteomes = genetics.translate_genomes(genomes=genomes)
+        proteomes = genomics.translate_genomes(genomes=genomes)
         _record_proteome_stats(
             proteomes=proteomes,
             records=records,
             size=size,
-            dom_size=genetics.dom_size,
+            dom_size=genomics.dom_size_nt,
             record={"size": size},
         )
+
     df = pd.DataFrame.from_records(records)
-
-    avgs = _get_proteome_stat_avgs(df=df, by="size", pad_prots=15)
-    avgs.loc[avgs["size"] == 200, "y"] = 400
-    avgs.loc[avgs["size"] == 500, "y"] = 300
-    avgs.loc[avgs["size"] == 1000, "y"] = 250
-    avgs.loc[avgs["size"] == 2000, "y"] = 300
-
-    return (
-        ggplot(df)
-        + geom_vline(aes(xintercept="n"), data=avgs, linetype="dashed", alpha=0.5)
-        + geom_histogram(aes(x="n"), bins=15)
-        + geom_text(aes(x="x", y="y", label="l"), data=avgs, size=10)
-        + facet_grid("size ~ v", scales="free")
-        + theme(figure_size=(8, 6))
-    ), "different_genome_sizes"
+    plot = _plot(df=df, by="size", facet="size ~ v")
+    return plot, "different_genome_sizes"
 
 
 def _plot_domain_probabilities(ncells: int, size: int):
-    records = []
-    for prob in (0.001, 0.01, 0.1):
-        genetics = ms.Genetics(p_reg_dom=prob, p_catal_dom=prob, p_transp_dom=prob)
+    records: list[dict] = []
+    for prob in (0.02, 0.05, 0.1):
+        genetics = Genomics(p_reg_dom=prob, p_catal_dom=prob, p_transp_dom=prob)
         genomes = [ms.random_genome(s=size) for _ in range(ncells)]
         proteomes = genetics.translate_genomes(genomes=genomes)
         _record_proteome_stats(
             proteomes=proteomes,
             records=records,
             size=size,
-            dom_size=genetics.dom_size,
+            dom_size=genetics.dom_size_nt,
             record={"prob": prob},
         )
+
     df = pd.DataFrame.from_records(records)
-
-    avgs = _get_proteome_stat_avgs(
-        df=df, by="prob", pad_prots=15, pad_doms=0.7, pad_coding=1.0
-    )
-    avgs.loc[avgs["prob"] == 0.001, "y"] = 400
-    avgs.loc[avgs["prob"] == 0.01, "y"] = 300
-    avgs.loc[avgs["prob"] == 0.1, "y"] = 200
-
-    return (
-        ggplot(df)
-        + geom_vline(aes(xintercept="n"), data=avgs, linetype="dashed", alpha=0.5)
-        + geom_histogram(aes(x="n"), bins=15)
-        + geom_text(aes(x="x", y="y", label="l"), data=avgs, size=10)
-        + facet_grid("prob ~ v", scales="free")
-        + theme(figure_size=(8, 4))
-    ), "different_domain_probabilities"
+    plot = _plot(df=df, by="prob", facet="prob ~ v")
+    return plot, "different_domain_probabilities"
 
 
 def _plot_start_stop_codons(ncells: int, size: int):
@@ -117,37 +109,22 @@ def _plot_start_stop_codons(ncells: int, size: int):
         "3-1": {"stop_codons": ("TAG",)},
     }
 
-    records = []
+    records: list[dict] = []
     for label, kwargs in kwargs_map.items():
-        genetics = ms.Genetics(**kwargs)
+        genetics = Genomics(**kwargs)  # type: ignore
         genomes = [ms.random_genome(s=size) for _ in range(ncells)]
         proteomes = genetics.translate_genomes(genomes=genomes)
         _record_proteome_stats(
             proteomes=proteomes,
             records=records,
             size=size,
-            dom_size=genetics.dom_size,
+            dom_size=genetics.dom_size_nt,
             record={"start-stop": label},
         )
+
     df = pd.DataFrame.from_records(records)
-
-    avgs = _get_proteome_stat_avgs(
-        df=df, by="start-stop", pad_prots=14, pad_doms=0.7, pad_coding=0.8
-    )
-    avgs.loc[avgs["start-stop"] == "1-3", "y"] = 400
-    avgs.loc[avgs["start-stop"] == "2-3", "y"] = 400
-    avgs.loc[avgs["start-stop"] == "3-1", "y"] = 200
-    avgs.loc[avgs["start-stop"] == "3-2", "y"] = 200
-    avgs.loc[avgs["start-stop"] == "3-3", "y"] = 400
-
-    return (
-        ggplot(df)
-        + geom_vline(aes(xintercept="n"), data=avgs, linetype="dashed", alpha=0.5)
-        + geom_histogram(aes(x="n"), bins=15)
-        + geom_text(aes(x="x", y="y", label="l"), data=avgs, size=10)
-        + facet_grid("start-stop ~ v", scales="free")
-        + theme(figure_size=(8, 6))
-    ), "different_start_stop_codons"
+    plot = _plot(df=df, by="start-stop", facet="start-stop ~ v")
+    return plot, "different_start_stop_codons"
 
 
 def create_plots(imgs_dir: Path):

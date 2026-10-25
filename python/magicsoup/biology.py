@@ -361,7 +361,7 @@ class Cell:
 
     Parameters:
         genome: Genome sequence string of this cell.
-        label: Label of origin which can be used to track cells.
+        lineage: Cell marker for lineage tracing.
         n_steps_alive: Number of time steps this cell has lived since last division.
         n_divisions: Number of times this cell's ancestors already divided.
         proteome: List of [Protein][magicsoup.containers.Protein] objects.
@@ -385,32 +385,30 @@ class Cell:
     When a cell divides its genome and proteome are copied.
     Both descendants will recieve half of all molecules each.
     Both their `n_divisions` attributes are incremented.
-    The cell's `label` will be copied as well.
+    The cell's `lineage` will be copied as well.
     This way you can track how cells spread.
     """
 
     def __init__(
         self,
         genome: str,
-        label: str,
+        lineage: str,
         age: float,
         generation: int,
         proteome: list[Protein],
         molecules: torch.Tensor,
     ):
         self.genome = genome
-        self.label = label
+        self.lineage = lineage
         self.age = age
         self.generation = generation
         self.proteome = proteome
         self.molecules = molecules
-        # TODO: label is misleading because multiple can have it
-        #       more like a strain or cell marker
 
     def __repr__(self) -> str:
         kwargs = {
             "genome": self.genome,
-            "label": self.label,
+            "lineage": self.lineage,
             "age": self.age,
             "generation": self.generation,
         }
@@ -418,4 +416,4 @@ class Cell:
         return f"{type(self).__name__}({','.join(args)})"
 
     def __str__(self) -> str:
-        return f"{type(self).__name__} {self.label}"
+        return f"{type(self).__name__} {self.lineage}"

@@ -84,10 +84,6 @@ class GenomicsKwargs(TypedDict, total=False):
     n_dom_type_codons: int
 
 
-# TODO: defaults should lead to ~20% 3 domains
-#       so that proteins have decent promiscuity
-
-
 class Genomics:
     """
     Defines simulation genetics and translates genomes.
@@ -118,9 +114,9 @@ class Genomics:
         self,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-        p_catal_dom: float = 0.01,
-        p_transp_dom: float = 0.01,
-        p_reg_dom: float = 0.01,
+        p_catal_dom: float = 0.05,
+        p_transp_dom: float = 0.05,
+        p_reg_dom: float = 0.05,
         n_dom_type_codons: int = 2,
     ):
         if any(len(d) != CODON_SIZE for d in start_codons):

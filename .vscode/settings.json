@@ -1,8 +1,5 @@
 {
   "python.envFile": "${workspaceFolder}/vscode.env",
-  "terminal.integrated.env.linux": {
-    "PYTHONPATH": "${workspaceFolder}/python"
-  },
   "jupyter.notebookFileRoot": "${workspaceFolder}/python",
   "pylint.args": [
     "--init-hook",

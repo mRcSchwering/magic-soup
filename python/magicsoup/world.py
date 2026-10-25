@@ -179,7 +179,7 @@ class World(TensorClass):
         return Cell(
             genome=genome,
             proteome=proteome,
-            label=str(self.cells.labels[idx]),
+            lineage=str(self.cells.lineages[idx]),
             age=float(self.cells.ages[idx]),
             generation=int(self.cells.generations[idx]),
             molecules=self.cells.molecules[idx, :],
@@ -229,7 +229,7 @@ class World(TensorClass):
         self.cells.alive[new_idxs] = True
         self.cells.ages[new_idxs] = 0.0
         self.cells.generations[new_idxs] = 0
-        self.cells.labels[new_idxs] = [randstr(n=12) for _ in range(n_new_cells)]
+        self.cells.lineages[new_idxs] = [randstr(n=12) for _ in range(n_new_cells)]
 
         return new_idxs
 
@@ -268,7 +268,7 @@ class World(TensorClass):
 
         # update other parameters
         self.cells.alive[new_idxs] = True
-        self.cells.labels[new_idxs] = [d.label for d in cells]
+        self.cells.lineages[new_idxs] = [d.lineage for d in cells]
         self.cells.molecules[new_idxs, :] = torch.stack([d.molecules for d in cells])
         self.cells.ages[new_idxs] = self.ftensor([d.age for d in cells])
         self.cells.generations[new_idxs] = self.idxtensor([d.generation for d in cells])
@@ -343,7 +343,7 @@ class World(TensorClass):
         # update cell parameters for children
         descendant_idxs = torch.cat([parent_idxs, child_idxs])
         self.cells.alive[child_idxs] = True
-        self.cells.labels[child_idxs] = self.cells.labels[parent_idxs]
+        self.cells.lineages[child_idxs] = self.cells.lineages[parent_idxs]
         self.cells.generations[child_idxs] = self.cells.generations[parent_idxs]
         self.cells.generations[descendant_idxs] += 1
         self.cells.ages[descendant_idxs] = 0.0
@@ -383,7 +383,7 @@ class World(TensorClass):
 
         # unset parameters
         self.cells.genomes[cell_idxs] = ""
-        self.cells.labels[cell_idxs] = ""
+        self.cells.lineages[cell_idxs] = ""
         self.cells.alive[cell_idxs] = False
         self.cells.ages[cell_idxs] = 0.0
         self.cells.generations[cell_idxs] = 0

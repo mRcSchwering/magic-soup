@@ -23,7 +23,7 @@ def cells() -> Cells:
 def _assert_empty_values(cells: Cells) -> None:
     # test empty values of cell parameters
     assert np.all(cells.genomes == "")
-    assert np.all(cells.labels == "")
+    assert np.all(cells.lineages == "")
     assert (cells.alive == False).all()
     assert (cells.ages == 0.0).all()
     assert (cells.generations == 0).all()
@@ -66,7 +66,7 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
 
     # check exact shape of cell parameters
     assert cells.genomes.shape == (cells.c,)
-    assert cells.labels.shape == (cells.c,)
+    assert cells.lineages.shape == (cells.c,)
     assert cells.alive.shape == (cells.c,)
     assert cells.ages.shape == (cells.c,)
     assert cells.generations.shape == (cells.c,)
@@ -133,7 +133,7 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
 
     # check exact shape of cell parameters
     assert cells.genomes.shape == (cells.c,)
-    assert cells.labels.shape == (cells.c,)
+    assert cells.lineages.shape == (cells.c,)
     assert cells.alive.shape == (cells.c,)
     assert cells.ages.shape == (cells.c,)
     assert cells.generations.shape == (cells.c,)
@@ -231,7 +231,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
 
     # keep original state for comparison
     genomes = cells.genomes.copy()
-    labels = cells.labels.copy()
+    lineages = cells.lineages.copy()
     alive = cells.alive.clone()
     ages = cells.ages.clone()
     generations = cells.generations.clone()
@@ -259,7 +259,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
 
     # check that the loaded state matches the original state
     assert np.all(cells.genomes == genomes)
-    assert np.all(cells.labels == labels)
+    assert np.all(cells.lineages == lineages)
     assert (cells.alive == alive).all()
     assert (cells.ages == ages).all()
     assert (cells.generations == generations).all()

@@ -82,7 +82,6 @@ disable = ["C", "R"]
 [tool.mypy]
 mypy_path = [
   "./python", # Needed to resolve python package
-  ".",        # Needed to resolve python package
 ]
 namespace_packages = false
 disable_error_code = "import-untyped"

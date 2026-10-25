@@ -1,11 +1,10 @@
-# type: ignore
 from pathlib import Path
 
 import magicsoup as ms
 import pandas as pd
 from plotnine import *
 
-from plots.util import generate_cell, record_concentrations
+from docs.plots.util import generate_cell, record_concentrations
 
 
 def _plot_switch_relay(nsteps=100, reg_km=1.0, low_high=(0.0, 4.0)):

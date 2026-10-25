@@ -93,7 +93,7 @@ class Cells(TensorClass):
 
         # cellular parameters
         self.genomes = self.strempty(0)  # cell genomes
-        self.labels = self.strempty(0)  # cell labels
+        self.lineages = self.strempty(0)  # cell lineages
         self.alive = self.idxzeros(0).bool()  # which ones are alive
         self.ages = self.fzeros(0)  # time since last division
         self.generations = self.idxzeros(0)  # number of divisions
@@ -258,7 +258,8 @@ class Cells(TensorClass):
         torch.save(self.molecules, statedir / "molecules.pt")
 
         lines: list[str] = [
-            f">{i} {l}\n{g}" for i, (g, l) in enumerate(zip(self.genomes, self.labels))
+            f">{i} {l}\n{g}"
+            for i, (g, l) in enumerate(zip(self.genomes, self.lineages))
         ]
 
         with open(statedir / "genomes.fasta", "w", encoding="utf-8") as fh:
@@ -292,18 +293,18 @@ class Cells(TensorClass):
             text: str = fh.read()
             entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
 
-        labels = []
+        lineages = []
         genomes = []
         for entry in entries:
             parts = entry.split("\n")
             descr = parts[0]
             seq = "" if len(parts) < 2 else parts[1]
             names = descr.split()
-            label = names[1].strip() if len(names) > 1 else ""
+            lineage = names[1].strip() if len(names) > 1 else ""
             genomes.append(seq)
-            labels.append(label)
+            lineages.append(lineage)
 
-        self.labels = self.strarray(labels)
+        self.lineages = self.strarray(lineages)
         self.genomes = self.strarray(genomes)
 
         # setup kinetics parameters again
@@ -326,7 +327,7 @@ class Cells(TensorClass):
     def _increase_c(self, by_n: int) -> None:
         # cell paramaters
         self.genomes = self._exp_arr_c(a=self.genomes, by_n=by_n)
-        self.labels = self._exp_arr_c(a=self.labels, by_n=by_n)
+        self.lineages = self._exp_arr_c(a=self.lineages, by_n=by_n)
         self.alive = self._exp_tens_c(t=self.alive, by_n=by_n)
         self.ages = self._exp_tens_c(t=self.ages, by_n=by_n)
         self.generations = self._exp_tens_c(t=self.generations, by_n=by_n)
@@ -357,7 +358,7 @@ class Cells(TensorClass):
 
         # cell parameters
         self.genomes = self.genomes[keep]
-        self.labels = self.labels[keep]
+        self.lineages = self.lineages[keep]
         self.alive = self.alive[keep]
         self.ages = self.ages[keep]
         self.generations = self.generations[keep]

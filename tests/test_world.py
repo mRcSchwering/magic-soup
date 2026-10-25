@@ -43,7 +43,7 @@ def _get_mol_mass(world: World) -> torch.Tensor:
 def _get_cell_arrays(cells: Cells) -> dict[str, np.ndarray]:
     return {
         "genomes": cells.genomes.copy(),
-        "labels": cells.labels.copy(),
+        "lineages": cells.lineages.copy(),
     }
 
 
@@ -168,7 +168,7 @@ def test_spawn_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> No
     assert (t1.cell_tensors["generations"][new_idx] == 0).all()
     assert (t1.proteome_tensors["v_max"][new_idx] != 0).any()
     assert all(len(d) > 0 for d in t1.cell_arrays["genomes"][new_idx])
-    assert all(len(d) > 0 for d in t1.cell_arrays["labels"][new_idx])
+    assert all(len(d) > 0 for d in t1.cell_arrays["lineages"][new_idx])
 
     # molecules were picked up
     molmap = world.culture.molecule_map
@@ -187,13 +187,13 @@ def test_get_cell(world: World) -> None:
     pos = world.culture.get_cell_positions()
 
     c0 = world.get_cell(by_idx=25)
-    assert c0.label == world.cells.labels[25]
+    assert c0.lineage == world.cells.lineages[25]
     assert c0.genome == world.cells.genomes[25]
     assert torch.equal(c0.molecules, world.cells.molecules[25])
     assert len(c0.proteome) > 0
 
     c1 = world.get_cell(by_position=(int(pos[20, 0]), int(pos[20, 1])))
-    assert c1.label == world.cells.labels[20]
+    assert c1.lineage == world.cells.lineages[20]
     assert c1.genome == world.cells.genomes[20]
     assert torch.equal(c1.molecules, world.cells.molecules[20])
     assert len(c1.proteome) > 0
@@ -264,7 +264,7 @@ def test_add_cells(caplog, world: World, n_add: int, exp_n_add: int) -> None:
     assert (t1.cell_tensors["generations"][new_idx] == 1).all()
     assert (t1.proteome_tensors["v_max"][new_idx] != 0).any()
     assert all(len(d) > 0 for d in t1.cell_arrays["genomes"][new_idx])
-    assert all(len(d) > 0 for d in t1.cell_arrays["labels"][new_idx])
+    assert all(len(d) > 0 for d in t1.cell_arrays["lineages"][new_idx])
 
     # molecule map is as before
     assert torch.equal(
@@ -450,7 +450,7 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
     assert (t1.cell_tensors["ages"][parent_idxs] == 0.0).all()
     assert (t1.cell_tensors["ages"][child_idxs] == 0.0).all()
 
-    # their genomes, labels, proteomes should be equal
+    # their genomes, lineages, proteomes should be equal
     for key in t1.cell_arrays:
         arr0 = t1.cell_arrays[key][parent_idxs]
         arr1 = t1.cell_arrays[key][child_idxs]
@@ -491,8 +491,8 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
     assert torch.equal(t0.pos, t1.pos)
     p = min(t0.p, t1.p) - 1
 
-    arr0 = t0.cell_arrays["labels"][:]
-    arr1 = t1.cell_arrays["labels"][:]
+    arr0 = t0.cell_arrays["lineages"][:]
+    arr1 = t1.cell_arrays["lineages"][:]
     assert np.all(arr0 == arr1)
 
     for key in t0.cell_tensors:

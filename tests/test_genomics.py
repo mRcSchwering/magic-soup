@@ -229,45 +229,22 @@ def _sum_dom_type(data: list[list[ProteinSpec]], type_: int) -> int:
 
 
 def test_genomics_domain_likelihoods() -> None:
-    # 1=catalytic, 2=transporter, 3=regulatory
-    # regulatory-only proteins get sorted out, so there is a bias towards
-    # fewer regulatory domains
+    n_genomes = 1000
+    genome_size = 1000
 
-    # all same likelihood (while considering reg bias)
-    kwargs = {"p_catal_dom": 0.1, "p_transp_dom": 0.1, "p_reg_dom": 0.1}
-    genomics = Genomics(**kwargs)  # type: ignore
-    genomes = [random_genome(s=500) for _ in range(1000)]
+    genomics = Genomics()  # type: ignore
+    genomes = [random_genome(s=genome_size) for _ in range(n_genomes)]
     proteomes_data = genomics.translate_genomes(genomes=genomes)
 
-    n_catal = _sum_dom_type(proteomes_data, 1)
-    n_trnsp = _sum_dom_type(proteomes_data, 2)
-    n_reg = _sum_dom_type(proteomes_data, 3)
-    n = n_catal + n_trnsp + n_reg
-    assert abs(n_catal - n_trnsp) < 0.1 * n
-    assert abs(n_trnsp - n_reg) < 0.2 * n
+    n_proteins = sum(len(d) for d in proteomes_data)
+    n_domains = sum(len(dd[0]) for d in proteomes_data for dd in d)
+    assert abs(n_domains / n_proteins - 2.0) < 0.5
 
-    # fewer catalytics (while considering reg bias)
-    kwargs["p_catal_dom"] = 0.01
-    genomics = Genomics(**kwargs)  # type: ignore
-    genomes = [random_genome(s=500) for _ in range(1000)]
-    proteomes_data = genomics.translate_genomes(genomes=genomes)
+    # 20% to 40% should have more than 2 domains
+    n_multi_dom = 0
+    for proteins in proteomes_data:
+        for protein in proteins:
+            if len(protein[0]) > 2:
+                n_multi_dom += 1
 
-    n_catal = _sum_dom_type(proteomes_data, 1)
-    n_trnsp = _sum_dom_type(proteomes_data, 2)
-    n_reg = _sum_dom_type(proteomes_data, 3)
-    n = n_catal + n_trnsp + n_reg
-    assert n_trnsp - n_catal > 0.9 * n / 3
-    assert n_reg - n_catal > 0.6 * n / 3
-
-    # also fewer transporters (while considering reg bias)
-    kwargs["p_transp_dom"] = 0.01
-    genomics = Genomics(**kwargs)  # type: ignore
-    genomes = [random_genome(s=500) for _ in range(1000)]
-    proteomes_data = genomics.translate_genomes(genomes=genomes)
-
-    n_catal = _sum_dom_type(proteomes_data, 1)
-    n_trnsp = _sum_dom_type(proteomes_data, 2)
-    n_reg = _sum_dom_type(proteomes_data, 3)
-    n = n_catal + n_trnsp + n_reg
-    assert n_reg - n_catal > 0.6 * n / 3
-    assert n_reg - n_trnsp > 0.6 * n / 3
+    assert 0.2 <= n_multi_dom / n_proteins <= 0.4

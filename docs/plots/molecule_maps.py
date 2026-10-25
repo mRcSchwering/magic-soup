@@ -1,4 +1,3 @@
-# type: ignore
 from itertools import product
 from pathlib import Path
 
