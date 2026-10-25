@@ -4,6 +4,7 @@ import pytest
 from magicsoup import rs, util
 from magicsoup.constants import CODON_SIZE
 
+
 # fmt: off
 @pytest.mark.parametrize("tmp, exp", [
     ("ANC", ["ATC", "ACC", "AGC", "AAC"]),

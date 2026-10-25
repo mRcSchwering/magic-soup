@@ -2,7 +2,8 @@
 free hand, energies invented, from
 https://en.wikipedia.org/wiki/Reverse_Krebs_cycle
 """
-from magicsoup.containers import Chemistry, Molecule
+
+from magicsoup.chemistry import Chemistry, Molecule, Reaction
 
 NADPH = Molecule("NADPH", 200.0 * 1e3)
 NADP = Molecule("NADP", 100.0 * 1e3)
@@ -41,14 +42,14 @@ MOLECULES = [
 ]
 
 REACTIONS = [
-    ([oxalalcetate, NADPH], [malate, NADP]),
-    ([malate], [fumarate]),
-    ([fumarate, NADPH], [sucinate, NADP]),
-    ([sucinate, ATP, HSCoA], [sucinylCoA, ADP]),
-    ([sucinylCoA, co2], [oxoglutarate, HSCoA]),
-    ([oxoglutarate, co2, NADPH], [isocitrate, NADP]),
-    ([isocitrate], [citrate]),
-    ([citrate, HSCoA], [acetylCoA, oxalalcetate]),
+    Reaction([oxalalcetate, NADPH], [malate, NADP]),
+    Reaction([malate], [fumarate]),
+    Reaction([fumarate, NADPH], [sucinate, NADP]),
+    Reaction([sucinate, ATP, HSCoA], [sucinylCoA, ADP]),
+    Reaction([sucinylCoA, co2], [oxoglutarate, HSCoA]),
+    Reaction([oxoglutarate, co2, NADPH], [isocitrate, NADP]),
+    Reaction([isocitrate], [citrate]),
+    Reaction([citrate, HSCoA], [acetylCoA, oxalalcetate]),
 ]
 
 CHEMISTRY = Chemistry(molecules=MOLECULES, reactions=REACTIONS)

@@ -143,10 +143,8 @@ I would like to add more transformations that are not described in these
 pathway but I don't know enough about this topic.
 E.g. shoudln't there be a hydroxybutyrate <-> malate (or similar)?
 """
-from magicsoup.containers import (
-    Chemistry,
-    Molecule,
-)
+
+from magicsoup.chemistry import Chemistry, Molecule, Reaction
 
 _TReact = tuple[list[Molecule], list[Molecule]]
 
@@ -162,17 +160,17 @@ _pyruvate = Molecule("pyruvate", 330.0 * 1e3)  # 3C 10e
 _X = Molecule("X", 50.0 * 1e3)
 _E = Molecule("E", 150.0 * 1e3)
 
-_common_reacts: list[_TReact] = [
+_common_reacts: list[Reaction] = [
     # energy carriers with defined reaction energies
-    ([_NADPH], [_NADP]),  # -70
-    ([_ATP], [_ADP]),  # -35
+    Reaction([_NADPH], [_NADP]),  # -70
+    Reaction([_ATP], [_ADP]),  # -35
     # restoring them should be practically irreversible
-    ([_ADP, _ADP, _E], [_ATP, _ATP]),  # -80
-    ([_NADP, _E], [_NADPH]),  # -80
+    Reaction([_ADP, _ADP, _E], [_ATP, _ATP]),  # -80
+    Reaction([_NADP, _E], [_NADPH]),  # -80
     # extracting carbon should be as fair as possible for all
-    ([_G3P], [_X, _X, _X, _X, _X, _X, _X, _X]),  # -20
-    ([_pyruvate], [_X, _X, _X, _X, _X, _X]),  # -30
-    ([_acetylCoA], [_HSCoA, _X, _X, _X, _X, _X]),  # -35
+    Reaction([_G3P], [_X, _X, _X, _X, _X, _X, _X, _X]),  # -20
+    Reaction([_pyruvate], [_X, _X, _X, _X, _X, _X]),  # -30
+    Reaction([_acetylCoA], [_HSCoA, _X, _X, _X, _X, _X]),  # -35
 ]
 
 _common_mols = [
@@ -197,11 +195,11 @@ _G3P = Molecule("G3P", 420.0 * 1e3)  # P 3C 12e
 _Ru5P = Molecule("Ru5P", 695.0 * 1e3)  # P 5C 20e
 
 _calvin_reacts = [
-    ([_RuBP, _co2], [_3PGA, _3PGA]),  # -35
-    ([_3PGA, _ATP], [_13BPG, _ADP]),  # -15
-    ([_13BPG, _NADPH], [_G3P, _NADP]),  # -20
-    ([_G3P, _G3P, _G3P, _G3P, _G3P], [_Ru5P, _Ru5P, _Ru5P]),  # -15
-    ([_Ru5P, _ATP], [_RuBP, _ADP]),  # -5
+    Reaction([_RuBP, _co2], [_3PGA, _3PGA]),  # -35
+    Reaction([_3PGA, _ATP], [_13BPG, _ADP]),  # -15
+    Reaction([_13BPG, _NADPH], [_G3P, _NADP]),  # -20
+    Reaction([_G3P, _G3P, _G3P, _G3P, _G3P], [_Ru5P, _Ru5P, _Ru5P]),  # -15
+    Reaction([_Ru5P, _ATP], [_RuBP, _ADP]),  # -5
 ]
 
 _calvin_mols = [_RuBP, _3PGA, _13BPG, _G3P, _Ru5P]
@@ -224,21 +222,21 @@ _citramalylCoA = Molecule("citramalyl-CoA", 810.0 * 1e3)  # 5C 18e !
 _pyruvate = Molecule("pyruvate", 330.0 * 1e3)  # 3C 10e !
 
 _hprop_reacts = [
-    ([_acetylCoA, _co2], [_malonylCoA]),  # +10
-    (
+    Reaction([_acetylCoA, _co2], [_malonylCoA]),  # +10
+    Reaction(
         [_malonylCoA, _NADPH, _NADPH, _NADPH],
         [_propionylCoA, _NADP, _NADP, _NADP],
     ),  # -30
-    ([_propionylCoA, _co2], [_methylmalonylCoA]),  # 0
-    ([_methylmalonylCoA], [_succinylCoA]),  # 0
-    ([_succinylCoA], [_succinate, _HSCoA]),  # -10
-    ([_succinate, _NADP], [_fumarate, _NADPH]),  # 0
-    ([_fumarate], [_malate]),  # 0
-    ([_malate, _HSCoA], [_malylCoA]),  # +10
-    ([_malylCoA], [_acetylCoA, _glyoxylate]),  # 0
-    ([_propionylCoA, _glyoxylate], [_methylmalylCoA]),  # -5
-    ([_methylmalylCoA], [_citramalylCoA]),  # 0
-    ([_citramalylCoA], [_acetylCoA, _pyruvate]),  # -5
+    Reaction([_propionylCoA, _co2], [_methylmalonylCoA]),  # 0
+    Reaction([_methylmalonylCoA], [_succinylCoA]),  # 0
+    Reaction([_succinylCoA], [_succinate, _HSCoA]),  # -10
+    Reaction([_succinate, _NADP], [_fumarate, _NADPH]),  # 0
+    Reaction([_fumarate], [_malate]),  # 0
+    Reaction([_malate, _HSCoA], [_malylCoA]),  # +10
+    Reaction([_malylCoA], [_acetylCoA, _glyoxylate]),  # 0
+    Reaction([_propionylCoA, _glyoxylate], [_methylmalylCoA]),  # -5
+    Reaction([_methylmalylCoA], [_citramalylCoA]),  # 0
+    Reaction([_citramalylCoA], [_acetylCoA, _pyruvate]),  # -5
 ]
 
 _hprop_mols = [
@@ -267,12 +265,12 @@ _acetylCoA = Molecule("acetyl-CoA", 475.0 * 1e3)  # 2C 8e !
 _HSCoA = Molecule("HS-CoA", 190.0 * 1e3)
 
 _wl_reacts = [
-    ([_co2, _NADPH], [_formate, _NADP]),  # -10
-    ([_formate, _FH4], [_formylFH4]),  # -10
-    ([_formylFH4, _NADPH], [_methylenFH4, _NADP]),  # -10
-    ([_methylenFH4, _NADPH], [_methylFH4, _NADP]),  # -15
-    ([_co2, _NADPH], [_co, _NADP]),  # -5
-    ([_methylFH4, _co, _HSCoA], [_acetylCoA, _FH4]),  # 0
+    Reaction([_co2, _NADPH], [_formate, _NADP]),  # -10
+    Reaction([_formate, _FH4], [_formylFH4]),  # -10
+    Reaction([_formylFH4, _NADPH], [_methylenFH4, _NADP]),  # -10
+    Reaction([_methylenFH4, _NADPH], [_methylFH4, _NADP]),  # -15
+    Reaction([_co2, _NADPH], [_co, _NADP]),  # -5
+    Reaction([_methylFH4, _co, _HSCoA], [_acetylCoA, _FH4]),  # 0
 ]
 
 _wl_mols = [
@@ -297,14 +295,14 @@ _isocitrate = Molecule("isocitrate", 600.0 * 1e3)  # 5C 18e !
 _citrate = Molecule("citrate", 600.0 * 1e3)  # 5C 18e !
 
 _rtca_reacts = [
-    ([_oxalacetate, _NADPH], [_malate, _NADP]),  # -5
-    ([_malate], [_fumarate]),  # 0
-    ([_fumarate, _NADPH], [_succinate, _NADP]),  # 0
-    ([_succinate, _HSCoA], [_succinylCoA]),  # +10
-    ([_succinylCoA, _NADPH, _co2], [_aKetoglutarate, _HSCoA, _NADP]),  # -35
-    ([_aKetoglutarate, _co2, _NADPH], [_isocitrate, _NADP]),  # -20
-    ([_isocitrate], [_citrate]),  # 0
-    ([_citrate, _HSCoA], [_oxalacetate, _acetylCoA]),  # +35
+    Reaction([_oxalacetate, _NADPH], [_malate, _NADP]),  # -5
+    Reaction([_malate], [_fumarate]),  # 0
+    Reaction([_fumarate, _NADPH], [_succinate, _NADP]),  # 0
+    Reaction([_succinate, _HSCoA], [_succinylCoA]),  # +10
+    Reaction([_succinylCoA, _NADPH, _co2], [_aKetoglutarate, _HSCoA, _NADP]),  # -35
+    Reaction([_aKetoglutarate, _co2, _NADPH], [_isocitrate, _NADP]),  # -20
+    Reaction([_isocitrate], [_citrate]),  # 0
+    Reaction([_citrate, _HSCoA], [_oxalacetate, _acetylCoA]),  # +35
 ]
 
 _rtca_mols = [
@@ -333,18 +331,18 @@ _hydroxybutyrylCoA = Molecule("hydroxybutyryl-CoA", 825.0 * 1e3)
 _acetoacetylCoA = Molecule("acetoacetyl-CoA", 760.0 * 1e3)  # 4C 16e !
 
 _dcarbhb_reacts = [
-    ([_acetylCoA, _co2, _NADPH], [_pyruvate, _HSCoA, _NADP]),  # -35
-    ([_pyruvate, _ATP], [_PEP, _ADP]),  # -15
-    ([_PEP, _co2], [_oxalacetate]),  # -10
-    ([_oxalacetate, _NADPH], [_malate, _NADP]),  # -5
-    ([_malate], [_fumarate]),  # 0
-    ([_fumarate, _NADPH], [_succinate, _NADP]),  # 0
-    ([_succinate, _HSCoA], [_succinylCoA]),  # +10
-    ([_succinylCoA, _NADPH], [_SSA, _HSCoA, _NADP]),  # -30
-    ([_SSA, _NADPH], [_GHB, _NADP]),  # -5
-    ([_GHB, _HSCoA], [_hydroxybutyrylCoA]),  # +35
-    ([_hydroxybutyrylCoA, _NADP], [_acetoacetylCoA, _NADPH]),  # +5
-    ([_acetoacetylCoA, _HSCoA], [_acetylCoA, _acetylCoA]),  # 0
+    Reaction([_acetylCoA, _co2, _NADPH], [_pyruvate, _HSCoA, _NADP]),  # -35
+    Reaction([_pyruvate, _ATP], [_PEP, _ADP]),  # -15
+    Reaction([_PEP, _co2], [_oxalacetate]),  # -10
+    Reaction([_oxalacetate, _NADPH], [_malate, _NADP]),  # -5
+    Reaction([_malate], [_fumarate]),  # 0
+    Reaction([_fumarate, _NADPH], [_succinate, _NADP]),  # 0
+    Reaction([_succinate, _HSCoA], [_succinylCoA]),  # +10
+    Reaction([_succinylCoA, _NADPH], [_SSA, _HSCoA, _NADP]),  # -30
+    Reaction([_SSA, _NADPH], [_GHB, _NADP]),  # -5
+    Reaction([_GHB, _HSCoA], [_hydroxybutyrylCoA]),  # +35
+    Reaction([_hydroxybutyrylCoA, _NADP], [_acetoacetylCoA, _NADPH]),  # +5
+    Reaction([_acetoacetylCoA, _HSCoA], [_acetylCoA, _acetylCoA]),  # 0
 ]
 
 _dcarbhb_mols = [
@@ -373,18 +371,18 @@ _hydroxybutyrylCoA = Molecule("hydroxybutyryl-CoA", 825.0 * 1e3)
 _acetoacetylCoA = Molecule("acetoacetyl-CoA", 760.0 * 1e3)
 
 _hprophbut_reacts = [
-    ([_acetylCoA, _co2], [_malonylCoA]),  # +10
-    (
+    Reaction([_acetylCoA, _co2], [_malonylCoA]),  # +10
+    Reaction(
         [_malonylCoA, _NADPH, _NADPH, _NADPH],
         [_propionylCoA, _NADP, _NADP, _NADP],
     ),  # -30
-    ([_propionylCoA, _co2], [_methylmalonylCoA]),  # 0
-    ([_methylmalonylCoA], [_succinylCoA]),  # 0
-    ([_succinylCoA, _NADPH], [_SSA, _HSCoA, _NADP]),  # -30
-    ([_SSA, _NADPH], [_GHB, _NADP]),  # -5
-    ([_GHB, _HSCoA], [_hydroxybutyrylCoA]),  # +35
-    ([_hydroxybutyrylCoA, _NADP], [_acetoacetylCoA, _NADPH]),  # +5
-    ([_acetoacetylCoA, _HSCoA], [_acetylCoA, _acetylCoA]),  # 0
+    Reaction([_propionylCoA, _co2], [_methylmalonylCoA]),  # 0
+    Reaction([_methylmalonylCoA], [_succinylCoA]),  # 0
+    Reaction([_succinylCoA, _NADPH], [_SSA, _HSCoA, _NADP]),  # -30
+    Reaction([_SSA, _NADPH], [_GHB, _NADP]),  # -5
+    Reaction([_GHB, _HSCoA], [_hydroxybutyrylCoA]),  # +35
+    Reaction([_hydroxybutyrylCoA, _NADP], [_acetoacetylCoA, _NADPH]),  # +5
+    Reaction([_acetoacetylCoA, _HSCoA], [_acetylCoA, _acetylCoA]),  # 0
 ]
 
 _hprophbut_mols = [
