@@ -1,8 +1,8 @@
-import math
 import random
 import string
 from collections.abc import Iterable
 from itertools import product
+from pathlib import Path
 from typing import Any, TypedDict
 
 import numpy as np
@@ -16,16 +16,6 @@ from magicsoup.constants import (
     DEFAULT_ITYPE,
     DEFAULT_STYPE,
 )
-
-
-def round_down(d: float, to: int = 3) -> int:
-    """Round down to declared integer"""
-    return math.floor(d / to) * to
-
-
-def closest_value(values: Iterable[float], key: float) -> float:
-    """Get closest value to key in values"""
-    return min(values, key=lambda d: abs(d - key))
 
 
 def randstr(n: int = 12) -> str:
@@ -118,6 +108,28 @@ def codons(n: int, excl_codons: list[str] | None = None) -> list[str]:
         if not has_stop:
             seqs.append(seq)
     return seqs
+
+
+def write_fasta(name_2_seq: dict[str, str], file: Path) -> None:
+    """Write fasta file from name to sequences mapping"""
+    lines: list[str] = [f">{n}\n{s}" for n, s in name_2_seq.items()]
+    file.write_text("\n".join(lines))
+
+
+def read_fasta(file: Path) -> dict[str, str]:
+    """Read name to sequences mapping from fasta file"""
+    text = file.read_text()
+    entries = [d for d in text.split(">") if len(d) > 0]
+
+    name_2_seq: dict[str, str] = {}
+    for entry in entries:
+        parts = entry.split("\n")
+        if len(parts) == 0:
+            continue
+        name = parts[0]
+        name_2_seq[name] = "" if len(parts) < 2 else parts[1]
+
+    return name_2_seq
 
 
 class TensorKwargs(TypedDict, total=False):

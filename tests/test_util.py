@@ -1,9 +1,8 @@
-from collections.abc import Iterable
+from pathlib import Path
 
 import pytest
 from magicsoup import rs, util
 from magicsoup.constants import CODON_SIZE
-
 
 # fmt: off
 @pytest.mark.parametrize("tmp, exp", [
@@ -72,24 +71,14 @@ def test_random_genome(s, excl):
         assert seq not in g
 
 
-@pytest.mark.parametrize(
-    "vals, key, exp",
-    [
-        ([1.0, 1.4, 1.8], 1.5, 1.4),
-        ([1.0, 1.4, 1.6], 1.5, 1.4),
-        ([1.0, 1.4, 1.6], -100.0, 1.0),
-        ([1.0, 1.4, 1.6], 100.0, 1.6),
-        ([-1.0, 1.4, 1.6], 0.0, -1.0),
-        ({0.1: "a", 0.2: "b"}, 0.0, 0.1),
-        ({3: "a", 4: "b"}, 2, 3),
-    ],
-)
-def test_closest_value(vals: Iterable, key: float, exp: float):
-    res = util.closest_value(values=vals, key=key)
-    assert res == exp
-
-
 def test_reverse_complement() -> None:
     seq = "ACTGG"
     res = rs.reverse_complement(seq=seq)
     assert res == "CCAGT"
+
+
+def test_writing_reading_fasta(tmp_path: Path) -> None:
+    orig = {"a": "gnome-a", "b": "", "": "genome-c", "d": "genome-d"}
+    util.write_fasta(name_2_seq=orig, file=tmp_path / "test.fasta")
+    new = util.read_fasta(file=tmp_path / "test.fasta")
+    assert orig == new

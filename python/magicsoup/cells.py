@@ -11,7 +11,7 @@ from magicsoup import rs
 from magicsoup.chemistry import Chemistry
 from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
-from magicsoup.util import TensorClass, TensorKwargs
+from magicsoup.util import TensorClass, TensorKwargs, read_fasta, write_fasta
 
 _log = logging.getLogger(__name__)
 
@@ -79,14 +79,6 @@ class Cells(TensorClass):
 
         molecules = chemistry.molecules
         n_molecules = len(molecules)
-        # TODO: rm? (and functions that generate them)
-        # self._int_mol_idxs = list(range(n_molecules))
-        # self._ext_mol_idxs = list(range(n_molecules, n_molecules * 2))
-        # self._mol_degrad = [self._get_degrade(m.half_life) for m in molecules]
-        # self._permeation = [
-        #     self._get_permeate(mol_perm_rate=m.permeability) for m in molecules
-        # ]
-
         self.c = 0  # dim 0
         self.p = 0  # dim 1
         self.m = 2 * n_molecules  # dim2
@@ -257,13 +249,13 @@ class Cells(TensorClass):
         torch.save(self.generations, statedir / "generations.pt")
         torch.save(self.molecules, statedir / "molecules.pt")
 
-        lines: list[str] = [
-            f">{i} {l}\n{g}"
-            for i, (g, l) in enumerate(zip(self.genomes, self.lineages))
-        ]
-
-        with open(statedir / "genomes.fasta", "w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines))
+        lineages_2_genomes = {
+            f"{i} {l}": g
+            for i, (l, g) in enumerate(
+                zip(self.lineages.tolist(), self.genomes.tolist())
+            )
+        }
+        write_fasta(file=statedir / "genomes.fasta", name_2_seq=lineages_2_genomes)
 
     def load_state(self, statedir: Path) -> None:
         """
@@ -287,25 +279,9 @@ class Cells(TensorClass):
         )
         self.molecules = torch.load(statedir / "molecules.pt", map_location=self.device)
 
-        # TODO: hide fasta reading/writing
-
-        with open(statedir / "genomes.fasta", encoding="utf-8") as fh:
-            text: str = fh.read()
-            entries = [d.strip() for d in text.split(">") if len(d.strip()) > 0]
-
-        lineages = []
-        genomes = []
-        for entry in entries:
-            parts = entry.split("\n")
-            descr = parts[0]
-            seq = "" if len(parts) < 2 else parts[1]
-            names = descr.split()
-            lineage = names[1].strip() if len(names) > 1 else ""
-            genomes.append(seq)
-            lineages.append(lineage)
-
-        self.lineages = self.strarray(lineages)
-        self.genomes = self.strarray(genomes)
+        lineage_2_genome = read_fasta(file=statedir / "genomes.fasta")
+        self.lineages = self.strarray([d.partition(" ")[2] for d in lineage_2_genome])
+        self.genomes = self.strarray(list(lineage_2_genome.values()))
 
         # setup kinetics parameters again
         self.v_max = self.fzeros(self.c, self.p)
@@ -404,21 +380,6 @@ class Cells(TensorClass):
 
         # set new p
         self.p = self.v_max.shape[1]
-
-    def _get_permeate(self, mol_perm_rate: float) -> float:
-        if mol_perm_rate < 0.0:
-            mol_perm_rate = -mol_perm_rate
-
-        mol_perm_rate = min(mol_perm_rate, 1.0)
-
-        if mol_perm_rate == 0.0:
-            return 0.0
-
-        d = 1 / mol_perm_rate
-        return 1 / (d + 1)
-
-    def _get_degrade(self, half_life: float) -> float:
-        return math.exp(-math.log(2) / half_life)
 
     def _exp_tens_c(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
         size = t.size()
