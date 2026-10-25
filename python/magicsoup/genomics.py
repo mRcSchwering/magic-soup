@@ -10,6 +10,7 @@ from magicsoup.constants import CODON_SIZE
 from magicsoup.util import codons, random_genome
 
 
+# TODO: see how I can use DomainType Enum also in Rust
 class DomainType(IntEnum):
     CATALYTIC = 1
     TRANSPORTER = 2
@@ -138,6 +139,12 @@ class Genomics:
 
         self.start_codons = list(start_codons)
         self.stop_codons = list(stop_codons)
+
+        # TODO: domain structure logic is currently spread out over
+        #       Rust in proteomics (needs to know which token refers to which value),
+        #       and genomics (needs to extract tokens in correct order)
+        #       and here (needs to build sequences in correct order)
+        #       this should somehow be centralized
 
         # Domain structure:
         # domain type definition (n domain type codons)

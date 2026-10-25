@@ -5,7 +5,7 @@ import magicsoup as ms
 import pandas as pd
 import torch
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
-from plotnine import *
+from plotnine import *  # pylint: disable=W0401
 
 # TODO: add physical units to plots in general
 

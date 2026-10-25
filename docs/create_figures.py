@@ -1,14 +1,14 @@
-# type: ignore
 """
 Generate figures for docs/imgs/supporting
 
     PYTHONPATH=./python python docs/create_figures.py --help
 """
+
 from argparse import ArgumentParser
 from collections.abc import Callable
 from pathlib import Path
 
-from plotnine import *
+from plotnine import *  # pylint: disable=W0401
 from plots.biochemical_patterns import create_plots as plot_biochemical_patterns
 from plots.equilibrium_constants import create_plots as plot_equilibrium_constants
 from plots.free_energy import create_plots as plot_free_energy
