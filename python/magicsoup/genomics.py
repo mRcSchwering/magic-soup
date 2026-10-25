@@ -1,8 +1,8 @@
-import math
 import random
 import warnings
 from collections.abc import Iterable
 from enum import IntEnum
+from itertools import product
 from typing import TypedDict
 
 from magicsoup import rs
@@ -24,12 +24,12 @@ class _CodonMap:
     def __init__(
         self, n_codons: int, stop_codons: Iterable[str], allow_last_stop: bool = False
     ) -> None:
-        seqs = codons(n=n_codons)
-        check_nts = CODON_SIZE * n_codons
         if allow_last_stop:
-            check_nts -= CODON_SIZE
-
-        seqs = [d for d in seqs if d[:check_nts] not in stop_codons]
+            seqs0 = codons(n=n_codons - 1, excl_codons=list(stop_codons))
+            seqs1 = codons(n=1)
+            seqs = [a + b for a, b in product(seqs0, seqs1)]
+        else:
+            seqs = codons(n=n_codons, excl_codons=list(stop_codons))
         self.seq_2_token = {d: i + 1 for i, d in enumerate(seqs)}
         self.token_2_seq = {v: k for k, v in self.seq_2_token.items()}
         self.encoding_size = max(self.seq_2_token.values())
@@ -44,25 +44,27 @@ class _DomainTypeMap:
         stop_codons: list[str],
     ) -> None:
         # generate all possible valid sequences for domain types
-        pool = codons(n=n_dom_type_codons, excl_codons=stop_codons)
-        random.shuffle(pool)
+        seqs = codons(n=n_dom_type_codons, excl_codons=stop_codons)
+        n_seqs = len(seqs)
+        dom_type_2_n = {k: int(p * n_seqs) for k, p in dom_type_probs.items()}
+
+        n_doms = sum(dom_type_2_n.values())
+        if n_doms > n_seqs:
+            raise ValueError("Domain type probabilities exceed 1")
+        for dom_type, n in dom_type_2_n.items():
+            if n == 0:
+                warnings.warn(
+                    f"{n_dom_type_codons} domain type codons"
+                    f" are too small to encode {dom_type}"
+                )
 
         # domain types -> nt sequences
         self.type_2_seqs: dict[DomainType, list[str]] = {k: [] for k in dom_type_probs}
 
-        while len(pool) > 0:
-            for dom_type, p in dom_type_probs.items():
-                if random.random() < p:
-                    self.type_2_seqs[dom_type].append(pool.pop())
-                    if len(pool) == 0:
-                        break
-
-        for dom_type, seqs in self.type_2_seqs.items():
-            if len(seqs) == 0:
-                warnings.warn(
-                    f"There will be no {dom_type} domains."
-                    f" Increase the number of codons encoding domain type or its probability"
-                )
+        random.shuffle(seqs)
+        for dom_type, n in dom_type_2_n.items():
+            for _ in range(n):
+                self.type_2_seqs[dom_type].append(seqs.pop())
 
         # nt sequence -> domain type token
         self.seq_2_token = {d: k.value for k, v in self.type_2_seqs.items() for d in v}
@@ -160,8 +162,6 @@ class Genomics:
 
         # pre-mature stop codons are excluded
         self.one_codon_map = _CodonMap(n_codons=1, stop_codons=stop_codons)
-
-        # because at domain end the second codon is allowed to be a stop codon
         self.two_codon_map = _CodonMap(
             n_codons=2, stop_codons=stop_codons, allow_last_stop=True
         )
@@ -225,11 +225,10 @@ class Genomics:
         # idx2: sign/orientation (1 codon, no stop)
         # idx3: reaction/molecule/effector (2 codon, 2nd can be stop)
         dom_seq = random.choice(domtype_2_seqs[domain_type])
-        i0_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
-        i1_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
-        i2_seq = random_genome(s=CODON_SIZE, excl=self.stop_codons)
-        i3 = random.choice(tokens)
-        i3_seq = token_2_two_codon[i3]
+        i0_seq = random.choice(codons(n=1, excl_codons=self.stop_codons))
+        i1_seq = random.choice(codons(n=1, excl_codons=self.stop_codons))
+        i2_seq = random.choice(codons(n=1, excl_codons=self.stop_codons))
+        i3_seq = token_2_two_codon[random.choice(tokens)]
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
 
@@ -244,7 +243,7 @@ class Genomics:
         The generated genome has at least the provided CDSs but it may have more.
         """
         n_pads = len(cdss) + 1
-        pad_size = math.floor(n_pad_nts / n_pads)
+        pad_size = n_pad_nts // n_pads
         remaining_nts = n_pad_nts - n_pads * pad_size
 
         excl_cdss = self.start_codons + self.stop_codons

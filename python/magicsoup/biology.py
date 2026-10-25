@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import Protocol
 
 import torch
@@ -29,6 +30,7 @@ class CatalyticDomain:
         vmax: Maximum velocity of the reaction (in mmol/s).
         start: Domain start on the CDS
         end: Domain end on the CDS
+        is_fwd: How reaction is coupled with other domains in the same CDS
 
     The simulation works with tensor representations of cell proteomes.
     This class is a helper which makes interpreting a cell's proteome easier.
@@ -47,12 +49,14 @@ class CatalyticDomain:
         vmax: float,
         start: int,
         end: int,
+        is_fwd: bool = True,
     ):
         self.start = start
         self.end = end
         self.reaction = reaction
         self.km = km
         self.vmax = vmax
+        self.is_fwd = is_fwd
 
     def to_dict(self) -> dict:
         """Get dict representation of domain"""
@@ -66,6 +70,7 @@ class CatalyticDomain:
             "vmax": self.vmax,
             "start": self.start,
             "end": self.end,
+            "fwd": self.is_fwd,
         }
         return {"type": "C", "spec": kwargs}
 
@@ -87,13 +92,19 @@ class CatalyticDomain:
             vmax=dct["vmax"],
             start=dct["start"],
             end=dct["end"],
+            is_fwd=dct["fwd"],
         )
 
     def __repr__(self) -> str:
-        return f"CatalyticDomain({self.reaction},Km={self.km:.2e},Vmax={self.vmax:.2e})"
+        return f"CatalyticDomain({self.reaction},Km={self.km:.2e},Vmax={self.vmax:.2e},fwd={self.is_fwd})"
 
     def __str__(self) -> str:
-        return f"{self.reaction} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
+        subs_cntr = Counter(self.reaction.substrates)
+        prods_cntr = Counter(self.reaction.products)
+        lft = [f"{n} {m}" if n > 1 else str(m) for m, n in subs_cntr.items()]
+        rgt = [f"{n} {m}" if n > 1 else str(m) for m, n in prods_cntr.items()]
+        subs, prods = (lft, rgt) if self.is_fwd else (rgt, lft)
+        return f"{' + '.join(subs)} -> {' + '.join(prods)} | Km {self.km:.2e} Vmax {self.vmax:.2e}"
 
 
 class TransporterDomain:

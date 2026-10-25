@@ -3,7 +3,6 @@ extern crate rand;
 extern crate rand_distr;
 extern crate rayon;
 
-mod genetics;
 mod genomics;
 mod mutations;
 mod proteomics;
@@ -121,7 +120,7 @@ impl Genomics {
         &self,
         genome: String,
         cdss: Vec<(usize, usize, bool)>,
-    ) -> Vec<genetics::ProteinSpecType> {
+    ) -> Vec<genomics::ProteinSpecType> {
         genomics::extract_domains(
             &genome,
             &cdss,

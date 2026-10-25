@@ -12,10 +12,18 @@ _mol_map = {"X": _mol_x, "Y": _mol_y}
 
 
 def test_domains_from_to_dict():
-    dct = {"reaction": (["X"], ["Y"]), "km": 1.0, "vmax": 2.0, "start": 1, "end": 2}
+    dct = {
+        "reaction": (["X"], ["Y"]),
+        "km": 1.0,
+        "vmax": 2.0,
+        "start": 1,
+        "end": 2,
+        "fwd": True,
+    }
     dom = CatalyticDomain.from_dict(dct, molmap=_mol_map)
     assert dom.reaction.substrates == (_mol_x,)
     assert dom.reaction.products == (_mol_y,)
+    assert dom.is_fwd
     assert dom.km == 1.0
     assert dom.vmax == 2.0
     assert dom.start == 1
@@ -74,6 +82,7 @@ def test_protein_from_to_dict():
             "vmax": 2.0,
             "start": 1,
             "end": 2,
+            "fwd": True,
         },
     }
     trnsp_dct = {
@@ -119,6 +128,7 @@ def test_protein_from_to_dict():
     assert isinstance(dom, CatalyticDomain)
     assert dom.reaction.substrates == (_mol_x,)
     assert dom.reaction.products == (_mol_y,)
+    assert dom.is_fwd
     assert dom.km == 1.0
     assert dom.vmax == 2.0
     assert dom.start == 1

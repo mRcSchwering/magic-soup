@@ -1,9 +1,40 @@
+import math
+
 import pytest
 from magicsoup.constants import CODON_SIZE
-from magicsoup.genomics import Genomics, ProteinSpec
-from magicsoup.util import random_genome
+from magicsoup.genomics import DomainType, Genomics, ProteinSpec, _DomainTypeMap
+from magicsoup.util import codons, random_genome
 
 from tests.util import load_test_json
+
+
+def test_domain_type_map() -> None:
+    probs = {
+        DomainType.CATALYTIC: 0.1,
+        DomainType.TRANSPORTER: 0.1,
+        DomainType.REGULATORY: 0.1,
+    }
+    stop_codons = ["TGA", "TAG", "TAA"]
+    dom_type_map = _DomainTypeMap(
+        dom_type_probs=probs,
+        n_dom_type_codons=2,
+        stop_codons=stop_codons,
+    )
+
+    possible_codons = codons(n=2, excl_codons=stop_codons)
+
+    n_total = len(possible_codons)
+    for dom_type, prob in probs.items():
+        exp = prob * n_total  # binom exp value
+        exp_var = 2.56 * math.sqrt(exp * prob * (1 - prob))  # binom 99% Wald interval
+        act = len(dom_type_map.type_2_seqs[dom_type])
+        assert exp - exp_var <= act <= exp + exp_var
+
+    for dom_type, seqs in dom_type_map.type_2_seqs.items():
+        for seq in seqs:
+            token = dom_type_map.seq_2_token[seq]
+            assert DomainType(token) is dom_type
+
 
 # (genome, (start, stop))
 # starts: "TTG", "GTG", "ATG"

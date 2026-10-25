@@ -147,13 +147,11 @@ class _ReactionMap:
         vector_2_tokens = _get_inverse(self.token_2_vector)
         molmap_i = {i: m for m, i in molmap.items()}
 
-        react_2_tokens: dict[Reaction, list[int]] = {}
+        self.react_2_tokens: dict[Reaction, list[int]] = {}
         for vec, tokens in vector_2_tokens.items():
             subs = [dd for i, n in enumerate(vec) if n < 0 for dd in [molmap_i[i]] * -n]
             prods = [dd for i, n in enumerate(vec) if n > 0 for dd in [molmap_i[i]] * n]
-            react_2_tokens[Reaction(substrates=subs, products=prods)] = tokens
-
-        self.react_2_tokens = react_2_tokens
+            self.react_2_tokens[Reaction(substrates=subs, products=prods)] = tokens
 
 
 # TODO: Co-factors are regarded in kinetics, but not in token mapping
@@ -194,15 +192,14 @@ class _TransporterMap:
         vector_2_tokens = _get_inverse(self.token_2_vector)
         molmap_i = {i: m for m, i in molmap.items()}
 
-        mol_2_tokens: dict[Molecule, list[int]] = {}
+        # all vectors have 1/-1 for intra- and extra cellular molecules
+        self.mol_2_tokens: dict[Molecule, list[int]] = {}
         for vec, tokens in vector_2_tokens.items():
-            non_zeros = [d for d in vec if d > 0]
+            non_zeros = [i for i, d in enumerate(vec) if d != 0]
             if len(non_zeros) == 0:
                 continue
 
-            mol_2_tokens[molmap_i[non_zeros[0]]] = tokens
-
-        self.mol_2_tokens = mol_2_tokens
+            self.mol_2_tokens[molmap_i[non_zeros[0]]] = tokens
 
 
 class _EffectorMap:
@@ -234,15 +231,17 @@ class _EffectorMap:
         vector_2_tokens = _get_inverse(self.token_2_vector)
         molmap_i = {i: m for m, i in molmap.items()}
 
-        mol_2_tokens: dict[Molecule, list[int]] = {}
+        # vectors have a 1 for each mol (intra and extra cellular)
+        self.mol_2_tokens: dict[tuple[Molecule, bool], list[int]] = {}
         for vec, tokens in vector_2_tokens.items():
-            non_zeros = [d for d in vec if d > 0]
+            non_zeros = [i for i, d in enumerate(vec) if d != 0]
             if len(non_zeros) == 0:
                 continue
 
-            mol_2_tokens[molmap_i[non_zeros[0]]] = tokens
-
-        self.mol_2_tokens = mol_2_tokens
+            idx = non_zeros[0]
+            is_int = idx < len(molmap)
+            mol_i = idx if is_int else idx - len(molmap)
+            self.mol_2_tokens[(molmap_i[mol_i], is_int)] = tokens
 
 
 class ProteomicsKwargs(TypedDict, total=False):
@@ -423,6 +422,11 @@ class Proteomics(TensorClass):
         """
         eps = self.eps
         max_k = self.max_k
+
+        # TODO: N could be an empty tensor
+        #       in that case einsum cpm,m->cp below fails
+        #       should find the right place to protect against empty tensors
+        #       more likely to be triggered when spawning 1 cell
 
         # energies define k_e which defines k_e = k_f/k_b
         # extreme energies can create Inf or 0.0, avoid them with clamp

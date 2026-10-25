@@ -310,10 +310,9 @@ fn set_catalytic_domain_dict(
     let mut lfts: Vec<String> = Vec::with_capacity(2);
     let mut rgts: Vec<String> = Vec::with_capacity(2);
     for (mol_i, n) in react.iter().enumerate() {
-        let signed_n = sign * *n;
-        if signed_n == 0 {
+        if *n == 0 {
             continue;
-        } else if signed_n > 0 {
+        } else if *n > 0 {
             let mol = &molecules[mol_i];
             rgts.extend((0..n.abs()).map(|_| mol.to_string()));
         } else {
@@ -323,6 +322,7 @@ fn set_catalytic_domain_dict(
     }
     kwargs.set_item("km", k_m).unwrap();
     kwargs.set_item("vmax", v_max).unwrap();
+    kwargs.set_item("fwd", sign > 0).unwrap();
     kwargs.set_item("reaction", (lfts, rgts)).unwrap();
 }
 

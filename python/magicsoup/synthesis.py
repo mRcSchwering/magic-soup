@@ -1,16 +1,18 @@
+import random
+
 from magicsoup.chemistry import Molecule, Reaction
 from magicsoup.constants import CODON_SIZE
 from magicsoup.genomics import DomainType
 from magicsoup.world import World
 
 
-class CatalyticDomainFact:
+class CatalyticDomainSynthesizer:
     """
-    Factory for generating nucleotide sequences with [CatalyticDomains][magicsoup.containers.CatalyticDomain].
+    Factory for generating nucleotide sequences with [CatalyticDomains][magicsoup.biology.CatalyticDomain].
 
     Arguments:
-        reaction: Tuple of `(substrates, products)` from [Chemistry][magicsoup.containers.Chemistry]
-            where both `substrates` and `products` are lists of [Molecules][magicsoup.containers.Molecule].
+        reaction: Tuple of `(substrates, products)` from [Chemistry][magicsoup.biology.Chemistry]
+            where both `substrates` and `products` are lists of [Molecules][magicsoup.biology.Molecule].
 
     For stoichiometric coefficients > 1, list the molecule species multiple times.
     E.g. for `2A + B <-> C` use `reaction=([A, A, B], [C])`
@@ -32,7 +34,7 @@ class CatalyticDomainFact:
         """Generate a nucleotide sequence for this domain"""
         react_2_tokens = world.cells.proteomics.reaction_map.react_2_tokens
         return world.cells.genomics.generate_domain_seq(
-            domain_type=DomainType.TRANSPORTER, tokens=react_2_tokens[self.reaction]
+            domain_type=DomainType.CATALYTIC, tokens=react_2_tokens[self.reaction]
         )
 
     def __repr__(self) -> str:
@@ -42,12 +44,12 @@ class CatalyticDomainFact:
         return str(self.reaction)
 
 
-class TransporterDomainFact:
+class TransporterDomainSynthesizer:
     """
-    Factory for generating nucleotide sequences with [TransporterDomains][magicsoup.containers.TransporterDomain].
+    Factory for generating nucleotide sequences with [TransporterDomains][magicsoup.biology.TransporterDomain].
 
     Arguments:
-        molecule: [Molecules][magicsoup.containers.Molecule] which can be transported into or out of the cell by this domain.
+        molecule: [Molecules][magicsoup.biology.Molecule] which can be transported into or out of the cell by this domain.
     """
 
     def __init__(self, molecule: Molecule):
@@ -75,12 +77,12 @@ class TransporterDomainFact:
         return f"{self.molecule} transporter"
 
 
-class RegulatoryDomainFact:
+class RegulatoryDomainSynthesizer:
     """
-    Factory for generating nucleotide sequences with [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
+    Factory for generating nucleotide sequences with [RegulatoryDomains][magicsoup.biology.RegulatoryDomain].
 
     Arguments:
-        effector: Effector [Molecules][magicsoup.containers.Molecule]
+        effector: Effector [Molecules][magicsoup.biology.Molecule]
     """
 
     def __init__(self, effector: Molecule):
@@ -98,7 +100,8 @@ class RegulatoryDomainFact:
         """Generate a nucleotide sequence for this domain"""
         mol_2_tokens = world.cells.proteomics.effector_map.mol_2_tokens
         return world.cells.genomics.generate_domain_seq(
-            domain_type=DomainType.REGULATORY, tokens=mol_2_tokens[self.effector]
+            domain_type=DomainType.REGULATORY,
+            tokens=mol_2_tokens[(self.effector, random.choice([True, False]))],
         )
 
     def __repr__(self) -> str:
@@ -108,17 +111,44 @@ class RegulatoryDomainFact:
         return f"{self.effector} receptor"
 
 
-type DomainFact = CatalyticDomainFact | TransporterDomainFact | RegulatoryDomainFact
+type DomainSynthesizer = CatalyticDomainSynthesizer | TransporterDomainSynthesizer | RegulatoryDomainSynthesizer
 
 
-# TODO: tests
-class GenomeFact:
+class ProteinSynthesizer:
+
+    def __init__(
+        self,
+        catalyzed_reactions: list[Reaction] | None = None,
+        transported_molecules: list[Molecule] | None = None,
+        allosteric_effectors: list[Molecule] | None = None,
+    ) -> None:
+        self.domains: list[DomainSynthesizer] = []
+
+        for react in catalyzed_reactions or []:
+            self.domains.append(CatalyticDomainSynthesizer(reaction=react))
+
+        for mol in transported_molecules or []:
+            self.domains.append(TransporterDomainSynthesizer(molecule=mol))
+
+        for eff in allosteric_effectors or []:
+            self.domains.append(RegulatoryDomainSynthesizer(effector=eff))
+
+    def __repr__(self) -> str:
+        doms = [repr(d) for d in self.domains]
+        return f"{type(self).__name__}({','.join(doms)})"
+
+    def __str__(self) -> str:
+        doms = [str(d) for d in self.domains]
+        return f"{type(self).__name__}: {' | '.join(doms)}"
+
+
+class GenomeSynthesizer:
     """
     Factory for generating genomes that translate into a desired proteome.
 
     Arguments:
         world: [World][magicsoup.world.World] object in which the genome will be used
-        proteome: Desired proteome as a list of lists of domain factories.
+        proteins: Desired proteins as a list of [ProteinSynthesizers][..ProteinSynthesizer].
             Each list of domain factories represents a protein.
         target_size: Optional target size of generated genome.
             Smallest possible genome size will be generated if `None`.
@@ -140,35 +170,19 @@ class GenomeFact:
     def __init__(
         self,
         world: World,
-        proteome: list[list[DomainFact]],
+        proteins: list[ProteinSynthesizer],
         target_size: int | None = None,
-    ):
+    ) -> None:
         self.world = world
-        self.proteome = proteome
+        self.proteins = proteins
 
-        try:
-            _ = iter(proteome)
-        except TypeError as err:
-            raise ValueError(
-                "Proteome must be a list of lists representing domains in proteins."
-            ) from err
-
-        for pi, prot in enumerate(proteome):
-            try:
-                _ = iter(prot)
-            except TypeError as err:
-                raise ValueError(
-                    "Proteome must be a list of lists representing domains in proteins."
-                    f" Element {pi} of proteome is not iterable."
-                ) from err
-
-        for prot in proteome:
-            for dom in prot:
+        for prot in proteins:
+            for dom in prot.domains:
                 dom.validate(world=world)
 
         self.req_nts = sum(
-            self.world.cells.genomics.dom_size_nt * len(d) + 2 * CODON_SIZE
-            for d in self.proteome
+            self.world.cells.genomics.dom_size_nt * len(d.domains) + 2 * CODON_SIZE
+            for d in self.proteins
         )
         self.target_size = self.req_nts if target_size is None else target_size
         if self.req_nts > self.target_size:
@@ -182,8 +196,8 @@ class GenomeFact:
         """Generate a genome with the desired proteome"""
         return self.world.cells.genomics.generate_genome(
             cdss=[
-                [d.gen_coding_sequence(world=self.world) for d in p]
-                for p in self.proteome
+                [d.gen_coding_sequence(world=self.world) for d in p.domains]
+                for p in self.proteins
             ],
             n_pad_nts=self.target_size - self.req_nts,
         )
