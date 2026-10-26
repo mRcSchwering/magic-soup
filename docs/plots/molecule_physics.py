@@ -32,7 +32,7 @@ def _plot_diff(chemistry: ms.Chemistry):
                         **record,
                         "x": x * 10,
                         "y": y * 10,
-                        "µM": world.culture.molecule_map[mi, x, y].item(),
+                        "mM": world.culture.molecule_map[mi, x, y].item(),
                     }
                 )
 
@@ -45,7 +45,7 @@ def _plot_diff(chemistry: ms.Chemistry):
 
     return (
         ggplot(df)
-        + geom_raster(aes(x="x", y="y", fill="µM"))
+        + geom_raster(aes(x="x", y="y", fill="mM"))
         + scale_fill_continuous(trans="log10")  # pylint: disable=all
         + facet_grid("molecule ~ second")
         + coord_equal(expand=False)
@@ -72,7 +72,7 @@ def _plot_perm_degrad(chemistry: ms.Chemistry):
         for mol in mols:
             mi = chemistry.molname_2_idx[mol]
             conc = float(world.cells.molecules[idxs, mi].sum()) / n_cells
-            records.append({"second": ti * dt, "molecule": mol, "µM": conc})
+            records.append({"second": ti * dt, "molecule": mol, "mM": conc})
         world.advance_time()
 
     dfp = pd.DataFrame.from_records(records)
@@ -92,7 +92,7 @@ def _plot_perm_degrad(chemistry: ms.Chemistry):
         for mol in mols:
             mi = chemistry.molname_2_idx[mol]
             conc = float(world.culture.molecule_map[mi].sum()) / N**2
-            records.append({"second": ti * dt, "molecule": mol, "µM": conc})
+            records.append({"second": ti * dt, "molecule": mol, "mM": conc})
         world.advance_time()
 
     dfh = pd.DataFrame.from_records(records)
@@ -100,13 +100,11 @@ def _plot_perm_degrad(chemistry: ms.Chemistry):
 
     return (
         ggplot(pd.concat([dfp, dfh], ignore_index=True))
-        + geom_line(aes(x="second", y="µM", color="molecule"))
+        + geom_line(aes(x="second", y="mM", color="molecule"))
         + scale_color_discrete()
         + scale_x_continuous(trans="log10")  # pylint: disable=all
         + facet_wrap("type", ncol=1, scales="free")
         + theme(figure_size=(12, 5))
-        # + theme(axis_title=element_blank())
-        # + theme(legend_position="bottom", legend_direction="horizontal")
     ), "permeation-degradation"
 
 

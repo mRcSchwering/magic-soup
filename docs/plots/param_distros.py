@@ -38,10 +38,5 @@ def _plot_distributions():
 
 
 def create_plots(imgs_dir: Path):
-    # g, name = _plot_specific_ke_distributions()
-    # g.save(imgs_dir / f"{name}.png", dpi=200)
     g, name = _plot_distributions()
     g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
-
-
-# TODO: in previous plots I used µM, actually it's mM

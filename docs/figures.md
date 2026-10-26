@@ -128,7 +128,7 @@ Only neighbouring cells can recombinate their genomes._
 ![](./img/supporting/diffusion.png)
 
 _**4.1. Molecule diffusion.**
-Small world maps were filled with a 100&nbsp;µM of a molecule species in the middle and 1&nbsp;µM in the periphery.
+Small world maps were filled with a 100&nbsp;mM of a molecule species in the middle and 1&nbsp;mM in the periphery.
 Columns represent time in seconds from left to right, rows show different molecule species.
 Diffusion coefficients were set to 1.9E-5&nbsp;cm²/s for CO2, 6.7E-6&nbsp;cm²/s for glucose, 2.5E-6&nbsp;cm²/s for NADH.
 Map dimensions are in µm._
@@ -138,9 +138,9 @@ Map dimensions are in µm._
 ![](./img/supporting/permeation-degradation.png)
 
 _**4.2. Molecule permeation and degradation.**
-Top row shows molecule degradation of 100&nbsp;µM CO2, NADH, acetyl-phosphate
+Top row shows molecule degradation of 100&nbsp;mM CO2, NADH, acetyl-phosphate
 with half-lifes of $\infty$, 0.5&nbsp;days, 100&nbsp;days respectively over the course of 115&nbsp;days.
-Bottom row shows molecule permeation of 100&nbsp;µM extracellular CO2, acetat, glucose through
+Bottom row shows molecule permeation of 100&nbsp;mM extracellular CO2, acetat, glucose through
 the cell membrane with permeability coefficients of 0.35&nbsp;cm/s, 2E-4&nbsp;cm/s, 1E-8&nbsp;cm/s respectively
 over the course of 10&nbsp;s._
 
@@ -154,7 +154,7 @@ _**5.1. Parameter Distributions.**
 Each row shows a snapshot of a parameter distribution of the proteins in a simulation with 1000 random cells with 1000 base pair long genomes each.
 The top rows shows the equilibrium constant ($K_E$) distribution.
 The middle row shows an equivalent of the Michaelis Menten constant ($K_M$) distribution in mM.
-The bottom row shows the maximum velocity ($v_{max}$) distribution in mM/s._
+The bottom row shows the maximum velocity ($v_{max}$) distribution in mM/s assuming constant protein concentration of 1&nbsp;µM._
 
 <br/>
 
