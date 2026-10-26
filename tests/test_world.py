@@ -756,3 +756,15 @@ def test_saving_loading_obj(tmp_path: Path) -> None:
     assert world.cells.dim_scaling == 0.3
     assert world.cells.genomics.stop_codons == ["TGA", "TAG"]
     assert world.cells.proteomics.abs_temp == 100
+
+
+# TODO: test that I can add 0 cells and run simulation
+
+# TODO: test that I can add a cell with 0 proteins (p=0) and run simulation
+
+# TODO: K_e values created by random proteins should be on average 1
+#       and most values should be between 1e-4 and 1e4
+#       most people model it as log-normal distribution with center 1
+#       and +/- 100 STDEV, values <1e-10 or >1e10 should be virtually impossible
+
+# TODO: test that checks that Vmax, Km values are in proper range (see proteomics)

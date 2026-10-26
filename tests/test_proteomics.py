@@ -932,6 +932,10 @@ def test_random_cell_reprs() -> None:
     proteomes, _ = _get_random_proteomes(1000)
     protics = Proteomics(chemistry=_CHEMISTRY)
 
+    # TODO: check that the amount of proteins
+    #       in the parameters reflects the number of proteins
+    #       in the proteomes
+
     # test
     for proteome in proteomes:
         _ = protics.get_proteome(proteome=proteome)

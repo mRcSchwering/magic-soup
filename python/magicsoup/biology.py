@@ -304,7 +304,7 @@ class Protein:
         self.n_domains = len(domains)
         self.cds_start = cds_start
         self.cds_end = cds_end
-        self.is_fwd = is_fwd
+        self.is_fwd = is_fwd  # TODO: maybe is_53 (clearer)
 
     def to_dict(self) -> dict:
         """Get dict representation of protein"""
@@ -323,6 +323,7 @@ class Protein:
         `type` is domain type `"C"` (catalytic), `"T"` (transporter), or
         `"R"` (regulatory) and `spec` is a dict with kwargs for each domain's `from_dict()`.
         """
+        # TODO: if I use Enums defined in python and Rust, can I use them here (instead of C,T,R)?
         doms: list[DomainType] = []
         for dom in dct["domains"]:
             dom_type = dom["type"]

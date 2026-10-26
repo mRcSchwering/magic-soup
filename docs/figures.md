@@ -146,27 +146,15 @@ over the course of 10&nbsp;s._
 
 <br/>
 
-## 5. Equilibrium Constants
+## 5. Parameter Distributions
 
-![](./img/supporting/specific_equilibrium_constant_distributions.png)
+![](./img/supporting/parameter-distributions.png)
 
-_**5.1. Equilibrium constant distributions of specific reactions on a logarithmic scale.**
-Reaction energies are based on the molecule energies defined on the Wood-Ljungdahl example chemistry.
-Random proteins describe enzymes based on 100 random genomes of length 500 using the Wood-Ljungdahl example chemistry.
-Light dashed lines show 100 and 1/100 equilibrium constants, the dark dashed lined 0.
-Reactions with equilibrium constants far beyong the light dashed lines become practically irreversible._
-
-<br/>
-
-![](./img/supporting/random_equilibrium_constant_distributions.png)
-
-_**5.2. Molecule energies and temperatures influence equilibrium constant distributions.**
-Absolute equilibrium constant distributions are shown on a logarithmic scale for random proteins
-at different temperatures in Kelvin and different reaction energies.
-Random proteins describe enzymes based on 1000 random genomes of length 500 using chemistries randomly generated.
-These randomly generated chemistries have molecules with energies of 10 kJ, 100 kJ, or 200 kJ.
-Light dashed line shows an equilibrium constant of 100, the dark dashed lined 0.
-Reactions with equilibrium constants far beyong the light dashed line become practically irreversible._
+_**5.1. Parameter Distributions.**
+Each row shows a snapshot of a parameter distribution of the proteins in a simulation with 1000 random cells with 1000 base pair long genomes each.
+The top rows shows the equilibrium constant ($K_E$) distribution.
+The middle row shows an equivalent of the Michaelis Menten constant ($K_M$) distribution in mM.
+The bottom row shows the maximum velocity ($v_{max}$) distribution in mM/s._
 
 <br/>
 

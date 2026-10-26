@@ -2,18 +2,26 @@ from pathlib import Path
 
 import magicsoup as ms
 import pandas as pd
+from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
-from plotnine import *
+from plotnine import *  # pylint: disable=W0614,W0401
 
 
 def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, cdsw=4):
     cell = world.get_cell(by_idx=cell_idx)
     n = len(cell.genome)
 
+    colors = {
+        "genome": "dimgray",
+        "CDS": "lightgray",
+        "catalytic": "#fe218b",
+        "transporter": "#21b0fe",
+        "regulatory": "#fed700",
+    }
     dom_type_map = {
-        ms.CatalyticDomain: "catal",
-        ms.TransporterDomain: "trnsp",
-        ms.RegulatoryDomain: "reg",
+        CatalyticDomain: "catalytic",
+        TransporterDomain: "transporter",
+        RegulatoryDomain: "regulatory",
     }
     records = [{"tag": "genome", "dir": "", "start": 0, "stop": n, "type": "genome"}]
     for pi, prot in enumerate(cell.proteome):
@@ -46,24 +54,16 @@ def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, 
         + ["genome"]
         + df.loc[df["dir"] == "bwd", "tag"].unique().tolist()
     )
-    types = df["type"].unique().tolist()
     df["tag"] = pd.Categorical(df["tag"], categories=reversed(tags), ordered=True)
-    df["type"] = pd.Categorical(df["type"], categories=types)
+    df["type"] = pd.Categorical(df["type"], categories=list(colors), ordered=True)
 
-    colors = {
-        "genome": "dimgray",
-        "CDS": "lightgray",
-        "catal": "#fe218b",
-        "trnsp": "#21b0fe",
-        "reg": "#fed700",
-    }
     sizes = {d: gw if d == "genome" else cdsw for d in tags}
     return (
         ggplot(df)
         + geom_segment(
             aes(x="start", y="tag", xend="stop", yend="tag", color="type", size="tag")
         )
-        + scale_color_manual(values=colors)
+        + scale_color_manual(values=colors)  # pylint: disable=all
         + scale_size_manual(values=sizes)
         + guides(size=False)
         + theme(figure_size=(w, h * len(sizes) + 0.3))
@@ -76,9 +76,9 @@ def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, 
 
 
 def create_plots(imgs_dir: Path):
-    world = ms.World(map_size=8, chemistry=CHEMISTRY)
+    world = ms.World(chemistry=CHEMISTRY)
     world.spawn_cells(genomes=[ms.random_genome(s=1000) for _ in range(10)])
 
     for idx in range(3):
         g, name = _plot_genome_transcripts(cell_idx=idx, world=world)
-        g.save(imgs_dir / f"{name}{idx}.png", dpi=200)
+        g.save(imgs_dir / f"{name}{idx}.png", dpi=200, transparent=True)

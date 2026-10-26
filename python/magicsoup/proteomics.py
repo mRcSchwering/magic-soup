@@ -289,7 +289,7 @@ class Proteomics(TensorClass):
         chemistry: Chemistry,
         cv_ratio: float = 1e-3,
         abs_temp: float = ROOM_TEMP,  # in K
-        km_range: tuple[float, float] = (1e-2, 1.0),  # in mM
+        km_range: tuple[float, float] = (1e-3, 10.0),  # in mM
         vmax_range: tuple[float, float] = (1e-3, 1e4),  # in mM/s
         scalar_enc_size: int = 64 - 3,  # 1 codon w/o stop
         vector_enc_size: int = 4096 - 3 * 64,  # 2 codons w/o stop in 1st
@@ -316,6 +316,10 @@ class Proteomics(TensorClass):
         # energies (kJ/mol -> J/mol) for all mols (2m,)
         self.mol_energies = self.ftensor([d.energy for d in molecules] * 2) * 1e3
 
+        # TODO: Km range: log normal
+        #       median at 0.1 mM, 0.003 mM 5th pctile, 3 mM 95th pctile
+        # TODO: Vmax range: log-normal sigma=10
+        #       median 1e-2 mM/s, 1e-4 mM/s 5th pctile, 1 mM/s 95th pctile
         self.km_map = _LogNormMap(max_token=scalar_enc_size, weight_range=km_range)
         self.vmax_map = _LogNormMap(max_token=scalar_enc_size, weight_range=vmax_range)
         self.sign_map = _SignMap(max_token=scalar_enc_size)
@@ -434,9 +438,11 @@ class Proteomics(TensorClass):
         #       more likely to be triggered when spawning 1 cell
 
         # energies define k_e which defines k_e = k_f/k_b
-        # extreme energies can create Inf or 0.0, avoid them with clamp
         e = torch.einsum("cpm,m->cp", N, self.mol_energies)
         k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(eps, max_k)
+
+        # TODO: come up with a better way of deriving kf/kb from km
+        #       basically I am limiting km
 
         # Km is sampled between a defined range
         # exessively small Km can create numerical instability
@@ -445,8 +451,8 @@ class Proteomics(TensorClass):
         # k_e<1   => k_f=Km/k_e,      k_b=Km
         # this operation can create again Inf or 0.0, avoided with clamp, limits K_e
         is_fwd = k_e >= 1.0
-        k_f = torch.where(is_fwd, k_m, k_m / k_e).clamp(max=max_k)
-        k_b = torch.where(is_fwd, k_m * k_e, k_m).clamp(max=max_k)
+        k_f = torch.where(is_fwd, k_m, k_m / k_e)  # .clamp(max=max_k)
+        k_b = torch.where(is_fwd, k_m * k_e, k_m)  # .clamp(max=max_k)
         return k_f, k_b
 
     def derive_effective_stoichiometry(self, N: torch.Tensor) -> torch.Tensor:

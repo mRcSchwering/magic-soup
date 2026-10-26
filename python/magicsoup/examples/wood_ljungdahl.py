@@ -26,22 +26,22 @@ from magicsoup.chemistry import Chemistry, Molecule, Reaction
 #       maybe use reasonable realistic values
 
 
-NADPH = Molecule("NADPH", 200.0 * 1e3)
-NADP = Molecule("NADP", 100.0 * 1e3)
-ATP = Molecule("ATP", 100.0 * 1e3)
-ADP = Molecule("ADP", 70.0 * 1e3)
+NADPH = Molecule("NADPH", 200)
+NADP = Molecule("NADP", 100)
+ATP = Molecule("ATP", 100)
+ADP = Molecule("ADP", 70)
 
-methylFH4 = Molecule("methyl-FH4", 360.0 * 1e3)
-methylenFH4 = Molecule("methylen-FH4", 300.0 * 1e3)
-formylFH4 = Molecule("formyl-FH4", 240.0 * 1e3)
-FH4 = Molecule("FH4", 200.0 * 1e3)
-formiat = Molecule("formiat", 20.0 * 1e3)
-co2 = Molecule("CO2", 10.0 * 1e3, diffusivity=1.0, permeability=1.0)
+methylFH4 = Molecule("methyl-FH4", 360)
+methylenFH4 = Molecule("methylen-FH4", 300)
+formylFH4 = Molecule("formyl-FH4", 240)
+FH4 = Molecule("FH4", 200)
+formiat = Molecule("formiat", 20)
+co2 = Molecule("CO2", 10, diffusivity=1.0, permeability=1.0)
 
-NiACS = Molecule("Ni-ACS", 200.0 * 1e3)
-methylNiACS = Molecule("methyl-Ni-ACS", 300.0 * 1e3)
-HSCoA = Molecule("HS-CoA", 200.0 * 1e3)
-acetylCoA = Molecule("acetyl-CoA", 260.0 * 1e3)
+NiACS = Molecule("Ni-ACS", 200)
+methylNiACS = Molecule("methyl-Ni-ACS", 300)
+HSCoA = Molecule("HS-CoA", 200)
+acetylCoA = Molecule("acetyl-CoA", 260)
 
 
 MOLECULES = [

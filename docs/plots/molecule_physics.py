@@ -121,9 +121,7 @@ def create_plots(imgs_dir: Path):
     ]
 
     chemistry = ms.Chemistry(molecules=molecules, reactions=[])
-    # g, name = _plot_diff(chemistry=chemistry)
-    # g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g, name = _plot_diff(chemistry=chemistry)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
     g, name = _plot_perm_degrad(chemistry=chemistry)
     g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
-    # g, name = _plot_molecule_gradients(chemistry=chemistry)
-    # g.save(imgs_dir / f"{name}.png", dpi=200)
