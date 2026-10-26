@@ -78,6 +78,7 @@ class World(TensorClass):
     ):
         super().__init__(**(tensor_kwargs or {}))
 
+        time_resolution = min(time_resolution, time_step)
         if not (time_step / time_resolution).is_integer():
             raise ValueError(
                 f"Time per step {time_step:.2f}s"

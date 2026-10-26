@@ -93,6 +93,10 @@ class Kinetics(TensorClass):
         n_max_bisect = self.n_max_bisect
         xi_conv_tol = self.xi_conv_tol
 
+        # if c=0 or p=0 there is no change
+        if c == 0 or p == 0:
+            return x0
+
         # initial xi
         xi = self.fzeros(c, p)  # (c, p)
 

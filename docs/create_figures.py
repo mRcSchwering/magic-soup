@@ -8,14 +8,14 @@ from argparse import ArgumentParser
 from collections.abc import Callable
 from pathlib import Path
 
-from plotnine import *  # pylint: disable=W0401
+from plotnine import *  # pylint: disable=W0614,W0401
 
 from docs.plots.biochemical_patterns import create_plots as plot_biochemical_patterns
 from docs.plots.equilibrium_constants import create_plots as plot_equilibrium_constants
 from docs.plots.free_energy import create_plots as plot_free_energy
 from docs.plots.genomes import create_plots as plot_genomes
 from docs.plots.kinetic_constants import create_plots as plot_kinetic_constants
-from docs.plots.molecule_maps import create_plots as plot_molecule_maps
+from docs.plots.molecule_physics import create_plots as plot_molecule_physics
 from docs.plots.mutations import create_plots as plot_mutations
 from docs.plots.reaction_kinetics import create_plots as plot_reaction_kinetics
 from docs.plots.survival_replication import create_plots as plot_survival_replication
@@ -25,7 +25,7 @@ _PLOTS: dict[str, Callable] = {
     "genomes": plot_genomes,
     "transcriptomes": plot_transcriptomes,
     "mutations": plot_mutations,
-    "molecule_maps": plot_molecule_maps,
+    "molecule_physics": plot_molecule_physics,
     "equilibrium_constants": plot_equilibrium_constants,
     "reaction_kinetics": plot_reaction_kinetics,
     "biochemical_patterns": plot_biochemical_patterns,

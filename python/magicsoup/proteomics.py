@@ -24,7 +24,9 @@ def _get_vector_map(
     """
     n_vectors = len(vectors)
     if n_vectors == 0:
-        raise ValueError("No vectors provided for mapping.")
+        # TODO: should also work without reactions
+        # raise ValueError("No vectors provided for mapping.")
+        return {}
 
     if n_vectors > max_token:
         raise ValueError(
@@ -111,6 +113,9 @@ class _HillMap:
         numbers = [none_value] + random.choices(choices, k=max_token)
         self.token_2_scalar = {i: n for i, n in enumerate(numbers)}
         self.scalar_2_tokens = _get_inverse(self.token_2_scalar)
+
+
+# TODO: test these maps (also with no reactions/molecules)
 
 
 class _ReactionMap:

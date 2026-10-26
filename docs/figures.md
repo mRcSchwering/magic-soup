@@ -18,19 +18,19 @@ For details see the source code that generated each figure
 ![](./img/supporting/different_genome_sizes.png)
 
 _**1.1. Genome compositions at different genome sizes.**
-1000 random genomes of lengths 200, 500, 1000, or 2000 each were generated, transcribed, and translated.
+1000 random genomes of lengths 500, 1000, or 2000 each were generated, transcribed, and translated.
 For every cell the number proteins per genome, domains per protein, and coding base pairs per base pair were recorded.
 Coding base pairs are base pairs which are part of at least 1 domain.
 Dashed lines with numbers describe medians.
 There were 3 start and 3 stop codons.
-Each domain type appeared with a frequency of 1% in all 2 codon tuples._
+Each domain type appeared with a frequency of 5% in all 2-codon tuples._
 
 <br/>
 
 ![](./img/supporting/different_domain_probabilities.png)
 
 _**1.2. Genome compositions at different domain probabilities.**
-1000 random genomes of length 1000 with 2 codon domain type frequencies 0.1%, 1%, or 10% each were generated, transcribed, and translated.
+1000 random genomes of length 1000 with 2-codon domain type frequencies 2%, 5%, or 10% each were generated, transcribed, and translated.
 For every cell the number proteins per genome, domains per protein, and coding base pairs per base pair were recorded.
 Coding base pairs are base pairs which are part of at least 1 domain.
 Dashed lines with numbers describe medians.
@@ -46,7 +46,7 @@ For every cell the number proteins per genome, domains per protein, and coding b
 Coding base pairs are base pairs which are part of at least 1 domain.
 Dashed lines with numbers describe medians.
 Facetting labels on the right describe first the number of start codons, second the number of stop codons.
-Each domain type appeared with a frequency of 1% in all 2 codon tuples._
+Each domain type appeared with a frequency of 5% in all 2-codon tuples._
 
 <br/>
 
@@ -123,30 +123,26 @@ Only neighbouring cells can recombinate their genomes._
 
 <br/>
 
-## 4. Molecule Diffusion and Degradation
+## 4. Molecule Physics
 
-![](./img/supporting/diffusion_degradation.png)
+![](./img/supporting/diffusion.png)
 
-_**4.1. Molecule diffusion and degradation at different rates.**
-Small world maps were customly filled with molecules and brought to diffuse and degrade over steps.
-Columns from left to right show how each molecule map progressed from 0 to 9s.
-Rows show molecule species with different properties: fast-diffusion and stable, fast-diffusing and unstable,
-slow-diffusing and stable, slow-diffusing and unstable.
-Fast-diffusing referse to a diffusivity of 1, slow-diffusing to a diffusivity of 0.01.
-Stable refers to a half life of 1000, unstable to a half life of 10._
+_**4.1. Molecule diffusion.**
+Small world maps were filled with a 100&nbsp;µM of a molecule species in the middle and 1&nbsp;µM in the periphery.
+Columns represent time in seconds from left to right, rows show different molecule species.
+Diffusion coefficients were set to 1.9E-5&nbsp;cm²/s for CO2, 6.7E-6&nbsp;cm²/s for glucose, 2.5E-6&nbsp;cm²/s for NADH.
+Map dimensions are in µm._
 
 <br/>
 
-![](./img/supporting/molecule_gradients.png)
+![](./img/supporting/permeation-degradation.png)
 
-_**4.2. Molecule gradients are created.**
-World maps are filled with molecules and brought to diffuse and degrade over time steps.
-Columns from left to right show how each molecule map progressed over 600s.
-Upper row shows a 1D gradient.
-Lower row shows 2D gradients.
-Gradients are created by selectively adding and removing molecules in certain positions.
-1D gradient evolves by adding molecules in the middle of the map while removing it on the outskirts.
-2D gradients evolve by adding molecules at 16 pixels while removing them on a grid between these pixels._
+_**4.2. Molecule permeation and degradation.**
+Top row shows molecule degradation of 100&nbsp;µM CO2, NADH, acetyl-phosphate
+with half-lifes of $\infty$, 0.5&nbsp;days, 100&nbsp;days respectively over the course of 115&nbsp;days.
+Bottom row shows molecule permeation of 100&nbsp;µM extracellular CO2, acetat, glucose through
+the cell membrane with permeability coefficients of 0.35&nbsp;cm/s, 2E-4&nbsp;cm/s, 1E-8&nbsp;cm/s respectively
+over the course of 10&nbsp;s._
 
 <br/>
 

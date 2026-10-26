@@ -143,6 +143,14 @@ class Cells(TensorClass):
         N_b = self.itensor(N_b_)
         N_h = self.itensor(N_h_)
 
+        # TODO: if p=0, 3D tensors have (c, 0) not (c, 0, m)
+        #       temporary fix
+        if N_f.shape[1] == 0:
+            N_f = N_f.unsqueeze(-1).expand(-1, -1, self.m)
+            N_b = N_b.unsqueeze(-1).expand(-1, -1, self.m)
+            N_h = N_h.unsqueeze(-1).expand(-1, -1, self.m)
+            K_r = K_r.unsqueeze(-1).expand(-1, -1, self.m)
+
         # new proteomes may have different p
         p_req = v_max.shape[1]
         self.update_p(p_req=p_req)

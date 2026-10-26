@@ -32,7 +32,7 @@ class Molecule:
         self,
         name: str,
         energy: float,  # kJ/mol
-        half_life: int = -1,  # days
+        half_life: float = -1,  # days
         diffusivity: float = 6.7 * 1e-6,  # cm²/s
         permeability: float = 2.4 * 1e-10,  # cm/s
     ) -> None:
