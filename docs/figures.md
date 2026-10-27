@@ -285,14 +285,11 @@ Simulation starts with only intracellular A, E is supplied at each step._
 
 ## 8. Free Energy in Simulation
 
-![](./img/supporting/free_energy.png)
+![](./img/supporting/energy-density.png)
 
-_**8.1. Energy and entropy density over time during simulation.**
-Entropy (top) is the sum of all products of molecule concentration with its logarithm.
-Energy (bottom) is the sum of all molecule energies at every position.
-Simulations with only diffusion, only enzymatic activity, and both diffusion and enzymatic activity are shown.
-Values were divided by number of pixel on map (per pixel).
-Simulations were created with the example Wood-Ljungdahl chemistry and 50% cell confluency of cells with random genomes of length 1000._
+_**8.1. Energy density over time.**
+Energy density in J/L shown over time for a simulation that includes reactions 
+in its chemistry (red) and one that doesn't (blue)._
 
 <br/>
 

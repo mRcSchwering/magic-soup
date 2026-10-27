@@ -54,6 +54,7 @@ class _DomainTypeMap:
             raise ValueError("Domain type probabilities exceed 1")
         for dom_type, n in dom_type_2_n.items():
             if n == 0:
+                # TODO: this warning is also raise if prob is 0
                 warnings.warn(
                     f"{n_dom_type_codons} domain type codons"
                     f" are too small to encode {dom_type}"

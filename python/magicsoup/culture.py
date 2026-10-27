@@ -186,6 +186,8 @@ class Culture(TensorClass):
         free = self.cell_map_flat < 0  # idxs of free voxels
         score = self.frand(free.shape).masked_fill(~free, -1.0)  # score free foxels
         sel = score.topk(n).indices  # n distinct flat voxel idxs (prefer free ones)
+        # TODO: got RuntimeError: selected index k out of range
+        #       when trying to add more cells than available pixels (maybe better error?)
         sel = sel[free[sel]]  # drop occupied ones if fewer than n were free
         return self._idxs_to_positions(sel)  # convert into row-col (k, 2)
 

@@ -3,91 +3,57 @@ from pathlib import Path
 import magicsoup as ms
 import pandas as pd
 import torch
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
-from plotnine import *  # pylint: disable=W0401
+from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
+from plotnine import *  # pylint: disable=W0614,W0401
 
 # TODO: add physical units to plots in general
 
 
-def _plot_energy(nsteps=1000, map_size=8, confluency=0.5, gsize=1000):
-    world = ms.World(map_size=map_size, chemistry=CHEMISTRY)
-    molmap = torch.rand_like(world.molecule_map) * 100
-    max_ = molmap.max().item()
-    n_cells = int(map_size**2 * confluency)
-    genomes = [ms.random_genome(s=gsize) for _ in range(n_cells)]
+def _run_simulation(
+    reactions: list[ms.Reaction], label: str, n_seconds=100
+) -> pd.DataFrame:
+    print("starting", label)
+    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=reactions)
+    E = torch.tensor([d.energy for d in chemistry.molecules], dtype=torch.double)
+    world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 10})
+    world.culture.molecule_map[:] = 10.0
+    N = world.culture.map_size
 
-    def init_world() -> ms.World:
-        world.kill_cells(cell_idxs=range(world.n_cells))
-        world.molecule_map = molmap.clone()
-        world.spawn_cells(genomes=genomes)
-        return world
+    genomes = [ms.random_genome() for _ in range(N**2)]
+    world.spawn_cells(genomes=genomes)
 
-    def world_energy(world: ms.World) -> float:
-        energies = torch.tensor([d.energy for d in world.chemistry.molecules])
-        e_map = torch.einsum("mxy,m->xy", world.molecule_map, energies)
-        e_cells = torch.einsum("cm,m->c", world.cell_molecules, energies)
-        return (e_map.sum() + e_cells.sum()).item()
-
-    def world_entropy(world: ms.World) -> float:
-        t = (
-            torch.cat([world.molecule_map.flatten(), world.cell_molecules.flatten()])
-            / max_
-        )
-        return (-t * torch.log(t + 1e-10)).sum().item()
-
-    def record_energy_entropy(record: dict, records: list, world: ms.World):
-        records.append({**record, "value": world_energy(world), "variable": "U"})
-        records.append({**record, "value": world_entropy(world), "variable": "S"})
+    def _get_energy_dens(world: ms.World) -> float:
+        e_map = torch.einsum("mxy,m->xy", world.culture.molecule_map.to(E), E)
+        e_cells = torch.einsum("cm,m->c", world.cells.molecules.to(E), E)
+        return int(e_map.sum() + e_cells.sum() / 1000) / N**2
 
     records = []
-
-    world = init_world()
-    for step_i in range(nsteps):
-        world.diffuse_molecules()
-        record_energy_entropy(
-            record={"label": "diffusion", "step": step_i}, records=records, world=world
-        )
-
-    world = init_world()
-    for step_i in range(nsteps):
-        world.enzymatic_activity()
-        record_energy_entropy(
-            record={"label": "enzymatic-activity", "step": step_i},
-            records=records,
-            world=world,
-        )
-
-    world = init_world()
-    for step_i in range(nsteps):
-        world.enzymatic_activity()
-        world.diffuse_molecules()
-        record_energy_entropy(
-            record={"label": "both", "step": step_i}, records=records, world=world
-        )
+    for t in range(n_seconds):
+        print(f"  {t}s")
+        records.append({"t": t, "e": _get_energy_dens(world)})
+        world.advance_time()
 
     df = pd.DataFrame.from_records(records)
-    df["label"] = pd.Categorical(
-        df["label"], categories=["diffusion", "enzymatic-activity", "both"]
-    )
-    df["value"] = df["value"] / map_size**2
-    df["variable"] = df["variable"] + "[pP]"
+    df["e"] = df["e"] * 1e-3  # mmol/L * J/mol -> J/L
+    df["de"] = df.loc[0, "e"] - df["e"]
+    df["l"] = label
+    return df
 
+
+def _plot_energy():
+    df0 = _run_simulation(reactions=[], label="without reactions")
+    df1 = _run_simulation(reactions=REACTIONS, label="with reactions")
+    df = pd.concat([df0, df1], ignore_index=True)
     return (
-        ggplot(df)
-        + geom_line(aes(x="step", y="value", color="label"))
-        + scale_y_continuous(labels=lambda d: [f"{dd:.2E}" for dd in d])
-        + facet_grid("variable ~ .", scales="free")
-        + scale_color_brewer(type="Qualitative", palette="Set2")
-        + theme(figure_size=(10, 4))
-        + theme(
-            legend_position="bottom",
-            legend_title=element_blank(),
-            axis_title=element_blank(),
-            legend_margin=10,
-        )
-    ), "free_energy"
+        ggplot(df, aes(x="t", y="e", color="l"))
+        + geom_line()
+        + xlab("time [s]")
+        + ylab("energy density [J/L]")
+        + theme(figure_size=(7, 3))
+        + theme(legend_position="bottom", legend_title=element_blank())
+    ), "energy-density"
 
 
 def create_plots(imgs_dir: Path):
     g, name = _plot_energy()
-    g.save(imgs_dir / f"{name}.png", dpi=200)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)

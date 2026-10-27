@@ -771,3 +771,7 @@ def test_saving_loading_obj(tmp_path: Path) -> None:
 
 # TODO: Hill coefficients are on average 1.5 in Ecoli
 #       >3 is extremely rare
+
+
+# TODO: test that energy always goes down with reactions
+#       stays the same without

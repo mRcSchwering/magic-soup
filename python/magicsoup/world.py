@@ -124,7 +124,14 @@ class World(TensorClass):
         )
 
         if not cells:
-            genomics = Genomics(**(genomics_kwargs or {}))
+            # TODO: if there are no reactions, react_dom_prob must be 0
+            #       where to do this best?
+            # TODO: I can give Cell kwargs, proteomics/genomics kwargs
+            #       then it's nested and Cells handles these kwargs
+            genomics_kwargs = genomics_kwargs or {}
+            if len(chemistry.reactions) == 0:
+                genomics_kwargs["p_catal_dom"] = 0.0
+            genomics = Genomics(**genomics_kwargs)
             proteomics = Proteomics(
                 **(proteomics_kwargs or {}),
                 chemistry=chemistry,
