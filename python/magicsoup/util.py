@@ -8,7 +8,7 @@ from typing import Any, TypedDict
 import numpy as np
 import torch
 
-from magicsoup.constants import (
+from magicsoup.config import (
     ALL_NTS,
     CODON_SIZE,
     DEFAULT_DEVICE,
@@ -33,7 +33,7 @@ def randstr(n: int = 12) -> str:
     )
 
 
-def random_genome(s: int = 500, excl: list[str] | None = None) -> str:
+def random_genome(s: int = 500, excl: Iterable[str] | None = None) -> str:
     """
     Generate a random nucleotide sequence string
 
@@ -89,7 +89,7 @@ def variants(seq: str) -> list[str]:
     return seqs3
 
 
-def codons(n: int, excl_codons: list[str] | None = None) -> list[str]:
+def codons(n: int, excl_codons: Iterable[str] | None = None) -> list[str]:
     """
     Return all possible nucleotide sequences of `n` codons,
     optionally excluding codons in `excl_codons`.
@@ -112,7 +112,7 @@ def codons(n: int, excl_codons: list[str] | None = None) -> list[str]:
 
 def write_fasta(name_2_seq: dict[str, str], file: Path) -> None:
     """Write fasta file from name to sequences mapping"""
-    lines: list[str] = [f">{n}\n{s}" for n, s in name_2_seq.items()]
+    lines = [f">{n}\n{s}" for n, s in name_2_seq.items()]
     file.write_text("\n".join(lines))
 
 

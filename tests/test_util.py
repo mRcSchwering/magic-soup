@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 from magicsoup import rs, util
-from magicsoup.constants import CODON_SIZE
+from magicsoup.config import CODON_SIZE
 
 
 # fmt: off

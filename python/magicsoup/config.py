@@ -14,6 +14,3 @@ DEFAULT_DEVICE = os.getenv("DEVICE", "cpu")
 DEFAULT_FTYPE = torch.float32
 DEFAULT_ITYPE = torch.int8
 DEFAULT_STYPE = "T"
-
-
-# TODO: better name config because device

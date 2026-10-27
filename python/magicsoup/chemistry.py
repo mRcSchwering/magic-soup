@@ -111,6 +111,9 @@ class Reaction:
 
         return hash(self) == hash(other)
 
+    def __lt__(self, other) -> bool:
+        return hash(self) < hash(other)
+
     def __repr__(self) -> str:
         subs_cntr = Counter(self.substrates)
         prods_cntr = Counter(self.products)
@@ -159,9 +162,8 @@ class Chemistry:
         molecules: Iterable[Molecule],
         reactions: Iterable[Reaction],
     ) -> None:
-        # remove duplicates while keeping order
-        self.molecules = list(dict.fromkeys(molecules))
-        self.reactions = list(dict.fromkeys(reactions))
+        self.molecules = sorted(set(molecules))
+        self.reactions = sorted(set(reactions))
 
         # check for undefined molecules in reactions
         dfnd_mols = set(molecules)
@@ -178,6 +180,7 @@ class Chemistry:
         self.mol_2_idx = {d: i for i, d in enumerate(self.molecules)}
         self.molname_2_idx = {d.name: i for i, d in enumerate(self.molecules)}
         self.molname_2_mol = {d.name: d for d in self.molecules}
+        self.idx_2_mol = {i: m for m, i in self.mol_2_idx.items()}
 
     def __and__(self, other: "Chemistry") -> "Chemistry":
         return Chemistry(

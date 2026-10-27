@@ -6,7 +6,7 @@ from itertools import product
 from typing import TypedDict
 
 from magicsoup import rs
-from magicsoup.constants import CODON_SIZE
+from magicsoup.config import CODON_SIZE
 from magicsoup.util import codons, random_genome
 
 

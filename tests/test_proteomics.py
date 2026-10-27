@@ -5,9 +5,15 @@ import pytest
 import torch
 from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
-from magicsoup.constants import GAS_CONSTANT
+from magicsoup.config import GAS_CONSTANT
 from magicsoup.genomics import DomainSpec, ProteinSpec
-from magicsoup.proteomics import Proteomics
+from magicsoup.proteomics import (
+    Proteomics,
+    _EffectorMap,
+    _LogNormMap,
+    _ReactionMap,
+    _TransporterMap,
+)
 
 from tests.util import FTYPE, ITYPE, ftensor, fzeros, itensor, izeros
 
@@ -95,6 +101,196 @@ _V_RATIOS = [
 ]
 
 # fmt: on
+
+
+def test_log_norm_map() -> None:
+    max_token = 100
+    value_range = (1e-2, 1e2)
+    mapper = _LogNormMap(max_token=max_token, value_range=value_range)
+    all_tokens = set(range(max_token + 1))  # first token is none token
+
+    # check that all tokens are defined
+    scalar_tokens = {dd for d in mapper.scalar_2_tokens.values() for dd in d}
+    tokens = set(mapper.token_2_scalar)
+    assert all_tokens == tokens
+    assert all_tokens == scalar_tokens
+
+    # check that mapping is bijective
+    assert len(scalar_tokens) == len(
+        [dd for d in mapper.scalar_2_tokens.values() for dd in d]
+    )
+
+    # check inversion is correct
+    for token in all_tokens:
+        scalar = mapper.token_2_scalar[token]
+
+        # none scalar
+        if scalar == 0:
+            assert token == 0
+            assert token in mapper.scalar_2_tokens[None]
+            continue
+
+        # valued scalar
+        assert token in mapper.scalar_2_tokens[scalar]
+
+    # distribution fits
+    values = list(mapper.token_2_scalar.values())[1:]
+    lo, hi = value_range
+    n = len(values)
+    assert min(values) > lo / 100
+    assert max(values) < hi * 100
+    assert len([d for d in values if d < lo]) / n < 0.1
+    assert len([d for d in values if d > hi]) / n < 0.1
+    exp = math.exp((math.log(lo) + math.log(hi)) / 2)
+    act = math.exp(sum(math.log(d) for d in values) / n)
+    assert abs(exp - act) < 0.5  # very unstable
+
+
+def test_reaction_map() -> None:
+    # it's possible to init without reactions
+    chemistry = Chemistry(molecules=_MOLECULES, reactions=[])
+    _ = _ReactionMap(chemistry=chemistry, max_token=20)
+
+    # setup actual mapper
+    chemistry = Chemistry(molecules=_MOLECULES, reactions=_REACTIONS)
+    idx_2_mol = chemistry.idx_2_mol
+    r = len(chemistry.reactions)
+
+    max_token = 20
+    mapper = _ReactionMap(chemistry=chemistry, max_token=max_token)
+    all_tokens = set(range(max_token + 1))  # first token is none token
+
+    # check that all tokens are defined
+    mol_tokens = {dd for d in mapper.react_2_tokens.values() for dd in d}
+    vector_tokens = set(mapper.token_2_vector)
+    assert all_tokens == vector_tokens
+    assert all_tokens == mol_tokens
+
+    # check that mapping is bijective
+    assert len(mol_tokens) == len(
+        [dd for d in mapper.react_2_tokens.values() for dd in d]
+    )
+
+    # check inversion is correct
+    for token in all_tokens:
+        vector = mapper.token_2_vector[token]
+        subs = [[idx_2_mol[i]] * -d for i, d in enumerate(vector) if d < 0]
+        prds = [[idx_2_mol[i]] * d for i, d in enumerate(vector) if d > 0]
+
+        # none vector
+        if len(subs) == 0 and len(prds) == 0:
+            assert token == 0
+            assert all(d == 0 for d in vector)
+            assert token in mapper.react_2_tokens[None]
+            continue
+
+        # valued vector
+        assert len(subs) > 0 and len(prds) > 0
+        react = Reaction(
+            substrates=[dd for d in subs for dd in d],
+            products=[dd for d in prds for dd in d],
+        )
+        assert token in mapper.react_2_tokens[react]
+
+    # check that all items are covered evenly
+    n_exp = max_token // r
+    assert mapper.react_2_tokens[None] == [0]
+    for react in chemistry.reactions:
+        assert len(mapper.react_2_tokens[react]) >= n_exp
+
+
+def test_transporter_map() -> None:
+    chemistry = Chemistry(molecules=_MOLECULES, reactions=[])
+    mol_2_idx = chemistry.mol_2_idx
+    m = len(mol_2_idx)
+
+    idx_2_mol = {v: k for k, v in mol_2_idx.items()}
+    idx_2_mol = {**idx_2_mol, **{k + m: v for k, v in idx_2_mol.items()}}
+
+    max_token = 20
+    mapper = _TransporterMap(chemistry=chemistry, max_token=max_token)
+    all_tokens = set(range(max_token + 1))  # first token is none token
+
+    # check that all tokens are defined
+    mol_tokens = {dd for d in mapper.mol_2_tokens.values() for dd in d}
+    vector_tokens = set(mapper.token_2_vector)
+    assert all_tokens == vector_tokens
+    assert all_tokens == mol_tokens
+
+    # check that mapping is bijective
+    assert len(mol_tokens) == len(
+        [dd for d in mapper.mol_2_tokens.values() for dd in d]
+    )
+
+    # check inversion is correct
+    for token in all_tokens:
+        vector = mapper.token_2_vector[token]
+        mols = [idx_2_mol[i] for i, d in enumerate(vector) if d != 0]
+
+        # none vector
+        if len(mols) == 0:
+            assert token == 0
+            assert all(d == 0 for d in vector)
+            assert token in mapper.mol_2_tokens[None]
+            continue
+
+        # valued vector
+        assert len(mols) == 2
+        assert mols[0] is mols[1]
+        assert token in mapper.mol_2_tokens[mols[0]]
+
+    # check that all items are covered evenly
+    n_exp = max_token // m
+    assert mapper.mol_2_tokens[None] == [0]
+    for mol in mol_2_idx:
+        assert len(mapper.mol_2_tokens[mol]) >= n_exp
+
+
+def test_effector_map() -> None:
+    chemistry = Chemistry(molecules=_MOLECULES, reactions=[])
+    mol_2_idx = chemistry.mol_2_idx
+    m = len(mol_2_idx)
+    m2 = 2 * m
+
+    idx_2_mol = {v: k for k, v in mol_2_idx.items()}
+    idx_2_mol = {**idx_2_mol, **{k + m: v for k, v in idx_2_mol.items()}}
+
+    max_token = 20
+    mapper = _EffectorMap(chemistry=chemistry, max_token=max_token)
+    all_tokens = set(range(max_token + 1))  # first token is none token
+
+    # check that all tokens are defined
+    mol_tokens = {dd for d in mapper.mol_2_tokens.values() for dd in d}
+    vector_tokens = set(mapper.token_2_vector)
+    assert all_tokens == vector_tokens
+    assert all_tokens == mol_tokens
+
+    # check that mapping is bijective
+    assert len(mol_tokens) == len(
+        [dd for d in mapper.mol_2_tokens.values() for dd in d]
+    )
+
+    # check inversion is correct
+    for token in all_tokens:
+        vector = mapper.token_2_vector[token]
+        mols = [idx_2_mol[i] for i, d in enumerate(vector) if d != 0]
+
+        # none vector
+        if len(mols) == 0:
+            assert token == 0
+            assert all(d == 0 for d in vector)
+            assert token in mapper.mol_2_tokens[None]
+            continue
+
+        # valued vector
+        assert len(mols) == 1
+        assert token in mapper.mol_2_tokens[mols[0]]
+
+    # check that all items are covered evenly
+    n_exp = max_token // m2
+    assert mapper.mol_2_tokens[None] == [0]
+    for mol in mol_2_idx:
+        assert len(mapper.mol_2_tokens[mol]) >= n_exp
 
 
 def _get_proteomics() -> Proteomics:

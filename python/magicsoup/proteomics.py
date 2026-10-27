@@ -1,6 +1,7 @@
 import math
 import random
 from collections import defaultdict
+from statistics import NormalDist
 from typing import TYPE_CHECKING, TypedDict
 
 import torch
@@ -8,47 +9,11 @@ import torch
 from magicsoup import rs
 from magicsoup.biology import Protein
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
-from magicsoup.constants import GAS_CONSTANT, ROOM_TEMP
+from magicsoup.config import GAS_CONSTANT, ROOM_TEMP
 from magicsoup.util import TensorClass, TensorKwargs
 
 if TYPE_CHECKING:
     from magicsoup.genomics import ProteinSpec
-
-
-def _get_vector_map(
-    max_token: int, vectors: list[list[int]], none_value: int = 0
-) -> dict[int, tuple[int, ...]]:
-    """
-    Get a map that maps tokens to a list of vectors.
-    Each vector will be mapped with the same frequency.
-    """
-    n_vectors = len(vectors)
-    if n_vectors == 0:
-        # TODO: should also work without reactions
-        # raise ValueError("No vectors provided for mapping.")
-        return {}
-
-    if n_vectors > max_token:
-        raise ValueError(
-            f"There are max_token={max_token} and {n_vectors} vectors."
-            " It is not possible to map all vectors"
-        )
-
-    vec_len = len(vectors[0])
-    if not all(len(d) == vec_len for d in vectors):
-        raise ValueError("Not all vectors have the same length")
-
-    for vector in vectors:
-        if all(d == 0 for d in vector):
-            raise ValueError(
-                "At least one vector includes only zeros."
-                " Each vector should contain at least one non-zero value."
-            )
-
-    idxs = random.choices(list(range(n_vectors)), k=max_token)
-    none_vector = tuple([none_value] * vec_len)
-    all_vectors = [none_vector] + [tuple(vectors[idx]) for idx in idxs]
-    return {i: v for i, v in enumerate(all_vectors)}
 
 
 def _get_inverse[T](m: dict[int, T]) -> dict[T, list[int]]:
@@ -64,29 +29,24 @@ class _LogNormMap:
     which is sampled from a log normal distribution.
     """
 
-    def __init__(
-        self, max_token: int, weight_range: tuple[float, float], none_value: float = 0.0
-    ) -> None:
+    def __init__(self, max_token: int, value_range: tuple[float, float]) -> None:
+        lo, hi = value_range
+        z95 = NormalDist().inv_cdf(0.975)
+        mu = (math.log(lo) + math.log(hi)) / 2
+        sig = (math.log(hi) - math.log(lo)) / (2 * z95)
 
-        min_w = min(weight_range)
-        max_w = max(weight_range)
-        l_min_w = math.log(min_w)
-        l_max_w = math.log(max_w)
-        mu = (l_min_w + l_max_w) / 2
-        sig = l_max_w - l_min_w
+        self.token_2_scalar: dict[int, float] = {}
+        self.scalar_2_tokens: dict[float | None, list[int]] = defaultdict(list)
 
-        non_zero_weights: list[float] = []
-        for _ in range(max_token):
-            sample = math.exp(random.gauss(mu, sig))
+        # none value on 0 token
+        self.token_2_scalar[0] = 0.0
+        self.scalar_2_tokens[None] = [0]
 
-            while not min_w <= sample <= max_w:
-                sample = math.exp(random.gauss(mu, sig))
-
-            non_zero_weights.append(sample)
-
-        weights = [none_value] + non_zero_weights
-        self.token_2_scalar = {i: w for i, w in enumerate(weights)}
-        self.scalar_2_tokens = _get_inverse(self.token_2_scalar)
+        # assign tokens
+        for token in range(1, max_token + 1):
+            value = random.lognormvariate(mu, sig)
+            self.token_2_scalar[token] = value
+            self.scalar_2_tokens[value].append(token)
 
 
 class _SignMap:
@@ -115,9 +75,6 @@ class _HillMap:
         self.scalar_2_tokens = _get_inverse(self.token_2_scalar)
 
 
-# TODO: test these maps (also with no reactions/molecules)
-
-
 class _ReactionMap:
     """
     Get a map that maps tokens to a list of vectors.
@@ -126,46 +83,49 @@ class _ReactionMap:
     stoichiometry of a reaction.
     """
 
-    def __init__(
-        self,
-        molmap: dict[Molecule, int],
-        reactions: list[Reaction],
-        max_token: int,
-        none_value: int = 0,
-    ) -> None:
-        n_mols = 2 * len(molmap)
+    def __init__(self, chemistry: Chemistry, max_token: int) -> None:
+        r = len(chemistry.reactions)
+        m = len(chemistry.molecules)
+        m2 = 2 * m
+        if r > max_token:
+            raise ValueError(
+                f"There are max_token={max_token} and {r} reactions."
+                " It is not possible to create an enzyme for all reactions"
+            )
 
-        # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0] * n_mols for _ in range(len(reactions))]
-        for ri, react in enumerate(reactions):
+        self.token_2_vector: dict[int, tuple[int, ...]] = {}
+        self.react_2_tokens: dict[Reaction | None, list[int]] = defaultdict(list)
+        if len(chemistry.reactions) == 0:
+            return
+
+        # only copy [0] to avoid having references to the same list
+        vectors = [[0] * m2 for _ in range(r)]
+        mol_2_idx = chemistry.mol_2_idx
+        ri_2_react: dict[int, Reaction] = {}
+        for ri, react in enumerate(chemistry.reactions):
+            ri_2_react[ri] = react
             for mol in react.substrates:
-                mol_i = molmap[mol]
-                vectors[ri][mol_i] -= 1
+                mi = mol_2_idx[mol]
+                vectors[ri][mi] -= 1
             for mol in react.products:
-                mol_i = molmap[mol]
-                vectors[ri][mol_i] += 1
+                mi = mol_2_idx[mol]
+                vectors[ri][mi] += 1
 
-        self.token_2_vector = _get_vector_map(
-            max_token=max_token, vectors=vectors, none_value=none_value
-        )
+        # none vector on 0 token
+        none_vector = [0] * m2
+        self.token_2_vector[0] = tuple(none_vector)
+        self.react_2_tokens[None] = [0]
 
-        vector_2_tokens = _get_inverse(self.token_2_vector)
-        molmap_i = {i: m for m, i in molmap.items()}
-
-        self.react_2_tokens: dict[Reaction, list[int]] = {}
-        for vec, tokens in vector_2_tokens.items():
-            subs = [dd for i, n in enumerate(vec) if n < 0 for dd in [molmap_i[i]] * -n]
-            prods = [dd for i, n in enumerate(vec) if n > 0 for dd in [molmap_i[i]] * n]
-            self.react_2_tokens[Reaction(substrates=subs, products=prods)] = tokens
+        # assign tokens round-robin
+        for token in range(1, max_token + 1):
+            ri = token % r
+            self.token_2_vector[token] = tuple(vectors[ri])
+            self.react_2_tokens[ri_2_react[ri]].append(token)
 
 
 # TODO: Co-factors are regarded in kinetics, but not in token mapping
 #       tokens map to vectors which are rows in N (so Co-factors are 0)
 #       Should separate forward and reverse
-
-# TODO: I always need 2 mapping:
-#       1. token -> (vector, scalar) for translation
-#       2. (scalar, Molecule, Reaction) -> token for synthesis
 
 
 class _TransporterMap:
@@ -175,36 +135,35 @@ class _TransporterMap:
     stoichiometry of a molecule transport into or out of the cell.
     """
 
-    def __init__(
-        self,
-        molmap: dict[Molecule, int],
-        max_token: int,
-        none_value: int = 0,
-    ) -> None:
+    def __init__(self, chemistry: Chemistry, max_token: int) -> None:
+        m = len(chemistry.molecules)
+        m2 = m * 2
+        if m > max_token:
+            raise ValueError(
+                f"There are max_token={max_token} and {m} molecules."
+                " It is not possible to create a transporter for all molecules"
+            )
 
-        n_mols = len(molmap)
+        self.token_2_vector: dict[int, tuple[int, ...]] = {}
+        self.mol_2_tokens: dict[Molecule | None, list[int]] = defaultdict(list)
+        idx_2_mol = chemistry.idx_2_mol
 
-        # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0] * n_mols * 2 for _ in range(n_mols)]
-        for mi in range(n_mols):
+        # only copy [0] to avoid having references to the same list
+        vectors = [[0] * m2 for _ in range(m)]
+        for mi in range(m):
             vectors[mi][mi] = -1
-            vectors[mi][mi + n_mols] = 1
+            vectors[mi][mi + m] = 1
 
-        self.token_2_vector = _get_vector_map(
-            max_token=max_token, vectors=vectors, none_value=none_value
-        )
+        # none vector on 0 token
+        none_vector = [0] * m2
+        self.token_2_vector[0] = tuple(none_vector)
+        self.mol_2_tokens[None] = [0]
 
-        vector_2_tokens = _get_inverse(self.token_2_vector)
-        molmap_i = {i: m for m, i in molmap.items()}
-
-        # all vectors have 1/-1 for intra- and extra cellular molecules
-        self.mol_2_tokens: dict[Molecule, list[int]] = {}
-        for vec, tokens in vector_2_tokens.items():
-            non_zeros = [i for i, d in enumerate(vec) if d != 0]
-            if len(non_zeros) == 0:
-                continue
-
-            self.mol_2_tokens[molmap_i[non_zeros[0]]] = tokens
+        # assign tokens round-robin
+        for token in range(1, max_token + 1):
+            mi = token % m
+            self.token_2_vector[token] = tuple(vectors[mi])
+            self.mol_2_tokens[idx_2_mol[mi]].append(token)
 
 
 class _EffectorMap:
@@ -215,38 +174,34 @@ class _EffectorMap:
     of an effector molecule.
     """
 
-    def __init__(
-        self,
-        molmap: dict[Molecule, int],
-        max_token: int,
-        none_value: int = 0,
-    ) -> None:
+    def __init__(self, chemistry: Chemistry, max_token: int) -> None:
+        m = len(chemistry.molecules)
+        m2 = m * 2
+        if m2 > max_token:
+            raise ValueError(
+                f"There are max_token={max_token} and {m} molecules."
+                " It is not possible to create a receptor for all molecules"
+            )
 
-        m = len(molmap) * 2
+        self.token_2_vector: dict[int, tuple[int, ...]] = {}
+        self.mol_2_tokens: dict[Molecule | None, list[int]] = defaultdict(list)
+        idx_2_mol = chemistry.idx_2_mol
 
-        # careful, only copy [0] to avoid having references to the same list
-        vectors = [[0] * m for _ in range(m)]
+        #  only copy [0] to avoid having references to the same list
+        vectors = [[0] * m2 for _ in range(m2)]
         for mi in range(m):
             vectors[mi][mi] = 1
+            vectors[mi + m][mi + m] = 1
 
-        self.token_2_vector = _get_vector_map(
-            max_token=max_token, vectors=vectors, none_value=none_value
-        )
+        # none vector on 0 token
+        none_vector = [0] * m2
+        self.token_2_vector[0] = tuple(none_vector)
+        self.mol_2_tokens[None] = [0]
 
-        vector_2_tokens = _get_inverse(self.token_2_vector)
-        molmap_i = {i: m for m, i in molmap.items()}
-
-        # vectors have a 1 for each mol (intra and extra cellular)
-        self.mol_2_tokens: dict[tuple[Molecule, bool], list[int]] = {}
-        for vec, tokens in vector_2_tokens.items():
-            non_zeros = [i for i, d in enumerate(vec) if d != 0]
-            if len(non_zeros) == 0:
-                continue
-
-            idx = non_zeros[0]
-            is_int = idx < len(molmap)
-            mol_i = idx if is_int else idx - len(molmap)
-            self.mol_2_tokens[(molmap_i[mol_i], is_int)] = tokens
+        # assign tokens round-robin
+        for token in range(1, max_token + 1):
+            self.token_2_vector[token] = tuple(vectors[token % m2])
+            self.mol_2_tokens[idx_2_mol[token % m]].append(token)
 
 
 class ProteomicsKwargs(TypedDict, total=False):
@@ -305,10 +260,8 @@ class Proteomics(TensorClass):
         self.chemistry = chemistry
 
         molecules = chemistry.molecules
-        reactions = chemistry.reactions
         n_mols = len(molecules)
         self.m = 2 * n_mols
-        mol_2_mi = {d: i for i, d in enumerate(molecules)}
 
         # cell-volume-to-voxel-volume ratios for ext mols (2m,)
         self.cv_ratio = self.ftensor([1] * n_mols + [cv_ratio] * n_mols)
@@ -320,15 +273,13 @@ class Proteomics(TensorClass):
         #       median at 0.1 mM, 0.003 mM 5th pctile, 3 mM 95th pctile
         # TODO: Vmax range: log-normal sigma=10
         #       median 1e-2 mM/s, 1e-4 mM/s 5th pctile, 1 mM/s 95th pctile
-        self.km_map = _LogNormMap(max_token=scalar_enc_size, weight_range=km_range)
-        self.vmax_map = _LogNormMap(max_token=scalar_enc_size, weight_range=vmax_range)
+        self.km_map = _LogNormMap(max_token=scalar_enc_size, value_range=km_range)
+        self.vmax_map = _LogNormMap(max_token=scalar_enc_size, value_range=vmax_range)
         self.sign_map = _SignMap(max_token=scalar_enc_size)
         self.hill_map = _HillMap(max_token=scalar_enc_size)
-        self.transport_map = _TransporterMap(molmap=mol_2_mi, max_token=vector_enc_size)
-        self.effector_map = _EffectorMap(molmap=mol_2_mi, max_token=vector_enc_size)
-        self.reaction_map = _ReactionMap(
-            reactions=reactions, molmap=mol_2_mi, max_token=vector_enc_size
-        )
+        self.transport_map = _TransporterMap(chemistry, max_token=vector_enc_size)
+        self.effector_map = _EffectorMap(chemistry, max_token=vector_enc_size)
+        self.reaction_map = _ReactionMap(chemistry, max_token=vector_enc_size)
 
         # init rust class
         self._setup_rs()
