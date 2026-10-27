@@ -279,7 +279,7 @@ class Protein:
             and [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
         cds_start: Start coordinate of its coding region
         cds_end: End coordinate of its coding region
-        is_fwd: Whether its CDS is in the forward or reverse-complement of the genome.
+        is_53: Whether its CDS is in the 5'-3' or 3'-5' direction of the genome.
 
     The simulation works with tensor representations of cell proteomes.
     This class is a helper which makes interpreting a cell's proteome easier.
@@ -290,29 +290,30 @@ class Protein:
     _I.e._ the index starts with 0, start is included, end is excluded.
     _E.g._ `cds_start=2`, `cds_end=31` starts with the 3rd and ends with the 31st base pair on the genome.
 
-    `is_fwd` describes whether the CDS is found on the forward (hypothetical 5'-3')
+    `is_53` describes whether the CDS is found on the forward (hypothetical 5'-3')
     or the reverse-complement (hypothetical 3'-5') side of the genome.
     `cds_start` and `cds_end` always describe the parsing direction / the direction of the hypothetical transcriptase.
-    So, if you want to visualize a `is_fwd=False` CDS on the genome in 5'-3' direction
+    So, if you want to visualize a `is_53=False` CDS on the genome in 5'-3' direction
     you have to do `n - cds_start` and `n - cds_stop` if `n` is the genome length.
     """
 
     def __init__(
-        self, domains: list[DomainType], cds_start: int, cds_end: int, is_fwd: bool
+        self, domains: list[DomainType], cds_start: int, cds_end: int, is_53: bool
     ):
         self.domains = domains
         self.n_domains = len(domains)
         self.cds_start = cds_start
         self.cds_end = cds_end
-        self.is_fwd = is_fwd  # TODO: maybe is_53 (clearer)
+        self.is_53 = is_53
 
+    # TODO: required?
     def to_dict(self) -> dict:
         """Get dict representation of protein"""
         return {
             "domains": [d.to_dict() for d in self.domains],
             "cds_start": self.cds_start,
             "cds_end": self.cds_end,
-            "is_fwd": self.is_fwd,
+            "is_53": self.is_53,
         }
 
     @classmethod
@@ -338,7 +339,7 @@ class Protein:
         return Protein(
             cds_start=dct["cds_start"],
             cds_end=dct["cds_end"],
-            is_fwd=dct["is_fwd"],
+            is_53=dct["is_53"],
             domains=doms,
         )
 

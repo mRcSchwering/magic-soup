@@ -26,13 +26,6 @@ from magicsoup.util import TensorClass, TensorKwargs, randstr
 _log = logging.getLogger(__name__)
 
 
-# TODO: @torch.inference_mode()
-#       around major stepping functions may speed up things even a bit more
-#       (or outside of the simulation around sep())
-#       however it means every tensor created within inference_mode cannot be mutated
-#       but this should be the case
-
-
 def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
     return lambda b: torch.load(BytesIO(b), map_location=map_loc)
@@ -57,6 +50,8 @@ class World(TensorClass):
     def __init__(
         self,
         chemistry: Chemistry,
+        genomics: Genomics | None = None,
+        proteomics: Proteomics | None = None,
         kinetics: Kinetics | None = None,
         diffusion: Diffusion | None = None,
         permeation: Permeation | None = None,
@@ -102,6 +97,16 @@ class World(TensorClass):
                 tensor_kwargs=tensor_kwargs,
             )
         )
+        self.cells = cells or Cells(
+            **(cells_kwargs or {}),
+            c_max=self.culture.map_size**2,
+            chemistry=chemistry,
+            genomics=genomics,
+            proteomics=proteomics,
+            genomics_kwargs=genomics_kwargs,
+            proteomics_kwargs=proteomics_kwargs,
+            tensor_kwargs=tensor_kwargs,
+        )
         self.diffusion = diffusion or Diffusion(
             **(diffusion_kwargs or {}),
             diff_coeffs=[d.diffusivity for d in chemistry.molecules],
@@ -122,33 +127,6 @@ class World(TensorClass):
             dt=time_resolution,
             tensor_kwargs=tensor_kwargs,
         )
-
-        if not cells:
-            # TODO: if there are no reactions, react_dom_prob must be 0
-            #       where to do this best?
-            # TODO: I can give Cell kwargs, proteomics/genomics kwargs
-            #       then it's nested and Cells handles these kwargs
-            genomics_kwargs = genomics_kwargs or {}
-            if len(chemistry.reactions) == 0:
-                genomics_kwargs["p_catal_dom"] = 0.0
-            genomics = Genomics(**genomics_kwargs)
-            proteomics = Proteomics(
-                **(proteomics_kwargs or {}),
-                chemistry=chemistry,
-                scalar_enc_size=genomics.one_codon_map.encoding_size,
-                vector_enc_size=genomics.two_codon_map.encoding_size,
-                tensor_kwargs=tensor_kwargs,
-            )
-            self.cells = Cells(
-                **(cells_kwargs or {}),
-                c_max=self.culture.map_size**2,
-                chemistry=chemistry,
-                genomics=genomics,
-                proteomics=proteomics,
-                tensor_kwargs=tensor_kwargs,
-            )
-        else:
-            self.cells = cells
 
         n_molecules = len(chemistry.molecules)
         self._int_mol_idxs = list(range(n_molecules))

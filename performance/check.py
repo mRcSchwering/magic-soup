@@ -24,12 +24,21 @@ v0.14.1 CPU (Intel Core i5-10210U):
 (0.37+-0.01)s - replicate cells
 (4.51+-0.12)s - enzymatic activity
 (0.40+-0.00)s - mutations
+
+0ba7586781640e8ae85f6ce089798f8b20dc5104 (Intel Core i5-10210U):
+10,000 cells, 1,000 genome size, on cpu
+(16.51+-0.76)s - spawn cells
+(15.38+-0.42)s - update cells
+(0.35+-0.01)s - replicate cells
+forever - advance time
 """
+
 import random
 import time
 from argparse import ArgumentParser
 
 import magicsoup as ms
+import torch
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 
 R = 5
@@ -49,7 +58,7 @@ def _gen_genomes(n: int, s: int, d=0.1) -> list[str]:
 def spawn_cells(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, device=device)
+        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
         world.spawn_cells(genomes=genomes)
@@ -60,12 +69,11 @@ def spawn_cells(device: str, n: int, s: int):
 def update_cells(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, device=device)
+        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
-        world.spawn_cells(genomes=genomes)
+        idxs = world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        pairs = [(d, i) for i, d in enumerate(world.cell_genomes)]
-        world.update_cells(genome_idx_pairs=pairs)
+        world.update_cells(genomes=genomes, cell_idxs=idxs)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -73,7 +81,7 @@ def update_cells(device: str, n: int, s: int):
 def replicate_cells(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, device=device)
+        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
         idxs = world.spawn_cells(genomes=genomes)
         t0 = time.time()
@@ -82,20 +90,20 @@ def replicate_cells(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
-def enzymatic_activity(device: str, n: int, s: int):
+def advance_time(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, device=device)
+        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        world.enzymatic_activity()
+        world.advance_time()
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
 
 def mutations(device: str, n: int, s: int):
-    world = ms.World(chemistry=CHEMISTRY, device=device)
+    world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
     genomes = _gen_genomes(n=n, s=s)
     world.spawn_cells(genomes=genomes)
     tds = []
@@ -109,32 +117,7 @@ def mutations(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
-def get_test(device: str, n: int, s: int):
-    proteome: list[list[ms.DomainFactType]] = []
-    for react in CHEMISTRY.reactions:
-        p: list[ms.DomainFactType] = [
-            ms.CatalyticDomainFact(reaction=react),
-            ms.RegulatoryDomainFact(effector=react[0][0], is_transmembrane=False),
-        ]
-        proteome.append(p)
-    for mol in CHEMISTRY.molecules:
-        p = [
-            ms.TransporterDomainFact(molecule=mol),
-            ms.RegulatoryDomainFact(effector=mol, is_transmembrane=True),
-        ]
-        proteome.append(p)
-
-    world = ms.World(chemistry=CHEMISTRY, device=device)
-    genome_fact = ms.GenomeFact(world=world, proteome=proteome, target_size=s)
-    tds = []
-    for _ in range(R):
-        t0 = time.time()
-        for _ in range(n):
-            _ = genome_fact.generate()
-        tds.append(time.time() - t0)
-    return _summary(tds=tds)
-
-
+@torch.inference_mode()
 def main(parts: list, n: int, s: int, device: str):
     print(f"Running {', '.join(parts)}")
     print(f"{n:,} cells, {s:,} genome size, on {device}")
@@ -151,17 +134,13 @@ def main(parts: list, n: int, s: int, device: str):
         smry = replicate_cells(device=device, n=n, s=s)
         print(f"{smry} - replicate cells")
 
-    if "enzymatic_activity" in parts:
-        smry = enzymatic_activity(device=device, n=n, s=s)
-        print(f"{smry} - enzymatic activity")
+    if "advance_time" in parts:
+        smry = advance_time(device=device, n=n, s=s)
+        print(f"{smry} - advance_time")
 
     if "mutations" in parts:
         smry = mutations(device=device, n=n, s=s)
         print(f"{smry} - mutations")
-
-    if "test" in parts:
-        smry = get_test(n=n, s=s, device=device)
-        print(f"{smry} - test")
 
 
 if __name__ == "__main__":
@@ -169,8 +148,8 @@ if __name__ == "__main__":
         "spawn_cells",
         "update_cells",
         "replicate_cells",
-        "enzymatic_activity",
-        "mutations",
+        "advance_time",
+        # "mutations",
     ]
 
     parser = ArgumentParser()

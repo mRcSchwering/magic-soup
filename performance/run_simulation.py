@@ -42,15 +42,16 @@ def timeit(label: str, step: int, writer: SummaryWriter):
     writer.add_scalar(f"Time[s]/{label}", time.time() - t0, step)
 
 
+@torch.inference_mode()
 def main(args: Namespace):
     writer = SummaryWriter(log_dir=_this_dir / "runs" / _now)
 
     world = ms.World(
         chemistry=CHEMISTRY,
-        map_size=args.map_size,
-        mol_map_init=args.init_molmap,
-        device=args.device,
+        culture_kwargs={"map_size": args.map_size},
+        tensor_kwargs={"device": args.device},
     )
+    world.culture.molecule_map[:] = 10
     world.save(rundir=_this_dir / "runs" / _now)
 
     mol_2_idx = {d.name: i for i, d in enumerate(CHEMISTRY.molecules)}
@@ -61,7 +62,7 @@ def main(args: Namespace):
             world.save_state(statedir=_this_dir / "runs" / _now / f"step={step_i}")
 
         with timeit("perStep", step_i, writer):
-            n_cells = world.n_cells
+            n_cells = world.cells.get_n_cells()
             if n_cells < 1000:
                 with timeit("addCells", step_i, writer):
                     genomes = [
@@ -70,48 +71,31 @@ def main(args: Namespace):
                     ]
                     world.spawn_cells(genomes=genomes)
 
-            with timeit("activity", step_i, writer):
-                world.enzymatic_activity()
+            with timeit("advanceTime", step_i, writer):
+                world.advance_time()
 
             with timeit("kill", step_i, writer):
-                kill = (
-                    torch.argwhere(world.cell_molecules[:, ATP_IDX] < 1.0)
-                    .flatten()
-                    .tolist()
-                )
+                kill = torch.argwhere(world.cells.molecules[:, ATP_IDX] < 1.0)
                 world.kill_cells(cell_idxs=kill)
 
             with timeit("replicate", step_i, writer):
-                repl = (
-                    torch.argwhere(world.cell_molecules[:, ATP_IDX] > 5.0)
-                    .flatten()
-                    .tolist()
-                )
-                world.cell_molecules[repl, ATP_IDX] -= 4.0
+                repl = torch.argwhere(world.cells.molecules[:, ATP_IDX] > 5.0)
+                world.cells.molecules[repl, ATP_IDX] -= 4.0
                 world.divide_cells(cell_idxs=repl)
 
-            with timeit("recombinateGenomes", step_i, writer):
-                world.recombinate_cells()
+            # with timeit("mutateGenomes", step_i, writer):
+            #     world.mutate_cells()
 
-            with timeit("mutateGenomes", step_i, writer):
-                world.mutate_cells()
+        writer.add_scalar("Cells/total", n_cells, step_i)
 
-            with timeit("wrapUp", step_i, writer):
-                world.degrade_molecules()
-                world.diffuse_molecules()
-                world.increment_cell_lifetimes()
-
-        writer.add_scalar("Cells/total", world.n_cells, step_i)
-
-        molmap = world.molecule_map
-        cellmols = world.cell_molecules
+        molmap = world.culture.molecule_map
+        cellmols = world.cells.molecules
         for mol in CHEMISTRY.molecules:
             mol_i = mol_2_idx[mol.name]
             d = molmap[mol_i].sum().item()
-            n = world.map_size**2
-            if world.n_cells > 0:
-                d += cellmols[:, mol_i].sum().item()
-                n += world.n_cells
+            n = world.culture.map_size**2
+            if n_cells > 0:
+                d += cellmols[:, mol_i].sum().item() / 1000
             writer.add_scalar(f"Molecules/{mol.name}", d / n, step_i)
 
     writer.close()

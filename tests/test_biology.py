@@ -112,7 +112,7 @@ def test_protein_from_to_dict():
     dct = {
         "cds_start": 1,
         "cds_end": 2,
-        "is_fwd": True,
+        "is_53": True,
         "domains": [cat_dct, reg_dct, trnsp_dct],
     }
     prot = Protein.from_dict(dct, molmap=_mol_map)
@@ -120,7 +120,7 @@ def test_protein_from_to_dict():
 
     assert prot.cds_start == 1
     assert prot.cds_end == 2
-    assert prot.is_fwd
+    assert prot.is_53
     assert len(prot.domains) == 3
     assert prot.n_domains == 3
 

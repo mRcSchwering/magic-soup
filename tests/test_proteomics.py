@@ -273,7 +273,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     p0 = proteins[0]
     assert p0.cds_start == 1
     assert p0.cds_end == 100
-    assert p0.is_fwd is False
+    assert p0.is_53 is False
     assert isinstance(p0.domains[0], CatalyticDomain)
     assert p0.domains[0].reaction == _r_a_b
     assert p0.domains[0].is_fwd
@@ -292,7 +292,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     p1 = proteins[1]
     assert p1.cds_start == 2
     assert p1.cds_end == 200
-    assert p1.is_fwd is True
+    assert p1.is_53 is True
     assert isinstance(p1.domains[0], CatalyticDomain)
     assert p1.domains[0].reaction == _r_b_c
     assert p1.domains[0].is_fwd
@@ -311,7 +311,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     p2 = proteins[2]
     assert p2.cds_start == 3
     assert p2.cds_end == 300
-    assert p2.is_fwd is False
+    assert p2.is_53 is False
     assert isinstance(p2.domains[0], CatalyticDomain)
     assert p2.domains[0].reaction == _r_d_bb
     assert p2.domains[0].is_fwd
@@ -325,7 +325,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     p0 = proteins[0]
     assert p0.cds_start == 4
     assert p0.cds_end == 400
-    assert p0.is_fwd is True
+    assert p0.is_53 is True
     assert isinstance(p0.domains[0], CatalyticDomain)
     assert p0.domains[0].reaction == _r_a_b
     assert not p0.domains[0].is_fwd
@@ -344,7 +344,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     p1 = proteins[1]
     assert p1.cds_start == 5
     assert p1.cds_end == 500
-    assert p1.is_fwd is False
+    assert p1.is_53 is False
     assert isinstance(p1.domains[0], CatalyticDomain)
     assert p1.domains[0].reaction == _r_b_c
     assert p1.domains[0].is_fwd
@@ -502,7 +502,7 @@ def test_cell_params_with_transporter_domains() -> None:
     p0 = proteins[0]
     assert p0.cds_start == 13
     assert p0.cds_end == 27
-    assert p0.is_fwd is True
+    assert p0.is_53 is True
     assert isinstance(p0.domains[0], TransporterDomain)
     assert p0.domains[0].molecule is _ma
     assert p0.domains[0].vmax == pytest.approx(1.5, abs=_TOL)
@@ -513,7 +513,7 @@ def test_cell_params_with_transporter_domains() -> None:
     p1 = proteins[1]
     assert p1.cds_start == 36
     assert p1.cds_end == 74
-    assert p1.is_fwd is False
+    assert p1.is_53 is False
     assert isinstance(p1.domains[0], TransporterDomain)
     assert p1.domains[0].molecule is _ma
     assert p1.domains[0].vmax == pytest.approx(1.5, abs=_TOL)
@@ -532,7 +532,7 @@ def test_cell_params_with_transporter_domains() -> None:
     p0 = proteins[0]
     assert p0.cds_start == 91
     assert p0.cds_end == 112
-    assert p0.is_fwd is False
+    assert p0.is_53 is False
     assert isinstance(p0.domains[0], TransporterDomain)
     assert p0.domains[0].molecule is _ma
     assert p0.domains[0].vmax == pytest.approx(1.5, abs=_TOL)
@@ -561,7 +561,7 @@ def test_cell_params_with_transporter_domains() -> None:
     p1 = proteins[1]
     assert p1.cds_start == 1
     assert p1.cds_end == 10
-    assert p1.is_fwd is False
+    assert p1.is_53 is False
     assert isinstance(p1.domains[0], CatalyticDomain)
     assert p1.domains[0].reaction == _r_a_b
     assert p1.domains[0].is_fwd
@@ -750,7 +750,7 @@ def test_cell_params_with_regulatory_domains() -> None:
     p0 = proteins[0]
     assert p0.cds_start == 1
     assert p0.cds_end == 100
-    assert p0.is_fwd is False
+    assert p0.is_53 is False
     assert isinstance(p0.domains[0], CatalyticDomain)
     assert p0.domains[0].reaction == _r_a_b
     assert p0.domains[0].is_fwd
@@ -778,7 +778,7 @@ def test_cell_params_with_regulatory_domains() -> None:
     p1 = proteins[1]
     assert p1.cds_start == 2
     assert p1.cds_end == 200
-    assert p1.is_fwd is True
+    assert p1.is_53 is True
     assert isinstance(p1.domains[0], CatalyticDomain)
     assert p1.domains[0].reaction == _r_a_b
     assert p0.domains[0].is_fwd
@@ -808,7 +808,7 @@ def test_cell_params_with_regulatory_domains() -> None:
     p0 = proteins[0]
     assert p0.cds_start == 3
     assert p0.cds_end == 300
-    assert p0.is_fwd is False
+    assert p0.is_53 is False
     assert isinstance(p0.domains[0], CatalyticDomain)
     assert p0.domains[0].reaction == _r_a_b
     assert p0.domains[0].is_fwd
@@ -836,7 +836,7 @@ def test_cell_params_with_regulatory_domains() -> None:
     p1 = proteins[1]
     assert p1.cds_start == 4
     assert p1.cds_end == 400
-    assert p1.is_fwd is True
+    assert p1.is_53 is True
     assert isinstance(p1.domains[0], CatalyticDomain)
     assert p1.domains[0].reaction == _r_a_b
     assert p0.domains[0].is_fwd

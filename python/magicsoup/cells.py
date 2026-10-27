@@ -9,8 +9,8 @@ import torch
 
 from magicsoup import rs
 from magicsoup.chemistry import Chemistry
-from magicsoup.genomics import Genomics
-from magicsoup.proteomics import Proteomics
+from magicsoup.genomics import Genomics, GenomicsKwargs
+from magicsoup.proteomics import Proteomics, ProteomicsKwargs
 from magicsoup.util import TensorClass, TensorKwargs, read_fasta, write_fasta
 
 _log = logging.getLogger(__name__)
@@ -62,20 +62,34 @@ class Cells(TensorClass):
     def __init__(
         self,
         chemistry: Chemistry,
-        genomics: Genomics,
-        proteomics: Proteomics,
+        genomics: Genomics | None = None,
+        proteomics: Proteomics | None = None,
         dim_scaling: float = 0.2,
         c_max: int = 100_000,
         p_max: int = 1_000,
+        genomics_kwargs: GenomicsKwargs | None = None,
+        proteomics_kwargs: ProteomicsKwargs | None = None,
         tensor_kwargs: TensorKwargs | None = None,
     ):
         super().__init__(**(tensor_kwargs or {}))
         self.chemistry = chemistry
-        self.genomics = genomics
-        self.proteomics = proteomics
         self.dim_scaling = dim_scaling
         self.c_max = c_max
         self.p_max = p_max
+
+        # without reactions, catalytic domains are not allowed
+        genomics_kwargs = genomics_kwargs or {}
+        if len(chemistry.reactions) == 0:
+            genomics_kwargs["p_catal_dom"] = 0
+
+        self.genomics = genomics or Genomics(**genomics_kwargs)
+        self.proteomics = proteomics or Proteomics(
+            **(proteomics_kwargs or {}),
+            chemistry=chemistry,
+            scalar_enc_size=self.genomics.one_codon_map.encoding_size,
+            vector_enc_size=self.genomics.two_codon_map.encoding_size,
+            tensor_kwargs=tensor_kwargs,
+        )
 
         molecules = chemistry.molecules
         n_molecules = len(molecules)

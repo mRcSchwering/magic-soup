@@ -458,7 +458,7 @@ fn get_protein_dict<'py>(
     let kwargs = PyDict::new(py);
     kwargs.set_item("cds_start", protein.1).unwrap();
     kwargs.set_item("cds_end", protein.2).unwrap();
-    kwargs.set_item("is_fwd", protein.3).unwrap();
+    kwargs.set_item("is_53", protein.3).unwrap();
     kwargs.set_item("domains", domains).unwrap();
     kwargs
 }
