@@ -21,7 +21,8 @@ _**1.1. Genome compositions at different genome sizes.**
 1000 random genomes of lengths 500, 1000, or 2000 each were generated, transcribed, and translated.
 For every cell the number proteins per genome, domains per protein, and coding base pairs per base pair were recorded.
 Coding base pairs are base pairs which are part of at least 1 domain.
-Dashed lines with numbers describe medians.
+Heavy dashed lines and numbers describe medians.
+Light dashed lines describe 10% and 90% percentiles.
 There were 3 start and 3 stop codons.
 Each domain type appeared with a frequency of 5% in all 2-codon tuples._
 
@@ -33,7 +34,8 @@ _**1.2. Genome compositions at different domain probabilities.**
 1000 random genomes of length 1000 with 2-codon domain type frequencies 2%, 5%, or 10% each were generated, transcribed, and translated.
 For every cell the number proteins per genome, domains per protein, and coding base pairs per base pair were recorded.
 Coding base pairs are base pairs which are part of at least 1 domain.
-Dashed lines with numbers describe medians.
+Heavy dashed lines and numbers describe medians.
+Light dashed lines describe 10% and 90% percentiles.
 There were 3 start and 3 stop codons._
 
 <br/>
@@ -44,7 +46,8 @@ _**1.3. Genome compositions at different start stop codon combinations.**
 1000 random genomes of length 1000 with combinations of 1 to 3 start and 1 to 3 stop codons each were generated, transcribed, and translated.
 For every cell the number proteins per genome, domains per protein, and coding base pairs per base pair were recorded.
 Coding base pairs are base pairs which are part of at least 1 domain.
-Dashed lines with numbers describe medians.
+Heavy dashed lines and numbers describe medians.
+Light dashed lines describe 10% and 90% percentiles.
 Facetting labels on the right describe first the number of start codons, second the number of stop codons.
 Each domain type appeared with a frequency of 5% in all 2-codon tuples._
 
@@ -148,13 +151,24 @@ over the course of 10&nbsp;s._
 
 ## 5. Parameter Distributions
 
-![](./img/supporting/parameter-distributions.png)
+![](./img/supporting/continuous-parameter-distributions.png)
 
-_**5.1. Parameter Distributions.**
+_**5.1. Continuous Parameter Distributions.**
 Each row shows a snapshot of a parameter distribution of the proteins in a simulation with 1000 random cells with 1000 base pair long genomes each.
 The top rows shows the equilibrium constant ($K_E$) distribution.
 The middle row shows an equivalent of the Michaelis Menten constant ($K_M$) distribution in mM.
-The bottom row shows the maximum velocity ($v_{max}$) distribution in mM/s assuming constant protein concentration of 1&nbsp;µM._
+The bottom row shows the maximum velocity ($v_{max}$) distribution in mM/s assuming constant protein concentration of 1&nbsp;µM.
+Heavy dashed lines and top right numbers show medians, light dashed lines show 10% and 90% percentiles._
+
+<br/>
+
+
+![](./img/supporting/discrete-parameter-distributions.png)
+
+_**5.2. Discrete Parameter Distributions.**
+Each row shows a snapshot of a parameter distribution of the proteins in a simulation with 1000 random cells with 1000 base pair long genomes each.
+The top rows shows the distribution of stoichiometric numbers of the catalyzed reactions.
+The bottom row shows the distribution of Hill coefficients of allosteric domains._
 
 <br/>
 

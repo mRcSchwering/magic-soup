@@ -32,7 +32,7 @@ def _record_proteome_stats(
             )
 
 
-def _plot(df: pd.DataFrame, by: str, facet: str) -> ggplot:
+def _plot(df: pd.DataFrame, by: str) -> ggplot:
     df["v"] = pd.Categorical(
         df["v"],
         categories=["proteins/genome", "domains/protein", "coding bps/bp"],
@@ -40,10 +40,16 @@ def _plot(df: pd.DataFrame, by: str, facet: str) -> ggplot:
     )
     avgs = df.groupby([by, "v"])["n"].median().reset_index()
     avgs["l"] = [f"{d:.1f}" for d in avgs["n"]]
+    q01 = df.groupby([by, "v"])["n"].quantile(0.1).reset_index()
+    q01["l"] = [f"{d:.1f}" for d in q01["n"]]
+    q09 = df.groupby([by, "v"])["n"].quantile(0.9).reset_index()
+    q09["l"] = [f"{d:.1f}" for d in q09["n"]]
     return (
         ggplot(df)
-        + geom_vline(aes(xintercept="n"), data=avgs, linetype="dashed", alpha=0.5)
         + geom_histogram(aes(x="n", y=after_stat("width*density")), bins=10)
+        + geom_vline(aes(xintercept="n"), data=avgs, linetype="dashed", alpha=0.5)
+        + geom_vline(aes(xintercept="n"), data=q09, linetype="dashed", alpha=0.2)
+        + geom_vline(aes(xintercept="n"), data=q01, linetype="dashed", alpha=0.2)
         + geom_text(
             aes(x=np.inf, y=np.inf, label="l"),
             ha="right",
@@ -53,7 +59,7 @@ def _plot(df: pd.DataFrame, by: str, facet: str) -> ggplot:
             path_effects=PE_WHITE_OUTLINE,
         )
         + scale_y_continuous(labels=percent_format())
-        + facet_grid(facet, scales="free")
+        + facet_grid(f"{by} ~ v", scales="free")
         + theme(
             figure_size=(8, 6),
             axis_title_y=element_blank(),
@@ -77,7 +83,7 @@ def _plot_genome_sizes(ncells: int):
         )
 
     df = pd.DataFrame.from_records(records)
-    plot = _plot(df=df, by="size", facet="size ~ v")
+    plot = _plot(df=df, by="size")
     return plot, "different_genome_sizes"
 
 
@@ -96,7 +102,7 @@ def _plot_domain_probabilities(ncells: int, size: int):
         )
 
     df = pd.DataFrame.from_records(records)
-    plot = _plot(df=df, by="prob", facet="prob ~ v")
+    plot = _plot(df=df, by="prob")
     return plot, "different_domain_probabilities"
 
 
@@ -123,7 +129,7 @@ def _plot_start_stop_codons(ncells: int, size: int):
         )
 
     df = pd.DataFrame.from_records(records)
-    plot = _plot(df=df, by="start-stop", facet="start-stop ~ v")
+    plot = _plot(df=df, by="start-stop")
     return plot, "different_start_stop_codons"
 
 
