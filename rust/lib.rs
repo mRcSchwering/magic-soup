@@ -6,6 +6,7 @@ mod genomics;
 mod mutations;
 mod proteomics;
 mod util;
+use numpy::PyArray2;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
@@ -21,7 +22,7 @@ fn point_mutations(
     p_indel: f32,
     p_del: f32,
 ) -> Vec<(String, usize)> {
-    py.allow_threads(move || mutations::point_mutations_threaded(seqs, p, p_indel, p_del))
+    py.detach(move || mutations::point_mutations_threaded(seqs, p, p_indel, p_del))
 }
 
 #[pyfunction]
@@ -30,7 +31,7 @@ fn recombinations(
     seq_pairs: Vec<(String, String)>,
     p: f32,
 ) -> Vec<(String, String, usize)> {
-    py.allow_threads(move || mutations::recombinations_threaded(seq_pairs, p))
+    py.detach(move || mutations::recombinations_threaded(seq_pairs, p))
 }
 
 // Genomics
@@ -81,7 +82,7 @@ impl Genomics {
         genomes: Vec<PyBackedStr>,
     ) -> Vec<Vec<genomics::ProteinSpec>> {
         let slices: Vec<&[u8]> = genomes.iter().map(|g| g.as_bytes()).collect();
-        py.allow_threads(move || {
+        py.detach(move || {
             genomics::translate_genomes_threaded(
                 &slices,
                 &self.start_codons,
@@ -178,7 +179,7 @@ impl Proteomics {
         util::MatrixType<Vec<i8>>,
         util::MatrixType<Vec<i8>>,
     ) {
-        py.allow_threads(move || {
+        py.detach(move || {
             proteomics::get_proteome_params_threaded(
                 &proteomes,
                 &self.k_m_map,

@@ -10,7 +10,6 @@ from magicsoup.config import CODON_SIZE
 from magicsoup.util import codons, random_genome
 
 
-# TODO: see how I can use DomainType Enum also in Rust
 class DomainType(IntEnum):
     CATALYTIC = 1
     TRANSPORTER = 2
@@ -73,6 +72,7 @@ class _DomainTypeMap:
         self.seq_2_token = {d: k.value for k, v in self.type_2_seqs.items() for d in v}
 
 
+type CdsSpec = tuple[int, int, bool]
 type DomainSpec = tuple[tuple[int, int, int, int, int], int, int]
 type ProteinSpec = tuple[list[DomainSpec], int, int, bool]
 
@@ -196,7 +196,7 @@ class Genomics:
         seq: str,
         min_cds_size: int,
         is_fwd: bool,
-    ) -> list[tuple[int, int, bool]]:
+    ) -> list[CdsSpec]:
         """Get CDS markers for a genome"""
         return self.rs.get_coding_regions(
             seq=seq, min_cds_size=min_cds_size, is_fwd=is_fwd
@@ -205,7 +205,7 @@ class Genomics:
     def extract_domains(
         self,
         genome: str,
-        cdss: list[tuple[int, int, bool]],
+        cdss: list[CdsSpec],
     ) -> list[ProteinSpec]:
         """Get proteome in form of domain specifications for a genome and CDS markers"""
         return self.rs.extract_domains(genome=genome, cdss=cdss)

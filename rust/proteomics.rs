@@ -1,3 +1,4 @@
+use crate::genomics::{DomainSpec, ProteinSpec};
 use crate::util::MatrixType;
 use pyo3::marker::Python;
 use pyo3::prelude::*;
@@ -5,13 +6,11 @@ use pyo3::types::{PyDict, PyDictMethods};
 use rayon::prelude::*;
 use std::collections::HashMap;
 
-pub type DomainSpecType = ((u8, u8, u8, u8, u16), usize, usize);
-pub type ProteinSpecType = (Vec<DomainSpecType>, usize, usize, bool);
-pub type ProteinParamsType = (f32, f32, Vec<f32>, Vec<i8>, Vec<i8>, Vec<i8>);
+pub type ProteinParams = (f32, f32, Vec<f32>, Vec<i8>, Vec<i8>, Vec<i8>);
 
 // Get domain v_max, k_m, sign, reaction values from indices
 fn get_cat_dom_params(
-    domain: &DomainSpecType,
+    domain: &DomainSpec,
     vmax_map: &HashMap<u8, f32>,
     k_m_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -26,7 +25,7 @@ fn get_cat_dom_params(
 
 // Get domain v_max, k_m, sign, transporter from indices
 fn get_tsp_dom_params(
-    domain: &DomainSpecType,
+    domain: &DomainSpec,
     vmax_map: &HashMap<u8, f32>,
     k_m_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -96,7 +95,7 @@ fn agg_cat_tsp_params(
 
 // Get domain hill, k_m, sign, effector from indices
 fn get_reg_dom_params(
-    domain: &DomainSpecType,
+    domain: &DomainSpec,
     hill_map: &HashMap<u8, i8>,
     k_m_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -141,7 +140,7 @@ fn agg_reg_params(params: &Vec<(i8, f32, i8, Vec<i8>)>, m: &usize) -> (Vec<f32>,
 
 // Get protein parameters from protein specification
 fn get_protein_params(
-    protein_spec: &ProteinSpecType,
+    protein_spec: &ProteinSpec,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -150,7 +149,7 @@ fn get_protein_params(
     transporter_map: &HashMap<u16, Vec<i8>>,
     effector_map: &HashMap<u16, Vec<i8>>,
     m: &usize,
-) -> ProteinParamsType {
+) -> ProteinParams {
     let mut cat_tsp_dom_params: Vec<(f32, f32, i8, Vec<i8>)> = Vec::new();
     let mut reg_dom_params: Vec<(i8, f32, i8, Vec<i8>)> = Vec::new();
 
@@ -192,7 +191,7 @@ fn get_protein_params(
 
 // Get proteome parameters from proteome specifications
 fn get_proteome_params(
-    proteome_spec: &Vec<ProteinSpecType>,
+    proteome_spec: &Vec<ProteinSpec>,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -201,7 +200,7 @@ fn get_proteome_params(
     transporter_map: &HashMap<u16, Vec<i8>>,
     effector_map: &HashMap<u16, Vec<i8>>,
     m: &usize,
-) -> Vec<ProteinParamsType> {
+) -> Vec<ProteinParams> {
     proteome_spec
         .iter()
         .map(|protein_spec| {
@@ -222,7 +221,7 @@ fn get_proteome_params(
 
 // Threaded version of get_proteome_params() for multiple proteomes
 pub fn get_proteome_params_threaded(
-    proteomes_spec: &Vec<Vec<ProteinSpecType>>,
+    proteomes_spec: &Vec<Vec<ProteinSpec>>,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -239,7 +238,7 @@ pub fn get_proteome_params_threaded(
     MatrixType<Vec<i8>>,
     MatrixType<Vec<i8>>,
 ) {
-    let proteomes_params: MatrixType<ProteinParamsType> = proteomes_spec
+    let proteomes_params: MatrixType<ProteinParams> = proteomes_spec
         .into_par_iter()
         .map(|d| {
             get_proteome_params(
@@ -297,7 +296,7 @@ fn get_domtype_char(domtype: &u8) -> char {
 fn set_catalytic_domain_dict(
     kwargs: &Bound<PyDict>,
     molecules: &Vec<String>,
-    domain_spec: &DomainSpecType,
+    domain_spec: &DomainSpec,
     vmax_map: &HashMap<u8, f32>,
     k_m_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -330,7 +329,7 @@ fn set_catalytic_domain_dict(
 fn set_transporter_domain_dict(
     kwargs: &Bound<PyDict>,
     molecules: &Vec<String>,
-    domain_spec: &DomainSpecType,
+    domain_spec: &DomainSpec,
     vmax_map: &HashMap<u8, f32>,
     k_m_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -357,7 +356,7 @@ fn set_transporter_domain_dict(
 fn set_regulatory_domain_dict(
     kwargs: &Bound<PyDict>,
     molecules: &Vec<String>,
-    domain_spec: &DomainSpecType,
+    domain_spec: &DomainSpec,
     hill_map: &HashMap<u8, i8>,
     k_m_map: &HashMap<u8, f32>,
     sign_map: &HashMap<u8, i8>,
@@ -396,7 +395,7 @@ fn set_regulatory_domain_dict(
 // from Protein specification using index mappings
 fn get_protein_dict<'py>(
     py: Python<'py>,
-    protein: &ProteinSpecType,
+    protein: &ProteinSpec,
     molecules: &Vec<String>,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
@@ -467,7 +466,7 @@ fn get_protein_dict<'py>(
 // from Proteome specification using index mappings
 pub fn get_proteome_dict<'py>(
     py: Python<'py>,
-    proteome: &Vec<ProteinSpecType>,
+    proteome: &Vec<ProteinSpec>,
     molecules: &Vec<String>,
     k_m_map: &HashMap<u8, f32>,
     vmax_map: &HashMap<u8, f32>,
