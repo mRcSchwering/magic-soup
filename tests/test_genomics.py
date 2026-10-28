@@ -115,7 +115,7 @@ def test_get_coding_regions(seq: str, exp: list[tuple[str, int]]) -> None:
 
 
 def test_extract_domains() -> None:
-    dom_type_map = {"AAA": 1, "GGG": 2, "CCC": 3}
+    dom_type_map = {"AAAAAA": 1, "GGGGGG": 2, "CCCCCC": 3}
     two_codon_map = {"ACTGAT": 1, "CTGTAT": 2, "CCGCGA": 3, "GGAATC": 4, "TGTCGA": 5}
     one_codon_map = {"ACT": 1, "CTG": 2, "CCG": 3, "GGA": 4, "TGT": 5}
 
@@ -123,24 +123,24 @@ def test_extract_domains() -> None:
     genomics.domain_type_map.seq_2_token = dom_type_map
     genomics.one_codon_map.seq_2_token = one_codon_map
     genomics.two_codon_map.seq_2_token = two_codon_map
-    genomics.dom_type_size_nt = 3
+    genomics.dom_type_size_nt = 6
     genomics.dom_size_nt = genomics.dom_type_size_nt + 5 * CODON_SIZE
     genomics._setup_rs()
 
     # fmt: off
-    genome = (
-        "AGACAAAAACTGTGTACTCCGCGATAGACTAGACG"
-        "AGACTATAGCTAGAAGCCCCTGTACTCCGTGTCGATAGACG"
-        "AGACTAGGGCCGGGACTGCCGCGACTAGAAGCTAGACTAACG"
-        "AAACCGGGATGTCTGTAT"
-        "CCCCCGGGACTGCCGCGAGGGACTCTGCCGGGAATC"
-    )
+    genome_parts = [
+        "AGAAAAAAA CTGTGTACT CCGCGATAG ACTAGACG",  # 0-35
+        "AGACTATAG CTAGAAGCC CCCCCCTGT ACTCCGTGT CGATAGACG", # 35-80
+        "AGACTAGGG GGGCCGGGA CTGCCGCGA CTAGAAGCT AGACTAACG",  # 80-125
+        "AAAAAACCG GGATGTCTG TAT",  # 125-146
+        "CCCCCCCCG GGACTGCCG CGACGAGGG GGGACTCTG CCGGGAATC",  # 146-191
+    ]
     cdss: list[tuple[int, int, bool]] = [
         (0, 35, True),  # (1, 2, 5, 1, 3)
-        (35, 76, False),  # (3, 5, 1, 3, 5)
-        (76, 118, True),  # (2, 3, 4, 2, 3)
-        (118, 136, False),  # (1, 3, 4, 5, 2)
-        (136, 172, True),  # (3, 3, 4, 2, 3) (2, 1, 2, 3, 4)
+        (35, 80, False),  # (3, 5, 1, 3, 5)
+        (80, 125, True),  # (2, 3, 4, 2, 3)
+        (125, 146, False),  # (1, 3, 4, 5, 2)
+        (146, 191, True),  # (3, 3, 4, 2, 3) (2, 1, 2, 3, 4)
     ]
     # - cds 0: normal domain                                                    => 1 res[0]
     # - cds 1: single type 3 domain, so it is removed
@@ -148,7 +148,7 @@ def test_extract_domains() -> None:
     # - cds 3: defines exactly 1 domain from start to end                       => 1 res[2]
     # - cds 4: defines exactly 2 domains, a 3rd type 2 start is in the middle   => 2 res[3]
     # fmt: on
-
+    genome = "".join(d.replace(" ", "") for d in genome_parts)
     res = genomics.extract_domains(genome=genome, cdss=cdss)
 
     # res[i]: (domain list, cds start, cds end, is fwd)
@@ -160,18 +160,18 @@ def test_extract_domains() -> None:
     assert res[0][1] == 0
     assert res[0][2] == 35
     assert res[0][3] is True
-    assert res[1][1] == 76
-    assert res[1][2] == 118
+    assert res[1][1] == 80
+    assert res[1][2] == 125
     assert res[1][3] is True
-    assert res[2][1] == 118
-    assert res[2][2] == 136
+    assert res[2][1] == 125
+    assert res[2][2] == 146
     assert res[2][3] is False
-    assert res[3][1] == 136
-    assert res[3][2] == 172
+    assert res[3][1] == 146
+    assert res[3][2] == 191
     assert res[3][3] is True
     assert res[0][0][0][0] == (1, 2, 5, 1, 3)
-    assert res[0][0][0][1] == 6
-    assert res[0][0][0][2] == 6 + genomics.dom_size_nt
+    assert res[0][0][0][1] == 3
+    assert res[0][0][0][2] == 3 + genomics.dom_size_nt
     assert res[1][0][0][0] == (2, 3, 4, 2, 3)
     assert res[1][0][0][1] == 6
     assert res[1][0][0][2] == 6 + genomics.dom_size_nt
@@ -182,8 +182,8 @@ def test_extract_domains() -> None:
     assert res[3][0][0][1] == 0
     assert res[3][0][0][2] == 0 + genomics.dom_size_nt
     assert res[3][0][1][0] == (2, 1, 2, 3, 4)
-    assert res[3][0][1][1] == 18
-    assert res[3][0][1][2] == 18 + genomics.dom_size_nt
+    assert res[3][0][1][1] == 24
+    assert res[3][0][1][2] == 24 + genomics.dom_size_nt
 
 
 def test_genomics() -> None:

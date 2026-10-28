@@ -2,27 +2,14 @@ extern crate pyo3;
 extern crate rand;
 extern crate rand_distr;
 extern crate rayon;
-
 mod genomics;
 mod mutations;
 mod proteomics;
 mod util;
-
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
 use std::collections::HashMap;
-
-// util
-
-#[pyfunction]
-fn dist_1d(a: u16, b: u16, m: u16) -> u16 {
-    util::dist_1d(&a, &b, &m)
-}
-
-#[pyfunction]
-fn reverse_complement(seq: String) -> String {
-    util::reverse_complement(&seq)
-}
 
 // mutations
 
@@ -48,28 +35,34 @@ fn recombinations(
 
 // Genomics
 
+#[pyfunction]
+fn reverse_complement(seq: PyBackedStr) -> String {
+    let bytes = genomics::reverse_complement(&seq.as_bytes());
+    String::from_utf8(bytes).expect("Genome not ASCII")
+}
+
 #[pyclass]
 struct Genomics {
-    start_codons: Vec<String>,
-    stop_codons: Vec<String>,
-    domain_type_2_token: HashMap<String, u8>,
-    one_codon_2_token: HashMap<String, u8>,
-    two_codon_2_token: HashMap<String, u16>,
-    dom_size: u8,
-    dom_type_size: u8,
+    start_codons: Vec<[u8; genomics::CODON_SIZE]>,
+    stop_codons: Vec<[u8; genomics::CODON_SIZE]>,
+    domain_type_2_token: HashMap<[u8; 2 * genomics::CODON_SIZE], u8>,
+    one_codon_2_token: HashMap<[u8; genomics::CODON_SIZE], u8>,
+    two_codon_2_token: HashMap<[u8; 2 * genomics::CODON_SIZE], u16>,
+    dom_size: usize,
+    dom_type_size: usize,
 }
 
 #[pymethods]
 impl Genomics {
     #[new]
     fn new(
-        start_codons: Vec<String>,
-        stop_codons: Vec<String>,
-        domain_type_2_token: HashMap<String, u8>,
-        one_codon_2_token: HashMap<String, u8>,
-        two_codon_2_token: HashMap<String, u16>,
-        dom_size: u8,
-        dom_type_size: u8,
+        start_codons: Vec<[u8; genomics::CODON_SIZE]>,
+        stop_codons: Vec<[u8; genomics::CODON_SIZE]>,
+        domain_type_2_token: HashMap<[u8; 2 * genomics::CODON_SIZE], u8>,
+        one_codon_2_token: HashMap<[u8; genomics::CODON_SIZE], u8>,
+        two_codon_2_token: HashMap<[u8; 2 * genomics::CODON_SIZE], u16>,
+        dom_size: usize,
+        dom_type_size: usize,
     ) -> Self {
         Genomics {
             start_codons,
@@ -85,11 +78,12 @@ impl Genomics {
     fn translate_genomes(
         &self,
         py: Python<'_>,
-        genomes: Vec<String>,
-    ) -> Vec<Vec<genomics::ProteinSpecType>> {
+        genomes: Vec<PyBackedStr>,
+    ) -> Vec<Vec<genomics::ProteinSpec>> {
+        let slices: Vec<&[u8]> = genomes.iter().map(|g| g.as_bytes()).collect();
         py.allow_threads(move || {
             genomics::translate_genomes_threaded(
-                &genomes,
+                &slices,
                 &self.start_codons,
                 &self.stop_codons,
                 &self.domain_type_2_token,
@@ -103,12 +97,12 @@ impl Genomics {
 
     fn get_coding_regions(
         &self,
-        seq: &str,
-        min_cds_size: u8,
+        seq: PyBackedStr,
+        min_cds_size: usize,
         is_fwd: bool,
     ) -> Vec<(usize, usize, bool)> {
         genomics::get_coding_regions(
-            seq,
+            seq.as_bytes(),
             &min_cds_size,
             &self.start_codons,
             &self.stop_codons,
@@ -118,11 +112,11 @@ impl Genomics {
 
     fn extract_domains(
         &self,
-        genome: String,
+        genome: PyBackedStr,
         cdss: Vec<(usize, usize, bool)>,
-    ) -> Vec<genomics::ProteinSpecType> {
+    ) -> Vec<genomics::ProteinSpec> {
         genomics::extract_domains(
-            &genome,
+            &genome.as_bytes(),
             &cdss,
             &self.dom_size,
             &self.dom_type_size,
@@ -175,7 +169,7 @@ impl Proteomics {
     fn get_proteome_params(
         &self,
         py: Python<'_>,
-        proteomes: Vec<Vec<genomics::ProteinSpecType>>,
+        proteomes: Vec<Vec<genomics::ProteinSpec>>,
     ) -> (
         util::MatrixType<f32>,
         util::MatrixType<f32>,
@@ -202,7 +196,7 @@ impl Proteomics {
     fn get_proteome_dict<'py>(
         &self,
         py: Python<'py>,
-        proteome: Vec<genomics::ProteinSpecType>,
+        proteome: Vec<genomics::ProteinSpec>,
         molecules: Vec<String>,
     ) -> Vec<Bound<'py, PyDict>> {
         proteomics::get_proteome_dict(
@@ -241,7 +235,7 @@ impl Cells {
     fn translate_genomes(
         &self,
         py: Python,
-        genomes: Vec<String>,
+        genomes: Vec<PyBackedStr>,
     ) -> (
         util::MatrixType<f32>,
         util::MatrixType<f32>,
@@ -264,7 +258,6 @@ impl Cells {
 #[pymodule]
 fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // util
-    m.add_function(wrap_pyfunction!(dist_1d, m)?)?;
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
 
     // mutations

@@ -58,11 +58,11 @@ class Genomics(_ReduceMixin):
         dom_type_size_nt: int,
     ) -> None:
         self._cls = _lib.Genomics(
-            start_codons,
-            stop_codons,
-            domain_type_2_token,
-            one_codon_2_token,
-            two_codon_2_token,
+            [d.encode() for d in start_codons],
+            [d.encode() for d in stop_codons],
+            {k.encode(): v for k, v in domain_type_2_token.items()},
+            {k.encode(): v for k, v in one_codon_2_token.items()},
+            {k.encode(): v for k, v in two_codon_2_token.items()},
             dom_size_nt,
             dom_type_size_nt,
         )
@@ -77,6 +77,13 @@ class Genomics(_ReduceMixin):
         )
 
     def translate_genomes(self, genomes: list[str]) -> "list[list[ProteinSpec]]":
+        # NOTE: even cheaper is it to send all genomes as one long buffer
+        # buffer = "".join(strarr)
+        # offsets = np.array([0] + list(np.cumsum([len(g) for g in strarr])), dtype=np.int64)
+        #       then in rust:
+        # let offs = offsets.as_slice()?;
+        # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as usize..w[1] as usize]).collect();
+        # revcomp_many(&slices).map_err(|(i, b)| {PyValueError::new_err("genome invalid base")})
         return self._cls.translate_genomes(genomes)
 
     def get_coding_regions(

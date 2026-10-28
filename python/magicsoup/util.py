@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 import numpy as np
 import torch
 
+from magicsoup import rs
 from magicsoup.config import (
     ALL_NTS,
     CODON_SIZE,
@@ -16,6 +17,11 @@ from magicsoup.config import (
     DEFAULT_ITYPE,
     DEFAULT_STYPE,
 )
+
+
+def reverse_complement(seq: str) -> str:
+    """Get reverse complement of nucleotide sequence"""
+    return rs.reverse_complement(seq=seq)
 
 
 def randstr(n: int = 12) -> str:

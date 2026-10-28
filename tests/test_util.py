@@ -1,8 +1,21 @@
 from pathlib import Path
 
 import pytest
-from magicsoup import rs, util
+from magicsoup import util
 from magicsoup.config import CODON_SIZE
+
+
+@pytest.mark.parametrize(
+    "seq, exp",
+    [
+        ("ACTGATTA", "TAATCAGT"),
+        ("GGAAT", "ATTCC"),
+        ("", ""),
+    ],
+)
+def test_reverse_complement(seq: str, exp: str) -> None:
+    res = util.reverse_complement(seq)
+    assert res == exp
 
 
 # fmt: off
@@ -70,12 +83,6 @@ def test_random_genome(s, excl):
 
     for seq in excl:
         assert seq not in g
-
-
-def test_reverse_complement() -> None:
-    seq = "ACTGG"
-    res = rs.reverse_complement(seq=seq)
-    assert res == "CCAGT"
 
 
 def test_writing_reading_fasta(tmp_path: Path) -> None:
