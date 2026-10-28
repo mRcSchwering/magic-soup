@@ -95,8 +95,10 @@ class Culture(TensorClass):
     ):
         super().__init__(**(tensor_kwargs or {}))
         N = map_size
-        m = len(chemistry.molecules)
+        self.N2 = N**2
         self.map_size = N
+
+        m = len(chemistry.molecules)
         self.n_molecules = m
 
         # all possible voxel positions (row, col)
@@ -124,9 +126,6 @@ class Culture(TensorClass):
         Cells are neighbors if they are within each others Moore neighbourhood.
         Note: With map size smaller 3 duplicate neighbors can be returned.
         """
-        L = self.map_size
-        N2 = L * L
-
         pos = self.get_cell_positions()  # (N², 2) with (-1, -1) for empty
         valid = pos[:, 0] >= 0  # rows which are not empty
 
@@ -143,7 +142,7 @@ class Culture(TensorClass):
         mask = valid[:, None] & (nb_voxels >= 0)  # (N², 4)
 
         # generate (N², 4) source cell indices for each neighbor voxel
-        src = self.idxarange(N2)[:, None].expand_as(nb_voxels)
+        src = self.idxarange(self.N2)[:, None].expand_as(nb_voxels)
 
         # return only valid pairs of cell indices (k, 2)
         return torch.stack((src[mask], nb_voxels[mask]), dim=1)  # (k, 2)
@@ -163,14 +162,13 @@ class Culture(TensorClass):
         """
         # build (N², 2) cell x-y cell positions from current map
         # row is cell index, empty rows are (-1, -1)
-        N2 = self.map_size * self.map_size
         flat = self.cell_map_flat
 
         # map empty voxels into dummy row N² + 1
-        pos = self.idxfull(N2 + 1, 2, value=-1)  # (N²+1, 2)
-        rows = torch.where(flat >= 0, flat, N2)  # (N²+1, 2)
+        pos = self.idxfull(self.N2 + 1, 2, value=-1)  # (N²+1, 2)
+        rows = torch.where(flat >= 0, flat, self.N2)  # (N²+1, 2)
         pos[rows] = self.all_positions
-        return pos[:N2]  # (N², 2) remove dummy row
+        return pos[: self.N2]  # (N², 2) remove dummy row
 
     def get_free_positions(self, n: int) -> torch.Tensor:
         """
@@ -186,8 +184,6 @@ class Culture(TensorClass):
         free = self.cell_map_flat < 0  # idxs of free voxels
         score = self.frand(free.shape).masked_fill(~free, -1.0)  # score free foxels
         sel = score.topk(n).indices  # n distinct flat voxel idxs (prefer free ones)
-        # TODO: got RuntimeError: selected index k out of range
-        #       when trying to add more cells than available pixels (maybe better error?)
         sel = sel[free[sel]]  # drop occupied ones if fewer than n were free
         return self._idxs_to_positions(sel)  # convert into row-col (k, 2)
 

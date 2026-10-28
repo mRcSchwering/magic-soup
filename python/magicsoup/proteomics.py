@@ -324,6 +324,13 @@ class Proteomics(TensorClass):
         N_b = self.itensor(N_b_)
         N_h = self.itensor(N_h_)
 
+        # if p=0, 3D tensors have (c, 0) not (c, 0, m)
+        if N_f.shape[1] == 0:
+            N_f = N_f.unsqueeze(-1).expand(-1, -1, self.m)
+            N_b = N_b.unsqueeze(-1).expand(-1, -1, self.m)
+            N_h = N_h.unsqueeze(-1).expand(-1, -1, self.m)
+            K_r = K_r.unsqueeze(-1).expand(-1, -1, self.m)
+
         N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
         k_f, k_b = self.derive_rates(N=N, k_m=k_m)
         N_e = self.derive_effective_stoichiometry(N=N)
@@ -374,11 +381,6 @@ class Proteomics(TensorClass):
         """
         eps = self.eps
         max_k = self.max_k
-
-        # TODO: N could be an empty tensor
-        #       in that case einsum cpm,m->cp below fails
-        #       should find the right place to protect against empty tensors
-        #       more likely to be triggered when spawning 1 cell
 
         # energies define k_e which defines k_e = k_f/k_b
         e = torch.einsum("cpm,m->cp", N, self.mol_energies)

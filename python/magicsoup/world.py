@@ -88,7 +88,9 @@ class World(TensorClass):
 
         self.chemistry = chemistry
         self.kinetics = kinetics or Kinetics(
-            **(kinetics_kwargs or {}), dt=time_resolution, tensor_kwargs=tensor_kwargs
+            **(kinetics_kwargs or {}),
+            dt=time_resolution,
+            tensor_kwargs=tensor_kwargs,
         )
         self.culture = culture or (
             Culture(
@@ -173,6 +175,11 @@ class World(TensorClass):
 
     def spawn_cells(self, genomes: list[str]) -> torch.Tensor:
         n_new_cells = len(genomes)
+        if n_new_cells > self.culture.N2:
+            raise ValueError(
+                f"Wanted to spawn {n_new_cells:,} new cells"
+                f" but there are only {self.culture.N2:,} voxels."
+            )
         if n_new_cells == 0:
             return self.idxtensor([])
 
@@ -221,6 +228,11 @@ class World(TensorClass):
 
     def add_cells(self, cells: list["Cell"]) -> torch.Tensor:
         n_new_cells = len(cells)
+        if n_new_cells > self.culture.N2:
+            raise ValueError(
+                f"Wanted to add {n_new_cells:,} new cells"
+                f" but there are only {self.culture.N2:,} voxels."
+            )
         if n_new_cells == 0:
             return self.idxtensor([])
 

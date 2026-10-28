@@ -16,12 +16,6 @@ from magicsoup.util import TensorClass, TensorKwargs, read_fasta, write_fasta
 _log = logging.getLogger(__name__)
 
 
-# TODO: what about checking that 2 inputs match
-#       e.g. 2 tensors that should have same length
-#       or that a tensor is (k,)
-#       check it here? or in world?
-
-
 # TODO: have all genomes as str array
 #       move between rust and python using str arrays
 
@@ -157,8 +151,7 @@ class Cells(TensorClass):
         N_b = self.itensor(N_b_)
         N_h = self.itensor(N_h_)
 
-        # TODO: if p=0, 3D tensors have (c, 0) not (c, 0, m)
-        #       temporary fix
+        # if p=0, 3D tensors have (c, 0) not (c, 0, m)
         if N_f.shape[1] == 0:
             N_f = N_f.unsqueeze(-1).expand(-1, -1, self.m)
             N_b = N_b.unsqueeze(-1).expand(-1, -1, self.m)
