@@ -775,3 +775,9 @@ def test_saving_loading_obj(tmp_path: Path) -> None:
 
 # TODO: test that energy always goes down with reactions
 #       stays the same without
+
+# TODO: Km range: log normal
+#       median at 0.1 mM, 0.003 mM 5th pctile, 3 mM 95th pctile
+
+# TODO: Vmax range: log-normal sigma=10
+#       median 1e-2 mM/s, 1e-4 mM/s 5th pctile, 1 mM/s 95th pctile

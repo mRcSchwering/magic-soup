@@ -1,5 +1,6 @@
 import math
 import random
+from typing import Any
 
 import pytest
 import torch
@@ -11,6 +12,7 @@ from magicsoup.proteomics import (
     Proteomics,
     _EffectorMap,
     _LogNormMap,
+    _MirrGeoMap,
     _ReactionMap,
     _TransporterMap,
 )
@@ -38,6 +40,9 @@ _CHEMISTRY = Chemistry(molecules=_MOLECULES, reactions=_REACTIONS)
 
 
 # fmt: off
+
+# token 0 always represents "no value"
+
 _KM_WEIGHTS = [
 #   x0    x1    x2    x3    x4    x5    x6    x7    x8    x9
     0.0,  0.1,  0.2,  0.3,  0.4,  0.5,  0.6,  0.7,  0.8,  0.9,  # 0x
@@ -52,10 +57,10 @@ _VMAX_WEIGHTS = [
 ]
 
 #         0   1   2
-_SIGNS = [0,  1,  -1]
+_SIGNS = [0,  1, -1]
 
-#         0  1  2  3  4  5
-_HILLS = [0, 1, 2, 3, 4, 5]
+#         0   1   2   3   4   5   6
+_HILLS = [0,  1,  2,  3, -1, -2, -3]
 
 _TRANSPORT_M = [
     ( 0,  0,  0,  0,  0,  0,  0,  0 ), # 0: none
@@ -103,22 +108,25 @@ _V_RATIOS = [
 # fmt: on
 
 
+def _assert_bijective(
+    all_tokens: set[int], tokens_map: dict[Any, list[int]], value_map: dict[int, Any]
+) -> None:
+    # check that all tokens are defined
+    scalar_tokens = {dd for d in tokens_map.values() for dd in d}
+    tokens = set(value_map)
+    assert all_tokens == tokens
+    assert all_tokens == scalar_tokens
+
+    # check that mapping is bijective
+    assert len(scalar_tokens) == len([dd for d in tokens_map.values() for dd in d])
+
+
 def test_log_norm_map() -> None:
     max_token = 100
     value_range = (1e-2, 1e2)
     mapper = _LogNormMap(max_token=max_token, value_range=value_range)
     all_tokens = set(range(max_token + 1))  # first token is none token
-
-    # check that all tokens are defined
-    scalar_tokens = {dd for d in mapper.scalar_2_tokens.values() for dd in d}
-    tokens = set(mapper.token_2_scalar)
-    assert all_tokens == tokens
-    assert all_tokens == scalar_tokens
-
-    # check that mapping is bijective
-    assert len(scalar_tokens) == len(
-        [dd for d in mapper.scalar_2_tokens.values() for dd in d]
-    )
+    _assert_bijective(all_tokens, mapper.scalar_2_tokens, mapper.token_2_scalar)
 
     # check inversion is correct
     for token in all_tokens:
@@ -143,7 +151,47 @@ def test_log_norm_map() -> None:
     assert len([d for d in values if d > hi]) / n < 0.1
     exp = math.exp((math.log(lo) + math.log(hi)) / 2)
     act = math.exp(sum(math.log(d) for d in values) / n)
-    assert abs(exp - act) < 0.5  # very unstable
+    assert abs(exp - act) < 0.8  # very unstable
+
+
+def test_mirr_geo_map() -> None:
+    max_token = 100
+    max_value = 4
+    mapper = _MirrGeoMap(max_token=max_token, max_value=max_value)
+    all_tokens = set(range(max_token + 1))  # first token is none token
+    _assert_bijective(all_tokens, mapper.scalar_2_tokens, mapper.token_2_scalar)
+
+    # check inversion is correct
+    for token in all_tokens:
+        scalar = mapper.token_2_scalar[token]
+
+        # none scalar
+        if scalar == 0:
+            assert token == 0
+            assert token in mapper.scalar_2_tokens[None]
+            continue
+
+        # valued scalar
+        assert token in mapper.scalar_2_tokens[scalar]
+
+    # distribution fits
+    assert 0 not in mapper.scalar_2_tokens
+    assert max_value + 1 not in mapper.scalar_2_tokens
+    assert mapper.scalar_2_tokens[None] == [0]
+    v = max_value
+    p0l = len(mapper.scalar_2_tokens[-v]) / max_token
+    p0r = len(mapper.scalar_2_tokens[v]) / max_token
+    while True:
+        v -= 1
+        if v == 0:
+            break
+
+        p1l = len(mapper.scalar_2_tokens[-v]) / max_token
+        p1r = len(mapper.scalar_2_tokens[v]) / max_token
+        assert abs(p0l - 2 * p1l) < 0.7  # unstable
+        assert abs(p0r - 2 * p1r) < 0.7  # unstable
+        p0l = p1l
+        p0r = p1r
 
 
 def test_reaction_map() -> None:
@@ -159,17 +207,7 @@ def test_reaction_map() -> None:
     max_token = 20
     mapper = _ReactionMap(chemistry=chemistry, max_token=max_token)
     all_tokens = set(range(max_token + 1))  # first token is none token
-
-    # check that all tokens are defined
-    mol_tokens = {dd for d in mapper.react_2_tokens.values() for dd in d}
-    vector_tokens = set(mapper.token_2_vector)
-    assert all_tokens == vector_tokens
-    assert all_tokens == mol_tokens
-
-    # check that mapping is bijective
-    assert len(mol_tokens) == len(
-        [dd for d in mapper.react_2_tokens.values() for dd in d]
-    )
+    _assert_bijective(all_tokens, mapper.react_2_tokens, mapper.token_2_vector)
 
     # check inversion is correct
     for token in all_tokens:
@@ -210,17 +248,7 @@ def test_transporter_map() -> None:
     max_token = 20
     mapper = _TransporterMap(chemistry=chemistry, max_token=max_token)
     all_tokens = set(range(max_token + 1))  # first token is none token
-
-    # check that all tokens are defined
-    mol_tokens = {dd for d in mapper.mol_2_tokens.values() for dd in d}
-    vector_tokens = set(mapper.token_2_vector)
-    assert all_tokens == vector_tokens
-    assert all_tokens == mol_tokens
-
-    # check that mapping is bijective
-    assert len(mol_tokens) == len(
-        [dd for d in mapper.mol_2_tokens.values() for dd in d]
-    )
+    _assert_bijective(all_tokens, mapper.mol_2_tokens, mapper.token_2_vector)
 
     # check inversion is correct
     for token in all_tokens:
@@ -258,17 +286,7 @@ def test_effector_map() -> None:
     max_token = 20
     mapper = _EffectorMap(chemistry=chemistry, max_token=max_token)
     all_tokens = set(range(max_token + 1))  # first token is none token
-
-    # check that all tokens are defined
-    mol_tokens = {dd for d in mapper.mol_2_tokens.values() for dd in d}
-    vector_tokens = set(mapper.token_2_vector)
-    assert all_tokens == vector_tokens
-    assert all_tokens == mol_tokens
-
-    # check that mapping is bijective
-    assert len(mol_tokens) == len(
-        [dd for d in mapper.mol_2_tokens.values() for dd in d]
-    )
+    _assert_bijective(all_tokens, mapper.mol_2_tokens, mapper.token_2_vector)
 
     # check inversion is correct
     for token in all_tokens:

@@ -47,8 +47,11 @@ def test_chemistry_initialization() -> None:
         reactions=[r2, r3, r1, r4, r3, r2, r1, r5],
     )
 
-    assert chem.molecules == [m3, m2, m1]
-    assert chem.reactions == [r1, r3]
+    assert chem.molecules == [m1, m2, m3]
+
+    # NOTE: order of reactions is not reliable
+    #       since A <-> B == B <-> A
+    assert set(chem.reactions) == {r1, r3}
 
 
 def test_chemistry_raises_wrong_duplicate_molecule() -> None:

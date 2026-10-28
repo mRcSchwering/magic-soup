@@ -25,12 +25,15 @@ class _CodonMap:
     def __init__(
         self, n_codons: int, stop_codons: Iterable[str], allow_last_stop: bool = False
     ) -> None:
+        # all possible sequences
         if allow_last_stop:
             seqs0 = codons(n=n_codons - 1, excl_codons=list(stop_codons))
             seqs1 = codons(n=1)
             seqs = [a + b for a, b in product(seqs0, seqs1)]
         else:
             seqs = codons(n=n_codons, excl_codons=list(stop_codons))
+
+        # tokens 1...n+1 (none token 0 gets no sequence)
         self.seq_2_token = {d: i + 1 for i, d in enumerate(seqs)}
         self.token_2_seq = {v: k for k, v in self.seq_2_token.items()}
         self.encoding_size = max(self.seq_2_token.values())
@@ -49,12 +52,10 @@ class _DomainTypeMap:
         n_seqs = len(seqs)
         dom_type_2_n = {k: int(p * n_seqs) for k, p in dom_type_probs.items()}
 
-        n_doms = sum(dom_type_2_n.values())
-        if n_doms > n_seqs:
+        if sum(dom_type_2_n.values()) > n_seqs:
             raise ValueError("Domain type probabilities exceed 1")
         for dom_type, n in dom_type_2_n.items():
-            if n == 0:
-                # TODO: this warning is also raise if prob is 0
+            if n == 0 and dom_type_probs[dom_type] > 0:
                 warnings.warn(
                     f"{n_dom_type_codons} domain type codons"
                     f" are too small to encode {dom_type}"

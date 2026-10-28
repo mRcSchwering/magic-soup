@@ -16,16 +16,9 @@ if TYPE_CHECKING:
     from magicsoup.genomics import ProteinSpec
 
 
-def _get_inverse[T](m: dict[int, T]) -> dict[T, list[int]]:
-    inv = defaultdict(list)
-    for k, v in m.items():
-        inv[v].append(k)
-    return inv
-
-
 class _LogNormMap:
     """
-    Get a map that maps tokens to a float
+    Get a map that maps tokens to floats
     which is sampled from a log normal distribution.
     """
 
@@ -49,30 +42,32 @@ class _LogNormMap:
             self.scalar_2_tokens[value].append(token)
 
 
-class _SignMap:
+class _MirrGeoMap:
     """
-    Get a map that maps tokens to 1 or -1
-    with 50% probability of each being mapped.
-    """
-
-    def __init__(self, max_token: int, none_value: int = 0) -> None:
-        choices = [1, -1]
-        signs = [none_value] + random.choices(choices, k=max_token)
-        self.token_2_scalar = {i: s for i, s in enumerate(signs)}
-        self.scalar_2_tokens = _get_inverse(self.token_2_scalar)
-
-
-class _HillMap:
-    """
-    Get a map that maps tokens to 1, 2, 3, 4, 5
-    with chances 52%, 26%, 13%, 6%, 3% respectively.
+    Get a map that maps tokens to ints
+    which are sampled from a geometric distribution with p=1/2, p0=0 mirrored around 0.
     """
 
-    def __init__(self, max_token: int, none_value: int = 0) -> None:
-        choices = [5] + 2 * [4] + 4 * [3] + 8 * [2] + 16 * [1]
-        numbers = [none_value] + random.choices(choices, k=max_token)
-        self.token_2_scalar = {i: n for i, n in enumerate(numbers)}
-        self.scalar_2_tokens = _get_inverse(self.token_2_scalar)
+    def __init__(self, max_token: int, max_value: int) -> None:
+        n = 1
+        pop: list[int] = []
+        for d in range(max_value, 0, -1):
+            pop.extend(n * [d])
+            pop.extend(n * [-d])
+            n *= 2
+
+        self.token_2_scalar: dict[int, int] = {}
+        self.scalar_2_tokens: dict[int | None, list[int]] = defaultdict(list)
+
+        # none value on 0 token
+        self.token_2_scalar[0] = 0
+        self.scalar_2_tokens[None] = [0]
+
+        # assign tokens
+        for token in range(1, max_token + 1):
+            value = random.choice(pop)
+            self.token_2_scalar[token] = value
+            self.scalar_2_tokens[value].append(token)
 
 
 class _ReactionMap:
@@ -246,6 +241,7 @@ class Proteomics(TensorClass):
         abs_temp: float = ROOM_TEMP,  # in K
         km_range: tuple[float, float] = (1e-3, 10.0),  # in mM
         vmax_range: tuple[float, float] = (1e-3, 1e4),  # in mM/s
+        hill_max: int = 3,
         scalar_enc_size: int = 64 - 3,  # 1 codon w/o stop
         vector_enc_size: int = 4096 - 3 * 64,  # 2 codons w/o stop in 1st
         max_k: float = 1e36,
@@ -269,14 +265,10 @@ class Proteomics(TensorClass):
         # energies (kJ/mol -> J/mol) for all mols (2m,)
         self.mol_energies = self.ftensor([d.energy for d in molecules] * 2) * 1e3
 
-        # TODO: Km range: log normal
-        #       median at 0.1 mM, 0.003 mM 5th pctile, 3 mM 95th pctile
-        # TODO: Vmax range: log-normal sigma=10
-        #       median 1e-2 mM/s, 1e-4 mM/s 5th pctile, 1 mM/s 95th pctile
         self.km_map = _LogNormMap(max_token=scalar_enc_size, value_range=km_range)
         self.vmax_map = _LogNormMap(max_token=scalar_enc_size, value_range=vmax_range)
-        self.sign_map = _SignMap(max_token=scalar_enc_size)
-        self.hill_map = _HillMap(max_token=scalar_enc_size)
+        self.sign_map = _MirrGeoMap(max_token=scalar_enc_size, max_value=1)
+        self.hill_map = _MirrGeoMap(max_token=scalar_enc_size, max_value=hill_max)
         self.transport_map = _TransporterMap(chemistry, max_token=vector_enc_size)
         self.effector_map = _EffectorMap(chemistry, max_token=vector_enc_size)
         self.reaction_map = _ReactionMap(chemistry, max_token=vector_enc_size)
