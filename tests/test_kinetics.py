@@ -219,50 +219,51 @@ def test_get_alpha_reg(kinetics: Kinetics):
     m = 4
 
     x0 = fzeros(c, m)
-    K_r = fzeros(c, p, m)
+    k_r = fzeros(c, p)
     N_h = izeros(c, p, m)
 
     # cell 0: P0: inh=c, P1: act=a, P2: inh=c, act=d
     x0[0, :] = ftensor([2.1, 0.0, 1.9, 2.0])
 
     N_h[0, 0, :] = itensor([0, 0, -1, 0])
-    K_r[0, 0, :] = ftensor([0.0, 0.0, 1.3, 0.0])
+    k_r[0, 0] = 1.3
 
     N_h[0, 1, :] = itensor([1, 0, 0, 0])
-    K_r[0, 1, :] = ftensor([2.1, 0.0, 0.0, 0.0])
+    k_r[0, 1] = 2.1
 
     N_h[0, 2, :] = itensor([0, 0, -1, 1])
-    K_r[0, 2, :] = ftensor([0.0, 0.0, 0.9, 0.9])
+    k_r[0, 2] = 0.9
 
     # cell 1: P0: inh=c,d, P1: act=a,b
     x0[1, :] = ftensor([3.2, 1.6, 4.0, 1.9])
 
     N_h[1, 0, :] = itensor([0, 0, -1, -1])
-    K_r[1, 0, :] = ftensor([0.0, 0.0, 1.4, 1.4])
+    k_r[1, 0] = 1.4
 
     N_h[1, 1, :] = itensor([1, 1, 0, 0])
-    K_r[1, 1, :] = ftensor([2.2, 2.2, 0.0, 0.0])
+    k_r[1, 1] = 2.2
 
     # cell 2: P0: act=10a, inh=10b, P1: act=c (but no c), P2: inh=d (but no d)
     x0[2, :] = ftensor([2.6, 1.2, 0.0, 0.0])
 
     N_h[2, 0, :] = itensor([10, -10, 0, 0])
-    K_r[2, 0, :] = ftensor([1.0, 2.0, 0.0, 0.0])
+    k_r[2, 0] = 1.5
 
     N_h[2, 1, :] = itensor([0, 0, 1, 0])
-    K_r[2, 1, :] = ftensor([0.0, 0.0, 3.0, 0.0])
+    k_r[2, 1] = 0.3
 
     N_h[2, 2, :] = itensor([0, 0, 0, -1])
-    K_r[2, 2, :] = ftensor([0.0, 0.0, 0.0, 4.0])
+    k_r[2, 2] = 4.0
 
     # expected
     a_r = x0.unsqueeze(1) ** N_h
-    k = K_r**N_h
+    k = k_r.unsqueeze(-1) ** N_h
     a_exp = torch.where(N_h != 0, (a_r / (k + a_r)), 1.0).prod(dim=-1).nan_to_num(1.0)
 
     # test
     x0_ = torch.broadcast_to(x0.unsqueeze(1), (c, p, m))
-    a = kinetics._get_alpha_reg(x=x0_, N_h=N_h, K_r=K_r)
+    a = kinetics._get_alpha_reg(x=x0_, N_h=N_h, k_r=k_r)
+
     torch.testing.assert_close(a, a_exp, atol=_ATOL, rtol=_RTOL)
 
 
@@ -274,8 +275,8 @@ def test_get_alpha_reg_randomly(kinetics: Kinetics):
         m = random.randint(2, 100)
         x = frand(c, p, m) * 1000
         N_h = irand(-100, 100, c, p, m)
-        K_r = frand(c, p, m) * 10
-        a = kinetics._get_alpha_reg(x=x, N_h=N_h, K_r=K_r)
+        k_r = frand(c, p) * 10
+        a = kinetics._get_alpha_reg(x=x, N_h=N_h, k_r=k_r)
         assert a.shape == (c, p)
         assert a.isnan().sum() == 0
         assert a.isfinite().all()
@@ -295,7 +296,7 @@ def test_step_protein_activity(kinetics: Kinetics):
     v_max = ffull(c, p, value=10.0)
     k_f = fzeros(c, p)
     k_b = fzeros(c, p)
-    K_r = fzeros(c, p, m)
+    k_r = fzeros(c, p)
     N_f = izeros(c, p, m)
     N_b = izeros(c, p, m)
     N_h = izeros(c, p, m)
@@ -341,14 +342,14 @@ def test_step_protein_activity(kinetics: Kinetics):
     N_h[3, 0, 1] = -1
     k_f[3, 0] = 5.0
     k_b[3, 0] = 5.0
-    K_r[3, 0, 1] = 5.0
+    k_r[3, 0] = 5.0
 
     N_f[3, 1, 1] = 1
     N_b[3, 1, 3] = 2
     N_h[3, 1, 0] = 1
     k_f[3, 1] = 5.0
     k_b[3, 1] = 5.0
-    K_r[3, 1, 0] = 5.0
+    k_r[3, 1] = 5.0
 
     # test
     x1 = kinetics.get_x1(
@@ -359,7 +360,7 @@ def test_step_protein_activity(kinetics: Kinetics):
         N_h=N_h,
         k_f=k_f,
         k_b=k_b,
-        K_r=K_r,
+        k_r=k_r,
         v_max=v_max,
     )
 
@@ -420,7 +421,7 @@ def test_step_protein_activity_different_volumes(kinetics: Kinetics):
     v_max = ffull(c, p, value=10.0)
     k_f = fzeros(c, p)
     k_b = fzeros(c, p)
-    K_r = fzeros(c, p, m)
+    k_r = fzeros(c, p)
     N_f = izeros(c, p, m)
     N_b = izeros(c, p, m)
     N_h = izeros(c, p, m)
@@ -448,7 +449,7 @@ def test_step_protein_activity_different_volumes(kinetics: Kinetics):
         N_h=N_h,
         k_f=k_f,
         k_b=k_b,
-        K_r=K_r,
+        k_r=k_r,
         v_max=v_max,
     )
 
@@ -481,7 +482,7 @@ def test_step_protein_activity_convergence(kinetics: Kinetics):
     v_max = ffull(c, p, value=1e4)
     k_f = fzeros(c, p)
     k_b = fzeros(c, p)
-    K_r = fzeros(c, p, m)
+    k_r = fzeros(c, p)
     N_f = izeros(c, p, m)
     N_b = izeros(c, p, m)
     N_h = izeros(c, p, m)
@@ -518,7 +519,7 @@ def test_step_protein_activity_convergence(kinetics: Kinetics):
             N_h=N_h,
             k_f=k_f,
             k_b=k_b,
-            K_r=K_r,
+            k_r=k_r,
             v_max=v_max,
         )
 
@@ -554,7 +555,7 @@ def test_step_protein_activity_randomly(caplog):
         v_max = frand(c, p) * 1e3
         k_f = frand(c, p) * 10
         k_b = frand(c, p) * 10
-        K_r = frand(c, p, m) * 10
+        k_r = frand(c, p) * 10
 
         kinetics = Kinetics(dt=dt)
 
@@ -568,7 +569,7 @@ def test_step_protein_activity_randomly(caplog):
                     N_h=N_h,
                     k_f=k_f,
                     k_b=k_b,
-                    K_r=K_r,
+                    k_r=k_r,
                     v_max=v_max,
                 )
             assert x.shape == (c, m), f"repetition {i}, step {j}"

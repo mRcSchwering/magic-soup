@@ -66,7 +66,7 @@ class Kinetics(TensorClass):
         N_b: torch.Tensor,  # (c, p, 2m)
         k_f: torch.Tensor,  # (c, p)
         k_b: torch.Tensor,  # (c, p)
-        K_r: torch.Tensor,  # (c, p, 2m)
+        k_r: torch.Tensor,  # (c, p)
         v_max: torch.Tensor,  # (c, p)
     ) -> torch.Tensor:
         """
@@ -80,7 +80,7 @@ class Kinetics(TensorClass):
             N_b: (c, p, 2m) integer tensor of stoichiometric coefficients of products for calculating MM kinetics
             k_f: (c, p) float tensor of reactant affinity in forward direction
             k_b: (c, p) float tensor of reactant affinity in backward direction
-            K_r: (c, p, 2m) float tensor of half occupancy concentrations of regulatory domains
+            r_r: (c, p) float tensor of half occupancy concentrations of regulatory domains
             v_max: (c, p) float tensor maximum velocity of assuming 1 µM (micro molar) of protein in mM/s (milli molar per second)
 
         Effective stoichiometric numbers means stoichiometric numbers adjusted to volume differences between cell and voxel.
@@ -134,7 +134,7 @@ class Kinetics(TensorClass):
                 N_b=N_b,
                 k_f=k_f,
                 k_b=k_b,
-                K_r=K_r,
+                k_r=k_r,
                 v_max=v_max,
             )  # (c, p)
 
@@ -171,7 +171,7 @@ class Kinetics(TensorClass):
         N_b: torch.Tensor,  # (c, p, 2m)
         k_f: torch.Tensor,  # (c, p)
         k_b: torch.Tensor,  # (c, p)
-        K_r: torch.Tensor,  # (c, p, 2m)
+        k_r: torch.Tensor,  # (c, p)
         v_max: torch.Tensor,  # (c, p)
     ) -> torch.Tensor:
         # solve for xi per protein
@@ -211,7 +211,7 @@ class Kinetics(TensorClass):
             a_cat = self._get_alpha_cat(x=x1, N_f=N_f, N_b=N_b, k_f=k_f, k_b=k_b)
 
             # calculate per protein regulatory activity
-            a_reg = self._get_alpha_reg(x=x1, N_h=N_h, K_r=K_r)
+            a_reg = self._get_alpha_reg(x=x1, N_h=N_h, k_r=k_r)
 
             v = v_max * a_cat * a_reg  # (c, p)
 
@@ -228,27 +228,28 @@ class Kinetics(TensorClass):
         self,
         x: torch.Tensor,  # (c, p, 2m)
         N_h: torch.Tensor,  # (c, p, 2m)
-        K_r: torch.Tensor,  # (c, p, 2m)
+        k_r: torch.Tensor,  # (c, p)
     ) -> torch.Tensor:
         # calculate per protein regulatory activity
         # - N_h defines hill coefficients
         # - x must be >= 0 for all elements where N_h > 0
-        # - K_r must be > 0 for all elements where N_h > 0
-        # - K_r must be 0 for all elements where N_h = 0
+        # - k_r must be > 0 for all elements where N_h > 0
+        # - k_r must be 0 for all elements where N_h = 0
         #
         # for each protein calculate alpha_reg:
         #
-        #   alpha = prod(x_i^n_i / (k_i^n_i + x_i^n_i))  i in 1..m
+        #   alpha = prod(x_i^n_i / (k^n_i + x_i^n_i))  i in 1..m
         #
         # for better effective dynamic range as:
         #
-        #   z_i = n_i * (log(k_i) - log(x_i))
+        #   z_i = n_i * (log(k) - log(x_i))
         #   alpha = exp(-sum(softplus(z_i)))  i in 1..m
         #
         eps = self.eps
-        z = N_h * (torch.log(K_r) - torch.log(x + eps))  # (c, p, 2m)
+        z = N_h * (torch.log(k_r.unsqueeze(-1)) - torch.log(x + eps))  # (c, p, 2m)
         s = F.softplus(z, beta=1.0, threshold=20.0)  # pylint: disable=E1102
-        alpha = torch.exp(-s.nansum(dim=2))  # (c, p)
+        s.masked_fill_(N_h == 0, 0.0)  # remove x not involved
+        alpha = torch.exp(-s.sum(dim=2))  # (c, p)
         return alpha  # (c, p)
 
     def _get_alpha_cat(

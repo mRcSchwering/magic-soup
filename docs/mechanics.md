@@ -198,12 +198,12 @@ Allosteric regulation $\alpha_{reg}$ is modeled as
 
 $$
 \alpha_{reg} =
-\prod^{\text{effectors}} \frac{c_l^{h_l}}{c_l^{h_l} + k_{r,l}^{h_l}}
+\prod^{\text{effectors}} \frac{c_l^{h_l}}{c_l^{h_l} + k_r^{h_l}}
 $$
 
 where $c_l$ is the concentration of effector molecule $l$,
 $h_l$ is its hill coefficient,
-and $k_{r,l}$ is its effector concentration producing half occupation.
+and $k_r$ is its effector concentration producing half occupation.
 $h_l > 0$ creates activating effectors, $h_l < 0$ inhibiting effectors.
 Proteins without regulatory domains are always active.
 As a result, the velocity of a protein in a cell is modeled as
