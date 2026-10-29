@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from magicsoup import _lib  # type: ignore
 
 if TYPE_CHECKING:
@@ -85,6 +87,11 @@ class Genomics(_ReduceMixin):
         # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as usize..w[1] as usize]).collect();
         # revcomp_many(&slices).map_err(|(i, b)| {PyValueError::new_err("genome invalid base")})
         return self._cls.translate_genomes(genomes)
+
+    def translate_genomes_new(
+        self, genomes: list[str]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+        return self._cls.translate_genomes_new(genomes)
 
     def get_coding_regions(
         self,

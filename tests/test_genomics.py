@@ -2,7 +2,7 @@ import math
 
 import pytest
 from magicsoup.config import CODON_SIZE
-from magicsoup.genomics import DomainType, Genomics, ProteinSpec, _DomainTypeMap
+from magicsoup.genomics import DomainType, Genomics, _DomainTypeMap
 from magicsoup.util import codons, random_genome
 
 from tests.util import load_test_json
@@ -218,16 +218,6 @@ def test_genomics() -> None:
     genome = "".join(seq.replace("\n", "").split())
     proteome = genomics.translate_genomes(genomes=[genome])[0]
     assert proteome == exp_proteome
-
-
-def _sum_dom_type(data: list[list[ProteinSpec]], type_: int) -> int:
-    out = 0
-    for cell in data:
-        for protein, *_ in cell:
-            for dom, *_ in protein:
-                if dom[0] == type_:
-                    out += 1
-    return out
 
 
 def test_genomics_domain_likelihoods() -> None:

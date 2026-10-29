@@ -5,6 +5,8 @@ from enum import IntEnum
 from itertools import product
 from typing import TypedDict
 
+import numpy as np
+
 from magicsoup import rs
 from magicsoup.config import CODON_SIZE
 from magicsoup.util import codons, random_genome
@@ -73,7 +75,8 @@ class _DomainTypeMap:
 
 
 type CdsSpec = tuple[int, int, bool]
-type DomainSpec = tuple[tuple[int, int, int, int, int], int, int]
+type DomainTokens = tuple[int, int, int, int, int]
+type DomainSpec = tuple[DomainTokens, int, int]
 type ProteinSpec = tuple[list[DomainSpec], int, int, bool]
 
 
@@ -190,6 +193,14 @@ class Genomics:
         if len(genomes) == 0:
             return []
         return self.rs.translate_genomes(genomes=genomes)
+
+    def translate_genomes2(
+        self, genomes: list[str]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+        """Get proteomes in form of domain specifications from genomes"""
+        if len(genomes) == 0:
+            return (np.zeros(0), np.zeros(0), np.zeros((0, 5)), 0)
+        return self.rs.translate_genomes_new(genomes=genomes)
 
     def get_coding_regions(
         self,

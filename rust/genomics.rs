@@ -5,7 +5,8 @@ use std::collections::HashMap;
 pub static CODON_SIZE: usize = 3;
 
 pub type CdsSpec = (usize, usize, bool);
-pub type DomainSpec = ((u8, u8, u8, u8, u16), usize, usize);
+pub type DomainTokens = (u8, u8, u8, u8, u16);
+pub type DomainSpec = (DomainTokens, usize, usize);
 pub type ProteinSpec = (Vec<DomainSpec>, usize, usize, bool);
 
 /// Reverse completemt of a DNA sequence (only 'A', 'C', 'T', 'G')

@@ -4,6 +4,7 @@ from collections import defaultdict
 from statistics import NormalDist
 from typing import TYPE_CHECKING, TypedDict
 
+import numpy as np
 import torch
 
 from magicsoup import rs
@@ -16,19 +17,27 @@ if TYPE_CHECKING:
     from magicsoup.genomics import ProteinSpec
 
 
-class _LogNormMap:
+class _LogNormMap(TensorClass):
     """
     Get a map that maps tokens to floats
     which is sampled from a log normal distribution.
     """
 
-    def __init__(self, max_token: int, value_range: tuple[float, float]) -> None:
+    def __init__(
+        self,
+        max_token: int,
+        value_range: tuple[float, float],
+        tensor_kwargs: TensorKwargs | None = None,
+    ) -> None:
+        super().__init__(**(tensor_kwargs or {}))
+
         lo, hi = value_range
         z95 = NormalDist().inv_cdf(0.975)
         mu = (math.log(lo) + math.log(hi)) / 2
         sig = (math.log(hi) - math.log(lo)) / (2 * z95)
 
         self.token_2_scalar: dict[int, float] = {}
+        self.token_scalar = self.fzeros(max_token + 1)
         self.scalar_2_tokens: dict[float | None, list[int]] = defaultdict(list)
 
         # none value on 0 token
@@ -39,16 +48,24 @@ class _LogNormMap:
         for token in range(1, max_token + 1):
             value = random.lognormvariate(mu, sig)
             self.token_2_scalar[token] = value
+            self.token_scalar[token] = value
             self.scalar_2_tokens[value].append(token)
 
 
-class _MirrGeoMap:
+class _MirrGeoMap(TensorClass):
     """
     Get a map that maps tokens to ints
     which are sampled from a geometric distribution with p=1/2, p0=0 mirrored around 0.
     """
 
-    def __init__(self, max_token: int, max_value: int) -> None:
+    def __init__(
+        self,
+        max_token: int,
+        max_value: int,
+        tensor_kwargs: TensorKwargs | None = None,
+    ) -> None:
+        super().__init__(**(tensor_kwargs or {}))
+
         n = 1
         pop: list[int] = []
         for d in range(max_value, 0, -1):
@@ -57,6 +74,7 @@ class _MirrGeoMap:
             n *= 2
 
         self.token_2_scalar: dict[int, int] = {}
+        self.token_scalar = self.izeros(max_token + 1)
         self.scalar_2_tokens: dict[int | None, list[int]] = defaultdict(list)
 
         # none value on 0 token
@@ -67,10 +85,11 @@ class _MirrGeoMap:
         for token in range(1, max_token + 1):
             value = random.choice(pop)
             self.token_2_scalar[token] = value
+            self.token_scalar[token] = value
             self.scalar_2_tokens[value].append(token)
 
 
-class _ReactionMap:
+class _ReactionMap(TensorClass):
     """
     Get a map that maps tokens to a list of vectors.
     Each vector will be mapped with the same frequency.
@@ -78,7 +97,14 @@ class _ReactionMap:
     stoichiometry of a reaction.
     """
 
-    def __init__(self, chemistry: Chemistry, max_token: int) -> None:
+    def __init__(
+        self,
+        chemistry: Chemistry,
+        max_token: int,
+        tensor_kwargs: TensorKwargs | None = None,
+    ) -> None:
+        super().__init__(**(tensor_kwargs or {}))
+
         r = len(chemistry.reactions)
         m = len(chemistry.molecules)
         m2 = 2 * m
@@ -89,12 +115,16 @@ class _ReactionMap:
             )
 
         self.token_2_vector: dict[int, tuple[int, ...]] = {}
+        self.token_fwd_vector = self.izeros(max_token + 1, m2)
+        self.token_bwd_vector = self.izeros(max_token + 1, m2)
         self.react_2_tokens: dict[Reaction | None, list[int]] = defaultdict(list)
         if len(chemistry.reactions) == 0:
             return
 
         # only copy [0] to avoid having references to the same list
         vectors = [[0] * m2 for _ in range(r)]
+        fwd_vectors = [[0] * m2 for _ in range(r)]
+        bwd_vectors = [[0] * m2 for _ in range(r)]
         mol_2_idx = chemistry.mol_2_idx
         ri_2_react: dict[int, Reaction] = {}
         for ri, react in enumerate(chemistry.reactions):
@@ -102,9 +132,11 @@ class _ReactionMap:
             for mol in react.substrates:
                 mi = mol_2_idx[mol]
                 vectors[ri][mi] -= 1
+                fwd_vectors[ri][mi] += 1
             for mol in react.products:
                 mi = mol_2_idx[mol]
                 vectors[ri][mi] += 1
+                bwd_vectors[ri][mi] += 1
 
         # none vector on 0 token
         none_vector = [0] * m2
@@ -115,6 +147,8 @@ class _ReactionMap:
         for token in range(1, max_token + 1):
             ri = token % r
             self.token_2_vector[token] = tuple(vectors[ri])
+            self.token_fwd_vector[token] = self.itensor(fwd_vectors[ri])
+            self.token_bwd_vector[token] = self.itensor(bwd_vectors[ri])
             self.react_2_tokens[ri_2_react[ri]].append(token)
 
 
@@ -123,14 +157,21 @@ class _ReactionMap:
 #       Should separate forward and reverse
 
 
-class _TransporterMap:
+class _TransporterMap(TensorClass):
     """
     Get a map that maps tokens to a list of vectors.
     Each vector has number of molecules length and represents the
     stoichiometry of a molecule transport into or out of the cell.
     """
 
-    def __init__(self, chemistry: Chemistry, max_token: int) -> None:
+    def __init__(
+        self,
+        chemistry: Chemistry,
+        max_token: int,
+        tensor_kwargs: TensorKwargs | None = None,
+    ) -> None:
+        super().__init__(**(tensor_kwargs or {}))
+
         m = len(chemistry.molecules)
         m2 = m * 2
         if m > max_token:
@@ -140,6 +181,7 @@ class _TransporterMap:
             )
 
         self.token_2_vector: dict[int, tuple[int, ...]] = {}
+        self.token_vector = self.izeros(max_token + 1, m2)
         self.mol_2_tokens: dict[Molecule | None, list[int]] = defaultdict(list)
         idx_2_mol = chemistry.idx_2_mol
 
@@ -158,10 +200,11 @@ class _TransporterMap:
         for token in range(1, max_token + 1):
             mi = token % m
             self.token_2_vector[token] = tuple(vectors[mi])
+            self.token_vector[token] = self.itensor(vectors[mi])
             self.mol_2_tokens[idx_2_mol[mi]].append(token)
 
 
-class _EffectorMap:
+class _EffectorMap(TensorClass):
     """
     Get a map that maps tokens to a list of vectors.
     Each vector has number of molecules length and represents the
@@ -169,7 +212,14 @@ class _EffectorMap:
     of an effector molecule.
     """
 
-    def __init__(self, chemistry: Chemistry, max_token: int) -> None:
+    def __init__(
+        self,
+        chemistry: Chemistry,
+        max_token: int,
+        tensor_kwargs: TensorKwargs | None = None,
+    ) -> None:
+        super().__init__(**(tensor_kwargs or {}))
+
         m = len(chemistry.molecules)
         m2 = m * 2
         if m2 > max_token:
@@ -179,6 +229,7 @@ class _EffectorMap:
             )
 
         self.token_2_vector: dict[int, tuple[int, ...]] = {}
+        self.token_vector = self.izeros(max_token + 1, m2)
         self.mol_2_tokens: dict[Molecule | None, list[int]] = defaultdict(list)
         idx_2_mol = chemistry.idx_2_mol
 
@@ -196,6 +247,7 @@ class _EffectorMap:
         # assign tokens round-robin
         for token in range(1, max_token + 1):
             self.token_2_vector[token] = tuple(vectors[token % m2])
+            self.token_vector[token] = self.itensor(vectors[token % m2])
             self.mol_2_tokens[idx_2_mol[token % m]].append(token)
 
 
@@ -265,13 +317,29 @@ class Proteomics(TensorClass):
         # energies (kJ/mol -> J/mol) for all mols (2m,)
         self.mol_energies = self.ftensor([d.energy for d in molecules] * 2) * 1e3
 
-        self.km_map = _LogNormMap(max_token=scalar_enc_size, value_range=km_range)
-        self.vmax_map = _LogNormMap(max_token=scalar_enc_size, value_range=vmax_range)
-        self.sign_map = _MirrGeoMap(max_token=scalar_enc_size, max_value=1)
-        self.hill_map = _MirrGeoMap(max_token=scalar_enc_size, max_value=hill_max)
-        self.transport_map = _TransporterMap(chemistry, max_token=vector_enc_size)
-        self.effector_map = _EffectorMap(chemistry, max_token=vector_enc_size)
-        self.reaction_map = _ReactionMap(chemistry, max_token=vector_enc_size)
+        self.km_map = _LogNormMap(
+            max_token=scalar_enc_size, value_range=km_range, tensor_kwargs=tensor_kwargs
+        )
+        self.vmax_map = _LogNormMap(
+            max_token=scalar_enc_size,
+            value_range=vmax_range,
+            tensor_kwargs=tensor_kwargs,
+        )
+        self.sign_map = _MirrGeoMap(
+            max_token=scalar_enc_size, max_value=1, tensor_kwargs=tensor_kwargs
+        )
+        self.hill_map = _MirrGeoMap(
+            max_token=scalar_enc_size, max_value=hill_max, tensor_kwargs=tensor_kwargs
+        )
+        self.transport_map = _TransporterMap(
+            chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs
+        )
+        self.effector_map = _EffectorMap(
+            chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs
+        )
+        self.reaction_map = _ReactionMap(
+            chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs
+        )
 
         # init rust class
         self._setup_rs()
@@ -298,6 +366,107 @@ class Proteomics(TensorClass):
             Protein.from_dict(d, molmap=self.chemistry.molname_2_mol)
             for d in proteome_kwargs
         ]
+
+    def get_cell_params2(
+        self,
+        cells: np.ndarray,
+        proteins: np.ndarray,
+        tokens: np.ndarray,
+        c: int,
+        p: int,
+    ) -> dict[str, torch.Tensor]:
+        # TODO: make sure they are all i32 on Rust side
+        # parameters in flat (d,) representation of (c, p)
+        cell = torch.from_numpy(cells).to(self.device, torch.int32)
+        prot = torch.from_numpy(proteins).to(self.device, torch.int32)
+        tok = torch.from_numpy(tokens).to(self.device, torch.int32)
+        m = self.m
+
+        # tokens:
+        # 0: domain type 1=catal,2=trnsp,3=reg
+        # 1: vmax for catal/trnsp, hill for reg
+        # 2: km
+        # 3: sign
+        # 4: react for catal, mol for trnsp, effect for reg
+        is_catal = tok[:, 0] == 1
+        is_trnsp = tok[:, 0] == 2
+        is_regul = tok[:, 0] == 3
+
+        idx_flat = cell * p + prot  # in (d,) for flat (c, p)
+        src_hill = self.hill_map.token_scalar[tokens[:, 1]].unsqueeze(-1)  # (d,0)
+        src_sign = self.sign_map.token_scalar[tokens[:, 3]].unsqueeze(-1)  # (d,0)
+
+        # aggregate domains by mean (subsample to keep uninvolved out)
+
+        # maximum velocity
+        v_max = self.fzeros(c, p)
+        idx = idx_flat[is_catal | is_trnsp]
+        src = self.vmax_map.token_scalar[tokens[is_catal | is_trnsp, 1]]
+        v_max.view(-1).scatter_reduce_(
+            dim=0, index=idx, src=src, reduce="mean", include_self=False
+        )
+
+        # catalytic and transporter sensitivity
+        k_m = self.fzeros(c, p)
+        idx = idx_flat[is_catal | is_trnsp]
+        src = self.km_map.token_scalar[tokens[is_catal | is_trnsp, 2]]
+        k_m.view(-1).scatter_reduce_(
+            dim=0, index=idx, src=src, reduce="mean", include_self=False
+        )
+
+        # allosteric sensitivity
+        K_r = self.fzeros(c, p, m)
+        idx = idx_flat[is_regul]
+        src = self.km_map.token_scalar[tokens[is_regul, 2]]
+        K_r.view(-1).scatter_reduce_(
+            dim=0, index=idx, src=src, reduce="mean", include_self=False
+        )
+
+        print(K_r)
+
+        # aggregate domains by sum (0s as defaults)
+
+        # reaction stoichiometry
+        N_f = self.izeros(c, p, m)
+        N_b = self.izeros(c, p, m)
+        src_idx = torch.where(is_catal, tok[:, 4], 0)
+        src_f = self.reaction_map.token_fwd_vector[src_idx]
+        src_b = self.reaction_map.token_bwd_vector[src_idx]
+        src = torch.where(src_sign > 0, src_f, src_b)
+        N_f.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+        src = torch.where(src_sign > 0, src_b, src_f)
+        N_b.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+
+        # transporter stoichiometry
+        src_idx = torch.where(is_trnsp, tok[:, 4], 0)
+        src_t = self.transport_map.token_vector[src_idx] * src_sign
+        src = torch.where(src_t < 0, -src_t, 0)
+        N_f.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+        src = torch.where(src_t > 0, src_t, 0)
+        N_b.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+
+        # hill coefficients
+        N_h = self.izeros(c, p, m)
+        src_idx = torch.where(is_regul, tok[:, 4], 0)
+        src = self.effector_map.token_vector[src_idx] * src_sign * src_hill
+        N_h.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+
+        # TODO: also make regulatory K_r 2D (just easier everywhere)
+
+        N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
+        k_f, k_b = self.derive_rates(N=N, k_m=k_m)
+        N_e = self.derive_effective_stoichiometry(N=N)
+
+        return {
+            "N_e": N_e,
+            "N_f": N_f,
+            "N_b": N_b,
+            "N_h": N_h,
+            "k_f": k_f,
+            "k_b": k_b,
+            "K_r": K_r,
+            "v_max": v_max,
+        }
 
     def get_cell_params(
         self, proteomes: "list[list[ProteinSpec]]"

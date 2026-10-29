@@ -6,7 +6,7 @@ mod genomics;
 mod mutations;
 mod proteomics;
 mod util;
-use numpy::PyArray2;
+use numpy::{PyArray1, PyArray2};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
@@ -94,6 +94,67 @@ impl Genomics {
                 &self.dom_type_size,
             )
         })
+    }
+
+    fn translate_genomes_new<'py>(
+        &self,
+        py: Python<'py>,
+        genomes: Vec<PyBackedStr>,
+    ) -> (
+        Bound<'py, PyArray1<i32>>,
+        Bound<'py, PyArray1<i32>>,
+        Bound<'py, PyArray2<i32>>,
+        usize,
+    ) {
+        // translate genomes
+        let slices: Vec<&[u8]> = genomes.iter().map(|g| g.as_bytes()).collect();
+        let specs = py.detach(move || {
+            genomics::translate_genomes_threaded(
+                &slices,
+                &self.start_codons,
+                &self.stop_codons,
+                &self.domain_type_2_token,
+                &self.one_codon_2_token,
+                &self.two_codon_2_token,
+                &self.dom_size,
+                &self.dom_type_size,
+            )
+        });
+
+        // convert to flat representation
+        let mut cell: Vec<i32> = Vec::new();
+        let mut prot: Vec<i32> = Vec::new();
+        let mut tokens: Vec<Vec<i32>> = Vec::new();
+        let mut max_p: usize = 0;
+
+        if let Some(p) = specs.iter().map(|d| d.len()).max() {
+            max_p = p;
+            let n_doms: usize = specs.iter().flatten().map(|d| d.0.len()).sum();
+            cell.reserve(n_doms);
+            prot.reserve(n_doms);
+            tokens.reserve(n_doms);
+
+            for (cell_i, cell_spec) in specs.iter().enumerate() {
+                for (prot_i, prot_spec) in cell_spec.iter().enumerate() {
+                    for dom_spec in prot_spec.0.iter() {
+                        cell.push(cell_i as i32);
+                        prot.push(prot_i as i32);
+                        let t = dom_spec.0;
+                        tokens.push(vec![
+                            t.0 as i32, t.1 as i32, t.2 as i32, t.3 as i32, t.4 as i32,
+                        ]);
+                    }
+                }
+            }
+        }
+
+        // fill up numpy arrays
+        let cell_arr: Bound<'py, PyArray1<i32>> = PyArray1::from_vec(py, cell);
+        let prot_arr: Bound<'py, PyArray1<i32>> = PyArray1::from_vec(py, prot);
+        let tokens_arr: Bound<'py, PyArray2<i32>> =
+            PyArray2::from_vec2(py, &tokens).expect("Failed to build PyArray2");
+
+        (cell_arr, prot_arr, tokens_arr, max_p)
     }
 
     fn get_coding_regions(

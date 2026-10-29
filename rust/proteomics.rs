@@ -258,6 +258,8 @@ pub fn get_proteome_params_threaded(
     let c: usize = proteomes_params.len();
     let p: usize = proteomes_params.iter().map(Vec::len).max().unwrap_or(0);
 
+    // cell (D,)
+
     // (v_max, k_m, k_r, n_f, n_b, n_h)
     let mut v_max = vec![vec![0 as f32; p]; c];
     let mut k_m = vec![vec![0 as f32; p]; c];

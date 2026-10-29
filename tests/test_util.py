@@ -1,8 +1,11 @@
 from pathlib import Path
 
 import pytest
+import torch
 from magicsoup import util
 from magicsoup.config import CODON_SIZE
+
+from tests.util import idxtensor
 
 
 @pytest.mark.parametrize(
@@ -90,3 +93,44 @@ def test_writing_reading_fasta(tmp_path: Path) -> None:
     util.write_fasta(name_2_seq=orig, file=tmp_path / "test.fasta")
     new = util.read_fasta(file=tmp_path / "test.fasta")
     assert orig == new
+
+
+@pytest.mark.parametrize(
+    "idx, alp, src, exp",
+    [
+        ([0, 0, 0, 1, 1], [1, 2, 3], [0, -1, 2, 2, 0], [2, 4, 3]),
+        ([0, 0, 1, 1, 2], [1, 2, 3], [0, 1, 2, 3, 4], [2, 7, 7]),
+        ([0, 0, 0, 2, 2], [1, 2, 3], [0, 1, 2, 3, 4], [4, 2, 10]),
+        ([], [], [], []),
+        ([0], [0], [0], [0]),
+        ([0, 0, 1], [[0, 0], [0, 0]], [[3, 2], [2, 1], [1, 2]], [[5, 3], [1, 2]]),
+    ],
+)
+def test_index_add(idx: list, alp: list, src: list, exp: list) -> None:
+    idx_ = idxtensor(idx)
+    alp_ = idxtensor(alp)
+    src_ = idxtensor(src)
+    exp_ = idxtensor(exp)
+    alp_.index_add_(dim=0, index=idx_, source=src_)
+    assert torch.equal(alp_, exp_)
+
+
+@pytest.mark.parametrize(
+    "idx, src, red, exp",
+    [
+        ([0, 0, 1], [1, 2, 3], "sum", [3, 3]),
+        ([0, 0, 1], [1, 2, 3], "amax", [2, 3]),
+        ([0, 0, 1], [2, 2, 3], "mean", [2, 3]),
+        ([0, 0, 0], [1, 2, 2], "prod", [4, 0]),
+        ([0, 0, 0, 2], [1, 2, 3, 4], "sum", [6, 0, 4]),
+        ([], [], "amax", []),
+        ([0], [0], "prod", [0]),
+    ],
+)
+def test_scatter_reduce(idx: list, src: list, red: str, exp: list) -> None:
+    idx_ = idxtensor(idx)
+    alp_ = idxtensor([0] * len(exp))  # since include_self=False
+    src_ = idxtensor(src)
+    exp_ = idxtensor(exp)
+    alp_.scatter_reduce_(0, index=idx_, src=src_, reduce=red, include_self=False)
+    assert torch.equal(alp_, exp_)
