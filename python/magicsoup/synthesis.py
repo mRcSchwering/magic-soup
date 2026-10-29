@@ -1,3 +1,5 @@
+import random
+
 from magicsoup.chemistry import Molecule, Reaction
 from magicsoup.config import CODON_SIZE
 from magicsoup.genomics import DomainType
@@ -96,10 +98,10 @@ class RegulatoryDomainSynthesizer:
 
     def gen_coding_sequence(self, world: World) -> str:
         """Generate a nucleotide sequence for this domain"""
-        mol_2_tokens = world.cells.proteomics.effector_map.mol_2_tokens
+        eff_2_tokens = world.cells.proteomics.effector_map.eff_2_tokens
         return world.cells.genomics.generate_domain_seq(
             domain_type=DomainType.REGULATORY,
-            tokens=mol_2_tokens[self.effector],
+            tokens=eff_2_tokens[(self.effector, random.choice([True, False]))],
         )
 
     def __repr__(self) -> str:

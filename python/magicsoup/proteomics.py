@@ -7,10 +7,16 @@ from typing import TYPE_CHECKING, TypedDict
 import numpy as np
 import torch
 
-from magicsoup import rs
-from magicsoup.biology import Protein
+from magicsoup.biology import (
+    CatalyticDomain,
+    Domain,
+    Protein,
+    RegulatoryDomain,
+    TransporterDomain,
+)
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
 from magicsoup.config import GAS_CONSTANT, ROOM_TEMP
+from magicsoup.genomics import DomainType
 from magicsoup.util import TensorClass, TensorKwargs
 
 if TYPE_CHECKING:
@@ -36,19 +42,15 @@ class _LogNormMap(TensorClass):
         mu = (math.log(lo) + math.log(hi)) / 2
         sig = (math.log(hi) - math.log(lo)) / (2 * z95)
 
-        self.token_2_scalar: dict[int, float] = {}
         self.token_scalar = self.fzeros(max_token + 1)
-        self.scalar_2_tokens: dict[float | None, list[int]] = defaultdict(list)
-
-        # none value on 0 token
-        self.token_2_scalar[0] = 0.0
-        self.scalar_2_tokens[None] = [0]
+        self.token_2_scalar: dict[int, float] = {}
+        self.scalar_2_tokens: dict[float, list[int]] = defaultdict(list)
 
         # assign tokens
         for token in range(1, max_token + 1):
             value = random.lognormvariate(mu, sig)
-            self.token_2_scalar[token] = value
             self.token_scalar[token] = value
+            self.token_2_scalar[token] = value
             self.scalar_2_tokens[value].append(token)
 
 
@@ -73,19 +75,15 @@ class _MirrGeoMap(TensorClass):
             pop.extend(n * [-d])
             n *= 2
 
-        self.token_2_scalar: dict[int, int] = {}
         self.token_scalar = self.izeros(max_token + 1)
-        self.scalar_2_tokens: dict[int | None, list[int]] = defaultdict(list)
-
-        # none value on 0 token
-        self.token_2_scalar[0] = 0
-        self.scalar_2_tokens[None] = [0]
+        self.token_2_scalar: dict[int, int] = {}
+        self.scalar_2_tokens: dict[int, list[int]] = defaultdict(list)
 
         # assign tokens
         for token in range(1, max_token + 1):
             value = random.choice(pop)
-            self.token_2_scalar[token] = value
             self.token_scalar[token] = value
+            self.token_2_scalar[token] = value
             self.scalar_2_tokens[value].append(token)
 
 
@@ -114,10 +112,10 @@ class _ReactionMap(TensorClass):
                 " It is not possible to create an enzyme for all reactions"
             )
 
-        self.token_2_vector: dict[int, tuple[int, ...]] = {}
         self.token_fwd_vector = self.izeros(max_token + 1, m2)
         self.token_bwd_vector = self.izeros(max_token + 1, m2)
-        self.react_2_tokens: dict[Reaction | None, list[int]] = defaultdict(list)
+        self.token_2_react: dict[int, Reaction] = {}
+        self.react_2_tokens: dict[Reaction, list[int]] = defaultdict(list)
         if len(chemistry.reactions) == 0:
             return
 
@@ -138,17 +136,12 @@ class _ReactionMap(TensorClass):
                 vectors[ri][mi] += 1
                 bwd_vectors[ri][mi] += 1
 
-        # none vector on 0 token
-        none_vector = [0] * m2
-        self.token_2_vector[0] = tuple(none_vector)
-        self.react_2_tokens[None] = [0]
-
         # assign tokens round-robin
         for token in range(1, max_token + 1):
             ri = token % r
-            self.token_2_vector[token] = tuple(vectors[ri])
             self.token_fwd_vector[token] = self.itensor(fwd_vectors[ri])
             self.token_bwd_vector[token] = self.itensor(bwd_vectors[ri])
+            self.token_2_react[token] = ri_2_react[ri]
             self.react_2_tokens[ri_2_react[ri]].append(token)
 
 
@@ -175,9 +168,9 @@ class _TransporterMap(TensorClass):
                 " It is not possible to create a transporter for all molecules"
             )
 
-        self.token_2_vector: dict[int, tuple[int, ...]] = {}
         self.token_vector = self.izeros(max_token + 1, m2)
-        self.mol_2_tokens: dict[Molecule | None, list[int]] = defaultdict(list)
+        self.token_2_mol: dict[int, Molecule] = {}
+        self.mol_2_tokens: dict[Molecule, list[int]] = defaultdict(list)
         idx_2_mol = chemistry.idx_2_mol
 
         # only copy [0] to avoid having references to the same list
@@ -186,16 +179,11 @@ class _TransporterMap(TensorClass):
             vectors[mi][mi] = -1
             vectors[mi][mi + m] = 1
 
-        # none vector on 0 token
-        none_vector = [0] * m2
-        self.token_2_vector[0] = tuple(none_vector)
-        self.mol_2_tokens[None] = [0]
-
         # assign tokens round-robin
         for token in range(1, max_token + 1):
             mi = token % m
-            self.token_2_vector[token] = tuple(vectors[mi])
             self.token_vector[token] = self.itensor(vectors[mi])
+            self.token_2_mol[token] = idx_2_mol[mi]
             self.mol_2_tokens[idx_2_mol[mi]].append(token)
 
 
@@ -223,9 +211,9 @@ class _EffectorMap(TensorClass):
                 " It is not possible to create a receptor for all molecules"
             )
 
-        self.token_2_vector: dict[int, tuple[int, ...]] = {}
         self.token_vector = self.izeros(max_token + 1, m2)
-        self.mol_2_tokens: dict[Molecule | None, list[int]] = defaultdict(list)
+        self.token_2_eff: dict[int, tuple[Molecule, bool]] = {}
+        self.eff_2_tokens: dict[tuple[Molecule, bool], list[int]] = defaultdict(list)
         idx_2_mol = chemistry.idx_2_mol
 
         #  only copy [0] to avoid having references to the same list
@@ -234,16 +222,13 @@ class _EffectorMap(TensorClass):
             vectors[mi][mi] = 1
             vectors[mi + m][mi + m] = 1
 
-        # none vector on 0 token
-        none_vector = [0] * m2
-        self.token_2_vector[0] = tuple(none_vector)
-        self.mol_2_tokens[None] = [0]
-
         # assign tokens round-robin
         for token in range(1, max_token + 1):
-            self.token_2_vector[token] = tuple(vectors[token % m2])
+            mol = idx_2_mol[token % m]
+            is_transmem = token % m2 >= m
             self.token_vector[token] = self.itensor(vectors[token % m2])
-            self.mol_2_tokens[idx_2_mol[token % m]].append(token)
+            self.token_2_eff[token] = (mol, is_transmem)
+            self.eff_2_tokens[(mol, is_transmem)].append(token)
 
 
 class ProteomicsKwargs(TypedDict, total=False):
@@ -336,9 +321,6 @@ class Proteomics(TensorClass):
             chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs
         )
 
-        # init rust class
-        self._setup_rs()
-
     def get_proteome(self, proteome: "list[ProteinSpec]") -> list[Protein]:
         """
         Translate proteome of a single cell
@@ -353,16 +335,70 @@ class Proteomics(TensorClass):
         The returned list of proteins is purely for inspecting a cell.
         The simulation uses [get_cell_params()][.get_cell_params].
         """
-        proteome_kwargs = self.rs.get_proteome_dict(
-            proteome=proteome,
-            molecules=[d.name for d in self.chemistry.molecules],
-        )
-        return [
-            Protein.from_dict(d, molmap=self.chemistry.molname_2_mol)
-            for d in proteome_kwargs
-        ]
+        proteins: list[Protein] = []
 
-    def get_cell_params2(
+        for protein_spec in proteome:
+            domains: list[Domain] = []
+
+            for domain_spec in protein_spec[0]:
+                kwargs = {"start": domain_spec[1], "end": domain_spec[2]}
+                tokens = domain_spec[0]
+                dom_type = DomainType(tokens[0])
+                dom: Domain
+                # tokens:
+                # 0: domain type 1=catal,2=trnsp,3=reg
+                # 1: vmax for catal/trnsp, hill for reg
+                # 2: km
+                # 3: sign
+                # 4: react for catal, mol for trnsp, effect for reg
+
+                if dom_type is DomainType.CATALYTIC:
+                    dom = CatalyticDomain(
+                        vmax=self.vmax_map.token_2_scalar[tokens[1]],
+                        km=self.km_map.token_2_scalar[tokens[2]],
+                        is_fwd=self.sign_map.token_2_scalar[tokens[3]] > 0,
+                        reaction=self.reaction_map.token_2_react[tokens[4]],
+                        **kwargs,
+                    )
+
+                elif dom_type is DomainType.TRANSPORTER:
+                    dom = TransporterDomain(
+                        vmax=self.vmax_map.token_2_scalar[tokens[1]],
+                        km=self.km_map.token_2_scalar[tokens[2]],
+                        is_exporter=self.sign_map.token_2_scalar[tokens[3]] < 0,
+                        molecule=self.transport_map.token_2_mol[tokens[4]],
+                        **kwargs,
+                    )
+
+                elif dom_type is DomainType.REGULATORY:
+                    hill = self.hill_map.token_2_scalar[tokens[1]]
+                    mol, is_transmem = self.effector_map.token_2_eff[tokens[4]]
+                    sign = self.sign_map.token_2_scalar[tokens[3]]
+                    dom = RegulatoryDomain(
+                        hill=hill,
+                        km=self.km_map.token_2_scalar[tokens[2]],
+                        is_inhibiting=(sign * hill) < 0,
+                        effector=mol,
+                        is_transmembrane=is_transmem,
+                        **kwargs,
+                    )
+
+                else:
+                    raise ValueError(f"Unknown {dom_type} domain")
+
+                domains.append(dom)
+
+            protein = Protein(
+                domains=domains,
+                cds_start=protein_spec[1],
+                cds_end=protein_spec[2],
+                is_53=protein_spec[3],
+            )
+            proteins.append(protein)
+
+        return proteins
+
+    def get_cell_params(
         self,
         cells: np.ndarray,
         proteins: np.ndarray,
@@ -370,7 +406,6 @@ class Proteomics(TensorClass):
         c: int,
         p: int,
     ) -> dict[str, torch.Tensor]:
-        # TODO: make sure they are all i32 on Rust side
         # parameters in flat (d,) representation of (c, p)
         cell = torch.from_numpy(cells).to(self.device, torch.int32)
         prot = torch.from_numpy(proteins).to(self.device, torch.int32)
@@ -388,15 +423,15 @@ class Proteomics(TensorClass):
         is_regul = tok[:, 0] == 3
 
         idx_flat = cell * p + prot  # in (d,) for flat (c, p)
-        src_hill = self.hill_map.token_scalar[tokens[:, 1]].unsqueeze(-1)  # (d,0)
-        src_sign = self.sign_map.token_scalar[tokens[:, 3]].unsqueeze(-1)  # (d,0)
+        src_hill = self.hill_map.token_scalar[tok[:, 1]].unsqueeze(-1)  # (d,0)
+        src_sign = self.sign_map.token_scalar[tok[:, 3]].unsqueeze(-1)  # (d,0)
 
         # aggregate domains by mean (subsample to keep uninvolved out)
 
         # maximum velocity
         v_max = self.fzeros(c, p)
         idx = idx_flat[is_catal | is_trnsp]
-        src = self.vmax_map.token_scalar[tokens[is_catal | is_trnsp, 1]]
+        src = self.vmax_map.token_scalar[tok[is_catal | is_trnsp, 1]]
         v_max.view(-1).scatter_reduce_(
             dim=0, index=idx, src=src, reduce="mean", include_self=False
         )
@@ -404,7 +439,7 @@ class Proteomics(TensorClass):
         # catalytic and transporter sensitivity
         k_m = self.fzeros(c, p)
         idx = idx_flat[is_catal | is_trnsp]
-        src = self.km_map.token_scalar[tokens[is_catal | is_trnsp, 2]]
+        src = self.km_map.token_scalar[tok[is_catal | is_trnsp, 2]]
         k_m.view(-1).scatter_reduce_(
             dim=0, index=idx, src=src, reduce="mean", include_self=False
         )
@@ -412,7 +447,7 @@ class Proteomics(TensorClass):
         # allosteric sensitivity
         k_r = self.fzeros(c, p)
         idx = idx_flat[is_regul]
-        src = self.km_map.token_scalar[tokens[is_regul, 2]]
+        src = self.km_map.token_scalar[tok[is_regul, 2]]
         k_r.view(-1).scatter_reduce_(
             dim=0, index=idx, src=src, reduce="mean", include_self=False
         )
@@ -443,52 +478,6 @@ class Proteomics(TensorClass):
         src_idx = torch.where(is_regul, tok[:, 4], 0)
         src = self.effector_map.token_vector[src_idx] * src_sign * src_hill
         N_h.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
-
-        N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
-        k_f, k_b = self.derive_rates(N=N, k_m=k_m)
-        N_e = self.derive_effective_stoichiometry(N=N)
-
-        return {
-            "N_e": N_e,
-            "N_f": N_f,
-            "N_b": N_b,
-            "N_h": N_h,
-            "k_f": k_f,
-            "k_b": k_b,
-            "k_r": k_r,
-            "v_max": v_max,
-        }
-
-    def get_cell_params(
-        self, proteomes: "list[list[ProteinSpec]]"
-    ) -> dict[str, torch.Tensor]:
-        """
-        Translate and return cell parameters for many proteomes
-
-        Arguments:
-            proteomes: nested list of proteome specifications for each cell
-                where each proteome specification is a list of protein specifications
-
-        Returns:
-            Dict of all tensors necessary to describe cell proteomes.
-
-        This function is used by the simulation.
-        To get a more interpretable representation of proteomes
-        use [get_proteome()][.get_proteome].
-        """
-        v_max_, k_m_, k_r_, N_f_, N_b_, N_h_ = self.rs.get_proteome_params(proteomes)
-        v_max = self.ftensor(v_max_)
-        k_m = self.ftensor(k_m_)
-        k_r = self.ftensor(k_r_)
-        N_f = self.itensor(N_f_)
-        N_b = self.itensor(N_b_)
-        N_h = self.itensor(N_h_)
-
-        # if p=0, 3D tensors have (c, 0) not (c, 0, m)
-        if N_f.shape[1] == 0:
-            N_f = N_f.unsqueeze(-1).expand(-1, -1, self.m)
-            N_b = N_b.unsqueeze(-1).expand(-1, -1, self.m)
-            N_h = N_h.unsqueeze(-1).expand(-1, -1, self.m)
 
         N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
         k_f, k_b = self.derive_rates(N=N, k_m=k_m)
@@ -573,15 +562,3 @@ class Proteomics(TensorClass):
         """
         # effective stoichiometry considering volume difference of cell and medium
         return N * self.cv_ratio
-
-    def _setup_rs(self) -> None:
-        self.rs = rs.Proteomics(
-            km_map=self.km_map.token_2_scalar,
-            vmax_map=self.vmax_map.token_2_scalar,
-            sign_map=self.sign_map.token_2_scalar,
-            hill_map=self.hill_map.token_2_scalar,
-            reaction_map=self.reaction_map.token_2_vector,
-            transporter_map=self.transport_map.token_2_vector,
-            effector_map=self.effector_map.token_2_vector,
-            m=self.m,
-        )

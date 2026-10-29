@@ -51,14 +51,20 @@ _KMS = [
     2.0,  2.1,  2.2,  2.3,  2.4,  2.5,  2.6,  2.7,  2.8,  2.9,  # 2x
 ]
 
+_TOKEN_2_KM = {i: d for i, d in enumerate(_KMS)}
+
 _VMAXS = [
 #   x0    x1    x2    x3    x4    x5    x6    x7    x8    x9
     0.0,  1.1,  1.2,  1.3,  1.4,  1.5,  1.6,  1.7,  1.8,  1.9,  # 0x
     2.0,  2.1,  2.2,  2.3,  2.4,  2.5,  2.6,  2.7,  2.8,  2.9,  # 1x
 ]
 
+_TOKEN_2_VMAX = {i: d for i, d in enumerate(_VMAXS)}
+
 #         0   1   2
 _SIGNS = [0,  1, -1]
+
+_TOKEN_2_SIGN = {i: d for i, d in enumerate(_SIGNS)}
 
 
 _HILLS = [
@@ -66,6 +72,8 @@ _HILLS = [
     0,   1,   2,   3,   -1,  -2,  -3, 0,  0,  0,  # 0x
     0,   0,   0,   0,   0,   0,   0,  0,  0,  0,  # 1x
 ]
+
+_TOKEN_2_HILL = {i: d for i, d in enumerate(_HILLS)}
 
 _TRANSPORT_M = [
     ( 0,  0,  0,  0,  0,  0,  0,  0 ), # 0: none
@@ -79,6 +87,8 @@ _TRANSPORT_M = [
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
 ]
 
+_TOKEN_2_MOL = {1: _ma, 2: _mb, 3: _mc, 4: _md}
+
 _EFFECTOR_M = [
     ( 0, 0, 0, 0, 0, 0, 0, 0 ), # 0: none
     ( 1, 0, 0, 0, 0, 0, 0, 0 ), # 1: a intracellular
@@ -91,17 +101,36 @@ _EFFECTOR_M = [
     ( 0, 0, 0, 0, 0, 0, 0, 1 ), # 8: d extracellular
 ]
 
-_REACTION_M = [
+_TOKEN_2_EFFECT = {
+    1: (_ma, False), 2: (_mb, False), 3: (_mc, False), 4: (_md, False),
+    5: (_ma, True), 6: (_mb, True), 7: (_mc, True), 8: (_md, True),
+}
+
+_REACTION_M_F = [
     ( 0,  0,  0,  0,  0,  0,  0,  0 ), # 0: none
-    (-1,  1,  0,  0,  0,  0,  0,  0 ), # 1: a -> b
-    ( 0, -1,  1,  0,  0,  0,  0,  0 ), # 2: b -> c
-    ( 0, -1, -1,  1,  0,  0,  0,  0 ), # 3: b,c -> d
-    ( 0,  2,  0, -1,  0,  0,  0,  0 ), # 4: d -> 2b
+    ( 1,  0,  0,  0,  0,  0,  0,  0 ), # 1: a -> b
+    ( 0,  1,  0,  0,  0,  0,  0,  0 ), # 2: b -> c
+    ( 0,  1,  1,  0,  0,  0,  0,  0 ), # 3: b,c -> d
+    ( 0,  0,  0,  1,  0,  0,  0,  0 ), # 4: d -> 2b
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
 ]
+
+_REACTION_M_B = [
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ), # 0: none
+    ( 0,  1,  0,  0,  0,  0,  0,  0 ), # 1: a -> b
+    ( 0,  0,  1,  0,  0,  0,  0,  0 ), # 2: b -> c
+    ( 0,  0,  0,  1,  0,  0,  0,  0 ), # 3: b,c -> d
+    ( 0,  2,  0,  0,  0,  0,  0,  0 ), # 4: d -> 2b
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+]
+
+_TOKEN_2_REACT = {1: _r_a_b, 2: _r_b_c, 3: _r_bc_d, 4: _r_d_bb}
 
 _V_CELL = 1.0
 _V_MED = 1000.0
@@ -115,23 +144,21 @@ _V_RATIOS = [
 
 def _get_proteomics() -> Proteomics:
     protics = Proteomics(chemistry=_CHEMISTRY, abs_temp=310)
-    protics.km_map.token_2_scalar = {i: d for i, d in enumerate(_KMS)}
     protics.km_map.token_scalar = ftensor(_KMS)
-    protics.vmax_map.token_2_scalar = {i: d for i, d in enumerate(_VMAXS)}
+    protics.km_map.token_2_scalar = _TOKEN_2_KM
     protics.vmax_map.token_scalar = ftensor(_VMAXS)
-    protics.sign_map.token_2_scalar = {i: d for i, d in enumerate(_SIGNS)}
+    protics.vmax_map.token_2_scalar = _TOKEN_2_VMAX
     protics.sign_map.token_scalar = itensor(_SIGNS)
-    protics.hill_map.token_2_scalar = {i: d for i, d in enumerate(_HILLS)}
+    protics.sign_map.token_2_scalar = _TOKEN_2_SIGN
     protics.hill_map.token_scalar = itensor(_HILLS)
-    protics.transport_map.token_2_vector = {i: d for i, d in enumerate(_TRANSPORT_M)}
+    protics.hill_map.token_2_scalar = _TOKEN_2_HILL
     protics.transport_map.token_vector = itensor(_TRANSPORT_M)
-    protics.effector_map.token_2_vector = {i: d for i, d in enumerate(_EFFECTOR_M)}
+    protics.transport_map.token_2_mol = _TOKEN_2_MOL
     protics.effector_map.token_vector = itensor(_EFFECTOR_M)
-    protics.reaction_map.token_2_vector = {i: d for i, d in enumerate(_REACTION_M)}
-    N = itensor(_REACTION_M)
-    protics.reaction_map.token_fwd_vector = torch.where(N < 0, -N, 0)
-    protics.reaction_map.token_bwd_vector = torch.where(N > 0, N, 0)
-    protics._setup_rs()
+    protics.effector_map.token_2_eff = _TOKEN_2_EFFECT
+    protics.reaction_map.token_fwd_vector = itensor(_REACTION_M_F)
+    protics.reaction_map.token_bwd_vector = itensor(_REACTION_M_B)
+    protics.reaction_map.token_2_react = _TOKEN_2_REACT
     return protics
 
 
@@ -238,9 +265,8 @@ def test_cell_params_with_catalytic_domains() -> None:
     p = 3  # 2 max proteins
     m = 8  # 8 molecules
     protics = _get_proteomics()
-    params = protics.get_cell_params(proteomes=[c0, c1])
     proteomes_flat = _flatten_proteomes(proteomes=[c0, c1])
-    params2 = protics.get_cell_params2(*proteomes_flat, c=c, p=p)
+    params = protics.get_cell_params(*proteomes_flat, c=c, p=p)
 
     # expected cell params
     ke_c0_0 = _ke([_ma, _md], [_mb, _mb, _mc])
@@ -309,16 +335,6 @@ def test_cell_params_with_catalytic_domains() -> None:
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
-
-    # test cell params2
-    torch.testing.assert_close(params2["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
 
     # test protein representation
 
@@ -488,9 +504,8 @@ def test_cell_params_with_transporter_domains() -> None:
     p = 2  # 2 max proteins
     m = 8  # 8 molecules
     protics = _get_proteomics()
-    params = protics.get_cell_params(proteomes=[c0, c1])
     proteomes_flat = _flatten_proteomes(proteomes=[c0, c1])
-    params2 = protics.get_cell_params2(*proteomes_flat, c=c, p=p)
+    params = protics.get_cell_params(*proteomes_flat, c=c, p=p)
 
     # expected cell params
     k_f_exp = ftensor(
@@ -550,16 +565,6 @@ def test_cell_params_with_transporter_domains() -> None:
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
-
-    # test cell params2
-    torch.testing.assert_close(params2["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
 
     # test proteome representation
 
@@ -727,9 +732,8 @@ def test_cell_params_with_regulatory_domains() -> None:
     c = 2  # 2 cells
     p = 2  # 2 max proteins
     protics = _get_proteomics()
-    params = protics.get_cell_params(proteomes=[c0, c1])
     proteomes_flat = _flatten_proteomes(proteomes=[c0, c1])
-    params2 = protics.get_cell_params2(*proteomes_flat, c=c, p=p)
+    params = protics.get_cell_params(*proteomes_flat, c=c, p=p)
 
     # expected cell params
     ke_a_b = _ke([_ma], [_mb])
@@ -806,16 +810,6 @@ def test_cell_params_with_regulatory_domains() -> None:
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
-
-    # test cell params2
-    torch.testing.assert_close(params2["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
 
     # test protein representation
 
@@ -978,7 +972,8 @@ def test_random_cell_params() -> None:
 
         # setup proteomics
         protics = Proteomics(chemistry=_CHEMISTRY)
-        params = protics.get_cell_params(proteomes=proteomes)
+        proteomes_flat = _flatten_proteomes(proteomes=proteomes)
+        params = protics.get_cell_params(*proteomes_flat, c=len(proteomes), p=p_max)
 
         # test
         float_np = [params["k_f"], params["k_b"], params["k_r"], params["v_max"]]
@@ -1002,6 +997,7 @@ def test_random_cell_params() -> None:
             assert torch.all(t.isfinite())
 
 
+@pytest.mark.slow
 def test_random_cell_reprs() -> None:
     proteomes, _ = _get_random_proteomes(1000)
     protics = Proteomics(chemistry=_CHEMISTRY)
@@ -1016,40 +1012,27 @@ def test_random_cell_reprs() -> None:
 
 
 def _assert_bijective(
-    all_tokens: set[int], tokens_map: dict[Any, list[int]], value_map: dict[int, Any]
+    max_token: int, tokens_map: dict[int, Any], table: torch.Tensor
 ) -> None:
-    # check that all tokens are defined
-    scalar_tokens = {dd for d in tokens_map.values() for dd in d}
-    tokens = set(value_map)
-    assert all_tokens == tokens
-    assert all_tokens == scalar_tokens
-
-    # check that mapping is bijective
-    assert len(scalar_tokens) == len([dd for d in tokens_map.values() for dd in d])
+    assert table.shape[0] == max_token + 1
+    all_tokens = list(range(1, max_token + 1))
+    assert set(tokens_map) == set(all_tokens)
 
 
 def test_log_norm_map() -> None:
     max_token = 100
     value_range = (1e-2, 1e2)
     mapper = _LogNormMap(max_token=max_token, value_range=value_range)
-    all_tokens = set(range(max_token + 1))  # first token is none token
-    _assert_bijective(all_tokens, mapper.scalar_2_tokens, mapper.token_2_scalar)
+    _assert_bijective(max_token, mapper.token_2_scalar, mapper.token_scalar)
 
     # check inversion is correct
-    for token in all_tokens:
-        scalar = mapper.token_2_scalar[token]
-
-        # none scalar
-        if scalar == 0:
-            assert token == 0
-            assert token in mapper.scalar_2_tokens[None]
-            continue
-
-        # valued scalar
+    for token, scalar in mapper.token_2_scalar.items():
+        scalar_act = float(mapper.token_scalar[token])
+        assert abs(scalar - scalar_act) < 0.1
         assert token in mapper.scalar_2_tokens[scalar]
 
     # distribution fits
-    values = list(mapper.token_2_scalar.values())[1:]
+    values = mapper.token_scalar.tolist()[1:]
     lo, hi = value_range
     n = len(values)
     assert min(values) > lo / 100
@@ -1065,26 +1048,17 @@ def test_mirr_geo_map() -> None:
     max_token = 100
     max_value = 4
     mapper = _MirrGeoMap(max_token=max_token, max_value=max_value)
-    all_tokens = set(range(max_token + 1))  # first token is none token
-    _assert_bijective(all_tokens, mapper.scalar_2_tokens, mapper.token_2_scalar)
+    _assert_bijective(max_token, mapper.token_2_scalar, mapper.token_scalar)
 
     # check inversion is correct
-    for token in all_tokens:
-        scalar = mapper.token_2_scalar[token]
-
-        # none scalar
-        if scalar == 0:
-            assert token == 0
-            assert token in mapper.scalar_2_tokens[None]
-            continue
-
-        # valued scalar
+    for token, scalar in mapper.token_2_scalar.items():
+        scalar_act = int(mapper.token_scalar[token])
+        assert scalar == scalar_act
         assert token in mapper.scalar_2_tokens[scalar]
 
     # distribution fits
     assert 0 not in mapper.scalar_2_tokens
     assert max_value + 1 not in mapper.scalar_2_tokens
-    assert mapper.scalar_2_tokens[None] == [0]
     v = max_value
     p0l = len(mapper.scalar_2_tokens[-v]) / max_token
     p0r = len(mapper.scalar_2_tokens[v]) / max_token
@@ -1113,33 +1087,26 @@ def test_reaction_map() -> None:
 
     max_token = 20
     mapper = _ReactionMap(chemistry=chemistry, max_token=max_token)
-    all_tokens = set(range(max_token + 1))  # first token is none token
-    _assert_bijective(all_tokens, mapper.react_2_tokens, mapper.token_2_vector)
+    _assert_bijective(max_token, mapper.token_2_react, mapper.token_fwd_vector)
+    _assert_bijective(max_token, mapper.token_2_react, mapper.token_bwd_vector)
 
     # check inversion is correct
-    for token in all_tokens:
-        vector = mapper.token_2_vector[token]
-        subs = [[idx_2_mol[i]] * -d for i, d in enumerate(vector) if d < 0]
-        prds = [[idx_2_mol[i]] * d for i, d in enumerate(vector) if d > 0]
+    for token, react in mapper.token_2_react.items():
+        fwd_vector = mapper.token_fwd_vector[token].tolist()
+        bwd_vector = mapper.token_bwd_vector[token].tolist()
+        subs = [[idx_2_mol[i]] * d for i, d in enumerate(fwd_vector) if d > 0]
+        prds = [[idx_2_mol[i]] * d for i, d in enumerate(bwd_vector) if d > 0]
 
-        # none vector
-        if len(subs) == 0 and len(prds) == 0:
-            assert token == 0
-            assert all(d == 0 for d in vector)
-            assert token in mapper.react_2_tokens[None]
-            continue
-
-        # valued vector
         assert len(subs) > 0 and len(prds) > 0
-        react = Reaction(
+        react_act = Reaction(
             substrates=[dd for d in subs for dd in d],
             products=[dd for d in prds for dd in d],
         )
+        assert react == react_act
         assert token in mapper.react_2_tokens[react]
 
     # check that all items are covered evenly
     n_exp = max_token // r
-    assert mapper.react_2_tokens[None] == [0]
     for react in chemistry.reactions:
         assert len(mapper.react_2_tokens[react]) >= n_exp
 
@@ -1154,29 +1121,18 @@ def test_transporter_map() -> None:
 
     max_token = 20
     mapper = _TransporterMap(chemistry=chemistry, max_token=max_token)
-    all_tokens = set(range(max_token + 1))  # first token is none token
-    _assert_bijective(all_tokens, mapper.mol_2_tokens, mapper.token_2_vector)
+    _assert_bijective(max_token, mapper.token_2_mol, mapper.token_vector)
 
     # check inversion is correct
-    for token in all_tokens:
-        vector = mapper.token_2_vector[token]
+    for token, mol in mapper.token_2_mol.items():
+        vector = mapper.token_vector[token].tolist()
         mols = [idx_2_mol[i] for i, d in enumerate(vector) if d != 0]
-
-        # none vector
-        if len(mols) == 0:
-            assert token == 0
-            assert all(d == 0 for d in vector)
-            assert token in mapper.mol_2_tokens[None]
-            continue
-
-        # valued vector
         assert len(mols) == 2
-        assert mols[0] is mols[1]
-        assert token in mapper.mol_2_tokens[mols[0]]
+        assert mols[0] == mols[1] == mol
+        assert token in mapper.mol_2_tokens[mol]
 
     # check that all items are covered evenly
     n_exp = max_token // m
-    assert mapper.mol_2_tokens[None] == [0]
     for mol in mol_2_idx:
         assert len(mapper.mol_2_tokens[mol]) >= n_exp
 
@@ -1192,27 +1148,17 @@ def test_effector_map() -> None:
 
     max_token = 20
     mapper = _EffectorMap(chemistry=chemistry, max_token=max_token)
-    all_tokens = set(range(max_token + 1))  # first token is none token
-    _assert_bijective(all_tokens, mapper.mol_2_tokens, mapper.token_2_vector)
+    _assert_bijective(max_token, mapper.token_2_eff, mapper.token_vector)
 
     # check inversion is correct
-    for token in all_tokens:
-        vector = mapper.token_2_vector[token]
+    for token, (mol, is_trnsm) in mapper.token_2_eff.items():
+        vector = mapper.token_vector[token].tolist()
         mols = [idx_2_mol[i] for i, d in enumerate(vector) if d != 0]
-
-        # none vector
-        if len(mols) == 0:
-            assert token == 0
-            assert all(d == 0 for d in vector)
-            assert token in mapper.mol_2_tokens[None]
-            continue
-
-        # valued vector
         assert len(mols) == 1
-        assert token in mapper.mol_2_tokens[mols[0]]
+        assert token in mapper.eff_2_tokens[(mols[0], is_trnsm)]
 
     # check that all items are covered evenly
     n_exp = max_token // m2
-    assert mapper.mol_2_tokens[None] == [0]
     for mol in mol_2_idx:
-        assert len(mapper.mol_2_tokens[mol]) >= n_exp
+        assert len(mapper.eff_2_tokens[(mol, False)]) >= n_exp
+        assert len(mapper.eff_2_tokens[(mol, True)]) >= n_exp

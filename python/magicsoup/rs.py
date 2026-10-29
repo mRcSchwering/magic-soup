@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -21,17 +21,6 @@ class _ReduceMixin:
         return (self.__class__, self._state)
 
 
-# util
-
-
-def dist_1d(a: int, b: int, m: int) -> int:
-    return _lib.dist_1d(a, b, m)
-
-
-def reverse_complement(seq: str) -> str:
-    return _lib.reverse_complement(seq)
-
-
 # mutations
 
 
@@ -45,6 +34,13 @@ def recombinations(
     seq_pairs: list[tuple[str, str]], p: float
 ) -> list[tuple[str, str, int]]:
     return _lib.recombinations(seq_pairs, p)
+
+
+# genomics
+
+
+def reverse_complement(seq: str) -> str:
+    return _lib.reverse_complement(seq)
 
 
 class Genomics(_ReduceMixin):
@@ -88,10 +84,17 @@ class Genomics(_ReduceMixin):
         # revcomp_many(&slices).map_err(|(i, b)| {PyValueError::new_err("genome invalid base")})
         return self._cls.translate_genomes(genomes)
 
-    def translate_genomes_new(
+    def translate_genomes_arr(
         self, genomes: list[str]
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-        return self._cls.translate_genomes_new(genomes)
+        # NOTE: even cheaper is it to send all genomes as one long buffer
+        # buffer = "".join(strarr)
+        # offsets = np.array([0] + list(np.cumsum([len(g) for g in strarr])), dtype=np.int64)
+        #       then in rust:
+        # let offs = offsets.as_slice()?;
+        # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as usize..w[1] as usize]).collect();
+        # revcomp_many(&slices).map_err(|(i, b)| {PyValueError::new_err("genome invalid base")})
+        return self._cls.translate_genomes_arr(genomes)
 
     def get_coding_regions(
         self,
@@ -107,70 +110,3 @@ class Genomics(_ReduceMixin):
         cdss: list[tuple[int, int, bool]],
     ) -> "list[ProteinSpec]":
         return self._cls.extract_domains(genome, cdss)
-
-
-class Proteomics(_ReduceMixin):
-
-    def __init__(
-        self,
-        km_map: dict[int, float],
-        vmax_map: dict[int, float],
-        sign_map: dict[int, int],
-        hill_map: dict[int, int],
-        reaction_map: dict[int, tuple[int, ...]],
-        transporter_map: dict[int, tuple[int, ...]],
-        effector_map: dict[int, tuple[int, ...]],
-        m: int,
-    ) -> None:
-        self._cls = _lib.Proteomics(
-            km_map,
-            vmax_map,
-            sign_map,
-            hill_map,
-            reaction_map,
-            transporter_map,
-            effector_map,
-            m,
-        )
-        self._state = (
-            km_map,
-            vmax_map,
-            sign_map,
-            hill_map,
-            reaction_map,
-            transporter_map,
-            effector_map,
-            m,
-        )
-
-    def get_proteome_params(self, proteomes: "list[list[ProteinSpec]]") -> tuple[
-        list[list[float]],
-        list[list[float]],
-        list[list[float]],
-        list[list[list[int]]],
-        list[list[list[int]]],
-        list[list[list[int]]],
-    ]:
-        return self._cls.get_proteome_params(proteomes)
-
-    def get_proteome_dict(
-        self, proteome: "list[ProteinSpec]", molecules: list[str]
-    ) -> list[dict[str, Any]]:
-        return self._cls.get_proteome_dict(proteome, molecules)
-
-
-class Cells(_ReduceMixin):
-
-    def __init__(self, genomics: Genomics, proteomics: Proteomics) -> None:
-        self._cls = _lib.Cells(genomics._cls, proteomics._cls)
-        self._state = (genomics, proteomics)
-
-    def translate_genomes(self, genomes: list[str]) -> tuple[
-        list[list[float]],
-        list[list[float]],
-        list[list[list[float]]],
-        list[list[list[int]]],
-        list[list[list[int]]],
-        list[list[list[int]]],
-    ]:
-        return self._cls.translate_genomes(genomes)

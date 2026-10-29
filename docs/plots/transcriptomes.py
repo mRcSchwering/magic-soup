@@ -26,12 +26,12 @@ def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, 
     records = [{"tag": "genome", "dir": "", "start": 0, "stop": n, "type": "genome"}]
     for pi, prot in enumerate(cell.proteome):
         tag = f"CDS{pi}"
-        start = prot.cds_start if prot.is_fwd else n - prot.cds_start
-        stop = prot.cds_end if prot.is_fwd else n - prot.cds_end
+        start = prot.cds_start if prot.is_53 else n - prot.cds_start
+        stop = prot.cds_end if prot.is_53 else n - prot.cds_end
         records.append(
             {
                 "tag": tag,
-                "dir": "fwd" if prot.is_fwd else "bwd",
+                "dir": "fwd" if prot.is_53 else "bwd",
                 "start": start,
                 "stop": stop,
                 "type": "CDS",
@@ -41,9 +41,9 @@ def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, 
             records.append(
                 {
                     "tag": tag,
-                    "dir": "fwd" if prot.is_fwd else "bwd",
-                    "start": start + dom.start if prot.is_fwd else start - dom.start,
-                    "stop": start + dom.end if prot.is_fwd else start - dom.end,
+                    "dir": "fwd" if prot.is_53 else "bwd",
+                    "start": start + dom.start if prot.is_53 else start - dom.start,
+                    "stop": start + dom.end if prot.is_53 else start - dom.end,
                     "type": dom_type_map[type(dom)],
                 }
             )

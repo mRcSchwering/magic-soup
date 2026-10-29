@@ -4,12 +4,10 @@ extern crate rand_distr;
 extern crate rayon;
 mod genomics;
 mod mutations;
-mod proteomics;
 mod util;
 use numpy::{PyArray1, PyArray2};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::PyDict;
 use std::collections::HashMap;
 
 // mutations
@@ -96,7 +94,7 @@ impl Genomics {
         })
     }
 
-    fn translate_genomes_new<'py>(
+    fn translate_genomes_arr<'py>(
         &self,
         py: Python<'py>,
         genomes: Vec<PyBackedStr>,
@@ -189,132 +187,6 @@ impl Genomics {
     }
 }
 
-// Proteomics
-
-#[pyclass]
-struct Proteomics {
-    k_m_map: HashMap<u8, f32>,
-    vmax_map: HashMap<u8, f32>,
-    sign_map: HashMap<u8, i8>,
-    hill_map: HashMap<u8, i8>,
-    reaction_map: HashMap<u16, Vec<i8>>,
-    transporter_map: HashMap<u16, Vec<i8>>,
-    effector_map: HashMap<u16, Vec<i8>>,
-    m: usize,
-}
-
-#[pymethods]
-impl Proteomics {
-    #[new]
-    fn new(
-        k_m_map: HashMap<u8, f32>,
-        vmax_map: HashMap<u8, f32>,
-        sign_map: HashMap<u8, i8>,
-        hill_map: HashMap<u8, i8>,
-        reaction_map: HashMap<u16, Vec<i8>>,
-        transporter_map: HashMap<u16, Vec<i8>>,
-        effector_map: HashMap<u16, Vec<i8>>,
-        m: usize,
-    ) -> Self {
-        Proteomics {
-            k_m_map,
-            vmax_map,
-            sign_map,
-            hill_map,
-            reaction_map,
-            transporter_map,
-            effector_map,
-            m,
-        }
-    }
-
-    fn get_proteome_params(
-        &self,
-        py: Python<'_>,
-        proteomes: Vec<Vec<genomics::ProteinSpec>>,
-    ) -> (
-        util::MatrixType<f32>,
-        util::MatrixType<f32>,
-        util::MatrixType<f32>,
-        util::MatrixType<Vec<i8>>,
-        util::MatrixType<Vec<i8>>,
-        util::MatrixType<Vec<i8>>,
-    ) {
-        py.detach(move || {
-            proteomics::get_proteome_params_threaded(
-                &proteomes,
-                &self.k_m_map,
-                &self.vmax_map,
-                &self.sign_map,
-                &self.hill_map,
-                &self.reaction_map,
-                &self.transporter_map,
-                &self.effector_map,
-                &self.m,
-            )
-        })
-    }
-
-    fn get_proteome_dict<'py>(
-        &self,
-        py: Python<'py>,
-        proteome: Vec<genomics::ProteinSpec>,
-        molecules: Vec<String>,
-    ) -> Vec<Bound<'py, PyDict>> {
-        proteomics::get_proteome_dict(
-            py,
-            &proteome,
-            &molecules,
-            &self.k_m_map,
-            &self.vmax_map,
-            &self.sign_map,
-            &self.hill_map,
-            &self.reaction_map,
-            &self.transporter_map,
-            &self.effector_map,
-        )
-    }
-}
-
-// Cells
-
-#[pyclass]
-struct Cells {
-    genomics: Py<Genomics>,
-    proteomics: Py<Proteomics>,
-}
-
-#[pymethods]
-impl Cells {
-    #[new]
-    fn new(genomics: Bound<Genomics>, proteomics: Bound<Proteomics>) -> Self {
-        Cells {
-            genomics: genomics.unbind(),
-            proteomics: proteomics.unbind(),
-        }
-    }
-
-    fn translate_genomes(
-        &self,
-        py: Python,
-        genomes: Vec<PyBackedStr>,
-    ) -> (
-        util::MatrixType<f32>,
-        util::MatrixType<f32>,
-        util::MatrixType<f32>,
-        util::MatrixType<Vec<i8>>,
-        util::MatrixType<Vec<i8>>,
-        util::MatrixType<Vec<i8>>,
-    ) {
-        // idiomatic way of using PyO3 class instance reference
-        let genomics = self.genomics.borrow(py);
-        let proteomics = self.proteomics.borrow(py);
-
-        let proteomes = genomics.translate_genomes(py, genomes);
-        proteomics.get_proteome_params(py, proteomes)
-    }
-}
-
 // lib
 
 #[pymodule]
@@ -328,12 +200,6 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Genomics
     m.add_class::<Genomics>()?;
-
-    //Proteomics
-    m.add_class::<Proteomics>()?;
-
-    // Cells
-    m.add_class::<Cells>()?;
 
     Ok(())
 }

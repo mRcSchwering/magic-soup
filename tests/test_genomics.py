@@ -1,4 +1,5 @@
 import math
+from collections import defaultdict
 
 import pytest
 from magicsoup.config import CODON_SIZE
@@ -186,7 +187,7 @@ def test_extract_domains() -> None:
     assert res[3][0][1][2] == 24 + genomics.dom_size_nt
 
 
-def test_genomics() -> None:
+def test_translate_genomes() -> None:
     # fmt: off
     seq = """
     GACCAACGA CCGTCTTGA CCGCTGCGT TTCAACCGG 
@@ -219,6 +220,17 @@ def test_genomics() -> None:
     proteome = genomics.translate_genomes(genomes=[genome])[0]
     assert proteome == exp_proteome
 
+    cell, prot, tok, p = genomics.translate_genomes_arr(genomes=[genome])
+    print(cell)
+    print(prot)
+    print(tok.tolist())
+    assert p == 3
+    assert cell.tolist() == [0, 0, 0]
+    assert prot.tolist() == [0, 1, 2]
+    assert tok[0].tolist() == [1, 18, 44, 50, 783]
+    assert tok[1].tolist() == [1, 33, 5, 3, 163]
+    assert tok[2].tolist() == [1, 17, 33, 54, 955]
+
 
 def test_genomics_domain_likelihoods() -> None:
     n_genomes = 1000
@@ -226,17 +238,46 @@ def test_genomics_domain_likelihoods() -> None:
 
     genomics = Genomics()  # type: ignore
     genomes = [random_genome(s=genome_size) for _ in range(n_genomes)]
-    proteomes_data = genomics.translate_genomes(genomes=genomes)
 
-    n_proteins = sum(len(d) for d in proteomes_data)
-    n_domains = sum(len(dd[0]) for d in proteomes_data for dd in d)
-    assert abs(n_domains / n_proteins - 2.0) < 0.5
+    # translate into lists
+    proteomes = genomics.translate_genomes(genomes=genomes)
+    p_lst = sum([len(d) for d in proteomes])
+    d_lst = sum([len(dd[0]) for d in proteomes for dd in d])
+
+    # translate into arrays
+    cell, prot, tok, p = genomics.translate_genomes_arr(genomes=genomes)
+    p_arr = len({tuple(d) for d in zip(cell.tolist(), prot.tolist())})
+    d_arr = tok.shape[0]
+
+    # count domains per protein in list
+    d_cnts_lst: dict[int, int] = defaultdict(lambda: 0)
+    for proteins in proteomes:
+        for protein in proteins:
+            d_cnts_lst[len(protein[0])] += 1
+
+    # count domains per protein in arrays
+    d_cnts_arr: dict[int, int] = defaultdict(lambda: 0)
+    prot_i = 0
+    n_dom = 0
+    for i in range(d_arr):
+        if cell[i] * p + prot[i] == prot_i:
+            n_dom += 1
+            if i + 1 == d_arr:
+                d_cnts_arr[n_dom] += 1
+        else:
+            d_cnts_arr[n_dom] += 1
+            n_dom = 1
+            prot_i = cell[i] * p + prot[i]
+
+    # compare both results
+    assert p_lst == p_arr
+    assert d_lst == d_arr
+    assert d_cnts_lst == d_cnts_arr
+    assert d_cnts_lst == d_cnts_arr
+
+    # median should be around 2 domains per protein
+    assert abs(d_arr / p_arr - 2.0) < 0.5
 
     # 20% to 40% should have more than 2 domains
-    n_multi_dom = 0
-    for proteins in proteomes_data:
-        for protein in proteins:
-            if len(protein[0]) > 2:
-                n_multi_dom += 1
-
-    assert 0.2 <= n_multi_dom / n_proteins <= 0.4
+    n_multi_dom = sum([n for d, n in d_cnts_lst.items() if d > 2])
+    assert 0.2 <= n_multi_dom / p_arr <= 0.4

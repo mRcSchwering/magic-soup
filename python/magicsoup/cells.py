@@ -7,7 +7,6 @@ from typing import TypedDict
 import numpy as np
 import torch
 
-from magicsoup import rs
 from magicsoup.chemistry import Chemistry
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.proteomics import Proteomics, ProteomicsKwargs
@@ -23,6 +22,9 @@ _log = logging.getLogger(__name__)
 class CellsKwargs(TypedDict, total=False):
     dim_scaling: float
     p_max: int
+
+
+# TODO: K_r -> k_r
 
 
 class Cells(TensorClass):
@@ -109,9 +111,6 @@ class Cells(TensorClass):
         self.N_b = self.izeros(0, 0, self.m)  # backward stoichiometric coefficients
         self.N_h = self.izeros(0, 0, self.m)  # Hill coefficients
 
-        # setup rust class
-        self._setup_rs()
-
     def get_n_cells(self) -> int:
         """Get number of currently living cells"""
         return int(self.alive.sum().item())
@@ -138,54 +137,43 @@ class Cells(TensorClass):
         Prefer [copy_genomes()][.copy_genomes] over [update_genomes()][.update_genomes]
         if possible as it's much faster.
         """
-        if len(genomes) == 0:
+        c = len(genomes)
+        if c == 0:
             return
 
-        v_max_, k_m_, K_r_, N_f_, N_b_, N_h_ = self.rs.translate_genomes(
-            genomes=genomes
+        cell, prot, tok, p = self.genomics.translate_genomes_arr(genomes=genomes)
+        params = self.proteomics.get_cell_params(
+            cells=cell, proteins=prot, tokens=tok, p=p, c=c
         )
-        v_max = self.ftensor(v_max_)
-        k_m = self.ftensor(k_m_)
-        K_r = self.ftensor(K_r_)
-        N_f = self.itensor(N_f_)
-        N_b = self.itensor(N_b_)
-        N_h = self.itensor(N_h_)
 
-        # if p=0, 3D tensors have (c, 0) not (c, 0, m)
-        if N_f.shape[1] == 0:
-            N_f = N_f.unsqueeze(-1).expand(-1, -1, self.m)
-            N_b = N_b.unsqueeze(-1).expand(-1, -1, self.m)
-            N_h = N_h.unsqueeze(-1).expand(-1, -1, self.m)
-            K_r = K_r.unsqueeze(-1).expand(-1, -1, self.m)
+        v_max = params["v_max"]
+        k_f = params["k_f"]
+        k_b = params["k_b"]
+        k_r = params["k_r"]
+        N_e = params["N_e"]
+        N_f = params["N_f"]
+        N_b = params["N_b"]
+        N_h = params["N_h"]
+        # TODO: check if if p=0 works correctly
 
         # new proteomes may have different p
-        p_req = v_max.shape[1]
-        self.update_p(p_req=p_req)
+        self.update_p(p_req=p)
 
-        # p have could been adjusted upwards or p_req was already < p
-        if self.p > p_req:
-            p_diff = self.p - p_req
-            v_max = self._exp_tens_p(v_max, by_n=p_diff)
-            k_m = self._exp_tens_p(k_m, by_n=p_diff)
-            K_r = self._exp_tens_p(K_r, by_n=p_diff)
+        # p have could been adjusted upwards or p was already < self.p
+        if self.p > p:
+            p_diff = self.p - p
+            N_e = self._exp_tens_p(N_e, by_n=p_diff)
             N_f = self._exp_tens_p(N_f, by_n=p_diff)
             N_b = self._exp_tens_p(N_b, by_n=p_diff)
             N_h = self._exp_tens_p(N_h, by_n=p_diff)
 
-        # p_req could have been > p_max
-        if self.p < p_req:
-            v_max = v_max[:, : self.p]
-            k_m = k_m[:, : self.p]
-            K_r = K_r[:, : self.p]
+        # p could have been > p_max
+        if self.p < p:
+            N_e = N_e[:, : self.p]
             N_f = N_f[:, : self.p]
             N_b = N_b[:, : self.p]
             N_h = N_h[:, : self.p]
-            _log.warning("Proteome size %d has to be reduced to %d", p_req, self.p_max)
-
-        # derive final tensors
-        N = self.proteomics.derive_stoichiometry(N_f=N_f, N_b=N_b)
-        k_f, k_b = self.proteomics.derive_rates(N=N, k_m=k_m)
-        N_e = self.proteomics.derive_effective_stoichiometry(N=N)
+            _log.warning("Proteome size %d has to be reduced to %d", p, self.p_max)
 
         # update kinetics parameters
         self.N_e[idxs] = N_e
@@ -194,7 +182,7 @@ class Cells(TensorClass):
         self.N_h[idxs] = N_h
         self.k_f[idxs] = k_f
         self.k_b[idxs] = k_b
-        self.K_r[idxs] = K_r
+        self.k_r[idxs] = k_r
         self.v_max[idxs] = v_max
 
         # update cellular parameters
@@ -311,9 +299,6 @@ class Cells(TensorClass):
         # derive kinetics parameters from genomes
         idxs = self.idxarange(self.genomes.shape[0])
         self.update_genomes(genomes=self.genomes[idxs], idxs=idxs)
-
-    def _setup_rs(self) -> None:
-        self.rs = rs.Cells(genomics=self.genomics.rs, proteomics=self.proteomics.rs)
 
     def _increase_c(self, by_n: int) -> None:
         # cell paramaters

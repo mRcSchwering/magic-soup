@@ -141,12 +141,6 @@ class Genomics:
         self.start_codons = list(start_codons)
         self.stop_codons = list(stop_codons)
 
-        # TODO: domain structure logic is currently spread out over
-        #       Rust in proteomics (needs to know which token refers to which value),
-        #       and genomics (needs to extract tokens in correct order)
-        #       and here (needs to build sequences in correct order)
-        #       this should somehow be centralized
-
         # Domain structure:
         # domain type definition (n domain type codons)
         # 3 x 1-codon specifications (3 simple tokens)
@@ -188,19 +182,18 @@ class Genomics:
             dom_type_size_nt=self.dom_type_size_nt,
         )
 
-    def translate_genomes(self, genomes: list[str]) -> list[list[ProteinSpec]]:
-        """Get proteomes in form of domain specifications from genomes"""
+    def translate_genomes(self, genomes: list[str]) -> "list[list[ProteinSpec]]":
         if len(genomes) == 0:
             return []
         return self.rs.translate_genomes(genomes=genomes)
 
-    def translate_genomes2(
+    def translate_genomes_arr(
         self, genomes: list[str]
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
         """Get proteomes in form of domain specifications from genomes"""
         if len(genomes) == 0:
             return (np.zeros(0), np.zeros(0), np.zeros((0, 5)), 0)
-        return self.rs.translate_genomes_new(genomes=genomes)
+        return self.rs.translate_genomes_arr(genomes=genomes)
 
     def get_coding_regions(
         self,

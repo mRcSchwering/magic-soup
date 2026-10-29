@@ -6,6 +6,7 @@ import torch
 from magicsoup.chemistry import Molecule, Reaction
 
 
+# TODO: this is confusing, better just use Domain type
 class DomainType(Protocol):
     """Protocol for domains"""
 
@@ -268,6 +269,9 @@ class RegulatoryDomain:
         return f"{self.effector}{loc} {post} | Km {self.km:.2e} Hill {self.hill}"
 
 
+type Domain = RegulatoryDomain | CatalyticDomain | TransporterDomain
+
+
 class Protein:
     """
     Object describing a protein.
@@ -298,7 +302,7 @@ class Protein:
     """
 
     def __init__(
-        self, domains: list[DomainType], cds_start: int, cds_end: int, is_53: bool
+        self, domains: list[Domain], cds_start: int, cds_end: int, is_53: bool
     ):
         self.domains = domains
         self.n_domains = len(domains)
@@ -325,7 +329,7 @@ class Protein:
         `"R"` (regulatory) and `spec` is a dict with kwargs for each domain's `from_dict()`.
         """
         # TODO: if I use Enums defined in python and Rust, can I use them here (instead of C,T,R)?
-        doms: list[DomainType] = []
+        doms: list[Domain] = []
         for dom in dct["domains"]:
             dom_type = dom["type"]
             dom_spec = dom["spec"]
