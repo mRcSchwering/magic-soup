@@ -235,7 +235,7 @@ impl Proteomics {
     ) -> (
         util::MatrixType<f32>,
         util::MatrixType<f32>,
-        util::MatrixType<Vec<f32>>,
+        util::MatrixType<f32>,
         util::MatrixType<Vec<i8>>,
         util::MatrixType<Vec<i8>>,
         util::MatrixType<Vec<i8>>,
@@ -301,7 +301,7 @@ impl Cells {
     ) -> (
         util::MatrixType<f32>,
         util::MatrixType<f32>,
-        util::MatrixType<Vec<f32>>,
+        util::MatrixType<f32>,
         util::MatrixType<Vec<i8>>,
         util::MatrixType<Vec<i8>>,
         util::MatrixType<Vec<i8>>,

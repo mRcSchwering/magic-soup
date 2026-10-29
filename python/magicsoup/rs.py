@@ -146,7 +146,7 @@ class Proteomics(_ReduceMixin):
     def get_proteome_params(self, proteomes: "list[list[ProteinSpec]]") -> tuple[
         list[list[float]],
         list[list[float]],
-        list[list[list[float]]],
+        list[list[float]],
         list[list[list[int]]],
         list[list[list[int]]],
         list[list[list[int]]],

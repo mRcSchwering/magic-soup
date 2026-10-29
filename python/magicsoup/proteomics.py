@@ -152,11 +152,6 @@ class _ReactionMap(TensorClass):
             self.react_2_tokens[ri_2_react[ri]].append(token)
 
 
-# TODO: Co-factors are regarded in kinetics, but not in token mapping
-#       tokens map to vectors which are rows in N (so Co-factors are 0)
-#       Should separate forward and reverse
-
-
 class _TransporterMap(TensorClass):
     """
     Get a map that maps tokens to a list of vectors.
@@ -415,14 +410,12 @@ class Proteomics(TensorClass):
         )
 
         # allosteric sensitivity
-        K_r = self.fzeros(c, p, m)
+        k_r = self.fzeros(c, p)
         idx = idx_flat[is_regul]
         src = self.km_map.token_scalar[tokens[is_regul, 2]]
-        K_r.view(-1).scatter_reduce_(
+        k_r.view(-1).scatter_reduce_(
             dim=0, index=idx, src=src, reduce="mean", include_self=False
         )
-
-        print(K_r)
 
         # aggregate domains by sum (0s as defaults)
 
@@ -451,8 +444,6 @@ class Proteomics(TensorClass):
         src = self.effector_map.token_vector[src_idx] * src_sign * src_hill
         N_h.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
 
-        # TODO: also make regulatory K_r 2D (just easier everywhere)
-
         N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
         k_f, k_b = self.derive_rates(N=N, k_m=k_m)
         N_e = self.derive_effective_stoichiometry(N=N)
@@ -464,7 +455,7 @@ class Proteomics(TensorClass):
             "N_h": N_h,
             "k_f": k_f,
             "k_b": k_b,
-            "K_r": K_r,
+            "k_r": k_r,
             "v_max": v_max,
         }
 
@@ -485,10 +476,10 @@ class Proteomics(TensorClass):
         To get a more interpretable representation of proteomes
         use [get_proteome()][.get_proteome].
         """
-        v_max_, k_m_, K_r_, N_f_, N_b_, N_h_ = self.rs.get_proteome_params(proteomes)
+        v_max_, k_m_, k_r_, N_f_, N_b_, N_h_ = self.rs.get_proteome_params(proteomes)
         v_max = self.ftensor(v_max_)
         k_m = self.ftensor(k_m_)
-        K_r = self.ftensor(K_r_)
+        k_r = self.ftensor(k_r_)
         N_f = self.itensor(N_f_)
         N_b = self.itensor(N_b_)
         N_h = self.itensor(N_h_)
@@ -498,7 +489,6 @@ class Proteomics(TensorClass):
             N_f = N_f.unsqueeze(-1).expand(-1, -1, self.m)
             N_b = N_b.unsqueeze(-1).expand(-1, -1, self.m)
             N_h = N_h.unsqueeze(-1).expand(-1, -1, self.m)
-            K_r = K_r.unsqueeze(-1).expand(-1, -1, self.m)
 
         N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
         k_f, k_b = self.derive_rates(N=N, k_m=k_m)
@@ -511,7 +501,7 @@ class Proteomics(TensorClass):
             "N_h": N_h,
             "k_f": k_f,
             "k_b": k_b,
-            "K_r": K_r,
+            "k_r": k_r,
             "v_max": v_max,
         }
 

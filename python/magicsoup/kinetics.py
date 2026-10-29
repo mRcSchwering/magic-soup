@@ -233,7 +233,7 @@ class Kinetics(TensorClass):
         # calculate per protein regulatory activity
         # - N_h defines hill coefficients
         # - x must be >= 0 for all elements where N_h > 0
-        # - k_r must be > 0 for all elements where N_h > 0
+        # - k_r must be > 0 for all elements where N_h != 0
         # - k_r must be 0 for all elements where N_h = 0
         #
         # for each protein calculate alpha_reg:

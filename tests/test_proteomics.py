@@ -260,7 +260,7 @@ def test_cell_params_with_catalytic_domains() -> None:
             [_avg(0.3, 1.4), _avg(0.3, 1.7) * ke_c1_1, 0.0],
         ]
     )
-    K_r_exp = fzeros(c, p, m)
+    k_r_exp = fzeros(c, p)
     v_max_exp = ftensor(
         [
             [_avg(1.1, 1.2), _avg(2.0, 1.3), 2.9],
@@ -303,7 +303,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     # test cell params
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
@@ -313,7 +313,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     # test cell params2
     torch.testing.assert_close(params2["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params2["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
@@ -505,7 +505,7 @@ def test_cell_params_with_transporter_domains() -> None:
             [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) * _ke([_ma], [_mb])],
         ]
     )
-    K_r_exp = fzeros(c, p, 8)
+    k_r_exp = fzeros(c, p)
     v_max_exp = ftensor(
         [
             [1.5, _avg(1.5, 1.1)],
@@ -544,7 +544,7 @@ def test_cell_params_with_transporter_domains() -> None:
     # test cell params
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
@@ -554,7 +554,7 @@ def test_cell_params_with_transporter_domains() -> None:
     # test cell params2
     torch.testing.assert_close(params2["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params2["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
@@ -745,16 +745,10 @@ def test_cell_params_with_regulatory_domains() -> None:
             [0.5 * ke_a_b, 0.5 * ke_a_b],
         ]
     )
-    K_r_exp = ftensor(
+    k_r_exp = ftensor(
         [
-            [
-                [0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.0],
-            ],
-            [
-                [0.0, 1.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 1.25, 0.0, 0.0, 0.0, 0.0],
-            ],
+            [1.5, 1.25],
+            [1.25, 1.25],
         ]
     )
     v_max_exp = ftensor(
@@ -806,19 +800,17 @@ def test_cell_params_with_regulatory_domains() -> None:
     # test cell params
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_b"], N_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["N_h"], N_h_exp, rtol=_RTOL, atol=_ATOL)
 
-    print(K_r_exp)
-
     # test cell params2
     torch.testing.assert_close(params2["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
-    torch.testing.assert_close(params2["K_r"], K_r_exp, rtol=_RTOL, atol=_ATOL)
+    torch.testing.assert_close(params2["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["v_max"], v_max_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["N_e"], N_eff, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params2["N_f"], N_f_exp, rtol=_RTOL, atol=_ATOL)
@@ -989,8 +981,8 @@ def test_random_cell_params() -> None:
         params = protics.get_cell_params(proteomes=proteomes)
 
         # test
-        float_np = [params["k_f"], params["k_b"], params["v_max"]]
-        float_npm = [params["K_r"], params["N_e"]]
+        float_np = [params["k_f"], params["k_b"], params["k_r"], params["v_max"]]
+        float_npm = [params["N_e"]]
         int_npm = [params["N_f"], params["N_b"], params["N_h"]]
 
         for t in float_np:

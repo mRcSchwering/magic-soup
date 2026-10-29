@@ -6,7 +6,7 @@ use pyo3::types::{PyDict, PyDictMethods};
 use rayon::prelude::*;
 use std::collections::HashMap;
 
-pub type ProteinParams = (f32, f32, Vec<f32>, Vec<i8>, Vec<i8>, Vec<i8>);
+pub type ProteinParams = (f32, f32, f32, Vec<i8>, Vec<i8>, Vec<i8>);
 
 // Get domain v_max, k_m, sign, reaction values from indices
 fn get_cat_dom_params(
@@ -109,31 +109,34 @@ fn get_reg_dom_params(
 }
 
 // Get protein k_r, n_h from domain values
-fn agg_reg_params(params: &Vec<(i8, f32, i8, Vec<i8>)>, m: &usize) -> (Vec<f32>, Vec<i8>) {
-    // per molecule average k_r over domains
-    let mut k_r_sum = vec![0 as f32; *m];
-    let mut k_r_len = vec![0 as f32; *m];
+fn agg_reg_params(params: &Vec<(i8, f32, i8, Vec<i8>)>, m: &usize) -> (f32, Vec<i8>) {
+    let n_doms = params.len() as f32;
+
+    // average k_m over domains
+    let mut k_r_sum = 0 as f32;
 
     // sum n_h over domains
     let mut n_h = vec![0 as i8; *m];
 
+    if n_doms == 0.0 {
+        return (0.0, n_h);
+    }
+
     for param in params.iter() {
+        let mut has_reg: bool = false;
         for (i, &val) in param.3.iter().enumerate() {
             if val != 0 {
-                k_r_sum[i] += param.1;
-                k_r_len[i] += 1.0;
-
                 // positive hill for activating, negative for inhibiting
                 n_h[i] += param.2 * param.0;
+                has_reg = true;
             }
+        }
+        if (has_reg) {
+            k_r_sum += param.1;
         }
     }
 
-    let k_r: Vec<f32> = k_r_sum
-        .iter()
-        .zip(k_r_len.iter())
-        .map(|(&sum, &len)| if len > 0.0 { sum / len } else { 0.0 })
-        .collect();
+    let k_r = k_r_sum / n_doms;
 
     (k_r, n_h)
 }
@@ -233,7 +236,7 @@ pub fn get_proteome_params_threaded(
 ) -> (
     MatrixType<f32>,
     MatrixType<f32>,
-    MatrixType<Vec<f32>>,
+    MatrixType<f32>,
     MatrixType<Vec<i8>>,
     MatrixType<Vec<i8>>,
     MatrixType<Vec<i8>>,
@@ -263,7 +266,7 @@ pub fn get_proteome_params_threaded(
     // (v_max, k_m, k_r, n_f, n_b, n_h)
     let mut v_max = vec![vec![0 as f32; p]; c];
     let mut k_m = vec![vec![0 as f32; p]; c];
-    let mut k_r = vec![vec![vec![0 as f32; *m]; p]; c];
+    let mut k_r = vec![vec![0 as f32; p]; c];
     let mut n_f = vec![vec![vec![0 as i8; *m]; p]; c];
     let mut n_b = vec![vec![vec![0 as i8; *m]; p]; c];
     let mut n_h = vec![vec![vec![0 as i8; *m]; p]; c];
@@ -272,7 +275,7 @@ pub fn get_proteome_params_threaded(
         for (p_i, p_params) in c_params.iter().enumerate() {
             v_max[c_i][p_i] = p_params.0;
             k_m[c_i][p_i] = p_params.1;
-            k_r[c_i][p_i] = p_params.2.to_vec();
+            k_r[c_i][p_i] = p_params.2;
             n_f[c_i][p_i] = p_params.3.to_vec();
             n_b[c_i][p_i] = p_params.4.to_vec();
             n_h[c_i][p_i] = p_params.5.to_vec();
