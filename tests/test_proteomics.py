@@ -35,7 +35,8 @@ _r_a_b = Reaction([_ma], [_mb])
 _r_b_c = Reaction([_mb], [_mc])
 _r_bc_d = Reaction([_mb, _mc], [_md])
 _r_d_bb = Reaction([_md], 2 * [_mb])
-_REACTIONS = [_r_a_b, _r_b_c, _r_bc_d, _r_d_bb]
+_r_ac_bc = Reaction([_ma, _mc], [_mb, _mc])
+_REACTIONS = [_r_a_b, _r_b_c, _r_bc_d, _r_d_bb, _r_ac_bc]
 
 _CHEMISTRY = Chemistry(molecules=_MOLECULES, reactions=_REACTIONS)
 
@@ -112,7 +113,7 @@ _REACTION_M_F = [
     ( 0,  1,  0,  0,  0,  0,  0,  0 ), # 2: b -> c
     ( 0,  1,  1,  0,  0,  0,  0,  0 ), # 3: b,c -> d
     ( 0,  0,  0,  1,  0,  0,  0,  0 ), # 4: d -> 2b
-    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 1,  0,  1,  0,  0,  0,  0,  0 ), # 5: a,c -> b,c
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
@@ -124,13 +125,13 @@ _REACTION_M_B = [
     ( 0,  0,  1,  0,  0,  0,  0,  0 ), # 2: b -> c
     ( 0,  0,  0,  1,  0,  0,  0,  0 ), # 3: b,c -> d
     ( 0,  2,  0,  0,  0,  0,  0,  0 ), # 4: d -> 2b
-    ( 0,  0,  0,  0,  0,  0,  0,  0 ),
+    ( 0,  1,  1,  0,  0,  0,  0,  0 ), # 5: a,c -> b,c
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
     ( 0,  0,  0,  0,  0,  0,  0,  0 ),
 ]
 
-_TOKEN_2_REACT = {1: _r_a_b, 2: _r_b_c, 3: _r_bc_d, 4: _r_d_bb}
+_TOKEN_2_REACT = {1: _r_a_b, 2: _r_b_c, 3: _r_bc_d, 4: _r_d_bb, 5: _r_ac_bc}
 
 _V_CELL = 1.0
 _V_MED = 1000.0
@@ -255,9 +256,17 @@ def test_cell_params_with_catalytic_domains() -> None:
                 )
             ],
             5, 500, False
+        ),
+        (
+            [  # reaction with co-factor
+                (
+                    (1, 9, 3, 1, 5), # catal, v_max 1.9, Km 0.3, fwd, ac->bc
+                    8, 80
+                ),
+            ],
+            1, 200, False
         )
     ]
-    # TODO: add a cofactor within one reaction definiton
     # fmt: on
 
     # setup proteomics
@@ -274,6 +283,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     ke_c0_2 = _ke([_md], [_mb, _mb])
     ke_c1_0 = _ke([_mb, _md], [_ma, _mb, _mc])
     ke_c1_1 = _ke([_mb, _mb, _mc], [_mc, _md])
+    ke_c1_2 = _ke([_ma, _mc], [_mb, _mc])
     k_f_exp = ftensor(
         [
             [
@@ -284,7 +294,7 @@ def test_cell_params_with_catalytic_domains() -> None:
             [
                 _avg(0.3, 1.4) / math.sqrt(ke_c1_0),
                 _avg(0.3, 1.7) / math.sqrt(ke_c1_1),
-                0.0,
+                0.3 / math.sqrt(ke_c1_2),
             ],
         ]
     )
@@ -298,7 +308,7 @@ def test_cell_params_with_catalytic_domains() -> None:
             [
                 _avg(0.3, 1.4) * math.sqrt(ke_c1_0),
                 _avg(0.3, 1.7) * math.sqrt(ke_c1_1),
-                0.0,
+                0.3 * math.sqrt(ke_c1_2),
             ],
         ]
     )
@@ -306,7 +316,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     v_max_exp = ftensor(
         [
             [_avg(1.1, 1.2), _avg(2.0, 1.3), 2.9],
-            [_avg(1.1, 2.1), _avg(1.9, 2.3), 0.0],
+            [_avg(1.1, 2.1), _avg(1.9, 2.3), 1.9],
         ]
     )
     N_f_exp = itensor(
@@ -319,7 +329,7 @@ def test_cell_params_with_catalytic_domains() -> None:
             [
                 [0, 1, 0, 1, 0, 0, 0, 0],
                 [0, 2, 1, 0, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 0, 1, 0, 0, 0, 0, 0],
             ],
         ]
     )
@@ -333,7 +343,7 @@ def test_cell_params_with_catalytic_domains() -> None:
             [
                 [1, 1, 1, 0, 0, 0, 0, 0],
                 [0, 0, 1, 1, 0, 0, 0, 0],
-                [0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 1, 1, 0, 0, 0, 0, 0],
             ],
         ]
     )
@@ -445,6 +455,18 @@ def test_cell_params_with_catalytic_domains() -> None:
     assert p1.domains[1].km == pytest.approx(1.7, abs=_TOL)
     assert p1.domains[1].start == 9
     assert p1.domains[1].end == 90
+
+    p2 = proteins[2]
+    assert p2.cds_start == 1
+    assert p2.cds_end == 200
+    assert p2.is_53 is False
+    assert isinstance(p2.domains[0], CatalyticDomain)
+    assert p2.domains[0].reaction == _r_ac_bc
+    assert p2.domains[0].is_fwd
+    assert p2.domains[0].vmax == pytest.approx(1.9, abs=_TOL)
+    assert p2.domains[0].km == pytest.approx(0.3, abs=_TOL)
+    assert p2.domains[0].start == 8
+    assert p2.domains[0].end == 80
 
 
 def test_cell_params_with_transporter_domains() -> None:
