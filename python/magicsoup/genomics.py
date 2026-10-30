@@ -74,12 +74,6 @@ class _DomainTypeMap:
         self.seq_2_token = {d: k.value for k, v in self.type_2_seqs.items() for d in v}
 
 
-type CdsSpec = tuple[int, int, bool]
-type DomainTokens = tuple[int, int, int, int, int]
-type DomainSpec = tuple[DomainTokens, int, int]
-type ProteinSpec = tuple[list[DomainSpec], int, int, bool]
-
-
 class GenomicsKwargs(TypedDict, total=False):
     start_codons: tuple[str, ...]
     stop_codons: tuple[str, ...]
@@ -182,11 +176,12 @@ class Genomics:
             dom_type_size_nt=self.dom_type_size_nt,
         )
 
-    def translate_genomes(self, genomes: list[str]) -> "list[list[ProteinSpec]]":
+    def translate_genomes(self, genomes: list[str]) -> list[list[rs.ProteinSpec]]:
         if len(genomes) == 0:
             return []
         return self.rs.translate_genomes(genomes=genomes)
 
+    # TODO: better name
     def translate_genomes_arr(
         self, genomes: list[str]
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
@@ -200,7 +195,7 @@ class Genomics:
         seq: str,
         min_cds_size: int,
         is_fwd: bool,
-    ) -> list[CdsSpec]:
+    ) -> list[rs.CdsSpec]:
         """Get CDS markers for a genome"""
         return self.rs.get_coding_regions(
             seq=seq, min_cds_size=min_cds_size, is_fwd=is_fwd
@@ -209,8 +204,8 @@ class Genomics:
     def extract_domains(
         self,
         genome: str,
-        cdss: list[CdsSpec],
-    ) -> list[ProteinSpec]:
+        cdss: list[rs.CdsSpec],
+    ) -> list[rs.ProteinSpec]:
         """Get proteome in form of domain specifications for a genome and CDS markers"""
         return self.rs.extract_domains(genome=genome, cdss=cdss)
 
@@ -225,6 +220,7 @@ class Genomics:
         For catalytic domains the main entity is the reaction, for transporters the
         transported molecule, for regulatory domains the effector molecule.
         """
+        one_codons = list(self.one_codon_map.seq_2_token)
         token_2_two_codon = self.two_codon_map.token_2_seq
         domtype_2_seqs = self.domain_type_map.type_2_seqs
 
@@ -234,9 +230,9 @@ class Genomics:
         # idx2: sign/orientation (1 codon, no stop)
         # idx3: reaction/molecule/effector (2 codon, 2nd can be stop)
         dom_seq = random.choice(domtype_2_seqs[domain_type])
-        i0_seq = random.choice(codons(n=1, excl_codons=self.stop_codons))
-        i1_seq = random.choice(codons(n=1, excl_codons=self.stop_codons))
-        i2_seq = random.choice(codons(n=1, excl_codons=self.stop_codons))
+        i0_seq = random.choice(one_codons)
+        i1_seq = random.choice(one_codons)
+        i2_seq = random.choice(one_codons)
         i3_seq = token_2_two_codon[random.choice(tokens)]
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq

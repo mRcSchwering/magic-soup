@@ -1,22 +1,8 @@
 from collections import Counter
-from typing import Protocol
 
 import torch
 
 from magicsoup.chemistry import Molecule, Reaction
-
-
-# TODO: this is confusing, better just use Domain type
-class DomainType(Protocol):
-    """Protocol for domains"""
-
-    start: int
-    end: int
-
-    def to_dict(self) -> dict: ...
-
-    @classmethod
-    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "DomainType": ...
 
 
 class CatalyticDomain:
@@ -58,43 +44,6 @@ class CatalyticDomain:
         self.km = km
         self.vmax = vmax
         self.is_fwd = is_fwd
-
-    def to_dict(self) -> dict:
-        """Get dict representation of domain"""
-        reaction = (
-            [d.name for d in self.reaction.substrates],
-            [d.name for d in self.reaction.products],
-        )
-        kwargs = {
-            "reaction": reaction,
-            "km": self.km,
-            "vmax": self.vmax,
-            "start": self.start,
-            "end": self.end,
-            "fwd": self.is_fwd,
-        }
-        return {"type": "C", "spec": kwargs}
-
-    @classmethod
-    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "CatalyticDomain":
-        """
-        Convencience method for creating an instance from a dict.
-        All parameters must be present as keys.
-        Molecules are provided by their name.
-        """
-        lft, rgt = dct["reaction"]
-        reaction = Reaction(
-            substrates=[molmap[d] for d in lft],
-            products=[molmap[d] for d in rgt],
-        )
-        return cls(
-            reaction=reaction,
-            km=dct["km"],
-            vmax=dct["vmax"],
-            start=dct["start"],
-            end=dct["end"],
-            is_fwd=dct["fwd"],
-        )
 
     def __repr__(self) -> str:
         return f"CatalyticDomain({self.reaction},Km={self.km:.2e},Vmax={self.vmax:.2e},fwd={self.is_fwd})"
@@ -149,34 +98,6 @@ class TransporterDomain:
         self.vmax = vmax
         self.is_exporter = is_exporter
 
-    def to_dict(self) -> dict:
-        """Get dict representation of domain"""
-        kwargs = {
-            "molecule": self.molecule.name,
-            "km": self.km,
-            "vmax": self.vmax,
-            "is_exporter": self.is_exporter,
-            "start": self.start,
-            "end": self.end,
-        }
-        return {"type": "T", "spec": kwargs}
-
-    @classmethod
-    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "TransporterDomain":
-        """
-        Convencience method for creating an instance from a dict.
-        All parameters must be present as keys.
-        Molecules are provided by their name.
-        """
-        return cls(
-            molecule=molmap[dct["molecule"]],
-            km=dct["km"],
-            vmax=dct["vmax"],
-            is_exporter=dct["is_exporter"],
-            start=dct["start"],
-            end=dct["end"],
-        )
-
     def __repr__(self) -> str:
         sign = "exporter" if self.is_exporter else "importer"
         return f"TransporterDomain({self.molecule},Km={self.km:.2e},Vmax={self.vmax:.2e},{sign})"
@@ -227,36 +148,6 @@ class RegulatoryDomain:
         self.hill = int(hill)
         self.is_transmembrane = is_transmembrane
         self.is_inhibiting = is_inhibiting
-
-    def to_dict(self) -> dict:
-        """Get dict representation of domain"""
-        kwargs = {
-            "effector": self.effector.name,
-            "km": self.km,
-            "hill": self.hill,
-            "is_inhibiting": self.is_inhibiting,
-            "is_transmembrane": self.is_transmembrane,
-            "start": self.start,
-            "end": self.end,
-        }
-        return {"type": "R", "spec": kwargs}
-
-    @classmethod
-    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "RegulatoryDomain":
-        """
-        Convencience method for creating an instance from a dict.
-        All parameters must be present as keys.
-        Molecules are provided by their name.
-        """
-        return cls(
-            effector=molmap[dct["effector"]],
-            km=dct["km"],
-            hill=dct["hill"],
-            is_inhibiting=dct["is_inhibiting"],
-            is_transmembrane=dct["is_transmembrane"],
-            start=dct["start"],
-            end=dct["end"],
-        )
 
     def __repr__(self) -> str:
         loc = "transmembrane" if self.is_transmembrane else "cytosolic"
@@ -309,43 +200,6 @@ class Protein:
         self.cds_start = cds_start
         self.cds_end = cds_end
         self.is_53 = is_53
-
-    # TODO: required?
-    def to_dict(self) -> dict:
-        """Get dict representation of protein"""
-        return {
-            "domains": [d.to_dict() for d in self.domains],
-            "cds_start": self.cds_start,
-            "cds_end": self.cds_end,
-            "is_53": self.is_53,
-        }
-
-    @classmethod
-    def from_dict(cls, dct: dict, molmap: dict[str, Molecule]) -> "Protein":
-        """
-        Create Protein instance from dict. Key must match arguments.
-        Domains are set as a list of dicts `{"type": ".", "spec": {})` where
-        `type` is domain type `"C"` (catalytic), `"T"` (transporter), or
-        `"R"` (regulatory) and `spec` is a dict with kwargs for each domain's `from_dict()`.
-        """
-        # TODO: if I use Enums defined in python and Rust, can I use them here (instead of C,T,R)?
-        doms: list[Domain] = []
-        for dom in dct["domains"]:
-            dom_type = dom["type"]
-            dom_spec = dom["spec"]
-            if dom_type == "C":
-                doms.append(CatalyticDomain.from_dict(dom_spec, molmap=molmap))
-            elif dom_type == "T":
-                doms.append(TransporterDomain.from_dict(dom_spec, molmap=molmap))
-            elif dom_type == "R":
-                doms.append(RegulatoryDomain.from_dict(dom_spec, molmap=molmap))
-
-        return Protein(
-            cds_start=dct["cds_start"],
-            cds_end=dct["cds_end"],
-            is_53=dct["is_53"],
-            domains=doms,
-        )
 
     def __repr__(self) -> str:
         kwargs = {

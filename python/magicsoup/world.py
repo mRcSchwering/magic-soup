@@ -25,8 +25,6 @@ from magicsoup.util import TensorClass, TensorKwargs, randstr
 
 _log = logging.getLogger(__name__)
 
-# TODO: K_r -> k_r
-
 
 def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
@@ -392,7 +390,7 @@ class World(TensorClass):
         self.cells.v_max[cell_idxs] = 0.0
         self.cells.k_f[cell_idxs] = 0.0
         self.cells.k_b[cell_idxs] = 0.0
-        self.cells.K_r[cell_idxs] = 0.0
+        self.cells.k_r[cell_idxs] = 0.0
         self.cells.N_f[cell_idxs] = 0
         self.cells.N_b[cell_idxs] = 0
         self.cells.N_h[cell_idxs] = 0

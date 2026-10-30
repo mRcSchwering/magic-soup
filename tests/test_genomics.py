@@ -27,6 +27,9 @@ def test_domain_type_map() -> None:
     possible_codons = codons(n=2, excl_codons=stop_codons)
     n_total = len(possible_codons)
 
+    all_seqs = [dd for d in dom_type_map.type_2_seqs.values() for dd in d]
+    assert len(set(all_seqs)) == len(all_seqs)
+
     # check that probabilities are in binom 99% Wald interval
     for dom_type, prob in probs.items():
         exp = prob * n_total  # binom exp value

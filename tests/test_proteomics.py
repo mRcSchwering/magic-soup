@@ -8,7 +8,6 @@ import torch
 from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
 from magicsoup.config import GAS_CONSTANT
-from magicsoup.genomics import DomainSpec, DomainTokens, ProteinSpec
 from magicsoup.proteomics import (
     Proteomics,
     _EffectorMap,
@@ -17,6 +16,7 @@ from magicsoup.proteomics import (
     _ReactionMap,
     _TransporterMap,
 )
+from magicsoup.rs import DomainSpec, DomainTokens, ProteinSpec
 
 from tests.util import FTYPE, ITYPE, ftensor, fzeros, itensor, izeros
 

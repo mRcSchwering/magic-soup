@@ -1,11 +1,6 @@
-from typing import TYPE_CHECKING
-
 import numpy as np
 
 from magicsoup import _lib  # type: ignore
-
-if TYPE_CHECKING:
-    from magicsoup.genomics import ProteinSpec
 
 
 class _ReduceMixin:
@@ -37,6 +32,11 @@ def recombinations(
 
 
 # genomics
+
+type CdsSpec = tuple[int, int, bool]
+type DomainTokens = tuple[int, int, int, int, int]
+type DomainSpec = tuple[DomainTokens, int, int]
+type ProteinSpec = tuple[list[DomainSpec], int, int, bool]
 
 
 def reverse_complement(seq: str) -> str:

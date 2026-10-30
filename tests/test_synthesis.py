@@ -148,4 +148,4 @@ def test_generate_genomes_with_custom_length(world: World, size: int) -> None:
 
     # TODO: for some reason slightly p0 is only encoded slightly less than 80%
     #       of the time correctly. -> investigate!
-    assert correct_genomes / n_gens >= 0.7
+    assert correct_genomes / n_gens >= 0.9

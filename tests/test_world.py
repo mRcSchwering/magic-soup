@@ -61,7 +61,7 @@ def _get_proteome_tensors(cells: Cells) -> dict[str, torch.Tensor]:
         "v_max": cells.v_max.clone(),
         "k_f": cells.k_f.clone(),
         "k_b": cells.k_b.clone(),
-        "K_r": cells.K_r.clone(),
+        "k_r": cells.k_r.clone(),
         "N_f": cells.N_f.clone(),
         "N_b": cells.N_b.clone(),
         "N_h": cells.N_h.clone(),

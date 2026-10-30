@@ -2,11 +2,12 @@ import math
 import random
 from collections import defaultdict
 from statistics import NormalDist
-from typing import TYPE_CHECKING, TypedDict
+from typing import TypedDict
 
 import numpy as np
 import torch
 
+from magicsoup import rs
 from magicsoup.biology import (
     CatalyticDomain,
     Domain,
@@ -18,9 +19,6 @@ from magicsoup.chemistry import Chemistry, Molecule, Reaction
 from magicsoup.config import GAS_CONSTANT, ROOM_TEMP
 from magicsoup.genomics import DomainType
 from magicsoup.util import TensorClass, TensorKwargs
-
-if TYPE_CHECKING:
-    from magicsoup.genomics import ProteinSpec
 
 
 class _LogNormMap(TensorClass):
@@ -321,7 +319,7 @@ class Proteomics(TensorClass):
             chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs
         )
 
-    def get_proteome(self, proteome: "list[ProteinSpec]") -> list[Protein]:
+    def get_proteome(self, proteome: list[rs.ProteinSpec]) -> list[Protein]:
         """
         Translate proteome of a single cell
 
@@ -406,6 +404,21 @@ class Proteomics(TensorClass):
         c: int,
         p: int,
     ) -> dict[str, torch.Tensor]:
+        """
+        Derive proteome parameters from a buffer of protein specifications
+
+        Arguments:
+            cells: (d,) ndarray of cell indices
+            proteins: (d,) ndarray of protein indices in each cell
+            tokens: (d,t) ndarray of t tokens describing each domain
+            c: total number of cells in buffer
+            p: total number of proteins in buffer
+
+        Retruns:
+            Dict of tensors describing all translated proteomes
+
+        For a more readable representation of a proteome use [get_cell_params()][.get_cell_params].
+        """
         # parameters in flat (d,) representation of (c, p)
         cell = torch.from_numpy(cells).to(self.device, torch.int32)
         prot = torch.from_numpy(proteins).to(self.device, torch.int32)
