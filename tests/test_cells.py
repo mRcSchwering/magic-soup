@@ -10,7 +10,8 @@ from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
 from magicsoup.util import random_genome
 
-from tests.util import FTYPE, ITYPE, idxtensor
+from tests.config import FTYPE, IDXTYPE, ITYPE, STYPE
+from tests.util import idxtensor
 
 
 @pytest.fixture
@@ -40,6 +41,46 @@ def _assert_empty_values(cells: Cells) -> None:
     assert (cells.N_e == 0).all()
 
 
+def _assert_shapes(cells: Cells) -> None:
+    # check exact shape of cell parameters
+    assert cells.genomes.shape == (cells.c,)
+    assert cells.lineages.shape == (cells.c,)
+    assert cells.alive.shape == (cells.c,)
+    assert cells.ages.shape == (cells.c,)
+    assert cells.generations.shape == (cells.c,)
+    assert cells.molecules.shape == (cells.c, len(cells.chemistry.molecules))
+
+    # check exact shape of kinetics parameters
+    assert cells.v_max.shape == (cells.c, cells.p)
+    assert cells.k_f.shape == (cells.c, cells.p)
+    assert cells.k_b.shape == (cells.c, cells.p)
+    assert cells.k_r.shape == (cells.c, cells.p)
+    assert cells.N_f.shape == (cells.c, cells.p, cells.m)
+    assert cells.N_b.shape == (cells.c, cells.p, cells.m)
+    assert cells.N_h.shape == (cells.c, cells.p, cells.m)
+    assert cells.N_e.shape == (cells.c, cells.p, cells.m)
+
+
+def _asser_dtypes(cells: Cells) -> None:
+    # check exact shape of cell parameters
+    assert cells.genomes.dtype == STYPE
+    assert cells.lineages.dtype == STYPE
+    assert cells.alive.dtype == torch.bool
+    assert cells.ages.dtype == FTYPE
+    assert cells.generations.dtype == IDXTYPE
+    assert cells.molecules.dtype == FTYPE
+
+    # check exact shape of kinetics parameters
+    assert cells.v_max.dtype == FTYPE
+    assert cells.k_f.dtype == FTYPE
+    assert cells.k_b.dtype == FTYPE
+    assert cells.k_r.dtype == FTYPE
+    assert cells.N_f.dtype == ITYPE
+    assert cells.N_b.dtype == ITYPE
+    assert cells.N_h.dtype == ITYPE
+    assert cells.N_e.dtype == FTYPE
+
+
 @pytest.mark.parametrize(
     "c_req, c_exp",
     [
@@ -63,25 +104,7 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
 
     # check c
     assert cells.c == c_exp
-
-    # check exact shape of cell parameters
-    assert cells.genomes.shape == (cells.c,)
-    assert cells.lineages.shape == (cells.c,)
-    assert cells.alive.shape == (cells.c,)
-    assert cells.ages.shape == (cells.c,)
-    assert cells.generations.shape == (cells.c,)
-    assert cells.molecules.shape == (cells.c, len(cells.chemistry.molecules))
-
-    # check exact shape of kinetics parameters
-    assert cells.v_max.shape == (cells.c, cells.p)
-    assert cells.k_f.shape == (cells.c, cells.p)
-    assert cells.k_b.shape == (cells.c, cells.p)
-    assert cells.k_r.shape == (cells.c, cells.p)
-    assert cells.N_f.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_b.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_h.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_e.shape == (cells.c, cells.p, cells.m)
-
+    _assert_shapes(cells)
     _assert_empty_values(cells=cells)
 
 
@@ -130,26 +153,15 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
 
     # check p
     assert cells.p == p_exp
-
-    # check exact shape of cell parameters
-    assert cells.genomes.shape == (cells.c,)
-    assert cells.lineages.shape == (cells.c,)
-    assert cells.alive.shape == (cells.c,)
-    assert cells.ages.shape == (cells.c,)
-    assert cells.generations.shape == (cells.c,)
-    assert cells.molecules.shape == (cells.c, len(cells.chemistry.molecules))
-
-    # check exact shape of kinetics parameters
-    assert cells.v_max.shape == (cells.c, cells.p)
-    assert cells.k_f.shape == (cells.c, cells.p)
-    assert cells.k_b.shape == (cells.c, cells.p)
-    assert cells.k_r.shape == (cells.c, cells.p)
-    assert cells.N_f.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_b.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_h.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_e.shape == (cells.c, cells.p, cells.m)
-
+    _assert_shapes(cells)
     _assert_empty_values(cells=cells)
+
+
+def test_update_empty_genome(cells: Cells) -> None:
+    idxs = idxtensor([0])
+    genomes = [random_genome(s=0) for _ in range(1)]
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+    _asser_dtypes(cells)
 
 
 @pytest.mark.slow
@@ -164,16 +176,10 @@ def test_update_genomes_randomly(cells: Cells) -> None:
         genomes = [random_genome(s=500) for _ in range(n)]
         cells.update_genomes(genomes=genomes, idxs=idxs)
 
+        _asser_dtypes(cells)
+
         # check genomes set
         assert np.all(cells.genomes[idxs] == genomes)
-
-        # check kinetics parameters types
-        ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]
-        itensors = [cells.N_b, cells.N_f, cells.N_h]
-        for tens in ftensors:
-            assert tens.dtype == FTYPE
-        for tens in itensors:
-            assert tens.dtype == ITYPE
 
         # check at least some non-placeholder values
         denstensors = [cells.v_max, cells.k_b, cells.k_f, cells.N_f, cells.N_b]
@@ -200,18 +206,14 @@ def test_copy_genomes_randomly(cells: Cells) -> None:
         idxs1 = idxtensor(random.sample(idxs_left, n))
         cells.copy_genomes(from_idxs=idxs0, to_idxs=idxs1)
 
+        _asser_dtypes(cells)
+
         # check genomes set
         assert np.all(cells.genomes[idxs0] == cells.genomes[idxs1])
 
-        # check kinetics parameters types
+        # values were copied
         ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]
         itensors = [cells.N_b, cells.N_f, cells.N_h]
-        for tens in ftensors:
-            assert tens.dtype == FTYPE
-        for tens in itensors:
-            assert tens.dtype == ITYPE
-
-        # check at least some non-placeholder values
         for tens in ftensors + itensors:
             torch.testing.assert_close(tens[idxs0], tens[idxs1])
 

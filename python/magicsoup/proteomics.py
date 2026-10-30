@@ -412,6 +412,19 @@ class Proteomics(TensorClass):
         tok = torch.from_numpy(tokens).to(self.device, torch.int32)
         m = self.m
 
+        # indexing won't work
+        if p == 0 or c == 0:
+            return {
+                "N_e": self.fzeros(c, p, m),
+                "N_f": self.izeros(c, p, m),
+                "N_b": self.izeros(c, p, m),
+                "N_h": self.izeros(c, p, m),
+                "k_f": self.fzeros(c, p),
+                "k_b": self.fzeros(c, p),
+                "k_r": self.fzeros(c, p),
+                "v_max": self.fzeros(c, p),
+            }
+
         # tokens:
         # 0: domain type 1=catal,2=trnsp,3=reg
         # 1: vmax for catal/trnsp, hill for reg

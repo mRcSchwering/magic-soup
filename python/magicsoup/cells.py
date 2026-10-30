@@ -142,6 +142,9 @@ class Cells(TensorClass):
             return
 
         cell, prot, tok, p = self.genomics.translate_genomes_arr(genomes=genomes)
+        if p == 0:
+            return
+
         params = self.proteomics.get_cell_params(
             cells=cell, proteins=prot, tokens=tok, p=p, c=c
         )
@@ -154,7 +157,6 @@ class Cells(TensorClass):
         N_f = params["N_f"]
         N_b = params["N_b"]
         N_h = params["N_h"]
-        # TODO: check if if p=0 works correctly
 
         # new proteomes may have different p
         self.update_p(p_req=p)
