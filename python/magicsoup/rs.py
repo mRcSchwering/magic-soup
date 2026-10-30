@@ -19,16 +19,72 @@ class _ReduceMixin:
 # mutations
 
 
-def point_mutations(
-    seqs: list[str], p: float, p_indel: float, p_del: float
-) -> list[tuple[str, int]]:
-    return _lib.point_mutations(seqs, p, p_indel, p_del)
+class Mutator(_ReduceMixin):
 
+    def __init__(
+        self,
+        seed: float,
+        sub_rate: float,
+        transition_prob: float,
+        indel_rate: float,
+        indel_repeat_factor: float,
+        indel_max_multiplier: float,
+        indel_max_unit: int,
+        indel_mean_len: float,
+        indel_max_len: int,
+        insertion_prob: float,
+        break_rate: float,
+        seed_len: int,
+        min_homology: int,
+        saturating_homology: int,
+        min_segment: int,
+        duplication_prob: float,
+        min_genome_len: int,
+        max_genome_len: int | None,
+    ) -> None:
+        self._cls = _lib.Mutator(
+            seed,
+            sub_rate,
+            transition_prob,
+            indel_rate,
+            indel_repeat_factor,
+            indel_max_multiplier,
+            indel_max_unit,
+            indel_mean_len,
+            indel_max_len,
+            insertion_prob,
+            break_rate,
+            seed_len,
+            min_homology,
+            saturating_homology,
+            min_segment,
+            duplication_prob,
+            min_genome_len,
+            max_genome_len,
+        )
+        self._state = (
+            seed,
+            sub_rate,
+            transition_prob,
+            indel_rate,
+            indel_repeat_factor,
+            indel_max_multiplier,
+            indel_max_unit,
+            indel_mean_len,
+            indel_max_len,
+            insertion_prob,
+            break_rate,
+            seed_len,
+            min_homology,
+            saturating_homology,
+            min_segment,
+            duplication_prob,
+            min_genome_len,
+            max_genome_len,
+        )
 
-def recombinations(
-    seq_pairs: list[tuple[str, str]], p: float
-) -> list[tuple[str, str, int]]:
-    return _lib.recombinations(seq_pairs, p)
+    def mutate(self, genomes: list[str]) -> list[tuple[int, str]]:
+        return self._cls.mutate(genomes)
 
 
 # genomics
@@ -55,6 +111,7 @@ class Genomics(_ReduceMixin):
         dom_size_nt: int,
         dom_type_size_nt: int,
     ) -> None:
+        # TODO: encoding still necessary?
         self._cls = _lib.Genomics(
             [d.encode() for d in start_codons],
             [d.encode() for d in stop_codons],
@@ -80,7 +137,7 @@ class Genomics(_ReduceMixin):
         # offsets = np.array([0] + list(np.cumsum([len(g) for g in strarr])), dtype=np.int64)
         #       then in rust:
         # let offs = offsets.as_slice()?;
-        # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as usize..w[1] as usize]).collect();
+        # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as int..w[1] as int]).collect();
         # revcomp_many(&slices).map_err(|(i, b)| {PyValueError::new_err("genome invalid base")})
         return self._cls.translate_genomes(genomes)
 
@@ -92,7 +149,7 @@ class Genomics(_ReduceMixin):
         # offsets = np.array([0] + list(np.cumsum([len(g) for g in strarr])), dtype=np.int64)
         #       then in rust:
         # let offs = offsets.as_slice()?;
-        # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as usize..w[1] as usize]).collect();
+        # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as int..w[1] as int]).collect();
         # revcomp_many(&slices).map_err(|(i, b)| {PyValueError::new_err("genome invalid base")})
         return self._cls.translate_genomes_arr(genomes)
 

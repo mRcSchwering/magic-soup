@@ -2,34 +2,89 @@ extern crate pyo3;
 extern crate rand;
 extern crate rand_distr;
 extern crate rayon;
+mod config;
 mod genomics;
+pub mod homology;
+pub mod indel;
 mod mutations;
-mod util;
+pub mod seq;
+pub mod substitutions;
 use numpy::{PyArray1, PyArray2};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use std::collections::HashMap;
 
-// mutations
+// Mutator
 
-#[pyfunction]
-fn point_mutations(
-    py: Python<'_>,
-    seqs: Vec<String>,
-    p: f32,
-    p_indel: f32,
-    p_del: f32,
-) -> Vec<(String, usize)> {
-    py.detach(move || mutations::point_mutations_threaded(seqs, p, p_indel, p_del))
+#[pyclass]
+pub struct Mutator {
+    inner: mutations::Mutator,
 }
 
-#[pyfunction]
-fn recombinations(
-    py: Python<'_>,
-    seq_pairs: Vec<(String, String)>,
-    p: f32,
-) -> Vec<(String, String, usize)> {
-    py.detach(move || mutations::recombinations_threaded(seq_pairs, p))
+#[pymethods]
+impl Mutator {
+    #[new]
+    fn new(
+        seed: u64,
+        sub_rate: f64,
+        transition_prob: f64,
+        indel_rate: f64,
+        indel_repeat_factor: f64,
+        indel_max_multiplier: f64,
+        indel_max_unit: usize,
+        indel_mean_len: f64,
+        indel_max_len: usize,
+        insertion_prob: f64,
+        break_rate: f64,
+        seed_len: usize,
+        min_homology: usize,
+        saturating_homology: usize,
+        min_segment: usize,
+        duplication_prob: f64,
+        min_genome_len: usize,
+        max_genome_len: Option<usize>,
+    ) -> PyResult<Self> {
+        let cfg = config::Config {
+            sub_rate,
+            transition_prob,
+            indel_rate,
+            indel_repeat_factor,
+            indel_max_multiplier,
+            indel_max_unit,
+            indel_mean_len,
+            indel_max_len,
+            insertion_prob,
+            break_rate,
+            seed_len,
+            min_homology,
+            saturating_homology,
+            min_segment,
+            duplication_prob,
+            min_genome_len,
+            max_genome_len,
+        };
+        let inner = mutations::Mutator::new(cfg, seed).map_err(PyValueError::new_err)?;
+        Ok(Mutator { inner })
+    }
+
+    fn mutate(
+        &mut self,
+        py: Python<'_>,
+        genomes: Vec<PyBackedStr>,
+    ) -> PyResult<Vec<(usize, String)>> {
+        let slices: Vec<&[u8]> = genomes.iter().map(|g| g.as_bytes()).collect();
+        let inner = &mut self.inner;
+        let changed = py.detach(|| inner.mutate(&slices));
+        changed
+            .into_iter()
+            .map(|(i, v)| {
+                String::from_utf8(v)
+                    .map(|s| (i, s))
+                    .map_err(|_| PyValueError::new_err(format!("genome {i} is not ASCII")))
+            })
+            .collect()
+    }
 }
 
 // Genomics
@@ -194,12 +249,11 @@ fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // util
     m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
 
-    // mutations
-    m.add_function(wrap_pyfunction!(point_mutations, m)?)?;
-    m.add_function(wrap_pyfunction!(recombinations, m)?)?;
-
     // Genomics
     m.add_class::<Genomics>()?;
+
+    // Mutator
+    m.add_class::<Mutator>()?;
 
     Ok(())
 }

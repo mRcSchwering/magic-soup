@@ -9,8 +9,9 @@ crate-type = ["cdylib"]
 path = "rust/lib.rs"
 
 [dependencies]
-rand_distr = { version = "*" }
+rand = { version = "0.9" }
+rand_distr = { version = "0.5" }
 rayon = { version = "*" }
-rand = { version = "*" }
+memchr = { version = "*" }
 pyo3 = { version = "0.30", features = ["extension-module", "abi3-py39"] }
 numpy = { version = "0.30" }

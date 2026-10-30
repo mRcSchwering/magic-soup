@@ -1,85 +1,75 @@
+import random
+
 from magicsoup import rs
 
 
-def point_mutations(
-    seqs: list[str], p: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66
-) -> list[tuple[str, int]]:
-    """
-    Add point mutations to a list of base pair sequences.
-    Mutations are substitutions and indels.
-
-    Arguments:
-        seqs: base pair sequences
-        p: probability of a mutation per base pair
-        p_indel: probability of any point mutation being an indel
-                 (inverse probability of it being a substitution)
-        p_del: probability of any indel being a deletion
-               (inverse probability of it being an insertion)
-
-    Returns:
-        List of mutated sequences and their indices from `seqs`.
-
-    The returned list only contains sequences which experienced at least one mutation.
-    The new sequences are returned together with their `seqs` index.
-    E.g. `("...", 5)` means `seqs[5]` was mutated and the resulting sequence is
-    in the tuple.
-    """
-    # TODO: reducing to only the sequences that experience mutations
-    #       would reduce serialization from Pythont o Rust
-    return rs.point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
-
-
-# TODO: test likelihoods again
-def slippage(
-    seqs: list[str], p: float = 1e-7, p_length: float = 10.0
-) -> list[tuple[str, int]]:
-    # TODO: implement, important for evolution
-    return []
-
-
-# TODO: check likelihoods again
-def nahr(
-    seqs: list[str], k: int = 5, min_homology: int = 10, max_occurences: int = 20
-) -> list[tuple[str, int]]:
-    # 5-mers occur reasonably often in random sequences of 100-1000 bp
-    # min_homology would only allow a recombination if 2 sequences share a 10 bp stretch
-    # and are not overlapping and don't occure more than 20 times (do avoid very repetitive sequences)
-    # TODO: implement, important for evolution
-    return []
-
-
-def recombinations(
-    seq_pairs: list[tuple[str, str]], p: float = 1e-7
-) -> list[tuple[str, str, int]]:
-    """
-    Add random recombinations to pairs of base pair sequences.
-    The recombination happens by creating random strand breaks in the input sequence pairs
-    and randomly re-joining them.
-
-    Arguments:
-        seq_pairs: base pair sequence pairs
-        p: probability of a strand break per base pair
-
-    Returns:
-        List of mutated sequence pairs and their indices.
-
-    The returned list only contains sequence pairs that experienced a recombination.
-    The new sequence paris are returned and in addition to that their `seq_pairs` index.
-    E.g. if it's 5, it means `seq_pairs[5]` was mutated and the resulting sequences are in this 3-tuple.
-    """
-    # TODO: here I could also add a homology check to better imitate homologous recombination
-    #       currently it rather resembles random strand breaks and re-joining
-    # TODO: CGPT recommended p=1e-5 for 1k bp genomes
-    if len(seq_pairs) == 0:
-        return []
-    return rs.recombinations(seq_pairs=seq_pairs, p=p)
-
-
-class Mutations:
+class Mutator:
 
     def __init__(
-        self, p_point: float = 1e-6, p_indel: float = 0.4, p_del: float = 0.66
+        self,
+        seed: float | None = None,
+        sub_rate: float = 1e-9,
+        transition_prob: float = 0.55,
+        indel_rate: float = 1e-7,
+        indel_repeat_factor: float = 2.0,
+        indel_max_multiplier: float = 64.0,
+        indel_max_unit: int = 6,
+        indel_mean_len: float = 1.5,
+        indel_max_len: int = 20,
+        insertion_prob: float = 0.5,
+        break_rate: float = 1e-4,
+        seed_len: int = 12,
+        min_homology: int = 15,
+        saturating_homology: int = 60,
+        min_segment: int = 20,
+        duplication_prob: float = 0.5,
+        min_genome_len: int = 50,
+        max_genome_len: int | None = None,
     ) -> None:
-        self.p_point = p_point
-        self.p_indel = p_indel
-        self.p_del = p_del
+        self.seed = seed
+        self.sub_rate = sub_rate
+        self.transition_prob = transition_prob
+        self.indel_rate = indel_rate
+        self.indel_repeat_factor = indel_repeat_factor
+        self.indel_max_multiplier = indel_max_multiplier
+        self.indel_max_unit = indel_max_unit
+        self.indel_mean_len = indel_mean_len
+        self.indel_max_len = indel_max_len
+        self.insertion_prob = insertion_prob
+        self.break_rate = break_rate
+        self.seed_len = seed_len
+        self.min_homology = min_homology
+        self.saturating_homology = saturating_homology
+        self.min_segment = min_segment
+        self.duplication_prob = duplication_prob
+        self.min_genome_len = min_genome_len
+        self.max_genome_len = max_genome_len
+
+        # setup rust class
+        self._setup_rs()
+
+    def mutate(self, genomes: list[str]) -> list[tuple[int, str]]:
+        # TODO: could return as numpy -> tensors
+        return self.rs.mutate(genomes=genomes)
+
+    def _setup_rs(self) -> None:
+        self.rs = rs.Mutator(
+            seed=self.seed or random.getrandbits(8),
+            sub_rate=self.sub_rate,
+            transition_prob=self.transition_prob,
+            indel_rate=self.indel_rate,
+            indel_repeat_factor=self.indel_repeat_factor,
+            indel_max_multiplier=self.indel_max_multiplier,
+            indel_max_unit=self.indel_max_unit,
+            indel_mean_len=self.indel_mean_len,
+            indel_max_len=self.indel_max_len,
+            insertion_prob=self.insertion_prob,
+            break_rate=self.break_rate,
+            seed_len=self.seed_len,
+            min_homology=self.min_homology,
+            saturating_homology=self.saturating_homology,
+            min_segment=self.min_segment,
+            duplication_prob=self.duplication_prob,
+            min_genome_len=self.min_genome_len,
+            max_genome_len=self.max_genome_len,
+        )
