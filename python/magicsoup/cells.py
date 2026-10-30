@@ -24,7 +24,7 @@ class CellsKwargs(TypedDict, total=False):
     p_max: int
 
 
-# TODO: K_r -> k_r
+# TODO: k_r -> k_r
 
 
 class Cells(TensorClass):
@@ -104,7 +104,7 @@ class Cells(TensorClass):
         # kinetics parameters
         self.k_f = self.fzeros(0, 0)  # forward reaction rates
         self.k_b = self.fzeros(0, 0)  # backward reaction rates
-        self.K_r = self.fzeros(0, 0, self.m)  # effector affinities
+        self.k_r = self.fzeros(0, 0)  # effector affinities
         self.v_max = self.fzeros(0, 0)  # maximum reaction rates
         self.N_e = self.fzeros(0, 0, self.m)  # effective stoichiometric numbers
         self.N_f = self.izeros(0, 0, self.m)  # forward stoichiometric coefficients
@@ -162,6 +162,10 @@ class Cells(TensorClass):
         # p have could been adjusted upwards or p was already < self.p
         if self.p > p:
             p_diff = self.p - p
+            v_max = self._exp_tens_p(v_max, by_n=p_diff)
+            k_f = self._exp_tens_p(k_f, by_n=p_diff)
+            k_b = self._exp_tens_p(k_b, by_n=p_diff)
+            k_r = self._exp_tens_p(k_r, by_n=p_diff)
             N_e = self._exp_tens_p(N_e, by_n=p_diff)
             N_f = self._exp_tens_p(N_f, by_n=p_diff)
             N_b = self._exp_tens_p(N_b, by_n=p_diff)
@@ -208,7 +212,7 @@ class Cells(TensorClass):
         self.N_h[to_idxs] = self.N_h[from_idxs]
         self.k_f[to_idxs] = self.k_f[from_idxs]
         self.k_b[to_idxs] = self.k_b[from_idxs]
-        self.K_r[to_idxs] = self.K_r[from_idxs]
+        self.k_r[to_idxs] = self.k_r[from_idxs]
         self.v_max[to_idxs] = self.v_max[from_idxs]
 
         # update cellular parameters
@@ -290,7 +294,7 @@ class Cells(TensorClass):
         self.v_max = self.fzeros(self.c, self.p)
         self.k_f = self.fzeros(self.c, self.p)
         self.k_b = self.fzeros(self.c, self.p)
-        self.K_r = self.fzeros(self.c, self.p, self.m)
+        self.k_r = self.fzeros(self.c, self.p)
         self.N_f = self.izeros(self.c, self.p, self.m)
         self.N_b = self.izeros(self.c, self.p, self.m)
         self.N_h = self.izeros(self.c, self.p, self.m)
@@ -313,7 +317,7 @@ class Cells(TensorClass):
         self.v_max = self._exp_tens_c(t=self.v_max, by_n=by_n)
         self.k_f = self._exp_tens_c(t=self.k_f, by_n=by_n)
         self.k_b = self._exp_tens_c(t=self.k_b, by_n=by_n)
-        self.K_r = self._exp_tens_c(t=self.K_r, by_n=by_n)
+        self.k_r = self._exp_tens_c(t=self.k_r, by_n=by_n)
         self.N_f = self._exp_tens_c(t=self.N_f, by_n=by_n)
         self.N_b = self._exp_tens_c(t=self.N_b, by_n=by_n)
         self.N_h = self._exp_tens_c(t=self.N_h, by_n=by_n)
@@ -344,7 +348,7 @@ class Cells(TensorClass):
         self.v_max = self.v_max[keep]
         self.k_f = self.k_f[keep]
         self.k_b = self.k_b[keep]
-        self.K_r = self.K_r[keep]
+        self.k_r = self.k_r[keep]
         self.N_f = self.N_f[keep]
         self.N_b = self.N_b[keep]
         self.N_h = self.N_h[keep]
@@ -358,7 +362,7 @@ class Cells(TensorClass):
         self.v_max = self._exp_tens_p(t=self.v_max, by_n=by_n)
         self.k_f = self._exp_tens_p(t=self.k_f, by_n=by_n)
         self.k_b = self._exp_tens_p(t=self.k_b, by_n=by_n)
-        self.K_r = self._exp_tens_p(t=self.K_r, by_n=by_n)
+        self.k_r = self._exp_tens_p(t=self.k_r, by_n=by_n)
         self.N_f = self._exp_tens_p(t=self.N_f, by_n=by_n)
         self.N_b = self._exp_tens_p(t=self.N_b, by_n=by_n)
         self.N_h = self._exp_tens_p(t=self.N_h, by_n=by_n)
@@ -372,7 +376,7 @@ class Cells(TensorClass):
         self.v_max = self.v_max[:, :-by_n]
         self.k_f = self.k_f[:, :-by_n]
         self.k_b = self.k_b[:, :-by_n]
-        self.K_r = self.K_r[:, :-by_n]
+        self.k_r = self.k_r[:, :-by_n]
         self.N_f = self.N_f[:, :-by_n]
         self.N_b = self.N_b[:, :-by_n]
         self.N_h = self.N_h[:, :-by_n]

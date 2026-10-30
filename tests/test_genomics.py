@@ -8,6 +8,8 @@ from magicsoup.util import codons, random_genome
 
 from tests.util import load_test_json
 
+# TODO: make genome circular
+
 
 def test_domain_type_map() -> None:
     probs = {

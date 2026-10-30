@@ -33,7 +33,7 @@ def _assert_empty_values(cells: Cells) -> None:
     assert (cells.v_max == 0.0).all()
     assert (cells.k_f == 0.0).all()
     assert (cells.k_b == 0.0).all()
-    assert (cells.K_r == 0.0).all()
+    assert (cells.k_r == 0.0).all()
     assert (cells.N_f == 0).all()
     assert (cells.N_b == 0).all()
     assert (cells.N_h == 0).all()
@@ -76,7 +76,7 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
     assert cells.v_max.shape == (cells.c, cells.p)
     assert cells.k_f.shape == (cells.c, cells.p)
     assert cells.k_b.shape == (cells.c, cells.p)
-    assert cells.K_r.shape == (cells.c, cells.p, cells.m)
+    assert cells.k_r.shape == (cells.c, cells.p)
     assert cells.N_f.shape == (cells.c, cells.p, cells.m)
     assert cells.N_b.shape == (cells.c, cells.p, cells.m)
     assert cells.N_h.shape == (cells.c, cells.p, cells.m)
@@ -143,7 +143,7 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
     assert cells.v_max.shape == (cells.c, cells.p)
     assert cells.k_f.shape == (cells.c, cells.p)
     assert cells.k_b.shape == (cells.c, cells.p)
-    assert cells.K_r.shape == (cells.c, cells.p, cells.m)
+    assert cells.k_r.shape == (cells.c, cells.p)
     assert cells.N_f.shape == (cells.c, cells.p, cells.m)
     assert cells.N_b.shape == (cells.c, cells.p, cells.m)
     assert cells.N_h.shape == (cells.c, cells.p, cells.m)
@@ -168,7 +168,7 @@ def test_update_genomes_randomly(cells: Cells) -> None:
         assert np.all(cells.genomes[idxs] == genomes)
 
         # check kinetics parameters types
-        ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.K_r, cells.N_e]
+        ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]
         itensors = [cells.N_b, cells.N_f, cells.N_h]
         for tens in ftensors:
             assert tens.dtype == FTYPE
@@ -204,7 +204,7 @@ def test_copy_genomes_randomly(cells: Cells) -> None:
         assert np.all(cells.genomes[idxs0] == cells.genomes[idxs1])
 
         # check kinetics parameters types
-        ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.K_r, cells.N_e]
+        ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]
         itensors = [cells.N_b, cells.N_f, cells.N_h]
         for tens in ftensors:
             assert tens.dtype == FTYPE
@@ -240,7 +240,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     v_max = cells.v_max.clone()
     k_f = cells.k_f.clone()
     k_b = cells.k_b.clone()
-    K_r = cells.K_r.clone()
+    k_r = cells.k_r.clone()
     N_f = cells.N_f.clone()
     N_b = cells.N_b.clone()
     N_h = cells.N_h.clone()
@@ -269,7 +269,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     assert (cells.v_max == v_max).all()
     assert (cells.k_f == k_f).all()
     assert (cells.k_b == k_b).all()
-    assert (cells.K_r == K_r).all()
+    assert (cells.k_r == k_r).all()
     assert (cells.N_f == N_f).all()
     assert (cells.N_b == N_b).all()
     assert (cells.N_h == N_h).all()
