@@ -540,25 +540,16 @@ class Proteomics(TensorClass):
         Returns:
             Tuple (k_f, k_b) each a (c,p) float tensor describing reaction rates.
         """
-        eps = self.eps
-        max_k = self.max_k
-
         # energies define k_e which defines k_e = k_f/k_b
         e = torch.einsum("cpm,m->cp", N, self.mol_energies)
-        k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(eps, max_k)
+        k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(1e-36, 1e36)
 
-        # TODO: come up with a better way of deriving kf/kb from km
-        #       basically I am limiting km
+        # derive rates from km: Liebermeister and Klipp's convenience kinetics (2006)
+        is_defined = k_e > 0
+        sqrt_ke = torch.sqrt(k_e)
+        k_f = torch.where(is_defined, k_m / sqrt_ke, 0)
+        k_b = torch.where(is_defined, k_m * sqrt_ke, 0)
 
-        # Km is sampled between a defined range
-        # exessively small Km can create numerical instability
-        # thus, sampled Km should define the smaller Km of k_e = k_f/k_b
-        # k_e>=1  => k_f=Km,         k_b=k_e*Km
-        # k_e<1   => k_f=Km/k_e,      k_b=Km
-        # this operation can create again Inf or 0.0, avoided with clamp, limits K_e
-        is_fwd = k_e >= 1.0
-        k_f = torch.where(is_fwd, k_m, k_m / k_e)  # .clamp(max=max_k)
-        k_b = torch.where(is_fwd, k_m * k_e, k_m)  # .clamp(max=max_k)
         return k_f, k_b
 
     def derive_effective_stoichiometry(self, N: torch.Tensor) -> torch.Tensor:

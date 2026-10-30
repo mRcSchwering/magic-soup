@@ -276,14 +276,30 @@ def test_cell_params_with_catalytic_domains() -> None:
     ke_c1_1 = _ke([_mb, _mb, _mc], [_mc, _md])
     k_f_exp = ftensor(
         [
-            [_avg(0.5, 1.5) / ke_c0_0, _avg(0.9, 1.2) / ke_c0_1, 2.9 / ke_c0_2],
-            [_avg(0.3, 1.4) / ke_c1_0, _avg(0.3, 1.7), 0.0],
+            [
+                _avg(0.5, 1.5) / math.sqrt(ke_c0_0),
+                _avg(0.9, 1.2) / math.sqrt(ke_c0_1),
+                2.9 / math.sqrt(ke_c0_2),
+            ],
+            [
+                _avg(0.3, 1.4) / math.sqrt(ke_c1_0),
+                _avg(0.3, 1.7) / math.sqrt(ke_c1_1),
+                0.0,
+            ],
         ]
     )
     k_b_exp = ftensor(
         [
-            [_avg(0.5, 1.5), _avg(0.9, 1.2), 2.9],
-            [_avg(0.3, 1.4), _avg(0.3, 1.7) * ke_c1_1, 0.0],
+            [
+                _avg(0.5, 1.5) * math.sqrt(ke_c0_0),
+                _avg(0.9, 1.2) * math.sqrt(ke_c0_1),
+                2.9 * math.sqrt(ke_c0_2),
+            ],
+            [
+                _avg(0.3, 1.4) * math.sqrt(ke_c1_0),
+                _avg(0.3, 1.7) * math.sqrt(ke_c1_1),
+                0.0,
+            ],
         ]
     )
     k_r_exp = fzeros(c, p)
@@ -508,16 +524,17 @@ def test_cell_params_with_transporter_domains() -> None:
     params = protics.get_cell_params(*proteomes_flat, c=c, p=p)
 
     # expected cell params
+    _ke_a_b = _ke([_ma], [_mb])
     k_f_exp = ftensor(
         [
             [0.5, _avg(0.5, 0.2)],
-            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5)],
+            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) / math.sqrt(_ke_a_b)],
         ]
     )
     k_b_exp = ftensor(
         [
             [0.5, _avg(0.5, 0.2)],
-            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) * _ke([_ma], [_mb])],
+            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) * math.sqrt(_ke_a_b)],
         ]
     )
     k_r_exp = fzeros(c, p)
@@ -739,14 +756,14 @@ def test_cell_params_with_regulatory_domains() -> None:
     ke_a_b = _ke([_ma], [_mb])
     k_f_exp = ftensor(
         [
-            [0.5, 0.5],
-            [0.5, 0.5],
+            [0.5 / math.sqrt(ke_a_b), 0.5 / math.sqrt(ke_a_b)],
+            [0.5 / math.sqrt(ke_a_b), 0.5 / math.sqrt(ke_a_b)],
         ]
     )
     k_b_exp = ftensor(
         [
-            [0.5 * ke_a_b, 0.5 * ke_a_b],
-            [0.5 * ke_a_b, 0.5 * ke_a_b],
+            [0.5 * math.sqrt(ke_a_b), 0.5 * math.sqrt(ke_a_b)],
+            [0.5 * math.sqrt(ke_a_b), 0.5 * math.sqrt(ke_a_b)],
         ]
     )
     k_r_exp = ftensor(

@@ -765,7 +765,11 @@ def test_saving_loading_obj(tmp_path: Path) -> None:
 # TODO: K_e values created by random proteins should be on average 1
 #       and most values should be between 1e-4 and 1e4
 #       most people model it as log-normal distribution with center 1
-#       and +/- 100 STDEV, values <1e-10 or >1e10 should be virtually impossible
+#       and +/- 100 STDEV extreme values maybe <1e-8 or >1e8
+#       values <1e-10 or >1e10 should be virtually impossible
+#       However, in realistic enzymes the irreversibility comes also
+#       from the difference in k_cat (different for both directions)
+#       their K_e are actually close to 1
 
 # TODO: test that checks that Vmax, Km values are in proper range (see proteomics)
 

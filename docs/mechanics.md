@@ -216,11 +216,7 @@ v = \begin{cases}
 $$
 
 Values for $v_{max}$, $n$, $k_r$, $h$ are derived from domain specifications of the gene that encodes the protein (see [Genetics](#genetics)).
-Another domain specification defines an affinity from which $k_f$ and $k_b$ is derived so that
-
-$$
-\frac{k_b}{k_f} = K_e
-$$
+Another domain specification defines an affinity $k_m$ from which $k_f$ and $k_b$ is derived so that $K_e = k_b / k_f$ and $k_m = \sqrt{k_f k_b}$.
 
 This ensures that over time the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient) progresses towards the [equilibirum constant](https://en.wikipedia.org/wiki/Equilibrium_constant) $K_e$ and thus reactions always progress into an energetically favourable direction (also see [Chemistry](#chemistry)).
 For more details see [Model > Kinetics](./methods.md#kinetics)
