@@ -13,6 +13,7 @@ from magicsoup.chemistry import Chemistry
 from magicsoup.culture import Culture, CultureKwargs
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.kinetics import Kinetics, KineticsKwargs
+from magicsoup.mutations import Mutator, MutatorKwargs
 from magicsoup.physics import (
     Degradation,
     Diffusion,
@@ -51,6 +52,7 @@ class World(TensorClass):
         self,
         chemistry: Chemistry,
         genomics: Genomics | None = None,
+        mutator: Mutator | None = None,
         proteomics: Proteomics | None = None,
         kinetics: Kinetics | None = None,
         diffusion: Diffusion | None = None,
@@ -68,6 +70,7 @@ class World(TensorClass):
         culture_kwargs: CultureKwargs | None = None,
         cells_kwargs: CellsKwargs | None = None,
         genomics_kwargs: GenomicsKwargs | None = None,
+        mutator_kwargs: MutatorKwargs | None = None,
         proteomics_kwargs: ProteomicsKwargs | None = None,
         tensor_kwargs: TensorKwargs | None = None,
     ):
@@ -92,6 +95,7 @@ class World(TensorClass):
             dt=time_resolution,
             tensor_kwargs=tensor_kwargs,
         )
+        self.mutator = mutator or Mutator(**(mutator_kwargs or {}))
         self.culture = culture or (
             Culture(
                 **(culture_kwargs or {}),
@@ -445,33 +449,14 @@ class World(TensorClass):
         # age cells
         self.cells.ages += self.time_step
 
-    # def mutate_cells(
-    #     self,
-    #     p: float = 1e-6,
-    #     p_indel: float = 0.4,
-    #     p_del: float = 0.66,
-    # ) -> None:
-    #     cell_idxs = self.cells.get_free_idxs()
-    #     seqs = self.cells.genomes[cell_idxs]
-    #     mutated = point_mutations(seqs=seqs, p=p, p_indel=p_indel, p_del=p_del)
-    #     genomes = [d[0] for d in mutated]
-    #     idxs = [d[1] for d in mutated]
-    #     self.update_cells(genomes=genomes, cell_idxs=cell_idxs[idxs])
-
-    # def recombinate_cells(self, p: float = 1e-7) -> None:
-    #     nghbrs = self.culture.get_cell_neighbor_pairs()
-    #     genomes0 = self.cells.genomes[[d[0] for d in nghbrs]]
-    #     genomes1 = self.cells.genomes[[d[1] for d in nghbrs]]
-    #     pairs = [(g0, g1) for g0, g1 in zip(genomes0, genomes1)]
-    #     mutated = recombinations(seq_pairs=pairs, p=p)
-
-    #     genomes0 = [d[0] for d in mutated]
-    #     genomes1 = [d[1] for d in mutated]
-    #     idxs = [d[2] for d in mutated]
-
-    #     genomes = genomes0 + genomes1
-    #     cell_idxs = torch.cat([nghbrs[idxs:0], nghbrs[idxs:1]])
-    #     self.update_cells(genomes=genomes, cell_idxs=cell_idxs)
+    def mutate_cells(self, mutator: Mutator | None = None) -> None:
+        mutator = mutator or self.mutator
+        genomes = self.cells.genomes.tolist()
+        mutated = mutator.mutate(genomes=genomes)
+        self.update_cells(
+            cell_idxs=self.idxtensor([d[0] for d in mutated]),
+            genomes=[d[1] for d in mutated],
+        )
 
     def save(self, rundir: Path, name: str = "world.pkl") -> None:
         rundir.mkdir(parents=True, exist_ok=True)

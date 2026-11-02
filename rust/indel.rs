@@ -7,13 +7,13 @@
 //! Rate heterogeneity is implemented by rejection sampling: candidates arrive
 //! at `indel_rate * indel_max_multiplier` and are accepted with
 //! `multiplier / indel_max_multiplier`.
-
 use crate::config::Config;
 use crate::seq::geometric_len;
 use rand::Rng;
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RepeatContext {
+struct RepeatContext {
     /// Start of the periodic run.
     pub start: usize,
     /// Repeat unit length (bp).
@@ -24,7 +24,7 @@ pub struct RepeatContext {
 
 /// Find the longest tandem repeat (unit <= max_unit) containing `i`.
 /// Ties are resolved in favour of the shorter unit.
-pub fn repeat_context(s: &[u8], i: usize, max_unit: usize) -> RepeatContext {
+fn repeat_context(s: &[u8], i: usize, max_unit: usize) -> RepeatContext {
     let n = s.len();
     let mut best = RepeatContext {
         start: i,
@@ -63,28 +63,21 @@ pub fn repeat_context(s: &[u8], i: usize, max_unit: usize) -> RepeatContext {
     best
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IndelOutcome {
-    Rejected,
-    Insertion { len: usize, in_repeat: bool },
-    Deletion { len: usize, in_repeat: bool },
-}
-
 /// A planned indel: duplicate or remove seq[start .. start+len].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Indel {
+struct Indel {
     pub start: usize,
     pub len: usize,
     pub insert: bool,
-    pub in_repeat: bool,
 }
 
 /// Read-only step: draw a candidate site and decide the event (or reject it).
-pub fn plan_indel<R: Rng>(seq: &[u8], cfg: &Config, rng: &mut R) -> Option<Indel> {
+fn plan_indel<R: Rng>(seq: &[u8], cfg: &Config, rng: &mut R) -> Option<Indel> {
     let n = seq.len();
     if n == 0 {
         return None;
     }
+
     let i = rng.random_range(0..n);
     let ctx = repeat_context(seq, i, cfg.indel_max_unit);
 
@@ -103,7 +96,7 @@ pub fn plan_indel<R: Rng>(seq: &[u8], cfg: &Config, rng: &mut R) -> Option<Indel
     let insert = rng.random_bool(cfg.insertion_prob);
     let max_len = cfg.indel_max_len;
 
-    let (start, len, in_repeat) = if ctx.copies >= 2 {
+    let (start, len) = if ctx.copies >= 2 {
         // slip by k whole units; insertions add at most `copies` units,
         // deletions always leave at least one unit
         let max_units = if insert { ctx.copies } else { ctx.copies - 1 };
@@ -112,10 +105,10 @@ pub fn plan_indel<R: Rng>(seq: &[u8], cfg: &Config, rng: &mut R) -> Option<Indel
             return None;
         }
         let k = geometric_len(rng, cfg.indel_mean_len, max_units);
-        (ctx.start, k * ctx.unit, true)
+        (ctx.start, k * ctx.unit)
     } else {
         let len = geometric_len(rng, cfg.indel_mean_len, max_len).min(n - i);
-        (i, len, false)
+        (i, len)
     };
 
     if insert && cfg.max_genome_len.is_some_and(|m| n + len > m) {
@@ -124,36 +117,25 @@ pub fn plan_indel<R: Rng>(seq: &[u8], cfg: &Config, rng: &mut R) -> Option<Indel
     if !insert && n - len < cfg.min_genome_len {
         return None;
     }
-    Some(Indel {
-        start,
-        len,
-        insert,
-        in_repeat,
-    })
+    Some(Indel { start, len, insert })
 }
 
-pub fn apply_indel(seq: &mut Vec<u8>, e: Indel) -> IndelOutcome {
-    let Indel {
-        start,
-        len,
-        insert,
-        in_repeat,
-    } = e;
+fn apply_indel(seq: &mut Vec<u8>, e: Indel) {
+    let Indel { start, len, insert } = e;
     if insert {
         // tandem duplication of seq[start .. start+len]
         let dup: Vec<u8> = seq[start..start + len].to_vec();
-        seq.splice(start..start, dup);
-        IndelOutcome::Insertion { len, in_repeat }
+        seq.splice(start..start, dup); // insertion
     } else {
-        seq.drain(start..start + len);
-        IndelOutcome::Deletion { len, in_repeat }
+        seq.drain(start..start + len); // deletion
     }
 }
 
 /// Plan and apply in one call.
-pub fn try_indel<R: Rng>(seq: &mut Vec<u8>, cfg: &Config, rng: &mut R) -> IndelOutcome {
-    match plan_indel(seq, cfg, rng) {
-        Some(e) => apply_indel(seq, e),
-        None => IndelOutcome::Rejected,
+pub fn try_indel<R: Rng>(seq: &mut Cow<[u8]>, cfg: &Config, rng: &mut R) {
+    if let Some(e) = plan_indel(seq, cfg, rng) {
+        let mut owned = seq.to_vec();
+        apply_indel(&mut owned, e);
+        *seq = Cow::Owned(owned);
     }
 }

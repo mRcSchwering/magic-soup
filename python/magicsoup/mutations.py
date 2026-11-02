@@ -1,16 +1,93 @@
 import random
+from typing import TypedDict
 
 from magicsoup import rs
 
 
+class MutatorKwargs(TypedDict, total=False):
+    seed: float | None
+    sub_rate: float
+    transition_prob: float
+    indel_rate: float
+    indel_repeat_factor: float
+    indel_max_multiplier: float
+    indel_max_unit: int
+    indel_mean_len: float
+    indel_max_len: int
+    insertion_prob: float
+    break_rate: float
+    seed_len: int
+    min_homology: int
+    saturating_homology: int
+    min_segment: int
+    duplication_prob: float
+    min_genome_len: int
+    max_genome_len: int | None
+
+
 class Mutator:
+    """
+    Mutator with substitutions, small indels, and homology-dependent re-arrangements
+
+    Arguments:
+        sub_rate: per-bp substitution rate
+        transition_prob: probability that a substitutions is a transitions (transversion otherwise)
+        indel_rate: per-bp indel rate at sites that are not inside a tandem repeat
+        indel_repeat_factor: rate multiplier per additional repeat copy
+        indel_max_multiplier: upper bound of the multiplier
+        indel_max_unit: longest repeat unit (bp) recognised as a tandem repeat
+        indel_mean_len: mean indel size in bp outside repeats, in repeat units inside repeats
+        indel_max_len: hard cap on indel length in bp
+        insertion_prob: probability that an indel is an insertion (deletion otherwise)
+        break_rate: per-bp rate of breaks that start a homology search
+        seed_len: seed length used to find homologous partners
+        min_homology: minimum total homology (bp) for recombination to be possible
+        saturating_homology: homology length (bp) at which a partner is used with probability 1
+        min_segment: minimum length of the segment that is deleted / duplicated / inverted
+        duplication_prob: probability of duplication among direct-repeat events (else deletion)
+        min_genome_len: minimum acceptable genome size
+        max_genome_len: maximum acceptable genome size
+
+    First substitutions are applied, then indels, then homology-dependent re-arrangements.
+    Any mutation event that would create a genome smaller `min_genome_len`
+    or a genome larger `max_genome_len` is cancelled.
+
+    Transitions are A<->G or C<->T substitutions.
+    Transversions are other substitutions (e.g. A<->C).
+    For any bp there is one possible transition but two possible transversions.
+    Each of the two possible transversions has 50% likelihood.
+    So `transition_prob=1/3` would define un-biased substitutions.
+
+    Indel candidate locations are drawn with per-bp rate `indel_rate * indel_max_multiplier`.
+    If a candidate location is inside a tandem repeat, slippage is simulated with
+    probability `factor / indel_max_multiplier` where `factor = indel_repeat_factor^(copies-1)` (clamped to `indel_max_multiplier`).
+    `copies` is the number of repeat units found in the candidate location.
+    A number of repeat units drawn from a geometric distribution `indel_mean_len`
+    is then inserted or removed based on `insertion_prob`.
+    Whether a location is inside a tandem repeat is checked using `indel_max_unit`.
+    Outside of tandem repeat locations simple short indels are simulated.
+    A candidate receives an indel with probability `1 / indel_max_multiplier`.
+    A number of base pairs drawn from a geometric distribution with `indel_mean_len`
+    are then inserted or removed based on `insertion_prob`.
+    In any case the maximum indel size (bp) is always `indel_max_len`.
+
+    Candidates for homology-dependent re-arrangements (RecA-like) are introduced by breaks
+    with per-bp rate `break_rate`. The k-mer (`seed_len`) at this position becomes the seed.
+    Every other occurence of the seed and its reverse-complement is a potential partner.
+    Each match is extended to its full homology length `h` and weighted by
+    `w = (h - min_homology + 1) / (saturating_homology - min_homology + 1)` (clamped to 0 and 1).
+    Recombination happens with probability `sum(w)`, otherwise the break is repaired correctly.
+    The partner is chosen proportional to `w` and the outcome depends on orientation.
+    For direct matches `X A Y B Z` is deleted to `X B Z` or inserted to `X A Y A Y B Z` depending
+    on `duplication_prob`. For inverted matches `X A Y B Z` is inverted to `X A rc(Y) B Z`.
+    """
 
     def __init__(
         self,
         seed: float | None = None,
-        sub_rate: float = 1e-9,
+        sub_rate: float = 1e-5,
         transition_prob: float = 0.55,
-        indel_rate: float = 1e-7,
+        indel_rate: float = 1e-6,
         indel_repeat_factor: float = 2.0,
         indel_max_multiplier: float = 64.0,
         indel_max_unit: int = 6,
@@ -49,6 +126,9 @@ class Mutator:
         self._setup_rs()
 
     def mutate(self, genomes: list[str]) -> list[tuple[int, str]]:
+        """Apply mutations"""
+        # TODO: could already hand over as offset buffer
+        #       it will convert it anyway afterwards
         # TODO: could return as numpy -> tensors
         return self.rs.mutate(genomes=genomes)
 

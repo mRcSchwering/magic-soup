@@ -10,9 +10,9 @@
 //! indel and break positions are drawn on the current sequence when applied.
 
 use crate::config::Config;
-use crate::homology::{apply, plan_rearrangement, RearrangementOutcome};
-use crate::indel::{apply_indel, plan_indel, IndelOutcome};
-use crate::substitutions::substitute;
+use crate::homology::try_rearrangement;
+use crate::indel::try_indel;
+use crate::substitutions::try_substitution;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::{Distribution, Poisson};
@@ -68,9 +68,9 @@ impl Mutator {
         let n_indel =
             self.poisson(total as f64 * self.cfg.indel_rate * self.cfg.indel_max_multiplier);
         let n_break = self.poisson(total as f64 * self.cfg.break_rate);
-
         let mut events: Vec<(usize, Kind)> =
             Vec::with_capacity((n_sub + n_indel + n_break) as usize);
+
         for (count, kind) in [(n_sub, 0u8), (n_indel, 1), (n_break, 2)] {
             for _ in 0..count {
                 let x = self.rng.random_range(0..total);
@@ -84,25 +84,31 @@ impl Mutator {
                 events.push((g, k));
             }
         }
+
         // stable sort keeps substitutions before indels before breaks
         events.sort_by_key(|&(g, _)| g);
 
         let mut out = Vec::new();
         let mut i = 0;
+
         while i < events.len() {
             let g = events[i].0;
             let mut j = i;
+
             while j < events.len() && events[j].0 == g {
                 j += 1;
             }
+
             // copy-on-write: the genome is only cloned once an event changes it
             let mut seq = Cow::Borrowed(genomes[g].as_ref());
             for &(_, kind) in &events[i..j] {
                 apply_event(&mut seq, kind, &self.cfg, &mut self.rng);
             }
+
             if let Cow::Owned(v) = seq {
                 out.push((g, v));
             }
+
             i = j;
         }
         out
@@ -111,29 +117,8 @@ impl Mutator {
 
 fn apply_event(seq: &mut Cow<[u8]>, kind: Kind, cfg: &Config, rng: &mut SmallRng) {
     match kind {
-        Kind::Sub(pos) => {
-            if crate::seq::base_index(seq[pos]).is_some() {
-                substitute(seq.to_mut(), pos, cfg.transition_prob, rng);
-            }
-        }
-        Kind::Indel => {
-            if let Some(e) = plan_indel(seq, cfg, rng) {
-                match apply_indel(seq.to_mut(), e) {
-                    IndelOutcome::Insertion { .. } => {}
-                    IndelOutcome::Deletion { .. } => {}
-                    IndelOutcome::Rejected => {}
-                }
-            }
-        }
-        Kind::Break => match plan_rearrangement(seq, cfg, rng) {
-            Err(RearrangementOutcome::NoPartner) => {}
-            Err(_) => {}
-            Ok(pair) => match apply(seq.to_mut(), pair, cfg, rng) {
-                RearrangementOutcome::Deletion { .. } => {}
-                RearrangementOutcome::Duplication { .. } => {}
-                RearrangementOutcome::Inversion { .. } => {}
-                _ => {}
-            },
-        },
+        Kind::Sub(pos) => try_substitution(seq, pos, cfg, rng),
+        Kind::Indel => try_indel(seq, cfg, rng),
+        Kind::Break => try_rearrangement(seq, cfg, rng),
     }
 }

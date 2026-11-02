@@ -4,7 +4,8 @@ import magicsoup as ms
 import matplotlib.patheffects as path_effects
 import numpy as np
 import pandas as pd
-from magicsoup.genomics import Genomics, ProteinSpec
+from magicsoup.genomics import Genomics
+from magicsoup.rs import ProteinSpec
 from mizani.formatters import percent_format
 from plotnine import *  # pylint: disable=W0614,W0401
 

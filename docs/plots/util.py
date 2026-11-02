@@ -1,73 +1,52 @@
-import magicsoup as ms
-import pandas as pd
+import math
 
 
-def generate_cell(
-    ggen: ms.GenomeSynthesizer, world: ms.World, max_tries=3, allow_more_prots=False
-) -> int:
-    n_prots = len(ggen.proteome)
-    prot_dom_counts = [
-        {
-            ms.CatalyticDomain: sum(isinstance(dd, ms.CatalyticDomainFact) for dd in d),
-            ms.TransporterDomain: sum(
-                isinstance(dd, ms.TransporterDomainFact) for dd in d
-            ),
-            ms.RegulatoryDomain: sum(
-                isinstance(dd, ms.RegulatoryDomainFact) for dd in d
-            ),
-        }
-        for d in ggen.proteome
-    ]
-
-    i = 0
-    success = False
-    idxs: list[int] = []
-    while not success:
-        world.kill_cells(cell_idxs=idxs)
-        i += 1
-        if i > max_tries:
-            raise ValueError(f"Could not generate cell after {i} tries")
-        g = ggen.generate()
-        idxs = world.spawn_cells(genomes=[g])
-        if len(idxs) != 1:
-            continue
-        cell = world.get_cell(by_idx=idxs[0])
-        if not allow_more_prots and len(cell.proteome) != n_prots:
-            continue
-        found_prots = [False] * n_prots
-        for i, dom_counts in enumerate(prot_dom_counts):
-            for prot in cell.proteome:
-                found_doms = dict.fromkeys(dom_counts, False)
-                for domtype, target in dom_counts.items():
-                    if sum(isinstance(d, domtype) for d in prot.domains) == target:
-                        found_doms[domtype] = True
-                if all(found_doms.values()):
-                    found_prots[i] = True
-        if all(found_prots):
-            return idxs[0]
-    raise ValueError("unreachable")
+def _parse_cigar(cigar: str) -> list[tuple[str, int]]:
+    ops = []
+    n = 0
+    for ch in cigar:
+        if ch.isdigit():
+            n += int(ch)
+        else:
+            ops.append((ch, int(n)))
+            n = 0
+    return ops
 
 
-def record_concentrations(
-    record: dict, records: list, world: ms.World, cells_df: pd.DataFrame
-):
-    for _, row in cells_df.iterrows():
-        for mol, mi in world.chemistry.mol_2_idx.items():
-            records.append(
-                {
-                    **record,
-                    "cell": int(row["cell"]),
-                    "location": "int",
-                    "molecule": mol.name,
-                    "[x]": world.cell_molecules[int(row["cell"]), mi].item(),
-                }
-            )
-            records.append(
-                {
-                    **record,
-                    "cell": int(row["cell"]),
-                    "location": "ext",
-                    "molecule": mol.name,
-                    "[x]": world.molecule_map[mi, int(row["x"]), int(row["y"])].item(),
-                }
-            )
+def ani_from_cigar(cigar: str):
+    """
+    Get Average Nucleotide Identity (ANI) from a
+    Concise Idiosyncratic Gapped Alignment Report (CIGAR)
+    """
+    m = 0
+    mm = 0
+    for op, n in _parse_cigar(cigar):
+        if op == "=":
+            m += n
+        elif op == "X":
+            mm += n
+    aln = m + mm
+    return m / aln
+
+
+def _kmers(seq: str, k: int) -> set[str]:
+    seq = seq.upper()
+    return {seq[i : i + k] for i in range(len(seq) - k + 1)}
+
+
+def jaccard(seqa: str, seqb: str, kmer: int = 21) -> float:
+    """Get Jaccard similarity"""
+    a = _kmers(seqa, k=kmer)
+    b = _kmers(seqb, k=kmer)
+    return len(a & b) / len(a | b)
+
+
+def ani_from_jaccard(jacc: float, kmer: int = 21) -> float:
+    """
+    Get Average Nucleotide Identity (ANI)
+    from Jaccard similarity using Mash equation.
+    """
+    if jacc <= 0:
+        return 0.0  # no shared k-mers
+    d = -math.log(2 * jacc / (1 + jacc)) / kmer  # Mash distance
+    return 1 - d

@@ -36,7 +36,7 @@ dev = [
   "pylint>=4,<5",      # linting
   "plotnine>=0,<1",    # plotting
   "tensorboard>=2,<3", # watching simulation in browser
-  "Levenshtein>=0,<1", # Levenshtein distance
+  "edlib>=1,<2",       # Needleman-Wunsch using Levenshtein distance
 ]
 docs = [
   "mkdocs>=1,<2",               # make documentation

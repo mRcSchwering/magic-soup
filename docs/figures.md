@@ -90,39 +90,19 @@ Transcripts and domains are aligned with their respective positions on the genom
 
 ## 3. Mutations
 
-![](./img/supporting/point_mutations.png)
+![](./img/supporting/mutations.png)
 
-_**3.1. Genomes diverge with random point mutations at different rates over time.**
-Upper row shows percentage of cells which experienced at least 1 mutation.
-Lower row shows similarity distributions of each cell to its unmutated genome.
-Similarity is based on the normalized Levenshtein distance.
-Rates are per base pair.
-Each point mutation has a 40% chance of creating an indel, a random single base pair substitution otherwise.
-Each indels indel has a 66.66% chance of being a deletion, a random single base pair insertion otherwise._
-
-<br/>
-
-![](./img/supporting/genome_recombinations30.png)
-
-_**3.2. Genomes diverge with random recombinations at 30% confluency with different rates over time.**
-Upper row shows percentage of cells which experienced at least 1 mutation.
-Lower row shows similarity distributions of each cell to its unmutated genome.
-Similarity is based on the normalized Levenshtein distance.
-Recombination happens by creating random strand breaks in 2 genomes and randomly re-joining them.
-Rates are random strand breakes per base pair.
-Only neighbouring cells can recombinate their genomes._
-
-<br/>
-
-![](./img/supporting/genome_recombinations50.png)
-
-_**3.3. Genomes diverge with random recombinations at 50% confluency with different rates over time.**
-Upper row shows percentage of cells which experienced at least 1 mutation.
-Lower row shows similarity distributions of each cell to its unmutated genome.
-Similarity is based on the normalized Levenshtein distance.
-Recombination happens by creating random strand breaks in 2 genomes and randomly re-joining them.
-Rates are random strand breakes per base pair.
-Only neighbouring cells can recombinate their genomes._
+_**3.1 Accumulation of mutations.**
+Accumulated mutations over generations shown as
+ratio of muated genomes (top),
+21-mer Jaccard similarity (middle),
+Jaccard-derived (Mash) ANI (bottom)
+for default mutations settings (red),
+10-fold increased substitution rate (green),
+10-fold increased indel rate (blue)
+in 1000 base pair long genomes.
+Default mutation settings have per base pair rates of
+1E-5 for substitutions and 1E-6 for indels._
 
 <br/>
 

@@ -404,3 +404,8 @@ class Cells(TensorClass):
         shape = (size[0], by_n, *size[2:])
         zeros = torch.full(shape, value, device=t.device, dtype=t.dtype)
         return torch.cat([t, zeros + value], dim=1)
+
+
+# TODO: add n_proteins or similar as tensor
+#       to easily get the number fo proteins of each cell
+#       required to charge for protein expression
