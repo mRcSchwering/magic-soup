@@ -2,7 +2,7 @@ import json
 import logging
 import math
 from pathlib import Path
-from typing import TypedDict
+from typing import Annotated, TypedDict, overload
 
 import numpy as np
 import torch
@@ -25,6 +25,11 @@ class CellsKwargs(TypedDict, total=False):
 
 
 # TODO: k_r -> k_r
+
+# TODO: type tensors?
+# documentational only — no checker reads these strings
+FloatTensCP = Annotated[torch.Tensor, "(c, p)", float, "cuda"]
+StrArrC = Annotated[np.ndarray, "(c,)", str, "cpu"]
 
 
 class Cells(TensorClass):
@@ -94,7 +99,7 @@ class Cells(TensorClass):
         self.m = 2 * n_molecules  # dim2
 
         # cellular parameters
-        self.genomes = self.strempty(0)  # cell genomes
+        self.genomes: StrArrC = self.strempty(0)  # cell genomes
         self.lineages = self.strempty(0)  # cell lineages
         self.alive = self.idxzeros(0).bool()  # which ones are alive
         self.ages = self.fzeros(0)  # time since last division
@@ -102,7 +107,7 @@ class Cells(TensorClass):
         self.molecules = self.fzeros(0, n_molecules)  # intracellular concentrations
 
         # kinetics parameters
-        self.k_f = self.fzeros(0, 0)  # forward reaction rates
+        self.k_f: FloatTensCP = self.fzeros(0, 0)  # forward reaction rates
         self.k_b = self.fzeros(0, 0)  # backward reaction rates
         self.k_r = self.fzeros(0, 0)  # effector affinities
         self.v_max = self.fzeros(0, 0)  # maximum reaction rates
@@ -164,14 +169,14 @@ class Cells(TensorClass):
         # p have could been adjusted upwards or p was already < self.p
         if self.p > p:
             p_diff = self.p - p
-            v_max = self._exp_tens_p(v_max, by_n=p_diff)
-            k_f = self._exp_tens_p(k_f, by_n=p_diff)
-            k_b = self._exp_tens_p(k_b, by_n=p_diff)
-            k_r = self._exp_tens_p(k_r, by_n=p_diff)
-            N_e = self._exp_tens_p(N_e, by_n=p_diff)
-            N_f = self._exp_tens_p(N_f, by_n=p_diff)
-            N_b = self._exp_tens_p(N_b, by_n=p_diff)
-            N_h = self._exp_tens_p(N_h, by_n=p_diff)
+            v_max = self._grow(v_max, dim=1, by_n=p_diff)
+            k_f = self._grow(k_f, dim=1, by_n=p_diff)
+            k_b = self._grow(k_b, dim=1, by_n=p_diff)
+            k_r = self._grow(k_r, dim=1, by_n=p_diff)
+            N_e = self._grow(N_e, dim=1, by_n=p_diff)
+            N_f = self._grow(N_f, dim=1, by_n=p_diff)
+            N_b = self._grow(N_b, dim=1, by_n=p_diff)
+            N_h = self._grow(N_h, dim=1, by_n=p_diff)
 
         # p could have been > p_max
         if self.p < p:
@@ -217,8 +222,11 @@ class Cells(TensorClass):
         self.k_r[to_idxs] = self.k_r[from_idxs]
         self.v_max[to_idxs] = self.v_max[from_idxs]
 
+        # NOTE: sync with host
+        from_idxs = from_idxs.cpu()
+
         # update cellular parameters
-        self.genomes[to_idxs] = self.genomes[from_idxs]
+        self.genomes[to_idxs] = self.genomes[from_idxs.numpy()]
 
     def update_c(self, c_req: int) -> None:
         """Update `c` dimension by providing a new required size"""
@@ -308,22 +316,22 @@ class Cells(TensorClass):
 
     def _increase_c(self, by_n: int) -> None:
         # cell paramaters
-        self.genomes = self._exp_arr_c(a=self.genomes, by_n=by_n)
-        self.lineages = self._exp_arr_c(a=self.lineages, by_n=by_n)
-        self.alive = self._exp_tens_c(t=self.alive, by_n=by_n)
-        self.ages = self._exp_tens_c(t=self.ages, by_n=by_n)
-        self.generations = self._exp_tens_c(t=self.generations, by_n=by_n)
-        self.molecules = self._exp_tens_c(t=self.molecules, by_n=by_n)
+        self.genomes = self._grow(self.genomes, dim=0, by_n=by_n)
+        self.lineages = self._grow(self.lineages, dim=0, by_n=by_n)
+        self.alive = self._grow(self.alive, dim=0, by_n=by_n)
+        self.ages = self._grow(self.ages, dim=0, by_n=by_n)
+        self.generations = self._grow(self.generations, dim=0, by_n=by_n)
+        self.molecules = self._grow(self.molecules, dim=0, by_n=by_n)
 
         # kinetics parameters
-        self.v_max = self._exp_tens_c(t=self.v_max, by_n=by_n)
-        self.k_f = self._exp_tens_c(t=self.k_f, by_n=by_n)
-        self.k_b = self._exp_tens_c(t=self.k_b, by_n=by_n)
-        self.k_r = self._exp_tens_c(t=self.k_r, by_n=by_n)
-        self.N_f = self._exp_tens_c(t=self.N_f, by_n=by_n)
-        self.N_b = self._exp_tens_c(t=self.N_b, by_n=by_n)
-        self.N_h = self._exp_tens_c(t=self.N_h, by_n=by_n)
-        self.N_e = self._exp_tens_c(t=self.N_e, by_n=by_n)
+        self.v_max = self._grow(self.v_max, dim=0, by_n=by_n)
+        self.k_f = self._grow(self.k_f, dim=0, by_n=by_n)
+        self.k_b = self._grow(self.k_b, dim=0, by_n=by_n)
+        self.k_r = self._grow(self.k_r, dim=0, by_n=by_n)
+        self.N_f = self._grow(self.N_f, dim=0, by_n=by_n)
+        self.N_b = self._grow(self.N_b, dim=0, by_n=by_n)
+        self.N_h = self._grow(self.N_h, dim=0, by_n=by_n)
+        self.N_e = self._grow(self.N_e, dim=0, by_n=by_n)
 
         # set new c
         self.c = self.genomes.shape[0]
@@ -361,14 +369,14 @@ class Cells(TensorClass):
 
     def _increase_p(self, by_n: int) -> None:
         # kinetics parameters
-        self.v_max = self._exp_tens_p(t=self.v_max, by_n=by_n)
-        self.k_f = self._exp_tens_p(t=self.k_f, by_n=by_n)
-        self.k_b = self._exp_tens_p(t=self.k_b, by_n=by_n)
-        self.k_r = self._exp_tens_p(t=self.k_r, by_n=by_n)
-        self.N_f = self._exp_tens_p(t=self.N_f, by_n=by_n)
-        self.N_b = self._exp_tens_p(t=self.N_b, by_n=by_n)
-        self.N_h = self._exp_tens_p(t=self.N_h, by_n=by_n)
-        self.N_e = self._exp_tens_p(t=self.N_e, by_n=by_n)
+        self.v_max = self._grow(self.v_max, dim=1, by_n=by_n)
+        self.k_f = self._grow(self.k_f, dim=1, by_n=by_n)
+        self.k_b = self._grow(self.k_b, dim=1, by_n=by_n)
+        self.k_r = self._grow(self.k_r, dim=1, by_n=by_n)
+        self.N_f = self._grow(self.N_f, dim=1, by_n=by_n)
+        self.N_b = self._grow(self.N_b, dim=1, by_n=by_n)
+        self.N_h = self._grow(self.N_h, dim=1, by_n=by_n)
+        self.N_e = self._grow(self.N_e, dim=1, by_n=by_n)
 
         # set new p
         self.p = self.v_max.shape[1]
@@ -387,23 +395,22 @@ class Cells(TensorClass):
         # set new p
         self.p = self.v_max.shape[1]
 
-    def _exp_tens_c(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
-        size = t.size()
-        shape = (by_n, *size[1:])
-        zeros = torch.full(shape, value, device=t.device, dtype=t.dtype)
-        return torch.cat([t, zeros], dim=0)
-
-    def _exp_arr_c(self, a: np.ndarray, by_n: int, value: str = "") -> np.ndarray:
-        shape = a.shape
-        shape = (by_n, *shape[1:])
-        zeros = np.full(shape, value, dtype=a.dtype)
-        return np.concatenate([a, zeros], axis=0)
-
-    def _exp_tens_p(self, t: torch.Tensor, by_n: int, value: int = 0) -> torch.Tensor:
-        size = t.size()
-        shape = (size[0], by_n, *size[2:])
-        zeros = torch.full(shape, value, device=t.device, dtype=t.dtype)
-        return torch.cat([t, zeros + value], dim=1)
+    @overload
+    def _grow(self, o: torch.Tensor, dim: int, by_n: int) -> torch.Tensor: ...
+    @overload
+    def _grow(self, o: np.ndarray, dim: int, by_n: int) -> np.ndarray: ...
+    def _grow(
+        self, o: torch.Tensor | np.ndarray, dim: int, by_n: int
+    ) -> torch.Tensor | np.ndarray:
+        shape = o.shape
+        size = (*shape[:dim], by_n, *shape[dim + 1 :])
+        if isinstance(o, torch.Tensor):
+            fullt = torch.full(size, 0, device=o.device, dtype=o.dtype)
+            return torch.cat([o, fullt], dim=dim)
+        elif isinstance(o, np.ndarray):
+            fulla = np.full(size, "", device=o.device, dtype=o.dtype)
+            return np.concatenate([o, fulla], axis=dim)
+        raise ValueError(f"Unknown type {type(o)}")
 
 
 # TODO: add n_proteins or similar as tensor
