@@ -9,6 +9,7 @@ import numpy as np
 
 from magicsoup import rs
 from magicsoup.config import CODON_SIZE
+from magicsoup.core.strarray import StrArray
 from magicsoup.util import codons, random_genome
 
 
@@ -176,19 +177,21 @@ class Genomics:
             dom_type_size_nt=self.dom_type_size_nt,
         )
 
-    def translate_genomes(self, genomes: list[str]) -> list[list[rs.ProteinSpec]]:
+    def translate_genomes(self, genomes: StrArray) -> list[list[rs.ProteinSpec]]:
         if len(genomes) == 0:
             return []
-        return self.rs.translate_genomes(genomes=genomes)
+        # TODO: change signature to accept buffer and indxs
+        return self.rs.translate_genomes(genomes=genomes.tolist())
 
     # TODO: better name
     def translate_genomes_arr(
-        self, genomes: list[str]
+        self, genomes: StrArray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
         """Get proteomes in form of domain specifications from genomes"""
         if len(genomes) == 0:
             return (np.zeros(0), np.zeros(0), np.zeros((0, 5)), 0)
-        return self.rs.translate_genomes_arr(genomes=genomes)
+        # TODO: change signature to accept buffer and indxs
+        return self.rs.translate_genomes_arr(genomes=genomes.tolist())
 
     def get_coding_regions(
         self,

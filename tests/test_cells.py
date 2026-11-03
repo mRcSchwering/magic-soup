@@ -159,7 +159,7 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
 
 def test_update_empty_genome(cells: Cells) -> None:
     idxs = idxtensor([0])
-    genomes = [random_genome(s=0) for _ in range(1)]
+    genomes = StrArray.from_strings([random_genome(s=0) for _ in range(1)])
     cells.update_genomes(genomes=genomes, idxs=idxs)
     _asser_dtypes(cells)
 
@@ -173,13 +173,13 @@ def test_update_genomes_randomly(cells: Cells) -> None:
     for _ in range(100):
         n = random.randint(10, c)
         idxs = idxtensor(random.sample(range(c), n))
-        genomes = [random_genome(s=500) for _ in range(n)]
+        genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
         cells.update_genomes(genomes=genomes, idxs=idxs)
 
         _asser_dtypes(cells)
 
         # check genomes set
-        assert cells.genomes[idxs.cpu().numpy()].tolist() == genomes
+        assert cells.genomes[idxs.cpu().numpy()].tolist() == genomes.tolist()
 
         # check at least some non-placeholder values
         denstensors = [cells.v_max, cells.k_b, cells.k_f, cells.N_f, cells.N_b]
@@ -199,7 +199,7 @@ def test_copy_genomes_randomly(cells: Cells) -> None:
     for _ in range(100):
         n = random.randint(1, c // 2)
         idxs0 = idxtensor(random.sample(range(c), n))
-        genomes0 = [random_genome(s=500) for _ in range(n)]
+        genomes0 = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
         cells.update_genomes(genomes=genomes0, idxs=idxs0)
 
         idxs_left = list(set(range(c)) - set(idxs0.tolist()))
@@ -230,7 +230,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     c = 60
     cells.update_c(c_req=c)
     idxs = idxtensor(list(range(0, c, 2)))
-    genomes_ = [random_genome() for _ in range(idxs.numel())]
+    genomes_ = StrArray.from_strings([random_genome() for _ in range(idxs.numel())])
     cells.update_genomes(genomes=genomes_, idxs=idxs)
     cells.alive[idxs] = True
 

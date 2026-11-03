@@ -3,6 +3,7 @@ from collections import defaultdict
 
 import pytest
 from magicsoup.config import CODON_SIZE
+from magicsoup.core.strarray import StrArray
 from magicsoup.genomics import DomainType, Genomics, _DomainTypeMap
 from magicsoup.util import codons, random_genome
 
@@ -222,10 +223,11 @@ def test_translate_genomes() -> None:
     ]
 
     genome = "".join(seq.replace("\n", "").split())
-    proteome = genomics.translate_genomes(genomes=[genome])[0]
+    genomes = StrArray.from_strings([genome])
+    proteome = genomics.translate_genomes(genomes=genomes)[0]
     assert proteome == exp_proteome
 
-    cell, prot, tok, p = genomics.translate_genomes_arr(genomes=[genome])
+    cell, prot, tok, p = genomics.translate_genomes_arr(genomes=genomes)
     print(cell)
     print(prot)
     print(tok.tolist())
@@ -242,7 +244,9 @@ def test_genomics_domain_likelihoods() -> None:
     genome_size = 1000
 
     genomics = Genomics()  # type: ignore
-    genomes = [random_genome(s=genome_size) for _ in range(n_genomes)]
+    genomes = StrArray.from_strings(
+        [random_genome(s=genome_size) for _ in range(n_genomes)]
+    )
 
     # translate into lists
     proteomes = genomics.translate_genomes(genomes=genomes)
@@ -267,12 +271,12 @@ def test_genomics_domain_likelihoods() -> None:
     for i in range(d_arr):
         if cell[i] * p + prot[i] == prot_i:
             n_dom += 1
-            if i + 1 == d_arr:
-                d_cnts_arr[n_dom] += 1
         else:
             d_cnts_arr[n_dom] += 1
             n_dom = 1
             prot_i = cell[i] * p + prot[i]
+
+    d_cnts_arr[n_dom] += 1
 
     # compare both results
     assert p_lst == p_arr

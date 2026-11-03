@@ -126,7 +126,7 @@ class Cells(TensorClass):
         """Get (k,) cell index tensor of unused cell indices"""
         return (~self.alive).nonzero(as_tuple=True)[0].int()  # sync with host
 
-    def update_genomes(self, genomes: list[str], idxs: T) -> None:
+    def update_genomes(self, genomes: StrArray, idxs: T) -> None:
         """
         Update cell genomes and proteomes
 
@@ -315,7 +315,7 @@ class Cells(TensorClass):
         # derive kinetics parameters from genomes
         idxs = self.idxarange(self.genomes.shape[0])
         cpu_idxs = idxs.cpu().numpy()  # sync with host
-        self.update_genomes(genomes=self.genomes[cpu_idxs].tolist(), idxs=idxs)
+        self.update_genomes(genomes=self.genomes[cpu_idxs], idxs=idxs)
 
     def _grow_c(self, by_n: int) -> None:
         # cell paramaters

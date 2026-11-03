@@ -170,6 +170,7 @@ class TensorClass:
         self.itype = itype
         self.ftype = ftype
         self.stype = stype
+        # TODO: idxtype as parameter (in case of int64)?
 
     def idxtensor(self, d: Any) -> torch.Tensor:
         return torch.tensor(d, device=self.device, dtype=torch.int32)
