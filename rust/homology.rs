@@ -177,8 +177,6 @@ fn apply_rearrangement<R: Rng>(seq: &mut Vec<u8>, pair: Pair, cfg: &Config, rng:
 /// Plan and apply in one call (convenience for use outside the engine).
 pub fn try_rearrangement<R: Rng>(seq: &mut Cow<[u8]>, cfg: &Config, rng: &mut R) {
     if let Some(pair) = plan_rearrangement(seq, cfg, rng) {
-        let mut owned = seq.to_vec();
-        apply_rearrangement(&mut owned, pair, cfg, rng);
-        *seq = Cow::Owned(owned);
+        apply_rearrangement(&mut seq.to_mut(), pair, cfg, rng);
     }
 }

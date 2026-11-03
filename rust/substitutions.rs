@@ -11,6 +11,7 @@ pub fn try_substitution<R: Rng>(seq: &mut Cow<[u8]>, pos: usize, cnf: &Config, r
     let Some(i) = base_index(seq[pos]) else {
         return;
     };
+
     let j = if rng.random_bool(cnf.transition_prob) {
         i ^ 2 // transition: A<->G, C<->T
     } else if rng.random_bool(0.5) {
@@ -18,7 +19,6 @@ pub fn try_substitution<R: Rng>(seq: &mut Cow<[u8]>, pos: usize, cnf: &Config, r
     } else {
         i ^ 3 // the other transversion
     };
-    let mut owned = seq.to_vec();
-    owned[pos] = BASES[j];
-    *seq = Cow::Owned(owned);
+
+    seq.to_mut()[pos] = BASES[j];
 }

@@ -134,8 +134,6 @@ fn apply_indel(seq: &mut Vec<u8>, e: Indel) {
 /// Plan and apply in one call.
 pub fn try_indel<R: Rng>(seq: &mut Cow<[u8]>, cfg: &Config, rng: &mut R) {
     if let Some(e) = plan_indel(seq, cfg, rng) {
-        let mut owned = seq.to_vec();
-        apply_indel(&mut owned, e);
-        *seq = Cow::Owned(owned);
+        apply_indel(&mut seq.to_mut(), e);
     }
 }
