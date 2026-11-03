@@ -4,10 +4,10 @@ import math
 from pathlib import Path
 from typing import Annotated, TypedDict, overload
 
-import numpy as np
 import torch
 
 from magicsoup.chemistry import Chemistry
+from magicsoup.core.strarray import StrArray
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.proteomics import Proteomics, ProteomicsKwargs
 from magicsoup.util import TensorClass, TensorKwargs, read_fasta, write_fasta
@@ -24,12 +24,10 @@ class CellsKwargs(TypedDict, total=False):
     p_max: int
 
 
-# TODO: k_r -> k_r
-
 # TODO: type tensors?
 # documentational only — no checker reads these strings
-FloatTensCP = Annotated[torch.Tensor, "(c, p)", float, "cuda"]
-StrArrC = Annotated[np.ndarray, "(c,)", str, "cpu"]
+A = Annotated[StrArray, "cpu"]
+T = Annotated[torch.Tensor, "cuda"]
 
 
 class Cells(TensorClass):
@@ -99,36 +97,36 @@ class Cells(TensorClass):
         self.m = 2 * n_molecules  # dim2
 
         # cellular parameters
-        self.genomes: StrArrC = self.strempty(0)  # cell genomes
-        self.lineages = self.strempty(0)  # cell lineages
-        self.alive = self.idxzeros(0).bool()  # which ones are alive
-        self.ages = self.fzeros(0)  # time since last division
-        self.generations = self.idxzeros(0)  # number of divisions
-        self.molecules = self.fzeros(0, n_molecules)  # intracellular concentrations
+        self.genomes: A = StrArray.empty(0)  # cell genomes
+        self.lineages: A = StrArray.empty(0)  # cell lineages
+        self.alive: T = self.idxzeros(0).bool()  # which ones are alive
+        self.ages: T = self.fzeros(0)  # time since last division
+        self.generations: T = self.idxzeros(0)  # number of divisions
+        self.molecules: T = self.fzeros(0, n_molecules)  # intracellular concentrations
 
         # kinetics parameters
-        self.k_f: FloatTensCP = self.fzeros(0, 0)  # forward reaction rates
-        self.k_b = self.fzeros(0, 0)  # backward reaction rates
-        self.k_r = self.fzeros(0, 0)  # effector affinities
-        self.v_max = self.fzeros(0, 0)  # maximum reaction rates
-        self.N_e = self.fzeros(0, 0, self.m)  # effective stoichiometric numbers
-        self.N_f = self.izeros(0, 0, self.m)  # forward stoichiometric coefficients
-        self.N_b = self.izeros(0, 0, self.m)  # backward stoichiometric coefficients
-        self.N_h = self.izeros(0, 0, self.m)  # Hill coefficients
+        self.k_f: T = self.fzeros(0, 0)  # forward reaction rates
+        self.k_b: T = self.fzeros(0, 0)  # backward reaction rates
+        self.k_r: T = self.fzeros(0, 0)  # effector affinities
+        self.v_max: T = self.fzeros(0, 0)  # maximum reaction rates
+        self.N_e: T = self.fzeros(0, 0, self.m)  # effective stoichiometric numbers
+        self.N_f: T = self.izeros(0, 0, self.m)  # forward stoichiometric coefficients
+        self.N_b: T = self.izeros(0, 0, self.m)  # backward stoichiometric coefficients
+        self.N_h: T = self.izeros(0, 0, self.m)  # Hill coefficients
 
     def get_n_cells(self) -> int:
         """Get number of currently living cells"""
-        return int(self.alive.sum().item())
+        return int(self.alive.sum().item())  # sync with host
 
-    def get_cell_idxs(self) -> torch.Tensor:
+    def get_cell_idxs(self) -> T:
         """Get (n,) cell index tensor of currently living cells"""
-        return self.alive.nonzero(as_tuple=True)[0].int()
+        return self.alive.nonzero(as_tuple=True)[0].int()  # sync with host
 
-    def get_free_idxs(self) -> torch.Tensor:
+    def get_free_idxs(self) -> T:
         """Get (k,) cell index tensor of unused cell indices"""
-        return (~self.alive).nonzero(as_tuple=True)[0].int()
+        return (~self.alive).nonzero(as_tuple=True)[0].int()  # sync with host
 
-    def update_genomes(self, genomes: list[str], idxs: torch.Tensor) -> None:
+    def update_genomes(self, genomes: list[str], idxs: T) -> None:
         """
         Update cell genomes and proteomes
 
@@ -196,10 +194,13 @@ class Cells(TensorClass):
         self.k_r[idxs] = k_r
         self.v_max[idxs] = v_max
 
-        # update cellular parameters
-        self.genomes[idxs] = genomes
+        # sync with host
+        idxs = idxs.cpu()
 
-    def copy_genomes(self, from_idxs: torch.Tensor, to_idxs: torch.Tensor) -> None:
+        # update cellular parameters
+        self.genomes[idxs.numpy()] = genomes
+
+    def copy_genomes(self, from_idxs: T, to_idxs: T) -> None:
         """
         Copy cell genomes and proteomes
 
@@ -222,29 +223,30 @@ class Cells(TensorClass):
         self.k_r[to_idxs] = self.k_r[from_idxs]
         self.v_max[to_idxs] = self.v_max[from_idxs]
 
-        # NOTE: sync with host
+        # sync with host
         from_idxs = from_idxs.cpu()
+        to_idxs = to_idxs.cpu()
 
         # update cellular parameters
-        self.genomes[to_idxs] = self.genomes[from_idxs.numpy()]
+        self.genomes[to_idxs.numpy()] = self.genomes[from_idxs.numpy()]
 
     def update_c(self, c_req: int) -> None:
         """Update `c` dimension by providing a new required size"""
         mar = math.ceil(c_req * self.dim_scaling)
         to_c = min(c_req + mar, self.c_max)
         if to_c < self.c:
-            self._decrease_c(by_n=self.c - to_c)
+            self._shrink_c(by_n=self.c - to_c)
         if c_req > self.c:
-            self._increase_c(by_n=to_c - self.c)
+            self._grow_c(by_n=to_c - self.c)
 
     def update_p(self, p_req: int) -> None:
         """Update `p` dimension by providing a new required size"""
         mar = math.ceil(p_req * self.dim_scaling)
         to_p = min(p_req + mar, self.p_max)
         if to_p < self.p:
-            self._decrease_p(by_n=self.p - to_p)
+            self._shrink_p(by_n=self.p - to_p)
         if p_req > self.p:
-            self._increase_p(by_n=to_p - self.p)
+            self._grow_p(by_n=to_p - self.p)
 
     def save_state(self, statedir: Path) -> None:
         """
@@ -266,13 +268,13 @@ class Cells(TensorClass):
         torch.save(self.generations, statedir / "generations.pt")
         torch.save(self.molecules, statedir / "molecules.pt")
 
-        lineages_2_genomes = {
+        l2g = {
             f"{i} {l}": g
             for i, (l, g) in enumerate(
                 zip(self.lineages.tolist(), self.genomes.tolist())
             )
         }
-        write_fasta(file=statedir / "genomes.fasta", name_2_seq=lineages_2_genomes)
+        write_fasta(file=statedir / "genomes.fasta", name_2_seq=l2g)
 
     def load_state(self, statedir: Path) -> None:
         """
@@ -296,9 +298,9 @@ class Cells(TensorClass):
         )
         self.molecules = torch.load(statedir / "molecules.pt", map_location=self.device)
 
-        lineage_2_genome = read_fasta(file=statedir / "genomes.fasta")
-        self.lineages = self.strarray([d.partition(" ")[2] for d in lineage_2_genome])
-        self.genomes = self.strarray(list(lineage_2_genome.values()))
+        l2g = read_fasta(file=statedir / "genomes.fasta")
+        self.lineages = StrArray.from_strings([d.partition(" ")[2] for d in l2g])
+        self.genomes = StrArray.from_strings(list(l2g.values()))
 
         # setup kinetics parameters again
         self.v_max = self.fzeros(self.c, self.p)
@@ -312,9 +314,10 @@ class Cells(TensorClass):
 
         # derive kinetics parameters from genomes
         idxs = self.idxarange(self.genomes.shape[0])
-        self.update_genomes(genomes=self.genomes[idxs], idxs=idxs)
+        cpu_idxs = idxs.cpu().numpy()  # sync with host
+        self.update_genomes(genomes=self.genomes[cpu_idxs].tolist(), idxs=idxs)
 
-    def _increase_c(self, by_n: int) -> None:
+    def _grow_c(self, by_n: int) -> None:
         # cell paramaters
         self.genomes = self._grow(self.genomes, dim=0, by_n=by_n)
         self.lineages = self._grow(self.lineages, dim=0, by_n=by_n)
@@ -334,21 +337,23 @@ class Cells(TensorClass):
         self.N_e = self._grow(self.N_e, dim=0, by_n=by_n)
 
         # set new c
-        self.c = self.genomes.shape[0]
+        self.c = len(self.genomes)
 
-    def _decrease_c(self, by_n: int) -> None:
-        avail = self.get_free_idxs()
+    def _shrink_c(self, by_n: int) -> None:
+        avail = self.get_free_idxs()  # sync with host
         n_avail = avail.numel()
         if n_avail < by_n:
             raise ValueError(f"Cannot decrease c by {by_n}, only {n_avail} available")
 
+        # sync with host
         avail = avail[:by_n]
         keep = torch.ones_like(self.alive, dtype=torch.bool)
         keep[avail] = False
+        cpu_keep = keep.cpu().numpy()
 
         # cell parameters
-        self.genomes = self.genomes[keep]
-        self.lineages = self.lineages[keep]
+        self.genomes = self.genomes[cpu_keep]
+        self.lineages = self.lineages[cpu_keep]
         self.alive = self.alive[keep]
         self.ages = self.ages[keep]
         self.generations = self.generations[keep]
@@ -365,9 +370,9 @@ class Cells(TensorClass):
         self.N_e = self.N_e[keep]
 
         # set new c
-        self.c = self.genomes.shape[0]
+        self.c = len(self.genomes)
 
-    def _increase_p(self, by_n: int) -> None:
+    def _grow_p(self, by_n: int) -> None:
         # kinetics parameters
         self.v_max = self._grow(self.v_max, dim=1, by_n=by_n)
         self.k_f = self._grow(self.k_f, dim=1, by_n=by_n)
@@ -381,7 +386,7 @@ class Cells(TensorClass):
         # set new p
         self.p = self.v_max.shape[1]
 
-    def _decrease_p(self, by_n: int) -> None:
+    def _shrink_p(self, by_n: int) -> None:
         # kinetics parameters
         self.v_max = self.v_max[:, :-by_n]
         self.k_f = self.k_f[:, :-by_n]
@@ -396,20 +401,18 @@ class Cells(TensorClass):
         self.p = self.v_max.shape[1]
 
     @overload
-    def _grow(self, o: torch.Tensor, dim: int, by_n: int) -> torch.Tensor: ...
+    def _grow(self, o: A, dim: int, by_n: int) -> A: ...
     @overload
-    def _grow(self, o: np.ndarray, dim: int, by_n: int) -> np.ndarray: ...
-    def _grow(
-        self, o: torch.Tensor | np.ndarray, dim: int, by_n: int
-    ) -> torch.Tensor | np.ndarray:
+    def _grow(self, o: T, dim: int, by_n: int) -> T: ...
+    def _grow(self, o: T | A, dim: int, by_n: int) -> T | A:
         shape = o.shape
         size = (*shape[:dim], by_n, *shape[dim + 1 :])
         if isinstance(o, torch.Tensor):
-            fullt = torch.full(size, 0, device=o.device, dtype=o.dtype)
-            return torch.cat([o, fullt], dim=dim)
-        elif isinstance(o, np.ndarray):
-            fulla = np.full(size, "", device=o.device, dtype=o.dtype)
-            return np.concatenate([o, fulla], axis=dim)
+            empty_tens = torch.full(size, 0, device=o.device, dtype=o.dtype)
+            return torch.cat([o, empty_tens], dim=dim)
+        elif isinstance(o, StrArray):
+            empty_arr = StrArray.empty(by_n)
+            return StrArray.concat([o, empty_arr])
         raise ValueError(f"Unknown type {type(o)}")
 
 

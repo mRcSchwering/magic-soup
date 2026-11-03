@@ -45,33 +45,26 @@ class StrArray:
     arena. Overwritten bytes become dead until [compact()][.compact] reclaims them.
     """
 
-    def __init__(self, strings: Iterable[str] = ()) -> None:
-        blobs = [s.encode() for s in strings]
-        lens = np.fromiter((len(b) for b in blobs), dtype=np.int64, count=len(blobs))
-        self._buf = np.frombuffer(b"".join(blobs), dtype=np.uint8).copy()
-        self._starts = _starts_from_lens(lens)
+    def __init__(self, buf: np.ndarray, starts: np.ndarray, lens: np.ndarray) -> None:
+        self._buf = buf
+        self._starts = starts
         self._lens = lens
 
-    # construction
-
-    # TODO: maybe _from_raw should be the actual __init__
-    #       and the current __init__ should rather be something like from_strings
     @classmethod
-    def _from_raw(
-        cls, buf: np.ndarray, starts: np.ndarray, lens: np.ndarray
-    ) -> "StrArray":
-        """Build an instance directly from (possibly shared) backing arrays"""
-        obj = cls.__new__(cls)
-        obj._buf = buf
-        obj._starts = starts
-        obj._lens = lens
-        return obj
+    def from_strings(cls, strings: Iterable[str] = ()) -> "StrArray":
+        blobs = [s.encode() for s in strings]
+        lens = np.fromiter((len(b) for b in blobs), dtype=np.int64, count=len(blobs))
+        buf = np.frombuffer(b"".join(blobs), dtype=np.uint8).copy()
+        starts = _starts_from_lens(lens)
+        return cls(buf=buf, starts=starts, lens=lens)
+
+    # construction
 
     @classmethod
     def empty(cls, n: int = 0) -> "StrArray":
         """Create an array of `n` empty strings"""
         zeros = np.zeros(n, dtype=np.int64)
-        return cls._from_raw(np.empty(0, dtype=np.uint8), zeros, zeros.copy())
+        return cls(buf=np.empty(0, dtype=np.uint8), starts=zeros, lens=zeros.copy())
 
     @classmethod
     def concat(cls, arrays: Iterable["StrArray"]) -> "StrArray":
@@ -91,8 +84,10 @@ class StrArray:
             blobs.append(blob)
             base += len(blob)
 
-        return cls._from_raw(
-            np.concatenate(blobs), np.concatenate(starts), np.concatenate(lens)
+        return cls(
+            buf=np.concatenate(blobs),
+            starts=np.concatenate(starts),
+            lens=np.concatenate(lens),
         )
 
     # sizing
@@ -105,17 +100,10 @@ class StrArray:
         """Shape `(n,)` of the array (mirrors `numpy.ndarray.shape`)"""
         return (len(self),)
 
-    # TODO: only used for repr, keep?
     @property
-    def nbytes(self) -> int:
-        """Number of live string bytes (excluding dead bytes in the buffer)"""
-        return int(self._lens.sum())
-
-    # TODO: only used for repr, keep?
-    @property
-    def buffer_nbytes(self) -> int:
-        """Size of the backing buffer including dead bytes (see [compact()][.compact])"""
-        return int(self._buf.size)
+    def utilization(self) -> float:
+        """Number of live bytes divided by the total buffer size (see [compact()][.compact])."""
+        return float(self._lens.sum() / self._buf.size)
 
     # reading
 
@@ -131,7 +119,7 @@ class StrArray:
             return self._buf[start : start + length].tobytes().decode()
 
         ii = self._as_int_index(idx)
-        return StrArray._from_raw(self._buf, self._starts[ii], self._lens[ii])
+        return StrArray(buf=self._buf, starts=self._starts[ii], lens=self._lens[ii])
 
     def __iter__(self) -> Iterator[str]:
         buf = self._buf
@@ -145,7 +133,7 @@ class StrArray:
     def copy(self) -> "StrArray":
         """Return an independent, compact copy (does not share the buffer)"""
         blob, lens = self._contiguous()
-        return StrArray._from_raw(blob, _starts_from_lens(lens), lens)
+        return StrArray(buf=blob, starts=_starts_from_lens(lens), lens=lens)
 
     # writing
 
@@ -229,6 +217,7 @@ class StrArray:
         self._starts = _starts_from_lens(lens)
         self._lens = lens
 
+    # TODO: required?
     def as_buffers(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Expose the backing arrays `(buffer, starts, lens)` for zero-copy exchange.
@@ -262,6 +251,5 @@ class StrArray:
 
     def __repr__(self) -> str:
         return (
-            f"{type(self).__name__}(n={len(self)}, "
-            f"live_bytes={self.nbytes}, buffer_bytes={self.buffer_nbytes})"
+            f"{type(self).__name__}(n={len(self)}, utilization={self.utilization:.2f})"
         )

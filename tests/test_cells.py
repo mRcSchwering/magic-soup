@@ -1,16 +1,16 @@
 import random
 from pathlib import Path
 
-import numpy as np
 import pytest
 import torch
 from magicsoup.cells import Cells
+from magicsoup.core.strarray import StrArray
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
 from magicsoup.util import random_genome
 
-from tests.config import FTYPE, IDXTYPE, ITYPE, STYPE
+from tests.config import FTYPE, IDXTYPE, ITYPE
 from tests.util import idxtensor
 
 
@@ -23,8 +23,8 @@ def cells() -> Cells:
 
 def _assert_empty_values(cells: Cells) -> None:
     # test empty values of cell parameters
-    assert np.all(cells.genomes == "")
-    assert np.all(cells.lineages == "")
+    assert all(d == "" for d in cells.genomes)
+    assert all(d == "" for d in cells.lineages)
     assert (cells.alive == False).all()
     assert (cells.ages == 0.0).all()
     assert (cells.generations == 0).all()
@@ -63,8 +63,8 @@ def _assert_shapes(cells: Cells) -> None:
 
 def _asser_dtypes(cells: Cells) -> None:
     # check exact shape of cell parameters
-    assert cells.genomes.dtype == STYPE
-    assert cells.lineages.dtype == STYPE
+    assert isinstance(cells.genomes, StrArray)
+    assert isinstance(cells.lineages, StrArray)
     assert cells.alive.dtype == torch.bool
     assert cells.ages.dtype == FTYPE
     assert cells.generations.dtype == IDXTYPE
@@ -179,7 +179,7 @@ def test_update_genomes_randomly(cells: Cells) -> None:
         _asser_dtypes(cells)
 
         # check genomes set
-        assert np.all(cells.genomes[idxs] == genomes)
+        assert cells.genomes[idxs.cpu().numpy()].tolist() == genomes
 
         # check at least some non-placeholder values
         denstensors = [cells.v_max, cells.k_b, cells.k_f, cells.N_f, cells.N_b]
@@ -209,7 +209,10 @@ def test_copy_genomes_randomly(cells: Cells) -> None:
         _asser_dtypes(cells)
 
         # check genomes set
-        assert np.all(cells.genomes[idxs0] == cells.genomes[idxs1])
+        assert (
+            cells.genomes[idxs0.cpu().numpy()].tolist()
+            == cells.genomes[idxs1.cpu().numpy()].tolist()
+        )
 
         # values were copied
         ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]
@@ -260,8 +263,8 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     cells.load_state(statedir=statedir)
 
     # check that the loaded state matches the original state
-    assert np.all(cells.genomes == genomes)
-    assert np.all(cells.lineages == lineages)
+    assert cells.genomes.tolist() == genomes.tolist()
+    assert cells.lineages.tolist() == lineages.tolist()
     assert (cells.alive == alive).all()
     assert (cells.ages == ages).all()
     assert (cells.generations == generations).all()
