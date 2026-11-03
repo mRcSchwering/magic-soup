@@ -1,21 +1,3 @@
-"""
-A compact, mutable 1-D array of variable-length strings.
-
-[StrArray][magicsoup.strarray.StrArray] stores many strings as a single byte
-arena plus a handle table (one start offset and one length per element).
-It behaves like a 1-D array of strings (fancy indexing, scatter assignment,
-filtering, concatenation) while keeping the buffer/offset mechanics internal.
-
-The representation is designed for cheap bookkeeping and zero-copy exchange
-with Rust:
-
-- gather (`arr[idxs]`), filter (`arr[mask]`), kill (`arr[idxs] = ""`) and
-  copy (`arr[children] = arr[parents]`) only touch the handle table and never
-  copy string bytes.
-- only genuinely new strings are ever written, and they are *appended* to the
-  arena. Overwritten bytes become dead until [compact()][.compact] reclaims them.
-"""
-
 from collections.abc import Iterable, Iterator, Sequence
 from typing import overload
 
@@ -53,8 +35,14 @@ class StrArray:
     - `arr[idxs] = value` scatters `value` (a `str`, an iterable of `str` or
       another `StrArray`) into the given positions.
 
-    Index arrays may be anything convertible via `np.asarray`, including
-    `torch.Tensor` (on CPU) and boolean masks.
+    The representation is designed for cheap bookkeeping and zero-copy exchange
+    with Rust:
+
+    - gather (`arr[idxs]`), filter (`arr[mask]`), kill (`arr[idxs] = ""`) and
+    copy (`arr[children] = arr[parents]`) only touch the handle table and never
+    copy string bytes.
+    - only genuinely new strings are ever written, and they are *appended* to the
+    arena. Overwritten bytes become dead until [compact()][.compact] reclaims them.
     """
 
     def __init__(self, strings: Iterable[str] = ()) -> None:
@@ -66,6 +54,8 @@ class StrArray:
 
     # construction
 
+    # TODO: maybe _from_raw should be the actual __init__
+    #       and the current __init__ should rather be something like from_strings
     @classmethod
     def _from_raw(
         cls, buf: np.ndarray, starts: np.ndarray, lens: np.ndarray
@@ -115,11 +105,13 @@ class StrArray:
         """Shape `(n,)` of the array (mirrors `numpy.ndarray.shape`)"""
         return (len(self),)
 
+    # TODO: only used for repr, keep?
     @property
     def nbytes(self) -> int:
         """Number of live string bytes (excluding dead bytes in the buffer)"""
         return int(self._lens.sum())
 
+    # TODO: only used for repr, keep?
     @property
     def buffer_nbytes(self) -> int:
         """Size of the backing buffer including dead bytes (see [compact()][.compact])"""
@@ -127,6 +119,7 @@ class StrArray:
 
     # reading
 
+    # TODO: add slice indexing?
     @overload
     def __getitem__(self, idx: int | np.integer) -> str: ...
     @overload
@@ -136,6 +129,7 @@ class StrArray:
             start = int(self._starts[idx])
             length = int(self._lens[idx])
             return self._buf[start : start + length].tobytes().decode()
+
         ii = self._as_int_index(idx)
         return StrArray._from_raw(self._buf, self._starts[ii], self._lens[ii])
 
@@ -179,6 +173,7 @@ class StrArray:
             self._starts[ii] = 0
             self._lens[ii] = 0
             return
+
         blob = value.encode()
         start = self._buf.size
         self._buf = np.concatenate([self._buf, np.frombuffer(blob, dtype=np.uint8)])
@@ -190,8 +185,10 @@ class StrArray:
             raise ValueError(
                 f"Cannot assign {len(strings)} strings to {len(ii)} positions"
             )
+
         if not strings:
             return
+
         blobs = [s.encode() for s in strings]
         lens = np.fromiter((len(b) for b in blobs), dtype=np.int64, count=len(blobs))
         base = self._buf.size
@@ -206,11 +203,12 @@ class StrArray:
             raise ValueError(
                 f"Cannot assign {len(value)} strings to {len(ii)} positions"
             )
+
         if value._buf is self._buf:
-            # same arena: pure handle copy, no bytes moved (e.g. cell division)
             self._starts[ii] = value._starts
             self._lens[ii] = value._lens
             return
+
         blob, lens = value._contiguous()
         base = self._buf.size
         self._buf = np.concatenate([self._buf, blob])
@@ -248,6 +246,7 @@ class StrArray:
         arr = np.asarray(idx)
         if arr.dtype == bool:
             arr = np.nonzero(arr)[0]
+
         return arr.astype(np.int64, copy=False)
 
     def _contiguous(self) -> tuple[np.ndarray, np.ndarray]:
@@ -256,10 +255,9 @@ class StrArray:
         total = int(lens.sum())
         if total == 0:
             return np.empty(0, dtype=np.uint8), lens.copy()
-        out_starts = _starts_from_lens(lens)
-        src = np.repeat(self._starts - out_starts, lens) + np.arange(
-            total, dtype=np.int64
-        )
+
+        starts = _starts_from_lens(lens)
+        src = np.repeat(self._starts - starts, lens) + np.arange(total, dtype=np.int64)
         return self._buf[src], lens.copy()
 
     def __repr__(self) -> str:

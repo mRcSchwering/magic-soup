@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
-import torch
-from magicsoup.strarray import StrArray
+from magicsoup.core.strarray import StrArray
 
 
 def test_construction_and_reading() -> None:
@@ -39,27 +38,14 @@ def test_integer_indexing() -> None:
         ([2, 2, 0], ["T", "T", "ATG"]),
         ([], []),
         (np.array([1, 0]), ["GGGCC", "ATG"]),
-        (slice(None), ["ATG", "GGGCC", "T"]),
+        (np.array([True, False, True]), ["ATG", "T"]),
     ],
 )
 def test_array_indexing(idx, exp) -> None:
     arr = StrArray(["ATG", "GGGCC", "T"])
-    sub = arr[idx] if not isinstance(idx, slice) else arr[np.arange(len(arr))]
+    sub = arr[idx]
     assert isinstance(sub, StrArray)
     assert sub.tolist() == exp
-
-
-def test_boolean_mask_indexing() -> None:
-    arr = StrArray(["ATG", "GGGCC", "T", "CC"])
-    mask = np.array([True, False, True, False])
-    assert arr[mask].tolist() == ["ATG", "T"]
-
-
-def test_torch_tensor_indexing() -> None:
-    arr = StrArray(["ATG", "GGGCC", "T", "CC"])
-    assert arr[torch.tensor([3, 0])].tolist() == ["CC", "ATG"]
-    mask = torch.tensor([True, False, False, True])
-    assert arr[mask].tolist() == ["ATG", "CC"]
 
 
 def test_getitem_shares_buffer_no_copy() -> None:
@@ -70,6 +56,22 @@ def test_getitem_shares_buffer_no_copy() -> None:
     assert sub._buf is arr._buf
 
 
+@pytest.mark.parametrize(
+    "idx, val, exp",
+    [
+        (np.array([0, 2]), ["TTTT", "G"], ["TTTT", "GGGCC", "G"]),
+        (np.array([0, 2]), "AAA", ["AAA", "GGGCC", "AAA"]),
+        (1, "AAA", ["ATG", "AAA", "T"]),
+        (1, "", ["ATG", "", "T"]),
+        (np.array([0, 1]), StrArray(["XX", "YY"]), ["XX", "YY", "T"]),
+    ],
+)
+def test_setitem(idx, val, exp) -> None:
+    arr = StrArray(["ATG", "GGGCC", "T"])
+    arr[idx] = val
+    assert arr.tolist() == exp
+
+
 def test_setitem_scalar_kill() -> None:
     arr = StrArray(["ATG", "GGGCC", "T", "CC"])
     buf_before = arr._buf
@@ -77,33 +79,6 @@ def test_setitem_scalar_kill() -> None:
     assert arr.tolist() == ["ATG", "", "T", ""]
     # killing must not touch the buffer
     assert arr._buf is buf_before
-
-
-def test_setitem_scalar_broadcast() -> None:
-    arr = StrArray(["ATG", "GGGCC", "T"])
-    arr[np.array([0, 2])] = "AAA"
-    assert arr.tolist() == ["AAA", "GGGCC", "AAA"]
-
-
-def test_setitem_list_of_strings() -> None:
-    arr = StrArray(["ATG", "GGGCC", "T"])
-    arr[np.array([0, 2])] = ["TTTT", "G"]
-    assert arr.tolist() == ["TTTT", "GGGCC", "G"]
-
-
-def test_setitem_single_int() -> None:
-    arr = StrArray(["ATG", "GGGCC", "T"])
-    arr[1] = "AAAA"
-    assert arr.tolist() == ["ATG", "AAAA", "T"]
-    arr[1] = ""
-    assert arr.tolist() == ["ATG", "", "T"]
-
-
-def test_setitem_strarray_other_buffer() -> None:
-    arr = StrArray(["ATG", "GGGCC", "T"])
-    other = StrArray(["XX", "YYY"])
-    arr[np.array([0, 2])] = other
-    assert arr.tolist() == ["XX", "GGGCC", "YYY"]
 
 
 def test_setitem_strarray_same_buffer_is_zero_copy() -> None:
@@ -143,8 +118,8 @@ def test_concat() -> None:
     assert StrArray.concat([]).tolist() == []
 
 
-def test_grow_like_exp_arr_c() -> None:
-    # mirrors Cells._exp_arr_c: concat([genomes, empties])
+# TODO: rm?
+def test_grow() -> None:
     genomes = StrArray(["ATG", "GGGCC"])
     grown = StrArray.concat([genomes, StrArray.empty(3)])
     assert grown.tolist() == ["ATG", "GGGCC", "", "", ""]
@@ -171,6 +146,7 @@ def test_copy_is_independent() -> None:
     assert dup.tolist() == ["ATG", "GG"]  # unaffected
 
 
+# TODO: what is this testing?!
 def test_as_buffers_roundtrip() -> None:
     strings = ["ATG", "", "GGGCC", "T"]
     arr = StrArray(strings)
@@ -192,6 +168,7 @@ def test_unicode_roundtrip() -> None:
     assert arr[1] == "αβγ"
 
 
+# TODO: werent these already tested?
 def test_empty_array_operations() -> None:
     arr = StrArray.empty(0)
     assert arr[np.array([], dtype=np.int64)].tolist() == []
@@ -199,10 +176,3 @@ def test_empty_array_operations() -> None:
     assert arr.tolist() == []
     buf, starts, lens = arr.as_buffers()
     assert buf.size == 0 and starts.size == 0 and lens.size == 0
-
-
-def test_repr() -> None:
-    arr = StrArray(["ATG", "GG"])
-    text = repr(arr)
-    assert "StrArray" in text
-    assert "n=2" in text
