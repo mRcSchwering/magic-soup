@@ -1,12 +1,9 @@
-import logging
 from typing import TypedDict
 
 import torch
 import torch.nn.functional as F
 
 from magicsoup.util import TensorClass, TensorKwargs
-
-_log = logging.getLogger(__name__)
 
 
 class KineticsKwargs(TypedDict, total=False):
@@ -116,8 +113,6 @@ class Kinetics(TensorClass):
             # substract contribution of each protein from total concentration change
             B = x0_ + (dx_ - N_e * xi_)  # (c, p, 2m)
 
-            self._check_nonfinite(B, "B during Jacobi sweep")
-
             xi_lo, xi_hi = self._get_bounds(
                 B=B, N_e=N_e, v_max=v_max, dt=dt
             )  # (c, p), (c, p)
@@ -138,6 +133,7 @@ class Kinetics(TensorClass):
                 v_max=v_max,
             )  # (c, p)
 
+            # TODO: sync to host, worht it?
             if (xi - xi_prev).abs().max() < xi_conv_tol:
                 break
 
@@ -149,12 +145,8 @@ class Kinetics(TensorClass):
 
         x1 = x0 + dx  # (c, 2m)
 
-        x1 = self._fix_nonfinite(x1, "x1 after Jacobi sweep")
-        x1 = self._fix_negative(x1, "x1 after Jacobi sweep")
-
-        if x1.min() < 0.0:
-            raise ValueError("Fix didnt work")
-
+        # final safe-guards
+        x1[~torch.isfinite(x1)] = 0.0
         return x1.clamp(min=0.0)  # (c, 2m)
 
     def _bisect_xi(
@@ -219,6 +211,7 @@ class Kinetics(TensorClass):
             hi = torch.where(too_high, xi, hi)  # (c, p)
             lo = torch.where(too_high, lo, xi)  # (c, p)
 
+            # TODO: sync to host, worht it?
             if (hi - lo).max() < xi_conv_tol:
                 break
 
@@ -306,33 +299,6 @@ class Kinetics(TensorClass):
         ratio = torch.where(dx < 0, x0 / (-dx + pad), torch.full_like(dx, inf))
         lam = ratio.min(dim=1, keepdim=True).values.clamp(max=1.0)  # (c, 1)
         return xi * lam, dx * lam  # (c, p), (c, 2m)
-
-    def _fix_negative(self, t: torch.Tensor, where: str) -> torch.Tensor:
-        is_neg = t < -self.eps  # error < eps is negligible
-        if not is_neg.any():
-            return t.clamp(min=0.0)
-
-        bad = t[is_neg].flatten()[:5]
-        _log.warning("negative values in %s, cells/molecules: %r", where, bad)
-        _log.warning("negative values in %s replaced with 0.0", where)
-        return t.clamp(min=0.0)
-
-    def _fix_nonfinite(self, t: torch.Tensor, where: str) -> torch.Tensor:
-        is_finite = torch.isfinite(t)
-        if is_finite.all():
-            return t
-
-        bad = t[~is_finite].flatten()[:5]
-        _log.warning("non-finite values in %s, cells/proteins: %r", where, bad)
-        _log.warning("non-finite values in %s replaced with 0.0", where)
-        t[~is_finite] = 0.0
-        return t
-
-    def _check_nonfinite(self, t: torch.Tensor, where: str) -> None:
-        is_finite = torch.isfinite(t)
-        if not is_finite.all():
-            bad = t[~is_finite].flatten()[:5]
-            _log.warning("non-finite values in %s, cells/proteins: %r", where, bad)
 
     @classmethod
     def _get_bounds(
