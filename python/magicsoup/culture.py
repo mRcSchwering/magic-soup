@@ -295,7 +295,7 @@ class Culture(TensorClass):
 
         # which parent idx produced child idx
         child_parent = self.idxfull(l, value=-1)  # (l,) <- (n,)
-        c = 0
+        c = 0  # TODO: keep on a GPU tensor to avoid syncing
 
         for _ in range(n_max_rounds):
             r = remaining.numel()  # number of cells still trying to act
@@ -325,7 +325,7 @@ class Culture(TensorClass):
 
             # set parent cell idxs into child slots
             child_parent[w_slots] = w_idxs  # (l,) <- (w,)
-            c += int(winners.sum())  # keep track of occupied slots
+            c += int(winners.sum())  # keep track of occupied slots  # sync with host
 
             # cells with no free neighbor stay too, migrate may vacate nearby
             remaining = remaining[~winners]  # (r,)

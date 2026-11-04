@@ -19,6 +19,9 @@ use std::collections::HashMap;
 //       e.g. into separate classes like Mutator with inner?
 //       keep other modules python-free
 
+// TODO: I need to make sure numpy dtypes and rust types are aligned
+//       shouldn't use usize for that because usize may be lower/higher
+
 // Mutator
 
 #[pyclass]

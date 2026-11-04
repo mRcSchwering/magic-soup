@@ -10,6 +10,7 @@ import torch
 from magicsoup.biology import Cell
 from magicsoup.cells import Cells, CellsKwargs
 from magicsoup.chemistry import Chemistry
+from magicsoup.core.strarray import StrArray
 from magicsoup.culture import Culture, CultureKwargs
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.kinetics import Kinetics, KineticsKwargs
@@ -160,8 +161,8 @@ class World(TensorClass):
                 raise ValueError(f"Cell at {by_position} not found")
             idx = int(torch.argwhere(mask)[0].item())
 
-        genome = str(self.cells.genomes[idx])
-        proteome_specs = self.cells.genomics.translate_genomes(genomes=[genome])
+        genomes = self.cells.genomes[np.array([idx])]
+        proteome_specs = self.cells.genomics.translate_genomes(genomes=genomes)
         proteome = (
             self.cells.proteomics.get_proteome(proteome=proteome_specs[0])
             if len(proteome_specs[0]) > 0
@@ -169,7 +170,7 @@ class World(TensorClass):
         )
 
         return Cell(
-            genome=genome,
+            genome=genomes[0],
             proteome=proteome,
             lineage=str(self.cells.lineages[idx]),
             age=float(self.cells.ages[idx]),
@@ -220,13 +221,15 @@ class World(TensorClass):
         self.culture.molecule_map[:, xs, ys] = pickup * f
 
         # update genomes and proteomes
-        self.cells.update_genomes(genomes=genomes, idxs=new_idxs)
+        self.cells.update_genomes(genomes=StrArray.from_strings(genomes), idxs=new_idxs)
 
         # update other values
         self.cells.alive[new_idxs] = True
         self.cells.ages[new_idxs] = 0.0
         self.cells.generations[new_idxs] = 0
-        self.cells.lineages[new_idxs] = [randstr(n=12) for _ in range(n_new_cells)]
+        self.cells.lineages[new_idxs.cpu().numpy()] = [
+            randstr(n=12) for _ in range(n_new_cells)
+        ]
 
         return new_idxs
 
@@ -266,11 +269,12 @@ class World(TensorClass):
         self.culture.cell_map[xs, ys] = new_idxs
 
         # update parameters from genomes
-        self.cells.update_genomes(genomes=[d.genome for d in cells], idxs=new_idxs)
+        genomes = StrArray.from_strings([d.genome for d in cells])
+        self.cells.update_genomes(genomes=genomes, idxs=new_idxs)
 
         # update other parameters
         self.cells.alive[new_idxs] = True
-        self.cells.lineages[new_idxs] = [d.lineage for d in cells]
+        self.cells.lineages[new_idxs.cpu().numpy()] = [d.lineage for d in cells]
         self.cells.molecules[new_idxs, :] = torch.stack([d.molecules for d in cells])
         self.cells.ages[new_idxs] = self.ftensor([d.age for d in cells])
         self.cells.generations[new_idxs] = self.idxtensor([d.generation for d in cells])
@@ -319,15 +323,15 @@ class World(TensorClass):
             return self.idxtensor([]), self.idxtensor([])
 
         # prepare for children
-        avail_idxs = self.cells.get_free_idxs()
+        avail_idxs = self.cells.get_free_idxs()  # sync with host
         n_avail = avail_idxs.numel()
 
         if n_avail >= n_req:
             child_idxs = avail_idxs[:n_req]
         else:
-            n_alive = self.cells.get_n_cells()
+            n_alive = self.cells.get_n_cells()  # sync with host
             self.cells.update_c(c_req=n_req + n_alive)
-            avail_idxs = self.cells.get_free_idxs()
+            avail_idxs = self.cells.get_free_idxs()  # sync with host
             child_idxs = avail_idxs[:n_req]
 
         # already places children on cell map
@@ -340,12 +344,14 @@ class World(TensorClass):
             return self.idxtensor([]), self.idxtensor([])
 
         # update child kinetics parameters from genomes
-        self.cells.copy_genomes(from_idxs=parent_idxs, to_idxs=child_idxs)
+        self.cells.copy_genomes(from_idxs=parent_idxs, to_idxs=child_idxs)  # sync host
+        cpu_child_idxs = child_idxs.cpu().numpy()
+        cpu_parent_idxs = parent_idxs.cpu().numpy()
 
         # update cell parameters for children
         descendant_idxs = torch.cat([parent_idxs, child_idxs])
         self.cells.alive[child_idxs] = True
-        self.cells.lineages[child_idxs] = self.cells.lineages[parent_idxs]
+        self.cells.lineages[cpu_child_idxs] = self.cells.lineages[cpu_parent_idxs]
         self.cells.generations[child_idxs] = self.cells.generations[parent_idxs]
         self.cells.generations[descendant_idxs] += 1
         self.cells.ages[descendant_idxs] = 0.0
@@ -356,7 +362,7 @@ class World(TensorClass):
 
         return parent_idxs, child_idxs
 
-    def update_cells(self, genomes: list[str], cell_idxs: torch.Tensor) -> None:
+    def update_cells(self, genomes: StrArray, cell_idxs: torch.Tensor) -> None:
         if len(genomes) == 0:
             return
 
@@ -367,10 +373,13 @@ class World(TensorClass):
 
     def kill_cells(self, cell_idxs: torch.Tensor | None = None) -> None:
         if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()
+            cell_idxs = self.cells.get_cell_idxs()  # sync with host
 
         if cell_idxs.numel() == 0:
             return
+
+        # sync with host
+        cpu_cell_idxs = cell_idxs.cpu().numpy()
 
         # free up map
         cell_positions = self.culture.get_cell_positions()
@@ -384,8 +393,8 @@ class World(TensorClass):
         self.culture.molecule_map[:, xs, ys] = (n_voxel + n_cell) / self.v_voxel
 
         # unset parameters
-        self.cells.genomes[cell_idxs] = ""
-        self.cells.lineages[cell_idxs] = ""
+        self.cells.genomes[cpu_cell_idxs] = ""
+        self.cells.lineages[cpu_cell_idxs] = ""
         self.cells.alive[cell_idxs] = False
         self.cells.ages[cell_idxs] = 0.0
         self.cells.generations[cell_idxs] = 0
@@ -453,8 +462,8 @@ class World(TensorClass):
         mutator = mutator or self.mutator
         idxs, mutated = mutator.mutate(genomes=self.cells.genomes)
         self.update_cells(
-            cell_idxs=self.idxtensor([d[0] for d in mutated]),
-            genomes=[d[1] for d in mutated],
+            cell_idxs=torch.from_numpy(idxs).to(self.device),
+            genomes=mutated,
         )
 
     def save(self, rundir: Path, name: str = "world.pkl") -> None:
