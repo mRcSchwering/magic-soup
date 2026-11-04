@@ -49,3 +49,15 @@ pub fn geometric_len<R: rand::Rng>(rng: &mut R, mean: f64, max: usize) -> usize 
     }
     len
 }
+
+/// Convert offset-buffer to vector
+pub fn buffer_to_vec<'a>(buf: &'a [u8], starts: &[isize], lens: &[isize]) -> Vec<&'a [u8]> {
+    starts
+        .iter()
+        .zip(lens)
+        .map(|(&s, &l)| {
+            buf.get((s as usize)..(s.saturating_add(l) as usize))
+                .expect("Starts or lens overflow buffer")
+        })
+        .collect()
+}

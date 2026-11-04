@@ -83,8 +83,10 @@ class Mutator(_ReduceMixin):
             max_genome_len,
         )
 
-    def mutate(self, genomes: list[str]) -> list[tuple[int, str]]:
-        return self._cls.mutate(genomes)
+    def mutate(
+        self, buffer: np.ndarray, starts: np.ndarray, lens: np.ndarray
+    ) -> tuple[np.ndarray, list[str]]:
+        return self._cls.mutate(buffer, starts, lens)
 
 
 # genomics
@@ -111,7 +113,7 @@ class Genomics(_ReduceMixin):
         dom_size_nt: int,
         dom_type_size_nt: int,
     ) -> None:
-        # TODO: encoding still necessary?
+        # encode to be converted to [u8]
         self._cls = _lib.Genomics(
             [d.encode() for d in start_codons],
             [d.encode() for d in stop_codons],
@@ -131,27 +133,15 @@ class Genomics(_ReduceMixin):
             dom_type_size_nt,
         )
 
-    def translate_genomes(self, genomes: list[str]) -> "list[list[ProteinSpec]]":
-        # NOTE: even cheaper is it to send all genomes as one long buffer
-        # buffer = "".join(strarr)
-        # offsets = np.array([0] + list(np.cumsum([len(g) for g in strarr])), dtype=np.int64)
-        #       then in rust:
-        # let offs = offsets.as_slice()?;
-        # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as int..w[1] as int]).collect();
-        # revcomp_many(&slices).map_err(|(i, b)| {PyValueError::new_err("genome invalid base")})
-        return self._cls.translate_genomes(genomes)
+    def translate_genomes(
+        self, buffer: np.ndarray, starts: np.ndarray, lens: np.ndarray
+    ) -> "list[list[ProteinSpec]]":
+        return self._cls.translate_genomes(buffer, starts, lens)
 
     def translate_genomes_arr(
-        self, genomes: list[str]
+        self, buffer: np.ndarray, starts: np.ndarray, lens: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-        # NOTE: even cheaper is it to send all genomes as one long buffer
-        # buffer = "".join(strarr)
-        # offsets = np.array([0] + list(np.cumsum([len(g) for g in strarr])), dtype=np.int64)
-        #       then in rust:
-        # let offs = offsets.as_slice()?;
-        # let slices: Vec<&[u8]> = offs.windows(2).map(|w| &buf[w[0] as int..w[1] as int]).collect();
-        # revcomp_many(&slices).map_err(|(i, b)| {PyValueError::new_err("genome invalid base")})
-        return self._cls.translate_genomes_arr(genomes)
+        return self._cls.translate_genomes_arr(buffer, starts, lens)
 
     def get_coding_regions(
         self,

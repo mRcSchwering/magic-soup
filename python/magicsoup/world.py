@@ -451,8 +451,7 @@ class World(TensorClass):
 
     def mutate_cells(self, mutator: Mutator | None = None) -> None:
         mutator = mutator or self.mutator
-        genomes = self.cells.genomes.tolist()
-        mutated = mutator.mutate(genomes=genomes)
+        idxs, mutated = mutator.mutate(genomes=self.cells.genomes)
         self.update_cells(
             cell_idxs=self.idxtensor([d[0] for d in mutated]),
             genomes=[d[1] for d in mutated],

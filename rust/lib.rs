@@ -9,11 +9,15 @@ pub mod indel;
 mod mutations;
 pub mod seq;
 pub mod substitutions;
-use numpy::{PyArray1, PyArray2};
+use numpy::{PyArray1, PyArray2, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use std::collections::HashMap;
+
+// TODO: factor out all unnecessary code from lib.rs
+//       e.g. into separate classes like Mutator with inner?
+//       keep other modules python-free
 
 // Mutator
 
@@ -68,22 +72,31 @@ impl Mutator {
         Ok(Mutator { inner })
     }
 
-    fn mutate(
+    fn mutate<'py>(
         &mut self,
-        py: Python<'_>,
-        genomes: Vec<PyBackedStr>,
-    ) -> PyResult<Vec<(usize, String)>> {
-        let slices: Vec<&[u8]> = genomes.iter().map(|g| g.as_bytes()).collect();
+        py: Python<'py>,
+        buffer: PyReadonlyArray1<'py, u8>,
+        starts: PyReadonlyArray1<'py, isize>,
+        lens: PyReadonlyArray1<'py, isize>,
+    ) -> (Bound<'py, PyArray1<i32>>, Vec<String>) {
+        let slices: Vec<&[u8]> = seq::buffer_to_vec(
+            buffer.as_slice().expect("buffer not contiguous"),
+            starts.as_slice().expect("starts not contiguous"),
+            lens.as_slice().expect("lens not contiguous"),
+        );
+
+        // mutate
         let inner = &mut self.inner;
         let changed = py.detach(|| inner.mutate(&slices));
-        changed
+
+        // return
+        let idxs: Vec<i32> = changed.iter().map(|(i, _)| *i as i32).collect();
+        let genomes: Vec<String> = changed
             .into_iter()
-            .map(|(i, v)| {
-                String::from_utf8(v)
-                    .map(|s| (i, s))
-                    .map_err(|_| PyValueError::new_err(format!("genome {i} is not ASCII")))
-            })
-            .collect()
+            .map(|(_, d)| String::from_utf8(d).expect("non ASCII genome"))
+            .collect();
+
+        (PyArray1::from_vec(py, idxs), genomes)
     }
 }
 
@@ -129,12 +142,19 @@ impl Genomics {
         }
     }
 
-    fn translate_genomes(
+    fn translate_genomes<'py>(
         &self,
-        py: Python<'_>,
-        genomes: Vec<PyBackedStr>,
+        py: Python<'py>,
+        buffer: PyReadonlyArray1<'py, u8>,
+        starts: PyReadonlyArray1<'py, isize>,
+        lens: PyReadonlyArray1<'py, isize>,
     ) -> Vec<Vec<genomics::ProteinSpec>> {
-        let slices: Vec<&[u8]> = genomes.iter().map(|g| g.as_bytes()).collect();
+        let slices: Vec<&[u8]> = seq::buffer_to_vec(
+            buffer.as_slice().expect("buffer not contiguous"),
+            starts.as_slice().expect("starts not contiguous"),
+            lens.as_slice().expect("lens not contiguous"),
+        );
+
         py.detach(move || {
             genomics::translate_genomes_threaded(
                 &slices,
@@ -152,15 +172,22 @@ impl Genomics {
     fn translate_genomes_arr<'py>(
         &self,
         py: Python<'py>,
-        genomes: Vec<PyBackedStr>,
+        buffer: PyReadonlyArray1<'py, u8>,
+        starts: PyReadonlyArray1<'py, isize>,
+        lens: PyReadonlyArray1<'py, isize>,
     ) -> (
         Bound<'py, PyArray1<i32>>,
         Bound<'py, PyArray1<i32>>,
         Bound<'py, PyArray2<i32>>,
         usize,
     ) {
+        let slices: Vec<&[u8]> = seq::buffer_to_vec(
+            buffer.as_slice().expect("buffer not contiguous"),
+            starts.as_slice().expect("starts not contiguous"),
+            lens.as_slice().expect("lens not contiguous"),
+        );
+
         // translate genomes
-        let slices: Vec<&[u8]> = genomes.iter().map(|g| g.as_bytes()).collect();
         let specs = py.detach(move || {
             genomics::translate_genomes_threaded(
                 &slices,

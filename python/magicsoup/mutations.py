@@ -1,7 +1,10 @@
 import random
 from typing import TypedDict
 
+import numpy as np
+
 from magicsoup import rs
+from magicsoup.core.strarray import StrArray
 
 
 class MutatorKwargs(TypedDict, total=False):
@@ -125,12 +128,10 @@ class Mutator:
         # setup rust class
         self._setup_rs()
 
-    def mutate(self, genomes: list[str]) -> list[tuple[int, str]]:
+    def mutate(self, genomes: StrArray) -> tuple[np.ndarray, StrArray]:
         """Apply mutations"""
-        # TODO: could already hand over as offset buffer
-        #       it will convert it anyway afterwards
-        # TODO: could return as numpy -> tensors
-        return self.rs.mutate(genomes=genomes)
+        idxs, seqs = self.rs.mutate(*genomes.as_buffers())
+        return idxs, StrArray.from_strings(seqs)
 
     def _setup_rs(self) -> None:
         self.rs = rs.Mutator(

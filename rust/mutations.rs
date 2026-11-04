@@ -30,6 +30,14 @@ pub struct Mutator {
     rng: SmallRng,
 }
 
+fn apply_event(seq: &mut Cow<[u8]>, kind: Kind, cfg: &Config, rng: &mut SmallRng) {
+    match kind {
+        Kind::Sub(pos) => try_substitution(seq, pos, cfg, rng),
+        Kind::Indel => try_indel(seq, cfg, rng),
+        Kind::Break => try_rearrangement(seq, cfg, rng),
+    }
+}
+
 impl Mutator {
     pub fn new(cfg: Config, seed: u64) -> Result<Self, String> {
         cfg.validate()?;
@@ -115,10 +123,6 @@ impl Mutator {
     }
 }
 
-fn apply_event(seq: &mut Cow<[u8]>, kind: Kind, cfg: &Config, rng: &mut SmallRng) {
-    match kind {
-        Kind::Sub(pos) => try_substitution(seq, pos, cfg, rng),
-        Kind::Indel => try_indel(seq, cfg, rng),
-        Kind::Break => try_rearrangement(seq, cfg, rng),
-    }
-}
+// TODO: currently events can still be rejected in apply_event (e.g. homol-recob)
+//       in this case result contains un-mutated sequences
+//       so simulation does unnecessary update

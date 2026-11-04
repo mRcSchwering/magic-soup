@@ -2,6 +2,7 @@ import re
 
 import edlib  # type: ignore
 import pytest
+from magicsoup.core.strarray import StrArray
 from magicsoup.mutations import Mutator
 from magicsoup.util import random_genome
 
@@ -25,24 +26,24 @@ def test_reasonable_mutation_rates() -> None:
     mutator = Mutator()
 
     n = 10_000
-    genomes = [random_genome() for _ in range(n)]
-    res = mutator.mutate(genomes=genomes)
+    genomes = StrArray.from_strings([random_genome() for _ in range(n)])
+    idxs, mutated = mutator.mutate(genomes=genomes)
 
     # expect about 30 per 10k genomes
     exp_rate = 0.003
-    assert abs(len(res) / n - exp_rate) < 0.1
+    assert abs(len(mutated) / n - exp_rate) < 0.1
 
     # all mutated sequences are different
-    assert all(genomes[i] != d for i, d in res)
+    assert all(genomes[i] != d for i, d in zip(idxs, mutated))
 
     # no bullshit was added
-    assert all(set(d[1]) <= set("ACTG") for d in res)
+    assert all(set(d) <= set("ACTG") for d in mutated)
 
     # about 75% are substitutions
     subs = 0
     indels = 0
-    for idx, mutated in res:
-        muts = _sub_indel_counts(genomes[idx], mutated)
+    for idx, seq in zip(idxs, mutated):
+        muts = _sub_indel_counts(genomes[idx], seq)
         subs += muts["subs"]
         indels += muts["indels"]
 
@@ -66,12 +67,12 @@ def test_mutation_mechanisms(sub: float, indel: float, homo: float) -> None:
     mutator = Mutator(sub_rate=sub, indel_rate=indel, break_rate=homo)
 
     n = 10_000
-    genomes = [random_genome(10) * 100 for _ in range(n)]
-    res = mutator.mutate(genomes=genomes)
-    assert len(res) > 0
+    genomes = StrArray.from_strings([random_genome(10) * 100 for _ in range(n)])
+    idxs, mutated = mutator.mutate(genomes=genomes)
+    assert len(mutated) > 0
 
     # mutated sequences are different (homol can still create non-mutated ones)
-    assert sum(genomes[i] != d for i, d in res) / len(res) > 0.9
+    assert sum(genomes[i] != d for i, d in zip(idxs, mutated)) / len(mutated) > 0.9
 
     # no bullshit was added
-    assert all(set(d[1]) <= set("ACTG") for d in res)
+    assert all(set(d) <= set("ACTG") for d in mutated)

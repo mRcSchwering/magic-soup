@@ -180,8 +180,7 @@ class Genomics:
     def translate_genomes(self, genomes: StrArray) -> list[list[rs.ProteinSpec]]:
         if len(genomes) == 0:
             return []
-        # TODO: change signature to accept buffer and indxs
-        return self.rs.translate_genomes(genomes=genomes.tolist())
+        return self.rs.translate_genomes(*genomes.as_buffers())
 
     # TODO: better name
     def translate_genomes_arr(
@@ -190,8 +189,7 @@ class Genomics:
         """Get proteomes in form of domain specifications from genomes"""
         if len(genomes) == 0:
             return (np.zeros(0), np.zeros(0), np.zeros((0, 5)), 0)
-        # TODO: change signature to accept buffer and indxs
-        return self.rs.translate_genomes_arr(genomes=genomes.tolist())
+        return self.rs.translate_genomes_arr(*genomes.as_buffers())
 
     def get_coding_regions(
         self,
