@@ -7,7 +7,7 @@ import pytest
 import torch
 from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
-from magicsoup.config import GAS_CONSTANT
+from magicsoup.core.config import GAS_CONSTANT
 from magicsoup.proteomics import (
     Proteomics,
     _EffectorMap,

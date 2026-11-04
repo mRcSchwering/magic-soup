@@ -3,7 +3,7 @@ from typing import TypedDict
 import torch
 import torch.nn.functional as F
 
-from magicsoup.util import TensorClass, TensorKwargs
+from magicsoup.core.tensorclass import TensorClass, TensorKwargs
 
 
 class KineticsKwargs(TypedDict, total=False):

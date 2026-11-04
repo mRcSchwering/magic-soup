@@ -1,6 +1,4 @@
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,9 +6,9 @@ import pytest
 import torch
 from magicsoup.cells import Cells
 from magicsoup.core.strarray import StrArray
+from magicsoup.core.util import random_genome
 from magicsoup.culture import Culture
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
-from magicsoup.util import random_genome
 from magicsoup.world import World
 
 from tests.util import ftensor
@@ -103,14 +101,6 @@ class _State:
         )
 
 
-@contextmanager
-def _capture_state_change(world: World) -> Iterator[dict[str, _State]]:
-    out = {}
-    out["t0"] = _State.from_world(world)
-    yield out
-    out["t1"] = _State.from_world(world)
-
-
 @pytest.mark.parametrize(
     "n_spawn, exp_n_spawn",
     [
@@ -122,12 +112,13 @@ def _capture_state_change(world: World) -> Iterator[dict[str, _State]]:
 def test_spawn_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> None:
     _spawn_cells(world, n=50)
 
+    t0 = _State.from_world(world)
+
     # spawn cells
-    with caplog.at_level(logging.WARNING), _capture_state_change(world) as state:
+    with caplog.at_level(logging.WARNING):
         world.spawn_cells(genomes=[random_genome() for _ in range(n_spawn)])
 
-    t0 = state["t0"]
-    t1 = state["t1"]
+    t1 = _State.from_world(world)
 
     # check warning
     if exp_n_spawn != n_spawn:
@@ -215,12 +206,13 @@ def test_add_cells(caplog, world: World, n_add: int, exp_n_add: int) -> None:
     # get clones of the first cell
     cell = world.get_cell(by_idx=0)
 
+    t0 = _State.from_world(world)
+
     # spawn cells
-    with caplog.at_level(logging.WARNING), _capture_state_change(world) as state:
+    with caplog.at_level(logging.WARNING):
         world.add_cells(cells=[cell] * n_add)
 
-    t0 = state["t0"]
-    t1 = state["t1"]
+    t1 = _State.from_world(world)
 
     # check warning and mass
     if exp_n_add != n_add:
@@ -289,14 +281,14 @@ def test_add_cells(caplog, world: World, n_add: int, exp_n_add: int) -> None:
 def test_resuspend_cells(world: World, n_spawn: int, n_resp: int) -> None:
     _spawn_cells(world, n=n_spawn)
 
-    # resuspend cells
-    with _capture_state_change(world) as state:
-        t0 = state["t0"]
-        susp_idxs = t0.idx[:n_resp]
-        non_susp_idxs = t0.idx[n_resp:]
-        world.resuspend_cells(cell_idxs=susp_idxs)
+    t0 = _State.from_world(world)
 
-    t1 = state["t1"]
+    # resuspend cells
+    susp_idxs = t0.idx[:n_resp]
+    non_susp_idxs = t0.idx[n_resp:]
+    world.resuspend_cells(cell_idxs=susp_idxs)
+
+    t1 = _State.from_world(world)
 
     # indexes are the same
     assert torch.equal(t0.idx, t1.idx)
@@ -342,14 +334,14 @@ def test_resuspend_cells(world: World, n_spawn: int, n_resp: int) -> None:
 def test_migrate_cells(world: World, n_spawn: int, n_migrate: int, n_succ: int) -> None:
     _spawn_cells(world, n=n_spawn)
 
-    # migrate cells
-    with _capture_state_change(world) as state:
-        t0 = state["t0"]
-        migrate_idxs = t0.idx[:n_migrate]
-        non_migrate_idxs = t0.idx[n_migrate:]
-        scc_idx = world.migrate_cells(cell_idxs=migrate_idxs)
+    t0 = _State.from_world(world)
 
-    t1 = state["t1"]
+    # migrate cells
+    migrate_idxs = t0.idx[:n_migrate]
+    non_migrate_idxs = t0.idx[n_migrate:]
+    scc_idx = world.migrate_cells(cell_idxs=migrate_idxs)
+
+    t1 = _State.from_world(world)
 
     # cells migrated (in full map case 1 may fail to migrate by chance)
     assert abs(scc_idx.numel() - n_succ) < 2
@@ -399,14 +391,14 @@ def test_migrate_cells(world: World, n_spawn: int, n_migrate: int, n_succ: int) 
 def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) -> None:
     _spawn_cells(world, n=n_spawn)
 
-    # divide cells
-    with _capture_state_change(world) as state:
-        t0 = state["t0"]
-        divide_idxs = t0.idx[:n_divide]
-        non_divide_idxs = t0.idx[n_divide:]
-        parent_idxs, child_idxs = world.divide_cells(cell_idxs=divide_idxs)
+    t0 = _State.from_world(world)
 
-    t1 = state["t1"]
+    # divide cells
+    divide_idxs = t0.idx[:n_divide]
+    non_divide_idxs = t0.idx[n_divide:]
+    parent_idxs, child_idxs = world.divide_cells(cell_idxs=divide_idxs)
+
+    t1 = _State.from_world(world)
 
     # some cells divided
     assert parent_idxs.numel() == n_succ
@@ -475,15 +467,15 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
 def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
     _spawn_cells(world, n=n_spawn)
 
-    # update cells
-    with _capture_state_change(world) as state:
-        t0 = state["t0"]
-        update_idxs = t0.idx[:n_update]
-        no_update_idxs = t0.idx[n_update:]
-        new_genomes = StrArray.from_strings([random_genome() for _ in range(n_update)])
-        world.update_cells(genomes=new_genomes, cell_idxs=update_idxs)
+    t0 = _State.from_world(world)
 
-    t1 = state["t1"]
+    # update cells
+    update_idxs = t0.idx[:n_update]
+    no_update_idxs = t0.idx[n_update:]
+    new_genomes = StrArray.from_strings([random_genome() for _ in range(n_update)])
+    world.update_cells(genomes=new_genomes, cell_idxs=update_idxs)
+
+    t1 = _State.from_world(world)
 
     # mass is conserved
     torch.testing.assert_close(t0.mass, t1.mass, atol=_ATOL, rtol=_RTOL)
@@ -543,14 +535,14 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
     world = _spawn_cells(world, n_spawn)
     n_remain = n_spawn - n_kill
 
-    # kill cells
-    with _capture_state_change(world) as state:
-        t0 = state["t0"]
-        kill_idxs = t0.idx[n_remain : n_remain + n_kill]
-        no_kill_idxs = t0.idx[:n_remain]
-        world.kill_cells(cell_idxs=kill_idxs)
+    t0 = _State.from_world(world)
 
-    t1 = state["t1"]
+    # kill cells
+    kill_idxs = t0.idx[n_remain : n_remain + n_kill]
+    no_kill_idxs = t0.idx[:n_remain]
+    world.kill_cells(cell_idxs=kill_idxs)
+
+    t1 = _State.from_world(world)
 
     # cells died
     assert world.cells.get_n_cells() == n_remain
@@ -611,12 +603,12 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
 def test_advance_time(world: World, n_spawn: int) -> None:
     world = _spawn_cells(world, n_spawn)
 
-    # advance time
-    with _capture_state_change(world) as state:
-        world.advance_time()
+    t0 = _State.from_world(world)
 
-    t0 = state["t0"]
-    t1 = state["t1"]
+    # advance time
+    world.advance_time(n_steps=5)
+
+    t1 = _State.from_world(world)
 
     # except for molecule distribution and ages everything is the same
     assert torch.equal(t0.idx, t1.idx)
@@ -654,12 +646,12 @@ def test_advance_time(world: World, n_spawn: int) -> None:
 def test_zero_protein_cell(world: World) -> None:
     world = _spawn_cells(world, n=1, g=0)
 
-    # advance time
-    with _capture_state_change(world) as state:
-        world.advance_time()
+    t0 = _State.from_world(world)
 
-    t0 = state["t0"]
-    t1 = state["t1"]
+    # advance time
+    world.advance_time()
+
+    t1 = _State.from_world(world)
 
     # except for molecule distribution and ages everything is the same
     assert torch.equal(t0.idx, t1.idx)
@@ -696,8 +688,7 @@ def test_free_energy(world: World) -> None:
         return int(e_map.sum() + e_cells.sum() / 1000) / N**2
 
     e0 = _get_energy(world)
-    for t in range(3):
-        world.advance_time()
+    world.advance_time(n_steps=5)
     e1 = _get_energy(world)
 
     assert e0 > e1
@@ -707,25 +698,25 @@ def test_saving_loading_state(world: World, tmp_path: Path) -> None:
     statedir = tmp_path / "world_state"
     world = _spawn_cells(world, 50)
 
-    with _capture_state_change(world) as state:
-        # save world with 50 cells
-        world.save_state(statedir=statedir)
+    t0 = _State.from_world(world)
 
-        # clear world
-        world.kill_cells()
-        world.cells.update_p(p_req=0)
-        world.cells.update_c(c_req=0)
+    # save world with 50 cells
+    world.save_state(statedir=statedir)
 
-        # it was really cleared
-        assert world.cells.get_n_cells() == 0
-        assert world.cells.get_cell_idxs().numel() == 0
-        assert (world.culture.get_cell_positions() == -1).all()
+    # clear world
+    world.kill_cells()
+    world.cells.update_p(p_req=0)
+    world.cells.update_c(c_req=0)
 
-        # load state
-        world.load_state(statedir=statedir)
+    # it was really cleared
+    assert world.cells.get_n_cells() == 0
+    assert world.cells.get_cell_idxs().numel() == 0
+    assert (world.culture.get_cell_positions() == -1).all()
 
-    t0 = state["t0"]
-    t1 = state["t1"]
+    # load state
+    world.load_state(statedir=statedir)
+
+    t1 = _State.from_world(world)
 
     # everything should be the same
     assert torch.equal(t0.idx, t1.idx)

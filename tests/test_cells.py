@@ -5,10 +5,10 @@ import pytest
 import torch
 from magicsoup.cells import Cells
 from magicsoup.core.strarray import StrArray
+from magicsoup.core.util import random_genome
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
-from magicsoup.util import random_genome
 
 from tests.config import FTYPE, IDXTYPE, ITYPE
 from tests.util import idxtensor

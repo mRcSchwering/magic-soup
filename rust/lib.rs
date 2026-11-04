@@ -172,7 +172,7 @@ impl Genomics {
         })
     }
 
-    fn translate_genomes_arr<'py>(
+    fn encode_proteomes<'py>(
         &self,
         py: Python<'py>,
         buffer: PyReadonlyArray1<'py, u8>,

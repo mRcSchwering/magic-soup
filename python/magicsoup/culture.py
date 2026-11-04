@@ -4,7 +4,7 @@ from typing import TypedDict
 import torch
 
 from magicsoup.chemistry import Chemistry
-from magicsoup.util import TensorClass, TensorKwargs
+from magicsoup.core.tensorclass import TensorClass, TensorKwargs
 
 
 class MooreNeighborhood(TensorClass):
@@ -295,7 +295,7 @@ class Culture(TensorClass):
 
         # which parent idx produced child idx
         child_parent = self.idxfull(l, value=-1)  # (l,) <- (n,)
-        c = 0  # TODO: keep on a GPU tensor to avoid syncing
+        c = 0
 
         for _ in range(n_max_rounds):
             r = remaining.numel()  # number of cells still trying to act

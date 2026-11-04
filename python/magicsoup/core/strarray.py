@@ -107,7 +107,6 @@ class StrArray:
 
     # reading
 
-    # TODO: add slice indexing?
     @overload
     def __getitem__(self, idx: int | np.integer) -> str: ...
     @overload
@@ -217,7 +216,6 @@ class StrArray:
         self._starts = _starts_from_lens(lens)
         self._lens = lens
 
-    # TODO: required?
     def as_buffers(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Expose the backing arrays `(buffer, starts, lens)` for zero-copy exchange.

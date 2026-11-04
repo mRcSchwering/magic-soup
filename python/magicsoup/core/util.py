@@ -3,20 +3,9 @@ import string
 from collections.abc import Iterable
 from itertools import product
 from pathlib import Path
-from typing import Any, TypedDict
-
-import numpy as np
-import torch
 
 from magicsoup import rs
-from magicsoup.config import (
-    ALL_NTS,
-    CODON_SIZE,
-    DEFAULT_DEVICE,
-    DEFAULT_FTYPE,
-    DEFAULT_ITYPE,
-    DEFAULT_STYPE,
-)
+from magicsoup.core.config import ALL_NTS, CODON_SIZE
 
 
 def reverse_complement(seq: str) -> str:
@@ -136,74 +125,3 @@ def read_fasta(file: Path) -> dict[str, str]:
         name_2_seq[name] = "" if len(parts) < 2 else parts[1]
 
     return name_2_seq
-
-
-class TensorKwargs(TypedDict, total=False):
-    device: torch.device | str
-    itype: torch.dtype
-    ftype: torch.dtype
-
-
-class TensorClass:
-    """
-    Setup pytorch tensors
-
-    Arguments:
-        device: Device to use for torch tensors
-            (see [pytorch CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html)).
-        ftype: Dtype of float torch tensors used.
-        ftype: Dtype of integer torch tensors used.
-        ftype: Dtype for string numpy arrays
-
-    Device and dtypes have to be aligned between the different classes
-    used in the simulation.
-    """
-
-    def __init__(
-        self,
-        device: torch.device | str = DEFAULT_DEVICE,
-        itype: torch.dtype = DEFAULT_ITYPE,
-        ftype: torch.dtype = DEFAULT_FTYPE,
-        stype: np.dtype | str = DEFAULT_STYPE,
-    ) -> None:
-        self.device = device
-        self.itype = itype
-        self.ftype = ftype
-        self.stype = stype
-        # TODO: idxtype as parameter (in case of int64)?
-
-    def idxtensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=torch.int32)
-
-    def itensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=self.itype)
-
-    def ftensor(self, d: Any) -> torch.Tensor:
-        return torch.tensor(d, device=self.device, dtype=self.ftype)
-
-    def idxzeros(self, *args) -> torch.Tensor:
-        return torch.zeros(*args, device=self.device, dtype=torch.int32)
-
-    def izeros(self, *args) -> torch.Tensor:
-        return torch.zeros(*args, device=self.device, dtype=self.itype)
-
-    def fzeros(self, *args) -> torch.Tensor:
-        return torch.zeros(*args, device=self.device, dtype=self.ftype)
-
-    def idxfull(self, *args, value: int) -> torch.Tensor:
-        return torch.full(args, fill_value=value, device=self.device, dtype=torch.int32)
-
-    def frand(self, *args) -> torch.Tensor:
-        return torch.rand(*args, device=self.device, dtype=torch.float32)
-
-    def idxrandperm(self, n: int) -> torch.Tensor:
-        return torch.randperm(n, device=self.device, dtype=torch.int32)
-
-    def idxarange(self, n: int) -> torch.Tensor:
-        return torch.arange(n, device=self.device, dtype=torch.int32)
-
-    def strarray(self, d: Iterable[str]) -> np.ndarray:
-        return np.array(d, dtype=self.stype)
-
-    def strempty(self, n: int) -> np.ndarray:
-        return np.zeros((n,), dtype=self.stype)

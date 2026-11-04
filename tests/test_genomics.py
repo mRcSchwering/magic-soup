@@ -2,10 +2,10 @@ import math
 from collections import defaultdict
 
 import pytest
-from magicsoup.config import CODON_SIZE
+from magicsoup.core.config import CODON_SIZE
 from magicsoup.core.strarray import StrArray
+from magicsoup.core.util import codons, random_genome
 from magicsoup.genomics import DomainType, Genomics, _DomainTypeMap
-from magicsoup.util import codons, random_genome
 
 from tests.util import load_test_json
 
@@ -227,7 +227,7 @@ def test_translate_genomes() -> None:
     proteome = genomics.translate_genomes(genomes=genomes)[0]
     assert proteome == exp_proteome
 
-    cell, prot, tok, p = genomics.translate_genomes_arr(genomes=genomes)
+    cell, prot, tok, p = genomics.encode_proteomes(genomes=genomes)
     assert p == 3
     assert cell.tolist() == [0, 0, 0]
     assert prot.tolist() == [0, 1, 2]
@@ -251,7 +251,7 @@ def test_genomics_domain_likelihoods() -> None:
     d_lst = sum([len(dd[0]) for d in proteomes for dd in d])
 
     # translate into arrays
-    cell, prot, tok, p = genomics.translate_genomes_arr(genomes=genomes)
+    cell, prot, tok, p = genomics.encode_proteomes(genomes=genomes)
     p_arr = len({tuple(d) for d in zip(cell.tolist(), prot.tolist())})
     d_arr = tok.shape[0]
 

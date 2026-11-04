@@ -11,6 +11,8 @@ ALL_NTS = tuple("TCGA")  # "N" represents any one of these
 ALL_CODONS = {"".join(d) for d in product(ALL_NTS, ALL_NTS, ALL_NTS)}
 
 DEFAULT_DEVICE = os.getenv("DEVICE", "cpu")
-DEFAULT_FTYPE = torch.float32
-DEFAULT_ITYPE = torch.int8
-DEFAULT_STYPE = "T"
+
+# these parameters have to be aligned with Rust
+ITYPE = torch.int8
+FTYPE = torch.float32
+IDXTYPE = torch.int32

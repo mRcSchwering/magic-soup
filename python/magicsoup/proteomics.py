@@ -16,9 +16,9 @@ from magicsoup.biology import (
     TransporterDomain,
 )
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
-from magicsoup.config import GAS_CONSTANT, ROOM_TEMP
+from magicsoup.core.config import GAS_CONSTANT, ROOM_TEMP
+from magicsoup.core.tensorclass import TensorClass, TensorKwargs
 from magicsoup.genomics import DomainType
-from magicsoup.util import TensorClass, TensorKwargs
 
 
 class _LogNormMap(TensorClass):

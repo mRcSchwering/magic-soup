@@ -138,10 +138,10 @@ class Genomics(_ReduceMixin):
     ) -> "list[list[ProteinSpec]]":
         return self._cls.translate_genomes(buffer, starts, lens)
 
-    def translate_genomes_arr(
+    def encode_proteomes(
         self, buffer: np.ndarray, starts: np.ndarray, lens: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-        return self._cls.translate_genomes_arr(buffer, starts, lens)
+        return self._cls.encode_proteomes(buffer, starts, lens)
 
     def get_coding_regions(
         self,

@@ -8,9 +8,9 @@ from typing import TypedDict
 import numpy as np
 
 from magicsoup import rs
-from magicsoup.config import CODON_SIZE
+from magicsoup.core.config import CODON_SIZE
 from magicsoup.core.strarray import StrArray
-from magicsoup.util import codons, random_genome
+from magicsoup.core.util import codons, random_genome
 
 
 class DomainType(IntEnum):
@@ -182,14 +182,13 @@ class Genomics:
             return []
         return self.rs.translate_genomes(*genomes.as_buffers())
 
-    # TODO: better name
-    def translate_genomes_arr(
+    def encode_proteomes(
         self, genomes: StrArray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
         """Get proteomes in form of domain specifications from genomes"""
         if len(genomes) == 0:
             return (np.zeros(0), np.zeros(0), np.zeros((0, 5)), 0)
-        return self.rs.translate_genomes_arr(*genomes.as_buffers())
+        return self.rs.encode_proteomes(*genomes.as_buffers())
 
     def get_coding_regions(
         self,

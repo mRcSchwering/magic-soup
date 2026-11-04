@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 import torch
-from magicsoup import util
-from magicsoup.config import CODON_SIZE
+from magicsoup.core import util
+from magicsoup.core.config import CODON_SIZE
 
 from tests.util import idxtensor
 

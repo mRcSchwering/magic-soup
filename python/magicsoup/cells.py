@@ -8,26 +8,21 @@ import torch
 
 from magicsoup.chemistry import Chemistry
 from magicsoup.core.strarray import StrArray
+from magicsoup.core.tensorclass import TensorClass, TensorKwargs
+from magicsoup.core.util import read_fasta, write_fasta
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.proteomics import Proteomics, ProteomicsKwargs
-from magicsoup.util import TensorClass, TensorKwargs, read_fasta, write_fasta
 
 _log = logging.getLogger(__name__)
 
 
-# TODO: have all genomes as str array
-#       move between rust and python using str arrays
+A = Annotated[StrArray, "cpu"]
+T = Annotated[torch.Tensor, "cuda"]
 
 
 class CellsKwargs(TypedDict, total=False):
     dim_scaling: float
     p_max: int
-
-
-# TODO: type tensors?
-# documentational only — no checker reads these strings
-A = Annotated[StrArray, "cpu"]
-T = Annotated[torch.Tensor, "cuda"]
 
 
 class Cells(TensorClass):
@@ -116,7 +111,7 @@ class Cells(TensorClass):
 
     def get_n_cells(self) -> int:
         """Get number of currently living cells"""
-        return int(self.alive.sum().item())  # sync with host
+        return int(self.alive.sum())  # sync with host
 
     def get_cell_idxs(self) -> T:
         """Get (n,) cell index tensor of currently living cells"""
@@ -144,7 +139,7 @@ class Cells(TensorClass):
         if c == 0:
             return
 
-        cell, prot, tok, p = self.genomics.translate_genomes_arr(genomes=genomes)
+        cell, prot, tok, p = self.genomics.encode_proteomes(genomes=genomes)
         if p == 0:
             return
 
@@ -197,8 +192,10 @@ class Cells(TensorClass):
         # sync with host
         idxs = idxs.cpu()
 
-        # update cellular parameters
+        # update genomes
         self.genomes[idxs.numpy()] = genomes
+        if self.genomes.utilization <= 0.5:
+            self.genomes.compact()
 
     def copy_genomes(self, from_idxs: T, to_idxs: T) -> None:
         """

@@ -11,6 +11,8 @@ from magicsoup.biology import Cell
 from magicsoup.cells import Cells, CellsKwargs
 from magicsoup.chemistry import Chemistry
 from magicsoup.core.strarray import StrArray
+from magicsoup.core.tensorclass import TensorClass, TensorKwargs
+from magicsoup.core.util import randstr
 from magicsoup.culture import Culture, CultureKwargs
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.kinetics import Kinetics, KineticsKwargs
@@ -23,7 +25,6 @@ from magicsoup.physics import (
     PermeationKwargs,
 )
 from magicsoup.proteomics import Proteomics, ProteomicsKwargs
-from magicsoup.util import TensorClass, TensorKwargs, randstr
 
 _log = logging.getLogger(__name__)
 
@@ -47,6 +48,12 @@ class _CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
+# TODO: getting the current cell idxs as tensor always synchronizes
+#       I could add methods which are applied using a bool tensor
+#       or which are applied for all cells
+#       this could then be implemented without host synchronization
+
+
 class World(TensorClass):
 
     def __init__(
@@ -62,7 +69,6 @@ class World(TensorClass):
         culture: Culture | None = None,
         cells: Cells | None = None,
         time_step: float = 1.0,  # s
-        time_resolution: float = 0.1,  # s
         v_cell: float = 1.0,
         v_voxel: float = 1000.0,
         kinetics_kwargs: KineticsKwargs | None = None,
@@ -77,26 +83,11 @@ class World(TensorClass):
     ):
         super().__init__(**(tensor_kwargs or {}))
 
-        time_resolution = min(time_resolution, time_step)
-        if not (time_step / time_resolution).is_integer():
-            raise ValueError(
-                f"Time per step {time_step:.2f}s"
-                f"is not divisible by time resolution {time_resolution:.2f}s"
-            )
-
-        self.steps_per_time_step = int(time_step / time_resolution)
         self.time_step = time_step
-        self.time_resolution = time_resolution
         self.v_cell = v_cell
         self.v_voxel = v_voxel
 
         self.chemistry = chemistry
-        self.kinetics = kinetics or Kinetics(
-            **(kinetics_kwargs or {}),
-            dt=time_resolution,
-            tensor_kwargs=tensor_kwargs,
-        )
-        self.mutator = mutator or Mutator(**(mutator_kwargs or {}))
         self.culture = culture or (
             Culture(
                 **(culture_kwargs or {}),
@@ -114,11 +105,16 @@ class World(TensorClass):
             proteomics_kwargs=proteomics_kwargs,
             tensor_kwargs=tensor_kwargs,
         )
+        self.kinetics = kinetics or Kinetics(
+            **(kinetics_kwargs or {}),
+            dt=time_step,
+            tensor_kwargs=tensor_kwargs,
+        )
         self.diffusion = diffusion or Diffusion(
             **(diffusion_kwargs or {}),
             diff_coeffs=[d.diffusivity for d in chemistry.molecules],
             N=self.culture.map_size,
-            dt=time_resolution,
+            dt=time_step,
             tensor_kwargs=tensor_kwargs,
         )
         self.permeation = permeation or Permeation(
@@ -126,14 +122,15 @@ class World(TensorClass):
             perm_coeffs=[d.permeability for d in chemistry.molecules],
             v_cell=v_cell,
             v_vox=v_voxel,
-            dt=time_resolution,
+            dt=time_step,
             tensor_kwargs=tensor_kwargs,
         )
         self.degradation = degradation or Degradation(
             half_lifes=[d.half_life for d in chemistry.molecules],
-            dt=time_resolution,
+            dt=time_step,
             tensor_kwargs=tensor_kwargs,
         )
+        self.mutator = mutator or Mutator(**(mutator_kwargs or {}))
 
         n_molecules = len(chemistry.molecules)
         self._int_mol_idxs = list(range(n_molecules))
@@ -316,8 +313,11 @@ class World(TensorClass):
         return migrated_idxs
 
     def divide_cells(
-        self, cell_idxs: torch.Tensor
+        self, cell_idxs: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if cell_idxs is None:
+            cell_idxs = self.cells.get_cell_idxs()
+
         n_req = cell_idxs.numel()
         if n_req == 0:
             return self.idxtensor([]), self.idxtensor([])
@@ -409,16 +409,16 @@ class World(TensorClass):
         self.cells.N_h[cell_idxs] = 0
         self.cells.N_e[cell_idxs] = 0
 
-    def advance_time(self) -> None:
+    def advance_time(self, n_steps: int = 1) -> None:
         alive = self.cells.alive  # (c,)
         cell_molecules = self.cells.molecules  # (c, m)
-        cell_idxs = self.cells.get_cell_idxs()  # (c,)
+        cell_idxs = self.cells.get_cell_idxs()  # (c,) sync with host
         molecule_map = self.culture.molecule_map  # (m, N, N)
         cell_positions = self.culture.get_cell_positions()  # (N², 2)
         xs = cell_positions[cell_idxs, 0]
         ys = cell_positions[cell_idxs, 1]
 
-        for _ in range(self.steps_per_time_step):
+        for _ in range(n_steps):
             # degradation
             molecule_map[:] = self.degradation.degrade(x=molecule_map, m_dim=0)
             cell_molecules[:] = self.degradation.degrade(x=cell_molecules, m_dim=1)

@@ -6,7 +6,7 @@ import torch
 # pylint: disable=not-callable
 from torch.fft import fftfreq, irfft2, rfft2, rfftfreq
 
-from magicsoup.util import TensorClass, TensorKwargs
+from magicsoup.core.tensorclass import TensorClass, TensorKwargs
 
 
 class DiffusionKwargs(TypedDict, total=False):

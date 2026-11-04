@@ -3,8 +3,8 @@ import re
 import edlib  # type: ignore
 import pytest
 from magicsoup.core.strarray import StrArray
+from magicsoup.core.util import random_genome
 from magicsoup.mutations import Mutator
-from magicsoup.util import random_genome
 
 _CIGAR_RE = re.compile(r"(\d+)([=XID])")
 

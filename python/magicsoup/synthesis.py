@@ -1,7 +1,7 @@
 import random
 
 from magicsoup.chemistry import Molecule, Reaction
-from magicsoup.config import CODON_SIZE
+from magicsoup.core.config import CODON_SIZE
 from magicsoup.genomics import DomainType
 from magicsoup.world import World
 
