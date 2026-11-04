@@ -164,6 +164,13 @@ def test_update_empty_genome(cells: Cells) -> None:
     _asser_dtypes(cells)
 
 
+# TODO: test proteome param distros by random genomes make sense
+#       K_e: med 1, 70% (1e-4, 1e4), 99% (1e-8, 1e8)
+#       N_h: med 1.5, 95% (1, 3)
+#       K_m: med 0.1, 90% (0.003, 3)
+#       Vmax: med 1e-2, 90% (1e-4, 1)
+
+
 @pytest.mark.slow
 def test_update_genomes_randomly(cells: Cells) -> None:
     c = 100

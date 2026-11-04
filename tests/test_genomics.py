@@ -228,9 +228,6 @@ def test_translate_genomes() -> None:
     assert proteome == exp_proteome
 
     cell, prot, tok, p = genomics.translate_genomes_arr(genomes=genomes)
-    print(cell)
-    print(prot)
-    print(tok.tolist())
     assert p == 3
     assert cell.tolist() == [0, 0, 0]
     assert prot.tolist() == [0, 1, 2]

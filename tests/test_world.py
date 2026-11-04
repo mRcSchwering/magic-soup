@@ -4,14 +4,16 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import pytest
 import torch
 from magicsoup.cells import Cells
+from magicsoup.core.strarray import StrArray
 from magicsoup.culture import Culture
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from magicsoup.util import random_genome
 from magicsoup.world import World
+
+from tests.util import ftensor
 
 _ATOL = 1e-4
 _RTOL = 1e-4
@@ -24,8 +26,8 @@ def world() -> World:
     return World(chemistry=CHEMISTRY, culture=culture)
 
 
-def _spawn_cells(world: World, n: int, x: float = 10.0) -> World:
-    world.spawn_cells(genomes=[random_genome() for _ in range(n)])
+def _spawn_cells(world: World, n: int, x: float = 10.0, g: int = 500) -> World:
+    world.spawn_cells(genomes=[random_genome(g) for _ in range(n)])
     world.culture.molecule_map[:] = x
     world.cells.molecules[world.cells.alive] = x
     world.cells.ages[:] = 1.0
@@ -40,7 +42,7 @@ def _get_mol_mass(world: World) -> torch.Tensor:
     )
 
 
-def _get_cell_arrays(cells: Cells) -> dict[str, np.ndarray]:
+def _get_cell_arrays(cells: Cells) -> dict[str, StrArray]:
     return {
         "genomes": cells.genomes.copy(),
         "lineages": cells.lineages.copy(),
@@ -83,7 +85,7 @@ class _State:
     pos: torch.Tensor
     mass: torch.Tensor
     cell_tensors: dict[str, torch.Tensor]
-    cell_arrays: dict[str, np.ndarray]
+    cell_arrays: dict[str, StrArray]
     proteome_tensors: dict[str, torch.Tensor]
     culture_tensors: dict[str, torch.Tensor]
 
@@ -155,9 +157,9 @@ def test_spawn_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> No
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][t0.idx]
-        arr1 = t1.cell_arrays[key][t0.idx]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key][t0.idx.cpu().numpy()].tolist()
+        arr1 = t1.cell_arrays[key][t0.idx.cpu().numpy()].tolist()
+        assert arr0 == arr1, key
 
     if n_spawn == 0:
         return
@@ -167,8 +169,8 @@ def test_spawn_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> No
     assert (t1.cell_tensors["ages"][new_idx] == 0.0).all()
     assert (t1.cell_tensors["generations"][new_idx] == 0).all()
     assert (t1.proteome_tensors["v_max"][new_idx] != 0).any()
-    assert all(len(d) > 0 for d in t1.cell_arrays["genomes"][new_idx])
-    assert all(len(d) > 0 for d in t1.cell_arrays["lineages"][new_idx])
+    assert all(len(d) > 0 for d in t1.cell_arrays["genomes"][new_idx.cpu().numpy()])
+    assert all(len(d) > 0 for d in t1.cell_arrays["lineages"][new_idx.cpu().numpy()])
 
     # molecules were picked up
     molmap = world.culture.molecule_map
@@ -251,9 +253,9 @@ def test_add_cells(caplog, world: World, n_add: int, exp_n_add: int) -> None:
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][t0.idx]
-        arr1 = t1.cell_arrays[key][t0.idx]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key][t0.idx.cpu().numpy()].tolist()
+        arr1 = t1.cell_arrays[key][t0.idx.cpu().numpy()].tolist()
+        assert arr0 == arr1, key
 
     if n_add == 0:
         return
@@ -263,8 +265,8 @@ def test_add_cells(caplog, world: World, n_add: int, exp_n_add: int) -> None:
     assert (t1.cell_tensors["ages"][new_idx] == 1.0).all()
     assert (t1.cell_tensors["generations"][new_idx] == 1).all()
     assert (t1.proteome_tensors["v_max"][new_idx] != 0).any()
-    assert all(len(d) > 0 for d in t1.cell_arrays["genomes"][new_idx])
-    assert all(len(d) > 0 for d in t1.cell_arrays["lineages"][new_idx])
+    assert all(len(d) > 0 for d in t1.cell_arrays["genomes"][new_idx.cpu().numpy()])
+    assert all(len(d) > 0 for d in t1.cell_arrays["lineages"][new_idx.cpu().numpy()])
 
     # molecule map is as before
     assert torch.equal(
@@ -314,9 +316,9 @@ def test_resuspend_cells(world: World, n_spawn: int, n_resp: int) -> None:
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][t0.idx]
-        arr1 = t1.cell_arrays[key][t0.idx]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key][t0.idx.cpu().numpy()].tolist()
+        arr1 = t1.cell_arrays[key][t0.idx.cpu().numpy()].tolist()
+        assert arr0 == arr1, key
 
     # non-resuspended cells didn't change position
     assert torch.equal(t0.pos[non_susp_idxs], t1.pos[non_susp_idxs])
@@ -369,9 +371,9 @@ def test_migrate_cells(world: World, n_spawn: int, n_migrate: int, n_succ: int) 
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][:]
-        arr1 = t1.cell_arrays[key][:]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key].tolist()
+        arr1 = t1.cell_arrays[key].tolist()
+        assert arr0 == arr1, key
 
     # non-migrated and non-successful cells didn't change position
     non_succ_idxs = migrate_idxs[~torch.isin(migrate_idxs, scc_idx)]
@@ -423,9 +425,9 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][t0.idx]
-        arr1 = t1.cell_arrays[key][t0.idx]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key][t0.idx.cpu().numpy()].tolist()
+        arr1 = t1.cell_arrays[key][t0.idx.cpu().numpy()].tolist()
+        assert arr0 == arr1, key
 
     # original cells didn't change position
     torch.equal(t0.pos[t0.idx], t1.pos[t0.idx])
@@ -452,9 +454,9 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
 
     # their genomes, lineages, proteomes should be equal
     for key in t1.cell_arrays:
-        arr0 = t1.cell_arrays[key][parent_idxs]
-        arr1 = t1.cell_arrays[key][child_idxs]
-        assert np.all(arr0 == arr1), key
+        arr0 = t1.cell_arrays[key][parent_idxs.cpu().numpy()].tolist()
+        arr1 = t1.cell_arrays[key][child_idxs.cpu().numpy()].tolist()
+        assert arr0 == arr1, key
 
     for key in t1.proteome_tensors:
         ten0 = t1.proteome_tensors[key][parent_idxs, :p]
@@ -478,7 +480,7 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
         t0 = state["t0"]
         update_idxs = t0.idx[:n_update]
         no_update_idxs = t0.idx[n_update:]
-        new_genomes = [random_genome() for _ in range(n_update)]
+        new_genomes = StrArray.from_strings([random_genome() for _ in range(n_update)])
         world.update_cells(genomes=new_genomes, cell_idxs=update_idxs)
 
     t1 = state["t1"]
@@ -491,9 +493,9 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
     assert torch.equal(t0.pos, t1.pos)
     p = min(t0.p, t1.p) - 1
 
-    arr0 = t0.cell_arrays["lineages"][:]
-    arr1 = t1.cell_arrays["lineages"][:]
-    assert np.all(arr0 == arr1)
+    arr0 = t0.cell_arrays["lineages"].tolist()
+    arr1 = t1.cell_arrays["lineages"].tolist()
+    assert arr0 == arr1
 
     for key in t0.cell_tensors:
         ten0 = t0.cell_tensors[key]
@@ -506,9 +508,9 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
         assert torch.equal(ten0, ten1), key
 
     # non-updated cells have same genomes and proteome
-    arr0 = t0.cell_arrays["genomes"][no_update_idxs]
-    arr1 = t1.cell_arrays["genomes"][no_update_idxs]
-    assert np.all(arr0 == arr1)
+    arr0 = t0.cell_arrays["genomes"][no_update_idxs.cpu().numpy()].tolist()
+    arr1 = t1.cell_arrays["genomes"][no_update_idxs.cpu().numpy()].tolist()
+    assert arr0 == arr1
 
     for key in t0.proteome_tensors:
         ten0 = t0.proteome_tensors[key][no_update_idxs, :p]
@@ -519,9 +521,9 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
         return
 
     # updated cells have different genomes and proteomes
-    arr0 = t0.cell_arrays["genomes"][update_idxs]
-    arr1 = t1.cell_arrays["genomes"][update_idxs]
-    assert not np.all(arr0 == arr1)
+    arr0 = t0.cell_arrays["genomes"][update_idxs.cpu().numpy()].tolist()
+    arr1 = t1.cell_arrays["genomes"][update_idxs.cpu().numpy()].tolist()
+    assert arr0 != arr1
 
     for key in t0.proteome_tensors:
         ten0 = t0.proteome_tensors[key][update_idxs, :p]
@@ -571,9 +573,9 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][no_kill_idxs]
-        arr1 = t1.cell_arrays[key][no_kill_idxs]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key][no_kill_idxs.cpu().numpy()].tolist()
+        arr1 = t1.cell_arrays[key][no_kill_idxs.cpu().numpy()].tolist()
+        assert arr0 == arr1, key
 
     if n_kill == 0:
         return
@@ -589,7 +591,7 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
         assert (tens[kill_idxs] == 0).all(), key
 
     for key, arr in t1.cell_arrays.items():
-        assert np.all(arr[kill_idxs] == ""), key
+        assert all(d == "" for d in arr[kill_idxs.cpu().numpy()]), key
 
     for key in t0.culture_tensors:
         ten0 = t0.culture_tensors[key]
@@ -631,9 +633,9 @@ def test_advance_time(world: World, n_spawn: int) -> None:
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][:]
-        arr1 = t1.cell_arrays[key][:]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key].tolist()
+        arr1 = t1.cell_arrays[key].tolist()
+        assert arr0 == arr1, key
 
     if n_spawn == 0:
         return
@@ -647,6 +649,58 @@ def test_advance_time(world: World, n_spawn: int) -> None:
     assert not torch.equal(
         t0.culture_tensors["molecule_map"], t1.culture_tensors["molecule_map"]
     )
+
+
+def test_zero_protein_cell(world: World) -> None:
+    world = _spawn_cells(world, n=1, g=0)
+
+    # advance time
+    with _capture_state_change(world) as state:
+        world.advance_time()
+
+    t0 = state["t0"]
+    t1 = state["t1"]
+
+    # except for molecule distribution and ages everything is the same
+    assert torch.equal(t0.idx, t1.idx)
+    assert torch.equal(t0.pos, t1.pos)
+
+    for key in [d for d in t0.cell_tensors if d not in ["ages", "molecules"]]:
+        ten0 = t0.cell_tensors[key]
+        ten1 = t1.cell_tensors[key]
+        assert torch.equal(ten0, ten1), key
+
+    for key in t0.proteome_tensors:
+        ten0 = t0.proteome_tensors[key]
+        ten1 = t1.proteome_tensors[key]
+        assert torch.equal(ten0, ten1), key
+
+    for key in t0.cell_arrays:
+        arr0 = t0.cell_arrays[key].tolist()
+        arr1 = t1.cell_arrays[key].tolist()
+        assert arr0 == arr1, key
+
+    assert (t1.cell_tensors["ages"] == 2.0).all()
+    assert torch.equal(t0.mass, t1.mass)
+
+
+@pytest.mark.slow
+def test_free_energy(world: World) -> None:
+    world = _spawn_cells(world, n=100)
+    E = ftensor([d.energy for d in world.chemistry.molecules])
+    N = world.culture.map_size
+
+    def _get_energy(world: World) -> float:
+        e_map = torch.einsum("mxy,m->xy", world.culture.molecule_map, E)
+        e_cells = torch.einsum("cm,m->c", world.cells.molecules, E)
+        return int(e_map.sum() + e_cells.sum() / 1000) / N**2
+
+    e0 = _get_energy(world)
+    for t in range(3):
+        world.advance_time()
+    e1 = _get_energy(world)
+
+    assert e0 > e1
 
 
 def test_saving_loading_state(world: World, tmp_path: Path) -> None:
@@ -695,9 +749,9 @@ def test_saving_loading_state(world: World, tmp_path: Path) -> None:
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][:]
-        arr1 = t1.cell_arrays[key][:]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key].tolist()
+        arr1 = t1.cell_arrays[key].tolist()
+        assert arr0 == arr1, key
 
 
 def test_saving_loading_obj(tmp_path: Path) -> None:
@@ -745,9 +799,9 @@ def test_saving_loading_obj(tmp_path: Path) -> None:
         assert torch.equal(ten0, ten1), key
 
     for key in t0.cell_arrays:
-        arr0 = t0.cell_arrays[key][:]
-        arr1 = t1.cell_arrays[key][:]
-        assert np.all(arr0 == arr1), key
+        arr0 = t0.cell_arrays[key].tolist()
+        arr1 = t1.cell_arrays[key].tolist()
+        assert arr0 == arr1, key
 
     # check class attrs
     assert world.kinetics.eps == 1e-3
@@ -756,32 +810,3 @@ def test_saving_loading_obj(tmp_path: Path) -> None:
     assert world.cells.dim_scaling == 0.3
     assert world.cells.genomics.stop_codons == ["TGA", "TAG"]
     assert world.cells.proteomics.abs_temp == 100
-
-
-# TODO: test that I can add 0 cells and run simulation
-
-# TODO: test that I can add a cell with 0 proteins (p=0) and run simulation
-
-# TODO: K_e values created by random proteins should be on average 1
-#       and most values should be between 1e-4 and 1e4
-#       most people model it as log-normal distribution with center 1
-#       and +/- 100 STDEV extreme values maybe <1e-8 or >1e8
-#       values <1e-10 or >1e10 should be virtually impossible
-#       However, in realistic enzymes the irreversibility comes also
-#       from the difference in k_cat (different for both directions)
-#       their K_e are actually close to 1
-
-# TODO: test that checks that Vmax, Km values are in proper range (see proteomics)
-
-# TODO: Hill coefficients are on average 1.5 in Ecoli
-#       >3 is extremely rare
-
-
-# TODO: test that energy always goes down with reactions
-#       stays the same without
-
-# TODO: Km range: log normal
-#       median at 0.1 mM, 0.003 mM 5th pctile, 3 mM 95th pctile
-
-# TODO: Vmax range: log-normal sigma=10
-#       median 1e-2 mM/s, 1e-4 mM/s 5th pctile, 1 mM/s 95th pctile
