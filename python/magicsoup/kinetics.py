@@ -8,9 +8,8 @@ from magicsoup.core.tensorclass import TensorClass, TensorKwargs
 
 class KineticsKwargs(TypedDict, total=False):
     eps: float
-    n_max_sweeps: int
-    n_max_bisect: int
-    xi_conv_tol: float
+    n_sweeps: int
+    n_bisect: int
 
 
 class Kinetics(TensorClass):
@@ -19,10 +18,8 @@ class Kinetics(TensorClass):
 
     Arguments:
         dt: time interval of a step in s (seconds)
-        n_max_sweeps: maximum number of block Jacobi sweeps to perform when solving ODEs
-        n_max_bisect: maximum number of bisections when solving for xi
-        xi_conv_tol: xi convergence tolerance when solving ODEs.
-            Bisection steps and Jacobi sweeps stop once xi doesn't change for than this tolerance.
+        n_sweeps: number of block Jacobi sweeps to perform when solving ODEs
+        n_bisect: number of bisections when solving for xi
         eps: Smallest possible non-zero positive value
         tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
 
@@ -40,9 +37,8 @@ class Kinetics(TensorClass):
     def __init__(
         self,
         dt: float = 0.1,
-        n_max_sweeps: int = 3,
-        n_max_bisect: int = 20,
-        xi_conv_tol: float = 1e-4,
+        n_sweeps: int = 3,
+        n_bisect: int = 8,
         eps: float = 1e-40,
         tensor_kwargs: TensorKwargs | None = None,
     ):
@@ -50,9 +46,8 @@ class Kinetics(TensorClass):
 
         self.eps = eps
         self.dt = dt
-        self.n_max_sweeps = n_max_sweeps
-        self.n_max_bisect = n_max_bisect
-        self.xi_conv_tol = xi_conv_tol
+        self.n_sweeps = n_sweeps
+        self.n_bisect = n_bisect
 
     def get_x1(
         self,
@@ -86,9 +81,6 @@ class Kinetics(TensorClass):
         """
         c, p = v_max.shape
         dt = self.dt
-        n_max_sweeps = self.n_max_sweeps
-        n_max_bisect = self.n_max_bisect
-        xi_conv_tol = self.xi_conv_tol
 
         # if c=0 or p=0 there is no change
         if c == 0 or p == 0:
@@ -97,9 +89,7 @@ class Kinetics(TensorClass):
         # initial xi
         xi = self.fzeros(c, p)  # (c, p)
 
-        for _ in range(n_max_sweeps):
-            xi_prev = xi.clone()
-
+        for _ in range(self.n_sweeps):
             # concentration delta
             dx = torch.einsum("cpm,cp->cm", N_e, xi)  # (c, 2m)
 
@@ -113,13 +103,10 @@ class Kinetics(TensorClass):
             # substract contribution of each protein from total concentration change
             B = x0_ + (dx_ - N_e * xi_)  # (c, p, 2m)
 
-            xi_lo, xi_hi = self._get_bounds(
-                B=B, N_e=N_e, v_max=v_max, dt=dt
-            )  # (c, p), (c, p)
+            xi_lo, xi_hi = self._get_bounds(B=B, N_e=N_e, v_max=v_max, dt=dt)
             xi = self._bisect_xi(
                 dt=dt,
-                n_max_iters=n_max_bisect,
-                xi_conv_tol=xi_conv_tol,
+                n_iters=self.n_bisect,
                 B=B,
                 xi_lo=xi_lo,
                 xi_hi=xi_hi,
@@ -132,10 +119,6 @@ class Kinetics(TensorClass):
                 k_r=k_r,
                 v_max=v_max,
             )  # (c, p)
-
-            # TODO: sync to host, worht it?
-            if (xi - xi_prev).abs().max() < xi_conv_tol:
-                break
 
         # concentration delta
         dx = torch.einsum("cpm,cp->cm", N_e, xi)  # (c, 2m)
@@ -151,8 +134,7 @@ class Kinetics(TensorClass):
 
     def _bisect_xi(
         self,
-        n_max_iters: int,
-        xi_conv_tol: float,
+        n_iters: int,
         dt: float,
         B: torch.Tensor,  # (c, p, 2m)
         xi_lo: torch.Tensor,  # (c, p)
@@ -187,7 +169,7 @@ class Kinetics(TensorClass):
         lo = xi_lo.clone()  # (c, p)
         hi = xi_hi.clone()  # (c, p)
 
-        for _ in range(n_max_iters):
+        for _ in range(n_iters):
             xi = 0.5 * (lo + hi)  # (c, p)
 
             # bounds can be non-finite for N=0
@@ -210,10 +192,6 @@ class Kinetics(TensorClass):
             too_high = xi - dt * v > 0  # (c, p)
             hi = torch.where(too_high, xi, hi)  # (c, p)
             lo = torch.where(too_high, lo, xi)  # (c, p)
-
-            # TODO: sync to host, worht it?
-            if (hi - lo).max() < xi_conv_tol:
-                break
 
         return 0.5 * (lo + hi)  # (c, p)
 

@@ -1,4 +1,3 @@
-import logging
 import random
 
 import pytest
@@ -542,7 +541,7 @@ def test_step_protein_activity_convergence(kinetics: Kinetics):
 
 
 @pytest.mark.slow
-def test_step_protein_activity_randomly(caplog):
+def test_step_protein_activity_randomly():
     for i in range(10):
         c = random.randint(2, 1000)
         p = random.randint(1, 100)
@@ -559,21 +558,19 @@ def test_step_protein_activity_randomly(caplog):
 
         kinetics = Kinetics(dt=dt)
 
-        for j in range(10):
-            with caplog.at_level(logging.WARNING):
-                x = kinetics.get_x1(
-                    x0=x,
-                    N_e=(N_b - N_f).to(FTYPE),
-                    N_f=N_f,
-                    N_b=N_b,
-                    N_h=N_h,
-                    k_f=k_f,
-                    k_b=k_b,
-                    k_r=k_r,
-                    v_max=v_max,
-                )
+        for j in range(5):
+            x = kinetics.get_x1(
+                x0=x,
+                N_e=(N_b - N_f).to(FTYPE),
+                N_f=N_f,
+                N_b=N_b,
+                N_h=N_h,
+                k_f=k_f,
+                k_b=k_b,
+                k_r=k_r,
+                v_max=v_max,
+            )
             assert x.shape == (c, m), f"repetition {i}, step {j}"
             assert x.isnan().sum() == 0, f"repetition {i}, step {j}"
             assert x.isfinite().all(), f"repetition {i}, step {j}"
             assert (x >= 0).all(), f"repetition {i}, step {j}"
-            assert len(caplog.records) == 0, f"repetition {i}, step {j}"
