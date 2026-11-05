@@ -38,7 +38,7 @@ class Kinetics(TensorClass):
         self,
         dt: float = 0.1,
         n_sweeps: int = 3,
-        n_bisect: int = 8,
+        n_bisect: int = 10,
         eps: float = 1e-40,
         tensor_kwargs: TensorKwargs | None = None,
     ):
