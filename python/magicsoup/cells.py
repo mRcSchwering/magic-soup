@@ -130,10 +130,7 @@ class Cells(TensorClass):
             idxs: (k,) cell index tensor of respective cells to be updated
 
         Position `i` of `genomes` relates to position `i` of `idxs`.
-        Genomes are updated and translated.
-        New proteomes are immediately active.
-        Prefer [copy_genomes()][.copy_genomes] over [update_genomes()][.update_genomes]
-        if possible as it's much faster.
+        Genomes are updated and translated. New proteomes are immediately active.
         """
         c = len(genomes)
         if c == 0:
