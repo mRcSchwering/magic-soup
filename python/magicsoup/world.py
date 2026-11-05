@@ -254,9 +254,9 @@ class World(TensorClass):
             random.shuffle(cells)
             cells = cells[:n_new_cells]
 
-        n_cells = self.cells.get_n_cells()
+        n_cells = self.cells.get_n_cells()  # sync with host
         self.cells.update_c(c_req=n_cells + n_new_cells)
-        free_idxs = self.cells.get_free_idxs()
+        free_idxs = self.cells.get_free_idxs()  # sync with host
         new_idxs = free_idxs[:n_new_cells]
 
         # occupy positions
@@ -280,7 +280,7 @@ class World(TensorClass):
 
     def resuspend_cells(self, cell_idxs: torch.Tensor | None = None) -> None:
         if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()
+            cell_idxs = self.cells.get_cell_idxs()  # sync with host
 
         if cell_idxs.numel() == 0:
             return
@@ -302,7 +302,7 @@ class World(TensorClass):
 
     def migrate_cells(self, cell_idxs: torch.Tensor | None = None) -> torch.Tensor:
         if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()
+            cell_idxs = self.cells.get_cell_idxs()  # sync with host
 
         if cell_idxs.numel() == 0:
             return self.idxtensor([])
@@ -316,7 +316,7 @@ class World(TensorClass):
         self, cell_idxs: torch.Tensor | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()
+            cell_idxs = self.cells.get_cell_idxs()  # sync with host
 
         n_req = cell_idxs.numel()
         if n_req == 0:
