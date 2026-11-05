@@ -122,6 +122,26 @@ class Cells(TensorClass):
         """Get (k,) cell index tensor of unused cell indices"""
         return (~self.alive).nonzero(as_tuple=True)[0].int()  # sync with host
 
+    def get_utilization(self) -> float:
+        """
+        Fraction of the allocated proteome tensors that currently holds live data.
+
+        Returns `(n_alive * p_used) / (c * p)`, where `n_alive` is the number of
+        living cells and `p_used` the largest proteome in use. It drops as dead
+        cells accumulate (slack in `c`, wasted memory) or as `p` outgrows the real
+        proteomes (slack in `p`, wasted memory *and* per-step compute). Use it to
+        decide when to call [compact()][.compact]; it returns 1.0 when nothing is
+        allocated. [compact()][.compact] restores it to about `1 / (1 + dim_scaling)²`
+        (~0.69 at the default), so trigger below that to avoid thrashing.
+
+        Synchronizes with the host; call periodically, not every step.
+        E.g. when utilization drops below 0.5.
+        """
+        if self.c == 0 or self.p == 0:
+            return 1.0
+        n_alive = int(self.alive.sum())  # sync with host
+        return (n_alive * self._used_p()) / (self.c * self.p)
+
     def update_genomes(self, genomes: StrArray, idxs: T) -> None:
         """
         Update cell genomes and proteomes
@@ -339,17 +359,22 @@ class Cells(TensorClass):
         self.c = len(self.genomes)
         return new_idx
 
+    def _used_p(self) -> int:
+        # largest proteome size currently in use (host sync)
+        # a protein column is in use if any cell has non-zero params there;
+        # every protein has v_max > 0 (catalytic/transporter) or k_r > 0 (regulatory)
+        if self.p == 0:
+            return 0
+        used = (self.v_max != 0).any(dim=0) | (self.k_r != 0).any(dim=0)  # (p,)
+        cols = self.idxarange(self.p)
+        highest = torch.where(used, cols, self.idxtensor(-1)).max()
+        return int(highest) + 1  # sync with host
+
     def _compact_p(self) -> None:
         if self.p == 0:
             return
 
-        # a protein column is in use if any cell has non-zero params there;
-        # every protein has v_max > 0 (catalytic/transporter) or k_r > 0 (regulatory)
-        used = (self.v_max != 0).any(dim=0) | (self.k_r != 0).any(dim=0)  # (p,)
-        cols = self.idxarange(self.p)
-        highest = torch.where(used, cols, self.idxtensor(-1)).max()
-        p_used = int(highest) + 1  # sync with host
-
+        p_used = self._used_p()
         to_p = min(p_used + math.ceil(p_used * self.dim_scaling), self.p)
         if to_p < self.p:
             self._shrink_p(by_n=self.p - to_p)

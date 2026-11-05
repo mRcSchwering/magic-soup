@@ -139,6 +139,36 @@ def test_compact_keeps_living_cells(cells: Cells) -> None:
     _assert_shapes(cells)
 
 
+def test_get_utilization(cells: Cells) -> None:
+    cells.dim_scaling = 0.2
+    cells.c_max = 1000
+    cells.p_max = 1000
+
+    # nothing allocated -> fully utilized
+    assert cells.get_utilization() == 1.0
+
+    # fill 100 living cells with real proteomes
+    cells.update_c(c_req=100)
+    idxs = idxtensor(list(range(100)))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(100)])
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+    cells.alive[idxs] = True
+    u_full = cells.get_utilization()
+    assert 0.0 < u_full <= 1.0
+
+    # "kill" 90 cells (fewer alive, params zeroed) lowers utilization
+    dead = idxtensor(list(range(90)))
+    cells.alive[dead] = False
+    cells.v_max[dead] = 0.0
+    cells.k_r[dead] = 0.0
+    u_sparse = cells.get_utilization()
+    assert u_sparse < u_full
+
+    # compacting reclaims the slack and restores utilization
+    cells.compact()
+    assert cells.get_utilization() > u_sparse
+
+
 @pytest.mark.parametrize(
     "p_req, p_exp",
     [
