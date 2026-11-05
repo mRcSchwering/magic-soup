@@ -25,7 +25,7 @@ v0.14.1 CPU (Intel Core i5-10210U):
 (4.51+-0.12)s - enzymatic activity
 (0.40+-0.00)s - mutations
 
-55f5ef43f13cd355d474e97913eac17a8038d98c (Intel Core i5-10210U):
+18c3db7b443db84a1b6edd8177123a7b0ada4619 (Intel Core i5-10210U):
 10,000 cells, 1,000 genome size, on cpu
 (1.63+-0.06)s - spawn cells
 (1.52+-0.06)s - update cells
