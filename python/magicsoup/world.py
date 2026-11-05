@@ -410,13 +410,15 @@ class World(TensorClass):
         self.cells.N_e[cell_idxs] = 0
 
     def advance_time(self, n_steps: int = 1) -> None:
-        alive = self.cells.alive  # (c,)
         cell_molecules = self.cells.molecules  # (c, m)
         cell_idxs = self.cells.get_cell_idxs()  # (c,) sync with host
         molecule_map = self.culture.molecule_map  # (m, N, N)
         cell_positions = self.culture.get_cell_positions()  # (N², 2)
         xs = cell_positions[cell_idxs, 0]
         ys = cell_positions[cell_idxs, 1]
+
+        if cell_idxs.numel() == 0:
+            return
 
         for _ in range(n_steps):
             # degradation
@@ -426,12 +428,9 @@ class World(TensorClass):
             # diffusion
             molecule_map[:] = self.diffusion.diffuse(molecule_map)
 
-            if not alive.any():
-                continue
-
             # collect internal and external molecules for x
             x = torch.cat(
-                [cell_molecules[alive], molecule_map[:, xs, ys].T],
+                [cell_molecules[cell_idxs], molecule_map[:, xs, ys].T],
                 dim=1,
             )
 
@@ -441,19 +440,19 @@ class World(TensorClass):
             # enzymatic activity
             x = self.kinetics.get_x1(
                 x0=x,
-                N_e=self.cells.N_e[alive],
-                N_f=self.cells.N_f[alive],
-                N_b=self.cells.N_b[alive],
-                N_h=self.cells.N_h[alive],
-                k_f=self.cells.k_f[alive],
-                k_b=self.cells.k_b[alive],
-                k_r=self.cells.k_r[alive],
-                v_max=self.cells.v_max[alive],
+                N_e=self.cells.N_e[cell_idxs],
+                N_f=self.cells.N_f[cell_idxs],
+                N_b=self.cells.N_b[cell_idxs],
+                N_h=self.cells.N_h[cell_idxs],
+                k_f=self.cells.k_f[cell_idxs],
+                k_b=self.cells.k_b[cell_idxs],
+                k_r=self.cells.k_r[cell_idxs],
+                v_max=self.cells.v_max[cell_idxs],
             )
 
             # distribute x1 to internal and external molecules
             molecule_map[:, xs, ys] = x[:, self._ext_mol_idxs].T
-            cell_molecules[alive] = x[:, self._int_mol_idxs]
+            cell_molecules[cell_idxs] = x[:, self._int_mol_idxs]
 
         # age cells
         self.cells.ages += self.time_step
