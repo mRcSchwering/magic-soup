@@ -85,15 +85,15 @@ def _asser_dtypes(cells: Cells) -> None:
     "c_req, c_exp",
     [
         (100, 100),  # stays at 100
-        (101, 122),  # updates including margin (20% of 101)
-        (800, 960),  # updates including margin (20% of 800)
-        (900, 1000),  # update is limited to 1000 (max)
+        (101, 122),  # grows including margin (20% of 101)
+        (800, 960),  # grows including margin (20% of 800)
+        (900, 1000),  # grow limited to 1000 (max)
         (1000, 1000),  # stays at 1000 (max)
-        (83, 100),  # reduction too small (20% of 83)
-        (82, 99),  # reduced and margin added (20% of 82)
-        (40, 48),  # reduced and margin added (20% of 40)
-        (1, 2),  # reduced and margin added (20% of 1)
-        (0, 0),  # reduced to 0
+        (83, 100),  # no shrink: stays at 100
+        (82, 100),  # no shrink: stays at 100
+        (40, 100),  # no shrink: stays at 100
+        (1, 100),  # no shrink: stays at 100
+        (0, 100),  # no shrink: stays at 100
     ],
 )
 def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
@@ -102,13 +102,13 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
     cells.update_c(c_req=83)  # leaves exactly c=100
     cells.update_c(c_req=c_req)
 
-    # check c
+    # check c (update_c only grows)
     assert cells.c == c_exp
     _assert_shapes(cells)
     _assert_empty_values(cells=cells)
 
 
-def test_update_c_keeps_living_cells(cells: Cells) -> None:
+def test_compact_keeps_living_cells(cells: Cells) -> None:
     cells.dim_scaling = 0.2
     cells.c_max = 1000
     cells.update_c(c_req=83)  # leaves exactly c=100
@@ -118,31 +118,70 @@ def test_update_c_keeps_living_cells(cells: Cells) -> None:
     cells.alive[idxs] = True
     assert cells.alive.sum() == 50
 
-    # reduce to 60 (50 + 20%) cells
-    cells.update_c(c_req=50)
-    assert cells.c == 60
+    new_idx = cells.compact()
 
-    # living cells should be preserved
+    # shrinks to 50 living + 20% hysteresis, keeping all living cells
+    assert cells.c == 60
     assert cells.alive.sum() == 50
 
-    # reducing below 50 doesn't work with 50 living cells
-    with pytest.raises(ValueError):
-        cells.update_c(c_req=40)
+    # old -> new map: 100 old slots, 60 kept, 40 dropped
+    assert new_idx.shape == (100,)
+    assert (new_idx == -1).sum() == 40
+
+    # living cells get distinct, valid new indices that point to living slots
+    alive_old = torch.zeros(100, dtype=torch.bool, device=new_idx.device)
+    alive_old[idxs] = True
+    living_new = new_idx[alive_old]
+    assert (living_new >= 0).all()
+    assert living_new.unique().numel() == 50
+    assert cells.alive[living_new].all()
+
+    _assert_shapes(cells)
+
+
+def test_get_utilization(cells: Cells) -> None:
+    cells.dim_scaling = 0.2
+    cells.c_max = 1000
+    cells.p_max = 1000
+
+    # nothing allocated -> fully utilized
+    assert cells.get_utilization() == 1.0
+
+    # fill 100 living cells with real proteomes
+    cells.update_c(c_req=100)
+    idxs = idxtensor(list(range(100)))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(100)])
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+    cells.alive[idxs] = True
+    u_full = cells.get_utilization()
+    assert 0.0 < u_full <= 1.0
+
+    # "kill" 90 cells (fewer alive, params zeroed) lowers utilization
+    dead = idxtensor(list(range(90)))
+    cells.alive[dead] = False
+    cells.v_max[dead] = 0.0
+    cells.k_r[dead] = 0.0
+    u_sparse = cells.get_utilization()
+    assert u_sparse < u_full
+
+    # compacting reclaims the slack and restores utilization
+    cells.compact()
+    assert cells.get_utilization() > u_sparse
 
 
 @pytest.mark.parametrize(
     "p_req, p_exp",
     [
         (100, 100),  # stays at 100
-        (101, 122),  # updates including margin (20% of 101)
-        (800, 960),  # updates including margin (20% of 800)
-        (900, 1000),  # update is limited to 1000 (max)
+        (101, 122),  # grows including margin (20% of 101)
+        (800, 960),  # grows including margin (20% of 800)
+        (900, 1000),  # grow limited to 1000 (max)
         (1000, 1000),  # stays at 1000 (max)
-        (83, 100),  # reduction too small (20% of 83)
-        (82, 99),  # reduced and margin added (20% of 82)
-        (40, 48),  # reduced and margin added (20% of 40)
-        (1, 2),  # reduced and margin added (20% of 1)
-        (0, 0),  # reduced to 0
+        (83, 100),  # no shrink: stays at 100
+        (82, 100),  # no shrink: stays at 100
+        (40, 100),  # no shrink: stays at 100
+        (1, 100),  # no shrink: stays at 100
+        (0, 100),  # no shrink: stays at 100
     ],
 )
 def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
@@ -151,7 +190,7 @@ def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
     cells.update_p(p_req=83)  # leaves exactly c=100
     cells.update_p(p_req=p_req)
 
-    # check p
+    # check p (update_p only grows)
     assert cells.p == p_exp
     _assert_shapes(cells)
     _assert_empty_values(cells=cells)

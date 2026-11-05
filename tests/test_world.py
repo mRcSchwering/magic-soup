@@ -9,6 +9,7 @@ from magicsoup.core.strarray import StrArray
 from magicsoup.core.util import random_genome
 from magicsoup.culture import Culture
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup.mutations import Mutator
 from magicsoup.world import World
 
 from tests.util import ftensor
@@ -286,7 +287,9 @@ def test_resuspend_cells(world: World, n_spawn: int, n_resp: int) -> None:
     # resuspend cells
     susp_idxs = t0.idx[:n_resp]
     non_susp_idxs = t0.idx[n_resp:]
-    world.resuspend_cells(cell_idxs=susp_idxs)
+    mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
+    mask[susp_idxs] = True
+    world.resuspend_cells(mask=mask)
 
     t1 = _State.from_world(world)
 
@@ -339,7 +342,10 @@ def test_migrate_cells(world: World, n_spawn: int, n_migrate: int, n_succ: int) 
     # migrate cells
     migrate_idxs = t0.idx[:n_migrate]
     non_migrate_idxs = t0.idx[n_migrate:]
-    scc_idx = world.migrate_cells(cell_idxs=migrate_idxs)
+    mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
+    mask[migrate_idxs] = True
+    migrated = world.migrate_cells(mask=mask)
+    scc_idx = migrated.nonzero(as_tuple=True)[0].to(migrate_idxs.dtype)
 
     t1 = _State.from_world(world)
 
@@ -396,7 +402,13 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
     # divide cells
     divide_idxs = t0.idx[:n_divide]
     non_divide_idxs = t0.idx[n_divide:]
-    parent_idxs, child_idxs = world.divide_cells(cell_idxs=divide_idxs)
+    mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
+    mask[divide_idxs] = True
+    parent_of = world.divide_cells(mask=mask)
+
+    # derive successful parents and their children from parent_of
+    child_idxs = (parent_of >= 0).nonzero(as_tuple=True)[0].to(torch.int32)
+    parent_idxs = parent_of[child_idxs].to(torch.int32)
 
     t1 = _State.from_world(world)
 
@@ -523,6 +535,38 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
         assert not torch.equal(ten0, ten1), key
 
 
+def test_mutate_cells_reconciles_deferred_host_state(world: World) -> None:
+    _spawn_cells(world, n=30)
+    idxs = world.cells.get_cell_idxs()
+
+    # kill 10 cells (genome clearing deferred) and divide 10 others (genome copy
+    # deferred); both host-side updates should be flushed by mutate_cells
+    kill_mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
+    kill_mask[idxs[:10]] = True
+    world.kill_cells(mask=kill_mask)
+
+    div_mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
+    div_mask[idxs[20:30]] = True
+    parent_of = world.divide_cells(mask=div_mask)
+
+    # a no-op mutator isolates the reconcile from random mutation
+    no_mut = Mutator(sub_rate=0.0, indel_rate=0.0, break_rate=0.0)
+    world.mutate_cells(mutator=no_mut)
+
+    # dead-genome invariant: living cells keep genomes, dead cells are cleared
+    alive = world.cells.alive
+    for i in alive.nonzero(as_tuple=True)[0].tolist():
+        assert world.cells.genomes[i] != ""
+    for i in (~alive).nonzero(as_tuple=True)[0].tolist():
+        assert world.cells.genomes[i] == ""
+
+    # children inherited their parent's genome and lineage (deferred copy applied)
+    for s in (parent_of >= 0).nonzero(as_tuple=True)[0].tolist():
+        p = int(parent_of[s])
+        assert world.cells.genomes[s] == world.cells.genomes[p]
+        assert world.cells.lineages[s] == world.cells.lineages[p]
+
+
 @pytest.mark.parametrize(
     "n_spawn, n_kill",
     [
@@ -540,7 +584,10 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
     # kill cells
     kill_idxs = t0.idx[n_remain : n_remain + n_kill]
     no_kill_idxs = t0.idx[:n_remain]
-    world.kill_cells(cell_idxs=kill_idxs)
+    mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
+    mask[kill_idxs] = True
+    world.kill_cells(mask=mask)
+    world.reconcile()  # flush deferred genome/lineage clearing
 
     t1 = _State.from_world(world)
 
@@ -589,6 +636,47 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
         ten0 = t0.culture_tensors[key]
         ten1 = t1.culture_tensors[key]
         assert not torch.equal(ten0, ten1), key
+
+
+def test_compact_remaps_cell_map(world: World) -> None:
+    world = _spawn_cells(world, n=60)
+
+    positions = world.culture.get_cell_positions()
+    idxs0 = world.cells.get_cell_idxs()
+
+    # record each living cell's identity (its genome) by its map position;
+    # positions are not changed by kill/compact so they identify survivors
+    survivors = idxs0[1::2]
+    kill_idxs = idxs0[::2]
+    survivor_pos_genome = {
+        tuple(positions[int(i)].tolist()): world.cells.genomes[int(i)]
+        for i in survivors
+    }
+
+    c_before = world.cells.c
+    kill_mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
+    kill_mask[kill_idxs] = True
+    world.kill_cells(mask=kill_mask)
+    world.reconcile()  # clear dead genomes before compacting
+    world.compact()
+
+    # c actually shrank and all survivors are still alive
+    assert world.cells.c < c_before
+    assert world.cells.get_n_cells() == survivors.numel()
+
+    # every surviving cell still sits at its old voxel, pointing at the right
+    # data after reindexing (regression: cell_map must be remapped by compact)
+    cell_map = world.culture.cell_map
+    for (x, y), genome in survivor_pos_genome.items():
+        new_idx = int(cell_map[x, y])
+        assert new_idx >= 0
+        assert bool(world.cells.alive[new_idx])
+        assert world.cells.genomes[new_idx] == genome
+
+    # no dangling map entries: occupied voxels index living cells in range
+    occ = cell_map[cell_map >= 0]
+    assert int(occ.max()) < world.cells.c
+    assert bool(world.cells.alive[occ.long()].all())
 
 
 @pytest.mark.slow

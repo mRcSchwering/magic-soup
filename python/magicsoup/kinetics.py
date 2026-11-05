@@ -10,6 +10,7 @@ class KineticsKwargs(TypedDict, total=False):
     eps: float
     n_sweeps: int
     n_bisect: int
+    compile: bool
 
 
 class Kinetics(TensorClass):
@@ -40,6 +41,7 @@ class Kinetics(TensorClass):
         n_sweeps: int = 3,
         n_bisect: int = 10,
         eps: float = 1e-40,
+        compile: bool | None = None,
         tensor_kwargs: TensorKwargs | None = None,
     ):
         super().__init__(**(tensor_kwargs or {}))
@@ -48,6 +50,10 @@ class Kinetics(TensorClass):
         self.dt = dt
         self.n_sweeps = n_sweeps
         self.n_bisect = n_bisect
+
+        # torch.compile the solver; None = auto (on for CUDA, off for CPU)
+        self.compile = compile
+        self._solver = None  # built lazily, rebuilt after unpickling (__getstate__)
 
     def get_x1(
         self,
@@ -80,11 +86,42 @@ class Kinetics(TensorClass):
         `N_e` is used to calculate the resulting concentrations.
         """
         c, p = v_max.shape
-        dt = self.dt
 
         # if c=0 or p=0 there is no change
         if c == 0 or p == 0:
             return x0
+
+        return self._get_solver()(x0, N_e, N_h, N_f, N_b, k_f, k_b, k_r, v_max)
+
+    def _get_solver(self):
+        # lazily build the (optionally compiled) solver. The compiled callable is
+        # not pickled (see __getstate__); it is rebuilt here on first use.
+        if self._solver is None:
+            use = self.compile
+            if use is None:
+                use = "cuda" in str(self.device)
+            self._solver = (
+                torch.compile(self._solve, dynamic=True) if use else self._solve
+            )
+        return self._solver
+
+    def _solve(
+        self,
+        x0: torch.Tensor,  # (c, 2m)
+        N_e: torch.Tensor,  # (c, p, 2m)
+        N_h: torch.Tensor,  # (c, p, 2m)
+        N_f: torch.Tensor,  # (c, p, 2m)
+        N_b: torch.Tensor,  # (c, p, 2m)
+        k_f: torch.Tensor,  # (c, p)
+        k_b: torch.Tensor,  # (c, p)
+        k_r: torch.Tensor,  # (c, p)
+        v_max: torch.Tensor,  # (c, p)
+    ) -> torch.Tensor:
+        # Block-Jacobi sweeps with inner bisection; all loops are fixed-count and
+        # the whole body is elementwise/reduction-only, so it is torch.compile- and
+        # CUDA-graph-friendly (no host synchronization).
+        c, p = v_max.shape
+        dt = self.dt
 
         # initial xi
         xi = self.fzeros(c, p)  # (c, p)
@@ -128,9 +165,16 @@ class Kinetics(TensorClass):
 
         x1 = x0 + dx  # (c, 2m)
 
-        # final safe-guards
-        x1[~torch.isfinite(x1)] = 0.0
+        # final safe-guards (torch.where instead of boolean-mask assignment so the
+        # body stays free of data-dependent indexing for torch.compile)
+        x1 = torch.where(torch.isfinite(x1), x1, 0.0)  # (c, 2m)
         return x1.clamp(min=0.0)  # (c, 2m)
+
+    def __getstate__(self):
+        # don't pickle the compiled solver; it is rebuilt lazily after loading
+        state = self.__dict__.copy()
+        state["_solver"] = None
+        return state
 
     def _bisect_xi(
         self,
