@@ -198,7 +198,7 @@ def test_update_genomes_randomly(cells: Cells) -> None:
 
 
 @pytest.mark.slow
-def test_copy_genomes_randomly(cells: Cells) -> None:
+def test_copy_proteomes_randomly(cells: Cells) -> None:
     c = 100
     cells.update_c(c_req=c)
     p_init = cells.p
@@ -211,15 +211,9 @@ def test_copy_genomes_randomly(cells: Cells) -> None:
 
         idxs_left = list(set(range(c)) - set(idxs0.tolist()))
         idxs1 = idxtensor(random.sample(idxs_left, n))
-        cells.copy_genomes(from_idxs=idxs0, to_idxs=idxs1)
+        cells.copy_proteomes(from_idxs=idxs0, to_idxs=idxs1)
 
         _asser_dtypes(cells)
-
-        # check genomes set
-        assert (
-            cells.genomes[idxs0.cpu().numpy()].tolist()
-            == cells.genomes[idxs1.cpu().numpy()].tolist()
-        )
 
         # values were copied
         ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]

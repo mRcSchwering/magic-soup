@@ -344,13 +344,14 @@ class World(TensorClass):
             return self.idxtensor([]), self.idxtensor([])
 
         # update child kinetics parameters from genomes
-        self.cells.copy_genomes(from_idxs=parent_idxs, to_idxs=child_idxs)  # sync host
+        self.cells.copy_proteomes(from_idxs=parent_idxs, to_idxs=child_idxs)
         cpu_child_idxs = child_idxs.cpu().numpy()
         cpu_parent_idxs = parent_idxs.cpu().numpy()
 
         # update cell parameters for children
         descendant_idxs = torch.cat([parent_idxs, child_idxs])
         self.cells.alive[child_idxs] = True
+        self.cells.genomes[cpu_child_idxs] = self.cells.genomes[cpu_parent_idxs]
         self.cells.lineages[cpu_child_idxs] = self.cells.lineages[cpu_parent_idxs]
         self.cells.generations[child_idxs] = self.cells.generations[parent_idxs]
         self.cells.generations[descendant_idxs] += 1

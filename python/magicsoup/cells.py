@@ -197,9 +197,9 @@ class Cells(TensorClass):
         if self.genomes.utilization <= 0.5:
             self.genomes.compact()
 
-    def copy_genomes(self, from_idxs: T, to_idxs: T) -> None:
+    def copy_proteomes(self, from_idxs: T, to_idxs: T) -> None:
         """
-        Copy cell genomes and proteomes
+        Copy cell proteomes
 
         Arguments:
             from_idxs: (k,) cell index tensor of cells to copy from
@@ -207,8 +207,6 @@ class Cells(TensorClass):
 
         Position `i` of `genomes` relates to position `i` of `idxs`.
         New proteomes are immediately active.
-        Prefer [copy_genomes()][.copy_genomes] over [update_genomes()][.update_genomes]
-        if possible as it's much faster.
         """
         # update kinetics parameters
         self.N_e[to_idxs] = self.N_e[from_idxs]
@@ -219,13 +217,6 @@ class Cells(TensorClass):
         self.k_b[to_idxs] = self.k_b[from_idxs]
         self.k_r[to_idxs] = self.k_r[from_idxs]
         self.v_max[to_idxs] = self.v_max[from_idxs]
-
-        # sync with host
-        from_idxs = from_idxs.cpu()
-        to_idxs = to_idxs.cpu()
-
-        # update cellular parameters
-        self.genomes[to_idxs.numpy()] = self.genomes[from_idxs.numpy()]
 
     def update_c(self, c_req: int) -> None:
         """Update `c` dimension by providing a new required size"""

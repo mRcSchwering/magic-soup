@@ -325,7 +325,7 @@ class Culture(TensorClass):
 
             # set parent cell idxs into child slots
             child_parent[w_slots] = w_idxs  # (l,) <- (w,)
-            c += winners.sum()  # keep track of occupied slots  # sync with host
+            c += winners.sum()  # keep track of occupied slots
 
             # cells with no free neighbor stay too, migrate may vacate nearby
             remaining = remaining[~winners]  # (r,)
