@@ -591,6 +591,44 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
         assert not torch.equal(ten0, ten1), key
 
 
+def test_compact_remaps_cell_map(world: World) -> None:
+    world = _spawn_cells(world, n=60)
+
+    positions = world.culture.get_cell_positions()
+    idxs0 = world.cells.get_cell_idxs()
+
+    # record each living cell's identity (its genome) by its map position;
+    # positions are not changed by kill/compact so they identify survivors
+    survivors = idxs0[1::2]
+    kill_idxs = idxs0[::2]
+    survivor_pos_genome = {
+        tuple(positions[int(i)].tolist()): world.cells.genomes[int(i)]
+        for i in survivors
+    }
+
+    c_before = world.cells.c
+    world.kill_cells(cell_idxs=kill_idxs)
+    world.compact()
+
+    # c actually shrank and all survivors are still alive
+    assert world.cells.c < c_before
+    assert world.cells.get_n_cells() == survivors.numel()
+
+    # every surviving cell still sits at its old voxel, pointing at the right
+    # data after reindexing (regression: cell_map must be remapped by compact)
+    cell_map = world.culture.cell_map
+    for (x, y), genome in survivor_pos_genome.items():
+        new_idx = int(cell_map[x, y])
+        assert new_idx >= 0
+        assert bool(world.cells.alive[new_idx])
+        assert world.cells.genomes[new_idx] == genome
+
+    # no dangling map entries: occupied voxels index living cells in range
+    occ = cell_map[cell_map >= 0]
+    assert int(occ.max()) < world.cells.c
+    assert bool(world.cells.alive[occ.long()].all())
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "n_spawn",

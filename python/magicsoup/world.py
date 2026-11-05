@@ -363,6 +363,19 @@ class World(TensorClass):
 
         return parent_idxs, child_idxs
 
+    def compact(self) -> None:
+        """
+        Reclaim surplus cell slots and protein columns (with hysteresis).
+
+        Shrinks the `c` and `p` dimensions of all cell tensors to the current
+        occupancy, reindexes cells, and remaps the cell map so that cells keep
+        their positions. Synchronizes with the host; call periodically
+        (e.g. after subsampling), not inside the hot step.
+        """
+        new_idx = self.cells.compact()  # (c_old,) old -> new cell index (-1 dropped)
+        flat = self.culture.cell_map_flat
+        flat[:] = torch.where(flat >= 0, new_idx[flat.clamp(min=0)], flat)
+
     def update_cells(self, genomes: StrArray, cell_idxs: torch.Tensor) -> None:
         if len(genomes) == 0:
             return

@@ -216,22 +216,102 @@ class Cells(TensorClass):
         self.v_max[to_idxs] = self.v_max[from_idxs]
 
     def update_c(self, c_req: int) -> None:
-        """Update `c` dimension by providing a new required size"""
-        mar = math.ceil(c_req * self.dim_scaling)
-        to_c = min(c_req + mar, self.c_max)
-        if to_c < self.c:
-            self._shrink_c(by_n=self.c - to_c)
-        if c_req > self.c:
-            self._grow_c(by_n=to_c - self.c)
+        """
+        Grow the `c` dimension to fit `c_req` cells (plus hysteresis margin).
+
+        Never shrinks; use [compact()][.compact] to reclaim surplus slots.
+        Growing is kept in the methods that need the new size (so the one
+        required host synchronization stays at the call site).
+        """
+        if c_req <= self.c:
+            return
+        to_c = min(c_req + math.ceil(c_req * self.dim_scaling), self.c_max)
+        self._grow_c(by_n=to_c - self.c)
 
     def update_p(self, p_req: int) -> None:
-        """Update `p` dimension by providing a new required size"""
-        mar = math.ceil(p_req * self.dim_scaling)
-        to_p = min(p_req + mar, self.p_max)
+        """
+        Grow the `p` dimension to fit `p_req` proteins (plus hysteresis margin).
+
+        Never shrinks; use [compact()][.compact] to reclaim surplus columns.
+        """
+        if p_req <= self.p:
+            return
+        to_p = min(p_req + math.ceil(p_req * self.dim_scaling), self.p_max)
+        self._grow_p(by_n=to_p - self.p)
+
+    def compact(self) -> torch.Tensor:
+        """
+        Reclaim surplus cell slots and protein columns (with hysteresis).
+
+        Drops unused slots in dimension `c`, keeping all living cells plus a
+        hysteresis margin of free slots, and trims dimension `p` to the largest
+        proteome currently in use plus margin. All cell tensors and genomes are
+        reindexed accordingly.
+
+        Returns:
+            (c,) index tensor mapping each *old* cell index to its new index,
+            with -1 for dropped slots. Use it to remap any external structure
+            that stores cell indices (e.g. the cell map).
+
+        Synchronizes with the host. Intended to be called periodically
+        (e.g. after subsampling), not inside the hot step.
+        """
+        new_idx = self._compact_c()
+        self._compact_p()
+        return new_idx
+
+    def _compact_c(self) -> torch.Tensor:
+        # keep all living cells plus a hysteresis margin of free slots
+        n_alive = int(self.alive.sum())  # sync with host
+        pad = math.ceil(n_alive * self.dim_scaling)
+        keep = self.alive.clone()
+        free = (~self.alive).nonzero(as_tuple=True)[0]  # sync with host
+        keep[free[:pad]] = True
+
+        # old -> new index map (-1 for dropped slots); length is the old c
+        new_idx = torch.where(
+            keep, keep.cumsum(0).to(self.idxtype) - 1, self.idxtensor(-1)
+        )
+
+        # sync with host
+        cpu_keep = keep.cpu().numpy()
+
+        # cell parameters
+        self.genomes = self.genomes[cpu_keep]
+        self.lineages = self.lineages[cpu_keep]
+        self.alive = self.alive[keep]
+        self.ages = self.ages[keep]
+        self.generations = self.generations[keep]
+        self.molecules = self.molecules[keep]
+
+        # kinetics parameters
+        self.v_max = self.v_max[keep]
+        self.k_f = self.k_f[keep]
+        self.k_b = self.k_b[keep]
+        self.k_r = self.k_r[keep]
+        self.N_f = self.N_f[keep]
+        self.N_b = self.N_b[keep]
+        self.N_h = self.N_h[keep]
+        self.N_e = self.N_e[keep]
+
+        # set new c
+        self.c = len(self.genomes)
+        return new_idx
+
+    def _compact_p(self) -> None:
+        if self.p == 0:
+            return
+
+        # a protein column is in use if any cell has non-zero params there;
+        # every protein has v_max > 0 (catalytic/transporter) or k_r > 0 (regulatory)
+        used = (self.v_max != 0).any(dim=0) | (self.k_r != 0).any(dim=0)  # (p,)
+        cols = self.idxarange(self.p)
+        highest = torch.where(used, cols, self.idxtensor(-1)).max()
+        p_used = int(highest) + 1  # sync with host
+
+        to_p = min(p_used + math.ceil(p_used * self.dim_scaling), self.p)
         if to_p < self.p:
             self._shrink_p(by_n=self.p - to_p)
-        if p_req > self.p:
-            self._grow_p(by_n=to_p - self.p)
 
     def save_state(self, statedir: Path) -> None:
         """
@@ -320,39 +400,6 @@ class Cells(TensorClass):
         self.N_b = self._grow(self.N_b, dim=0, by_n=by_n)
         self.N_h = self._grow(self.N_h, dim=0, by_n=by_n)
         self.N_e = self._grow(self.N_e, dim=0, by_n=by_n)
-
-        # set new c
-        self.c = len(self.genomes)
-
-    def _shrink_c(self, by_n: int) -> None:
-        avail = self.get_free_idxs()  # sync with host
-        n_avail = avail.numel()
-        if n_avail < by_n:
-            raise ValueError(f"Cannot decrease c by {by_n}, only {n_avail} available")
-
-        # sync with host
-        avail = avail[:by_n]
-        keep = torch.ones_like(self.alive, dtype=torch.bool)
-        keep[avail] = False
-        cpu_keep = keep.cpu().numpy()
-
-        # cell parameters
-        self.genomes = self.genomes[cpu_keep]
-        self.lineages = self.lineages[cpu_keep]
-        self.alive = self.alive[keep]
-        self.ages = self.ages[keep]
-        self.generations = self.generations[keep]
-        self.molecules = self.molecules[keep]
-
-        # kinetics parameters
-        self.v_max = self.v_max[keep]
-        self.k_f = self.k_f[keep]
-        self.k_b = self.k_b[keep]
-        self.k_r = self.k_r[keep]
-        self.N_f = self.N_f[keep]
-        self.N_b = self.N_b[keep]
-        self.N_h = self.N_h[keep]
-        self.N_e = self.N_e[keep]
 
         # set new c
         self.c = len(self.genomes)
