@@ -25,15 +25,17 @@ v0.14.1 CPU (Intel Core i5-10210U):
 (4.51+-0.12)s - enzymatic activity
 (0.40+-0.00)s - mutations
 
-0ba7586781640e8ae85f6ce089798f8b20dc5104 (Intel Core i5-10210U):
+55f5ef43f13cd355d474e97913eac17a8038d98c (Intel Core i5-10210U):
 10,000 cells, 1,000 genome size, on cpu
-(16.51+-0.76)s - spawn cells
-(15.38+-0.42)s - update cells
-(0.35+-0.01)s - replicate cells
-forever - advance time
+(1.63+-0.06)s - spawn cells
+(1.52+-0.06)s - update cells
+(0.30+-0.04)s - replicate cells
+(57.19+-3.06)s - advance_time
+(0.03+-0.00)s - mutations
 """
 
 import random
+import statistics
 import time
 from argparse import ArgumentParser
 
@@ -45,8 +47,8 @@ R = 5
 
 
 def _summary(tds: list[float]) -> str:
-    mu = sum(tds) / R
-    sd = sum((d - mu) ** 2 / R for d in tds) ** (1 / 2)
+    mu = statistics.mean(tds)
+    sd = statistics.stdev(tds)
     return f"({mu:.2f}+-{sd:.2f})s"
 
 
@@ -73,7 +75,7 @@ def update_cells(device: str, n: int, s: int):
         genomes = _gen_genomes(n=n, s=s)
         idxs = world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        world.update_cells(genomes=genomes, cell_idxs=idxs)
+        world.update_cells(genomes=ms.StrArray.from_strings(genomes), cell_idxs=idxs)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -108,11 +110,11 @@ def mutations(device: str, n: int, s: int):
     world.spawn_cells(genomes=genomes)
     tds = []
     for _ in range(R):
+        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
+        genomes = _gen_genomes(n=n, s=s)
+        idxs = world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        _ = ms.point_mutations(seqs=genomes)
-        nghbrs = world.get_neighbors(cell_idxs=list(range(world.n_cells)))
-        nghbr_genomes = [(genomes[a], genomes[b]) for a, b in nghbrs]
-        _ = ms.recombinations(seq_pairs=nghbr_genomes)
+        world.mutate_cells(cell_idxs=idxs)
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -149,7 +151,7 @@ if __name__ == "__main__":
         "update_cells",
         "replicate_cells",
         "advance_time",
-        # "mutations",
+        "mutations",
     ]
 
     parser = ArgumentParser()

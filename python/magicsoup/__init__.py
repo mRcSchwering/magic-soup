@@ -1,4 +1,5 @@
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
+from magicsoup.core.strarray import StrArray
 from magicsoup.core.util import random_genome
 from magicsoup.mutations import Mutator
 from magicsoup.synthesis import GenomeSynthesizer, ProteinSynthesizer
@@ -11,6 +12,7 @@ __all__ = [
     "Mutator",
     "ProteinSynthesizer",
     "Reaction",
+    "StrArray",
     "World",
     "random_genome",
 ]

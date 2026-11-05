@@ -458,11 +458,21 @@ class World(TensorClass):
         # age cells
         self.cells.ages += self.time_step
 
-    def mutate_cells(self, mutator: Mutator | None = None) -> None:
+    def mutate_cells(
+        self, cell_idxs: torch.Tensor | None = None, mutator: Mutator | None = None
+    ) -> None:
+        if cell_idxs is None:
+            cell_idxs = self.cells.get_cell_idxs()  # sync with host
+
+        if cell_idxs.numel() == 0:
+            return
+
+        cpu_cell_idxs = cell_idxs.cpu().numpy()
         mutator = mutator or self.mutator
-        idxs, mutated = mutator.mutate(genomes=self.cells.genomes)
+        idxs, mutated = mutator.mutate(genomes=self.cells.genomes[cpu_cell_idxs])
+
         self.update_cells(
-            cell_idxs=torch.from_numpy(idxs).to(self.device),
+            cell_idxs=torch.from_numpy(cpu_cell_idxs[idxs]).to(self.device),
             genomes=mutated,
         )
 
