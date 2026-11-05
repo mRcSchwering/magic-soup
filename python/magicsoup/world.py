@@ -141,6 +141,8 @@ class World(TensorClass):
         by_idx: int | None = None,
         by_position: tuple[int, int] | None = None,
     ) -> "Cell":
+        # TODO: weird side effect of a getter
+        self.reconcile()  # ensure the genome/lineage arrays are current
         idx = -1
         positions = self.culture.get_cell_positions()
 
@@ -278,90 +280,190 @@ class World(TensorClass):
 
         return new_idxs
 
-    def resuspend_cells(self, cell_idxs: torch.Tensor | None = None) -> None:
-        if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()  # sync with host
+    def resuspend_cells(self, mask: torch.Tensor | None = None) -> None:
+        """
+        Relocate cells to random free voxels (e.g. to model a mixed suspension).
 
-        if cell_idxs.numel() == 0:
-            return
+        Arguments:
+            mask: (c,) bool tensor of cells to relocate; None = all living
 
-        n_cells = self.cells.get_n_cells()
+        Positions are updated in place. Each selected cell is placed on a distinct,
+        randomly chosen free voxel (its own vacated voxel is eligible). Operates
+        over all cell slots using masks and performs no host synchronization.
+        """
+        cells = self.cells
+        culture = self.culture
+        if mask is None:
+            mask = cells.alive.clone()
+        else:
+            mask = mask & cells.alive
 
-        # unoccupy current positions
-        cell_positions = self.culture.get_cell_positions()
-        old_xs = cell_positions[cell_idxs, 0]
-        old_ys = cell_positions[cell_idxs, 1]
-        self.culture.cell_map[old_xs, old_ys] = -1
+        n2 = culture.N2
+        c = mask.shape[0]
+        coords = culture.get_cell_positions()[:c]  # (c, 2) current positions
+        old_flat = culture._positions_to_idxs(coords)  # (c,) current voxel
+        cell_ids = self.idxarange(c)  # (c,)
+        flat = culture.cell_map_flat
 
-        # find new unoccupied positions
-        new_pos = self.culture.get_free_positions(n=n_cells)
-        new_xs = new_pos[cell_idxs, 0]
-        new_ys = new_pos[cell_idxs, 1]
+        # vacate the selected cells' voxels (non-selected routed to a dump slot)
+        padded = torch.cat([flat, self.idxtensor([-1])])  # (N²+1,)
+        vacate = torch.where(mask, old_flat, self.idxtensor(n2))  # (c,)
+        padded.scatter_(0, vacate, self.idxfull(c, value=-1))
+        flat[:] = padded[:n2]
 
-        self.culture.cell_map[new_xs, new_ys] = cell_idxs
+        # rank now-free voxels in random order; assign the r-th selected cell the
+        # r-th free voxel (there are always >= as many free voxels as selected
+        # cells, since each selected cell just vacated one)
+        free = flat < 0  # (N²,)
+        scores = self.frand(n2).masked_fill(~free, 2.0)  # free in [0, 1), occupied 2
+        order = scores.argsort()  # (N²,) free voxels first, in random order
+        sel_rank = mask.cumsum(0, dtype=self.idxtype) - 1  # (c,)
+        target = order[sel_rank.clamp(min=0)].int()  # (c,) target voxel per cell
 
-    def migrate_cells(self, cell_idxs: torch.Tensor | None = None) -> torch.Tensor:
-        if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()  # sync with host
+        # place the selected cells on their target voxels
+        padded = torch.cat([flat, self.idxtensor([-1])])
+        place = torch.where(mask, target, self.idxtensor(n2))  # (c,)
+        padded.scatter_(0, place, cell_ids)
+        flat[:] = padded[:n2]
 
-        if cell_idxs.numel() == 0:
-            return self.idxtensor([])
+    def migrate_cells(self, mask: torch.Tensor | None = None) -> torch.Tensor:
+        """
+        Let cells migrate to a free voxel in their Moore neighbourhood.
+
+        Arguments:
+            mask: (c,) bool tensor of cells attempting to migrate; None = all living
+
+        Returns:
+            (c,) bool tensor of cells that successfully migrated
+
+        Positions are updated in place. Performs no host synchronization.
+        """
+        if mask is None:
+            mask = self.cells.alive.clone()
+        else:
+            mask = mask & self.cells.alive
 
         # positions are updated in place
-        migrated_idxs = self.culture.undirected_cell_migration(cell_idxs=cell_idxs)
+        return self.culture.undirected_cell_migration(mask=mask)
 
-        return migrated_idxs
+    def divide_cells(self, mask: torch.Tensor | None = None) -> torch.Tensor:
+        """
+        Divide cells, placing each child in a free voxel of its parent.
 
-    def divide_cells(
-        self, cell_idxs: torch.Tensor | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()  # sync with host
+        Arguments:
+            mask: (c,) bool tensor of parents that want to divide; None = all living
 
-        n_req = cell_idxs.numel()
-        if n_req == 0:
-            return self.idxtensor([]), self.idxtensor([])
+        Returns:
+            (c,) index tensor `parent_of` where `parent_of[s]` is the parent slot
+            that produced the child now occupying slot `s`, else -1.
 
-        # prepare for children
-        avail_idxs = self.cells.get_free_idxs()  # sync with host
-        n_avail = avail_idxs.numel()
-
-        if n_avail >= n_req:
-            child_idxs = avail_idxs[:n_req]
+        Grows the `c` dimension with hysteresis if there are not enough free slots.
+        Children inherit their parent's proteome and half of its molecules.
+        """
+        cells = self.cells
+        culture = self.culture
+        if mask is None:
+            mask = cells.alive.clone()
         else:
-            n_alive = self.cells.get_n_cells()  # sync with host
-            self.cells.update_c(c_req=n_req + n_alive)
-            avail_idxs = self.cells.get_free_idxs()  # sync with host
-            child_idxs = avail_idxs[:n_req]
+            mask = mask & cells.alive
 
-        # already places children on cell map
-        parent_idxs, child_idxs = self.culture.cell_division(
-            parent_idxs=cell_idxs, child_idxs=child_idxs
+        # resolve which parents win a free neighbour voxel (reserves those voxels)
+        success, won_voxel = culture.cell_division(mask=mask)  # (c,), (c,)
+
+        # grow c to fit the new children (the one host sync)
+        c_req = int(cells.alive.sum() + success.sum())  # sync with host
+        cells.update_c(c_req=c_req)
+        c = cells.c
+
+        # pad to the (possibly grown) c; appended slots are not parents
+        success = self._pad_to_c(success, c, False)
+        won_voxel = self._pad_to_c(won_voxel, c, -1)
+
+        # allocate a free child slot per successful parent (prefix-sum, device)
+        parent_of, child_slot = self._allocate_children(success)
+
+        # copy children's genomes and lineages from their parents on the host
+        # (adjacent to the grow sync above, so ~one combined stall)
+        po = parent_of.cpu().numpy()  # sync with host
+        is_child = po >= 0
+        parents = po[is_child]
+        cells.genomes[is_child] = cells.genomes[parents]
+        cells.lineages[is_child] = cells.lineages[parents]
+
+        # finalize the map: replace reservations with the real child ids
+        dump = culture.N2
+        place = torch.where(success, won_voxel, self.idxtensor(dump))  # (c,)
+        child_vals = torch.where(success, child_slot, self.idxtensor(0))  # (c,)
+        flat = culture.cell_map_flat
+        padded = torch.cat([flat, self.idxtensor([-1])])
+        padded.scatter_(0, place, child_vals)
+        flat[:] = padded[: culture.N2]
+
+        # copy proteomes and cell state from parents to their children (device)
+        cells.copy_proteomes_masked(parent_of=parent_of)
+        self._apply_division_state(parent_of=parent_of, divided=success)
+
+        return parent_of
+
+    def _pad_to_c(self, t: torch.Tensor, c: int, fill) -> torch.Tensor:
+        n = t.shape[0]
+        if n >= c:
+            return t[:c]
+        pad = torch.full((c - n,), fill, dtype=t.dtype, device=t.device)
+        return torch.cat([t, pad])
+
+    def _allocate_children(
+        self, success: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # assign the i-th successful parent to the i-th free cell slot, sync-free
+        cells = self.cells
+        c = success.shape[0]
+        free = ~cells.alive  # (c,)
+        order = self.idxarange(c)  # (c,)
+
+        # map "r-th free slot" -> its cell index (non-free rows routed to dump c)
+        rank_of_free = torch.where(
+            free, free.cumsum(0, dtype=self.idxtype) - 1, self.idxtensor(c)
+        )  # (c,)
+        slot_of_rank = order.new_full((c + 1,), -1)
+        slot_of_rank.scatter_(0, rank_of_free, order)
+
+        # each successful parent -> next free slot
+        prank = success.cumsum(0, dtype=self.idxtype) - 1  # (c,)
+        child_slot = torch.where(
+            success, slot_of_rank[prank.clamp(min=0)], self.idxtensor(-1)
+        )  # (c,)
+
+        # invert to parent_of[child_slot] = parent
+        cs = torch.where(success, child_slot, self.idxtensor(c))  # non-succ -> dump
+        parent_of = self.idxfull(c + 1, value=-1)
+        parent_of.scatter_(0, cs, order)
+        return parent_of[:c], child_slot
+
+    def _apply_division_state(
+        self, parent_of: torch.Tensor, divided: torch.Tensor
+    ) -> None:
+        cells = self.cells
+        is_child = parent_of >= 0  # (c,)
+        src = parent_of.clamp(min=0)  # (c,)
+        descendant = is_child | divided  # (c,) children + parents that divided
+
+        # children become alive
+        cells.alive = cells.alive | is_child
+        # children inherit parent generation; all descendants then increment
+        cells.generations = torch.where(
+            is_child, cells.generations[src], cells.generations
         )
-
-        n_new_cells = parent_idxs.numel()
-        if n_new_cells == 0:
-            return self.idxtensor([]), self.idxtensor([])
-
-        # update child kinetics parameters from genomes
-        self.cells.copy_proteomes(from_idxs=parent_idxs, to_idxs=child_idxs)
-        cpu_child_idxs = child_idxs.cpu().numpy()
-        cpu_parent_idxs = parent_idxs.cpu().numpy()
-
-        # update cell parameters for children
-        descendant_idxs = torch.cat([parent_idxs, child_idxs])
-        self.cells.alive[child_idxs] = True
-        self.cells.genomes[cpu_child_idxs] = self.cells.genomes[cpu_parent_idxs]
-        self.cells.lineages[cpu_child_idxs] = self.cells.lineages[cpu_parent_idxs]
-        self.cells.generations[child_idxs] = self.cells.generations[parent_idxs]
-        self.cells.generations[descendant_idxs] += 1
-        self.cells.ages[descendant_idxs] = 0.0
-
-        # descendants share molecules
-        self.cells.molecules[child_idxs] = self.cells.molecules[parent_idxs]
-        self.cells.molecules[descendant_idxs] *= 0.5
-
-        return parent_idxs, child_idxs
+        cells.generations = cells.generations + descendant.to(cells.generations.dtype)
+        # descendants reset age
+        cells.ages = torch.where(descendant, self.ftensor(0.0), cells.ages)
+        # children share parent molecules, then all descendants split in half
+        cells.molecules = torch.where(
+            is_child[:, None], cells.molecules[src], cells.molecules
+        )
+        cells.molecules = torch.where(
+            descendant[:, None], cells.molecules * 0.5, cells.molecules
+        )
 
     def compact(self) -> None:
         """
@@ -376,6 +478,19 @@ class World(TensorClass):
         flat = self.culture.cell_map_flat
         flat[:] = torch.where(flat >= 0, new_idx[flat.clamp(min=0)], flat)
 
+    def reconcile(self) -> None:
+        """
+        Clear dead cells' genomes and lineages (one host synchronization).
+
+        Kill defers this host-side cleanup to keep itself sync-free. This is
+        called automatically by [mutate_cells()][magicsoup.world.World.mutate_cells],
+        [save()][magicsoup.world.World.save],
+        [save_state()][magicsoup.world.World.save_state] and
+        [get_cell()][magicsoup.world.World.get_cell]; call it manually if you read
+        the genome/lineage arrays directly after killing cells.
+        """
+        self.cells.reconcile_host()
+
     def update_cells(self, genomes: StrArray, cell_idxs: torch.Tensor) -> None:
         if len(genomes) == 0:
             return
@@ -385,43 +500,51 @@ class World(TensorClass):
 
         self.cells.update_genomes(genomes=genomes, idxs=cell_idxs)
 
-    def kill_cells(self, cell_idxs: torch.Tensor | None = None) -> None:
-        if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()  # sync with host
+    def kill_cells(self, mask: torch.Tensor | None = None) -> None:
+        """
+        Kill cells, spilling their molecules onto their voxels.
 
-        if cell_idxs.numel() == 0:
-            return
+        Arguments:
+            mask: (c,) bool tensor of cells to kill; None = all living
 
-        # sync with host
-        cpu_cell_idxs = cell_idxs.cpu().numpy()
+        Device-only: all cell tensors and the cell map are updated with masks.
+        Dead cells' genomes and lineages are cleared at the next
+        [reconcile()][magicsoup.world.World.reconcile], so this performs no host
+        synchronization.
+        """
+        cells = self.cells
+        culture = self.culture
+        if mask is None:
+            mask = cells.alive.clone()
+        else:
+            mask = mask & cells.alive  # only living cells can be killed
 
-        # free up map
-        cell_positions = self.culture.get_cell_positions()
-        xs = cell_positions[cell_idxs, 0]
-        ys = cell_positions[cell_idxs, 1]
-        self.culture.cell_map[xs, ys] = -1
+        # per-voxel kill mask by gathering each voxel's occupant's kill status
+        cm = culture.cell_map  # (N, N)
+        safe = cm.clamp(min=0)  # (N, N) -1 (empty) -> 0
+        kill_here = (cm >= 0) & mask[safe]  # (N, N)
 
-        # all molecules are spilled onto voxel
-        n_voxel = self.culture.molecule_map[:, xs, ys] * self.v_voxel
-        n_cell = self.cells.molecules[cell_idxs, :].T * self.v_cell
-        self.culture.molecule_map[:, xs, ys] = (n_voxel + n_cell) / self.v_voxel
+        # spill killed cells' molecules onto their voxels, then free the map
+        mols = cells.molecules[safe].permute(2, 0, 1)  # (m, N, N) per-voxel cell mols
+        spill = torch.where(kill_here, mols, self.ftensor(0.0))  # (m, N, N)
+        culture.molecule_map += spill * (self.v_cell / self.v_voxel)
+        cm.masked_fill_(kill_here, -1)
 
-        # unset parameters
-        self.cells.genomes[cpu_cell_idxs] = ""
-        self.cells.lineages[cpu_cell_idxs] = ""
-        self.cells.alive[cell_idxs] = False
-        self.cells.ages[cell_idxs] = 0.0
-        self.cells.generations[cell_idxs] = 0
-        self.cells.molecules[cell_idxs] = 0.0
-
-        self.cells.v_max[cell_idxs] = 0.0
-        self.cells.k_f[cell_idxs] = 0.0
-        self.cells.k_b[cell_idxs] = 0.0
-        self.cells.k_r[cell_idxs] = 0.0
-        self.cells.N_f[cell_idxs] = 0
-        self.cells.N_b[cell_idxs] = 0
-        self.cells.N_h[cell_idxs] = 0
-        self.cells.N_e[cell_idxs] = 0
+        # unset device cell state (genomes/lineages deferred to reconcile)
+        m1 = mask[:, None]
+        m2 = mask[:, None, None]
+        cells.alive = cells.alive & ~mask
+        cells.ages = torch.where(mask, self.ftensor(0.0), cells.ages)
+        cells.generations = torch.where(mask, self.idxtensor(0), cells.generations)
+        cells.molecules = torch.where(m1, self.ftensor(0.0), cells.molecules)
+        cells.v_max = torch.where(m1, self.ftensor(0.0), cells.v_max)
+        cells.k_f = torch.where(m1, self.ftensor(0.0), cells.k_f)
+        cells.k_b = torch.where(m1, self.ftensor(0.0), cells.k_b)
+        cells.k_r = torch.where(m1, self.ftensor(0.0), cells.k_r)
+        cells.N_f = torch.where(m2, self.itensor(0), cells.N_f)
+        cells.N_b = torch.where(m2, self.itensor(0), cells.N_b)
+        cells.N_h = torch.where(m2, self.itensor(0), cells.N_h)
+        cells.N_e = torch.where(m2, self.ftensor(0.0), cells.N_e)
 
     def advance_time(self, n_steps: int = 1) -> None:
         cell_molecules = self.cells.molecules  # (c, m)
@@ -472,24 +595,44 @@ class World(TensorClass):
         self.cells.ages += self.time_step
 
     def mutate_cells(
-        self, cell_idxs: torch.Tensor | None = None, mutator: Mutator | None = None
+        self,
+        mask: torch.Tensor | None = None,
+        mutator: Mutator | None = None,
     ) -> None:
-        if cell_idxs is None:
-            cell_idxs = self.cells.get_cell_idxs()  # sync with host
+        """
+        Mutate the genomes of the selected living cells.
 
-        if cell_idxs.numel() == 0:
+        Arguments:
+            mask: (c,) bool tensor of cells to mutate; None = all living cells
+            mutator: [Mutator][magicsoup.mutations.Mutator] to use; defaults to the
+                world's own.
+
+        Clears dead cells' genomes first (see
+        [reconcile()][magicsoup.world.World.reconcile]), then mutates the selected
+        living cells and updates their proteomes. Independent of division: pass a
+        mask to restrict mutation (e.g. only new children) or leave it to mutate
+        the whole population.
+        """
+        # clear dead genomes so the arena stays compact and dead cells aren't hit
+        alive_host = self.cells.reconcile_host()  # sync with host
+        if mask is None:
+            sel_idxs = np.nonzero(alive_host)[0]
+        else:
+            # restrict to living cells, then pull the selection to the host
+            sel_idxs = (mask & self.cells.alive).nonzero(as_tuple=True)[0].cpu().numpy()
+        if sel_idxs.shape[0] == 0:
             return
 
-        cpu_cell_idxs = cell_idxs.cpu().numpy()
         mutator = mutator or self.mutator
-        idxs, mutated = mutator.mutate(genomes=self.cells.genomes[cpu_cell_idxs])
+        idxs, mutated = mutator.mutate(genomes=self.cells.genomes[sel_idxs])
 
         self.update_cells(
-            cell_idxs=torch.from_numpy(cpu_cell_idxs[idxs]).to(self.device),
+            cell_idxs=torch.from_numpy(sel_idxs[idxs]).to(self.device),
             genomes=mutated,
         )
 
     def save(self, rundir: Path, name: str = "world.pkl") -> None:
+        self.reconcile()  # bring host genome/lineage arrays in sync before saving
         rundir.mkdir(parents=True, exist_ok=True)
         with open(rundir / name, "wb") as fh:
             pickle.dump(self, fh)
@@ -512,6 +655,7 @@ class World(TensorClass):
         return obj
 
     def save_state(self, statedir: Path):
+        self.reconcile()  # bring host genome/lineage arrays in sync before saving
         statedir.mkdir(parents=True, exist_ok=True)
         self.culture.save_state(statedir=statedir)
         self.cells.save_state(statedir=statedir)

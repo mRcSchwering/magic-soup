@@ -205,7 +205,7 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "cell_map, parents, children, n_exp",
+    "cell_map, parents, n_exp",
     [
         (
             # empty map
@@ -214,7 +214,6 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
                 [-1, -1, -1],
                 [-1, -1, -1],
             ],
-            [],
             [],
             0,
         ),
@@ -226,7 +225,6 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
                 [5, 6, 7],
             ],
             [],
-            [],
             0,
         ),
         (
@@ -237,7 +235,6 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
                 [5, 6, 2],
             ],
             [0],
-            [8],
             1,
         ),
         (
@@ -249,7 +246,6 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
                 [11, 12, 13, 14],
             ],
             [10],
-            [15],
             0,
         ),
         (
@@ -261,95 +257,79 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
                 [-1, -1, -1, -1],
             ],
             [0, 1, 2, 3],
-            [5, 6, 7, 8],
             4,
         ),
         (
-            # many cells want to divide, only 1 available
+            # many cells want to divide, only 1 free voxel
             [
                 [0, 7, 1],
                 [2, 3, 4],
                 [5, 6, -1],
             ],
             [3, 4, 6],
-            [8],
             1,
         ),
         (
-            # many children available only 2 want to divide
+            # 2 cells want to divide, plenty of room
             [
                 [0, -1, 1],
                 [2, 3, 4],
                 [-1, 6, -1],
             ],
             [0, 6],
-            [5, 7, 8],
             2,
         ),
         (
-            # many can divide but only 1 child available
+            # many cells divide, plenty of free voxels
             [
                 [-1, -1, 1],
                 [2, -1, -1],
                 [-1, 6, -1],
             ],
             [1, 2, 6],
-            [5],
-            1,
+            3,
         ),
     ],
 )
-def test_cell_division(
-    cell_map: list, parents: list[int], children: list[int], n_exp: int
-) -> None:
+def test_cell_division(cell_map: list, parents: list[int], n_exp: int) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
 
-    parents_0 = idxtensor(parents)
-    children_0 = idxtensor(children)
+    # which cell slots want to divide (mask over all possible slots)
+    mask = idxzeros(culture.N2).bool()
+    mask[idxtensor(parents)] = True
 
-    # remember idxs and positions before
-    cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+    # remember positions before
     cell_pos_0 = culture.get_cell_positions()
+    cell_map_before = culture.cell_map.clone()
 
-    # divide cells
-    scc_parents, scc_children = culture.cell_division(
-        parent_idxs=parents_0, child_idxs=children_0
-    )
+    # resolve division contention (reserves won voxels on the map)
+    success, won_voxel = culture.cell_division(mask=mask)
+    scc_parents = success.nonzero(as_tuple=True)[0].to(torch.int32)
 
-    # remember idxs and positions after
-    cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
-    cell_pos_1 = culture.get_cell_positions()
-    fld_parents = parents_0[~torch.isin(parents_0, scc_parents)]
-
-    # check expected number of successful divisions
+    # expected number of successful divisions (= won free voxels)
     assert scc_parents.numel() == n_exp
-    assert scc_children.numel() == n_exp
 
-    # basic consistency checks
-    assert set(fld_parents.tolist()) & set(scc_parents.tolist()) == set()
-    assert set(scc_parents.tolist()) & set(scc_children.tolist()) == set()
-    assert set(fld_parents.tolist() + scc_parents.tolist()) == set(parents_0.tolist())
-    assert fld_parents.numel() + scc_parents.numel() == parents_0.numel()
+    # successful parents are a subset of requested parents
+    assert set(scc_parents.tolist()) <= set(parents)
 
-    # test only provided parents and children are in the results
-    assert set(children_0.tolist()) >= set(scc_children.tolist())
-    assert set(parents_0.tolist()) >= set(scc_parents.tolist())
+    # originally occupied voxels are unchanged (reservations only touch free voxels)
+    occ = cell_map_before >= 0
+    assert torch.equal(culture.cell_map[occ], cell_map_before[occ])
 
-    # test map now contains new idxs
-    assert set(cell_idxs_0.tolist()) | set(scc_children.tolist()) == set(
-        cell_idxs_1.tolist()
-    )
+    # won voxels are distinct
+    scc_voxels = won_voxel[success]
+    assert scc_voxels.unique().numel() == scc_voxels.numel()
 
-    # test all original cells are unchanged
-    assert torch.equal(cell_pos_0[cell_idxs_0], cell_pos_1[cell_idxs_0])
-
-    # test all children are in Moore neighborhood of their parents
-    for p0, p1 in zip(
-        cell_pos_0[scc_parents].tolist(),
-        cell_pos_1[scc_children].tolist(),
-    ):
-        assert is_moore_nbd(p0, p1, n=culture.map_size)
+    # each won voxel was free before, is reserved (with parent id) after, and
+    # lies in the parent's Moore neighbourhood
+    for p in scc_parents.tolist():
+        v = int(won_voxel[p])
+        assert v >= 0
+        x, y = v // culture.map_size, v % culture.map_size
+        assert cell_map_before[x, y] < 0
+        assert int(culture.cell_map[x, y]) == p
+        assert is_moore_nbd(tuple(cell_pos_0[p].tolist()), (x, y), n=culture.map_size)
 
 
 @pytest.mark.slow
@@ -362,50 +342,41 @@ def test_cell_division_randomly() -> None:
         culture.cell_map[:] = _gen_rand_cell_map(N=N, confl=0.7)
         n = int(culture.cell_map.max()) + 1
 
-        # remember idxs and positions before
-        cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
+        # remember positions before
         cell_pos_0 = culture.get_cell_positions()
+        cell_map_before = culture.cell_map.clone()
 
-        # migrate
+        # pick random parents that want to divide
         parents_0 = idxrandperm(n)[: random.randint(5, n)]
-        free = [i for i in range(n, N * N) if i not in parents_0.tolist()]
-        children_0 = idxtensor(free)[: random.randint(0, len(free))]
+        mask = idxzeros(culture.N2).bool()
+        mask[parents_0] = True
 
-        # divide cells
-        scc_parents, scc_children = culture.cell_division(
-            parent_idxs=parents_0, child_idxs=children_0
-        )
+        # divide cells (resolves voxel contention, reserves won voxels)
+        success, won_voxel = culture.cell_division(mask=mask)
+        scc_parents = success.nonzero(as_tuple=True)[0].to(torch.int32)
 
-        # remember idxs and positions after
-        cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
-        cell_pos_1 = culture.get_cell_positions()
-        fld_parents = parents_0[~torch.isin(parents_0, scc_parents)]
+        # some should have divided
+        assert scc_parents.numel() > 0
 
-        # basic consistency checks
-        assert set(fld_parents.tolist()) & set(scc_parents.tolist()) == set()
-        assert set(scc_parents.tolist()) & set(scc_children.tolist()) == set()
-        assert set(fld_parents.tolist() + scc_parents.tolist()) == set(
-            parents_0.tolist()
-        )
-        assert fld_parents.numel() + scc_parents.numel() == parents_0.numel()
+        # successful parents are a subset of requested parents
+        assert set(scc_parents.tolist()) <= set(parents_0.tolist())
 
-        # test only provided parents and children are in the results
-        assert set(children_0.tolist()) >= set(scc_children.tolist())
-        assert set(parents_0.tolist()) >= set(scc_parents.tolist())
+        # originally occupied voxels are unchanged (reservations touch free voxels)
+        occ = cell_map_before >= 0
+        assert torch.equal(culture.cell_map[occ], cell_map_before[occ])
 
-        # test map now contains new idxs
-        assert set(cell_idxs_0.tolist()) | set(scc_children.tolist()) == set(
-            cell_idxs_1.tolist()
-        )
+        # won voxels are distinct, were free before, and are reserved after
+        scc_voxels = won_voxel[success]
+        assert scc_voxels.unique().numel() == scc_voxels.numel()
+        xs = scc_voxels // culture.map_size
+        ys = scc_voxels % culture.map_size
+        assert (cell_map_before[xs, ys] < 0).all()
+        assert (culture.cell_map[xs, ys] == scc_parents).all()
 
-        # test all original cells are unchanged
-        assert torch.equal(cell_pos_0[cell_idxs_0], cell_pos_1[cell_idxs_0])
-
-        # test all children are in Moore neighborhood of their parents
-        for p0, p1 in zip(
-            cell_pos_0[scc_parents].tolist(),
-            cell_pos_1[scc_children].tolist(),
-        ):
+        # each won voxel is in the parent's Moore neighborhood
+        par_pos = cell_pos_0[scc_parents].tolist()
+        vox_pos = torch.stack([xs, ys], dim=1).tolist()
+        for p0, p1 in zip(par_pos, vox_pos):
             assert is_moore_nbd(p0, p1, n=culture.map_size)
 
 
@@ -458,7 +429,7 @@ def test_cell_division_randomly() -> None:
             [
                 [0, -1, 5],
                 [2, 1, 7],
-                [9, 6, 8],
+                [3, 6, 8],
             ],
             [5],
             1,
@@ -479,19 +450,24 @@ def test_cell_division_randomly() -> None:
 def test_undirected_cell_migration(cell_map: list, idxs: list[int], exp_n: int) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
-    cell_idxs = idxtensor(idxs)
+
+    # which cell slots want to migrate (mask over all possible slots)
+    req_idxs = idxtensor(idxs)
+    mask = idxzeros(culture.N2).bool()
+    mask[req_idxs] = True
 
     # remember idxs and positions before
     cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
     cell_pos_0 = culture.get_cell_positions()
 
     # migrate
-    succ_idxs = culture.undirected_cell_migration(cell_idxs=cell_idxs)
+    migrated = culture.undirected_cell_migration(mask=mask)
+    succ_idxs = migrated.nonzero(as_tuple=True)[0].to(torch.int32)
 
     # remember idxs and positions after
     cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
     cell_pos_1 = culture.get_cell_positions()
-    unsucc_idxs = cell_idxs[~torch.isin(cell_idxs, succ_idxs)]
+    unsucc_idxs = req_idxs[~torch.isin(req_idxs, succ_idxs)]
 
     # check expected number of successful migrations
     assert succ_idxs.numel() == exp_n
@@ -529,19 +505,22 @@ def test_undirected_cell_migration_randomly() -> None:
 
         # migrate
         k = random.randint(10, n)
-        cell_idxs = idxrandperm(n)[:k]
-        succ_idxs = culture.undirected_cell_migration(cell_idxs=cell_idxs)
+        req_idxs = idxrandperm(n)[:k]
+        mask = idxzeros(culture.N2).bool()
+        mask[req_idxs] = True
+        migrated = culture.undirected_cell_migration(mask=mask)
+        succ_idxs = migrated.nonzero(as_tuple=True)[0].to(torch.int32)
 
         # remember idxs and positions after
         cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
         cell_pos_1 = culture.get_cell_positions()
-        unsucc_idxs = cell_idxs[~torch.isin(cell_idxs, succ_idxs)]
+        unsucc_idxs = req_idxs[~torch.isin(req_idxs, succ_idxs)]
 
         # at least some should have migrated
         assert succ_idxs.numel() > 0
 
         # successful idxs are subset of requested idxs
-        assert set(cell_idxs.tolist()) >= set(succ_idxs.tolist())
+        assert set(req_idxs.tolist()) >= set(succ_idxs.tolist())
 
         # cell idxs are unchanged
         assert torch.equal(cell_idxs_0, cell_idxs_1)

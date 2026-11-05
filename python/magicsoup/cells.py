@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 from typing import Annotated, TypedDict, overload
 
+import numpy as np
 import torch
 
 from magicsoup.chemistry import Chemistry
@@ -214,6 +215,46 @@ class Cells(TensorClass):
         self.k_b[to_idxs] = self.k_b[from_idxs]
         self.k_r[to_idxs] = self.k_r[from_idxs]
         self.v_max[to_idxs] = self.v_max[from_idxs]
+
+    def copy_proteomes_masked(self, parent_of: torch.Tensor) -> None:
+        """
+        Copy proteome parameters from parents to children.
+
+        Arguments:
+            parent_of: (c,) index tensor where `parent_of[s]` is the parent slot
+                whose proteome should be copied into child slot `s`, or -1 for
+                non-child slots.
+
+        Full-width and sync-free: processes all `c` rows (non-child rows keep
+        their own values) so no boolean-mask gather or nonzero is needed.
+        """
+        is_child = parent_of >= 0  # (c,)
+        src = parent_of.clamp(min=0)  # (c,)
+        m1 = is_child[:, None]  # (c, 1)
+        m2 = is_child[:, None, None]  # (c, 1, 1)
+        self.N_e = torch.where(m2, self.N_e[src], self.N_e)
+        self.N_f = torch.where(m2, self.N_f[src], self.N_f)
+        self.N_b = torch.where(m2, self.N_b[src], self.N_b)
+        self.N_h = torch.where(m2, self.N_h[src], self.N_h)
+        self.v_max = torch.where(m1, self.v_max[src], self.v_max)
+        self.k_f = torch.where(m1, self.k_f[src], self.k_f)
+        self.k_b = torch.where(m1, self.k_b[src], self.k_b)
+        self.k_r = torch.where(m1, self.k_r[src], self.k_r)
+
+    def reconcile_host(self) -> np.ndarray:
+        """
+        Clear genomes and lineages of dead cells.
+
+        Kill defers this host-side cleanup; call it (directly or via
+        `mutate_cells`/`save`/`get_cell`) to bring the genome and lineage arrays
+        back in sync with the `alive` mask. Returns the alive mask as a numpy bool
+        array. Synchronizes once.
+        """
+        alive_host = self.alive.cpu().numpy()  # sync with host
+        dead = ~alive_host
+        self.genomes[dead] = ""
+        self.lineages[dead] = ""
+        return alive_host
 
     def update_c(self, c_req: int) -> None:
         """
