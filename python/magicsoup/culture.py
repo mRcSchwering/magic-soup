@@ -312,7 +312,7 @@ class Culture(TensorClass):
             target_nbs, winners = self._choose_neighbourhood(nbs=nbs, r=r)
 
             # give each winner the next free child slot, only keep up to l winners
-            slots = c + winners.cumsum(0) - 1  # (r,) -> (l,)
+            slots = c + winners.cumsum(0, dtype=self.idxtype) - 1  # (r,) -> (l,)
             winners = winners & (slots < l)  # (r)
 
             # commit winners (w,) from (r,)
