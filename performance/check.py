@@ -25,12 +25,12 @@ v0.14.1 CPU (Intel Core i5-10210U):
 (4.51+-0.12)s - enzymatic activity
 (0.40+-0.00)s - mutations
 
-18c3db7b443db84a1b6edd8177123a7b0ada4619 (Intel Core i5-10210U):
+a033a935266d0e010c1eb79be2f3c64642e97824 (Intel Core i5-10210U):
 10,000 cells, 1,000 genome size, on cpu
-(1.63+-0.06)s - spawn cells
-(1.52+-0.06)s - update cells
-(0.30+-0.04)s - replicate cells
-(57.19+-3.06)s - advance_time
+(1.70+-0.17)s - spawn cells
+(1.43+-0.05)s - update cells
+(0.47+-0.01)s - replicate cells
+(50.01+-5.57)s - advance_time
 (0.03+-0.00)s - mutations
 """
 
@@ -85,9 +85,9 @@ def replicate_cells(device: str, n: int, s: int):
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
-        idxs = world.spawn_cells(genomes=genomes)
+        world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        world.divide_cells(cell_idxs=idxs)
+        world.divide_cells()
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
@@ -112,9 +112,9 @@ def mutations(device: str, n: int, s: int):
     for _ in range(R):
         world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
-        idxs = world.spawn_cells(genomes=genomes)
+        world.spawn_cells(genomes=genomes)
         t0 = time.time()
-        world.mutate_cells(cell_idxs=idxs)
+        world.mutate_cells()
         tds.append(time.time() - t0)
     return _summary(tds=tds)
 
