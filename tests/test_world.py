@@ -12,7 +12,7 @@ from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from magicsoup.mutations import Mutator
 from magicsoup.world import World
 
-from tests.util import ftensor
+from tests.util import ftensor, idxfull
 
 _ATOL = 1e-4
 _RTOL = 1e-4
@@ -469,23 +469,28 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
 
 
 @pytest.mark.parametrize(
-    "n_spawn, n_update",
+    "n_spawn, n_mutate",
     [
-        (50, 50),  # update all
-        (50, 25),  # update some
-        (50, 0),  # update none
+        (50, 50),  # mutate all
+        (50, 25),  # mutate some
+        (50, 0),  # mutate none
     ],
 )
-def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
+def test_mutate_cells(world: World, n_spawn: int, n_mutate: int) -> None:
     _spawn_cells(world, n=n_spawn)
 
     t0 = _State.from_world(world)
 
     # update cells
-    update_idxs = t0.idx[:n_update]
-    no_update_idxs = t0.idx[n_update:]
-    new_genomes = StrArray.from_strings([random_genome() for _ in range(n_update)])
-    world.update_cells(genomes=new_genomes, cell_idxs=update_idxs)
+    update_idxs = t0.idx[:n_mutate]
+    no_update_idxs = t0.idx[n_mutate:]
+
+    mask = idxfull(world.cells.c, value=0).bool()
+    mask[update_idxs] = True
+
+    # very high mutator makes sure there are updates
+    mutator = Mutator(sub_rate=1e-2, indel_rate=1e-2)
+    world.mutate_cells(mask=mask, mutator=mutator)
 
     t1 = _State.from_world(world)
 
@@ -521,7 +526,7 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
         ten1 = t1.proteome_tensors[key][no_update_idxs, :p]
         assert torch.equal(ten0, ten1), key
 
-    if n_update == 0:
+    if n_mutate == 0:
         return
 
     # updated cells have different genomes and proteomes
@@ -535,6 +540,7 @@ def test_update_cells(world: World, n_spawn: int, n_update: int) -> None:
         assert not torch.equal(ten0, ten1), key
 
 
+# TODO: combine with test above?
 def test_mutate_cells_reconciles_deferred_host_state(world: World) -> None:
     _spawn_cells(world, n=30)
     idxs = world.cells.get_cell_idxs()
@@ -587,7 +593,7 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
     mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
     mask[kill_idxs] = True
     world.kill_cells(mask=mask)
-    world.reconcile()  # flush deferred genome/lineage clearing
+    world.cells.reconcile_host()  # flush deferred genome/lineage clearing
 
     t1 = _State.from_world(world)
 
@@ -657,7 +663,6 @@ def test_compact_remaps_cell_map(world: World) -> None:
     kill_mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
     kill_mask[kill_idxs] = True
     world.kill_cells(mask=kill_mask)
-    world.reconcile()  # clear dead genomes before compacting
     world.compact()
 
     # c actually shrank and all survivors are still alive

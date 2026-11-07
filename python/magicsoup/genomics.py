@@ -84,6 +84,18 @@ class GenomicsKwargs(TypedDict, total=False):
     n_dom_type_codons: int
 
 
+# TODO: domain-type-encoding codons can hide each other
+#       e.g. one could be ATG CTG and another CTG TTA
+#       then a CDS with ATG CTG TTA will always translate the first one
+#       these collisions reduce the actual occurence of these domains
+#       compared to their intended one (p_catal_dom, ...) by about 44%
+#       this is symmetric (all domains can hide each other)
+#       when the first codon however happens to be a START codon, the domain starts itself
+#       this makes it 3x more likely to hide other domains (asymmetric)
+#       A similar mechanism happens with stop codons that are part of a domain (stops itself)
+# => it's probably better to not allow starts/stops in domain encodings at all
+
+
 class Genomics:
     """
     Defines simulation genetics and translates genomes.

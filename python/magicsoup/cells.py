@@ -2,7 +2,7 @@ import json
 import logging
 import math
 from pathlib import Path
-from typing import Annotated, TypedDict, overload
+from typing import Annotated, TypedDict
 
 import numpy as np
 import torch
@@ -35,7 +35,7 @@ class Cells(TensorClass):
         genomics: simulation [Genomics][magicsoup.genomics.Genomics]
         proteomics: simulation [Proteomics][magicsoup.proteomics.Proteomics]
         dim_scaling: Scaling hysteresis used for dimensions `c` and `p` in all cell states.
-            Increase to reduce number of memory allocations,
+            Increase to reduce number of memory allocations and host synchronizations,
             reduce to reduce memory and compute during simulation.
         c_max: Maximum possible number of cells (number of voxels on cell map)
         p_max: Maximum possible number of proteins (pruned if more)
@@ -111,15 +111,15 @@ class Cells(TensorClass):
         self.N_h: T = self.izeros(0, 0, self.m)  # Hill coefficients
 
     def get_n_cells(self) -> int:
-        """Get number of currently living cells"""
+        """Get number of currently living cells (forces host syncrhonization)"""
         return int(self.alive.sum())  # sync with host
 
     def get_cell_idxs(self) -> T:
-        """Get (n,) cell index tensor of currently living cells"""
+        """Get (n,) cell index tensor of currently living cells (forces host syncrhonization)"""
         return self.alive.nonzero(as_tuple=True)[0].int()  # sync with host
 
     def get_free_idxs(self) -> T:
-        """Get (k,) cell index tensor of unused cell indices"""
+        """Get (k,) cell index tensor of unused cell indices (forces host syncrhonization)"""
         return (~self.alive).nonzero(as_tuple=True)[0].int()  # sync with host
 
     def get_utilization(self) -> float:
@@ -129,22 +129,24 @@ class Cells(TensorClass):
         Returns `(n_alive * p_used) / (c * p)`, where `n_alive` is the number of
         living cells and `p_used` the largest proteome in use. It drops as dead
         cells accumulate (slack in `c`, wasted memory) or as `p` outgrows the real
-        proteomes (slack in `p`, wasted memory *and* per-step compute). Use it to
+        proteomes (slack in `p`, wasted memory and per-step compute). Use it to
         decide when to call [compact()][.compact]; it returns 1.0 when nothing is
         allocated. [compact()][.compact] restores it to about `1 / (1 + dim_scaling)²`
         (~0.69 at the default), so trigger below that to avoid thrashing.
 
         Synchronizes with the host; call periodically, not every step.
-        E.g. when utilization drops below 0.5.
+        Compact when utilization drops below e.g. 0.5.
         """
+        # forces host sync if p > 0
         if self.c == 0 or self.p == 0:
             return 1.0
-        n_alive = int(self.alive.sum())  # sync with host
+
+        n_alive = int(self.alive.sum())
         return (n_alive * self._used_p()) / (self.c * self.p)
 
-    def update_genomes(self, genomes: StrArray, idxs: T) -> None:
+    def update_genomes(self, genomes: A, idxs: T) -> None:
         """
-        Update cell genomes and proteomes
+        Update cell genomes and their proteomes
 
         Arguments:
             genomes: list of k new cell genomes
@@ -152,7 +154,9 @@ class Cells(TensorClass):
 
         Position `i` of `genomes` relates to position `i` of `idxs`.
         Genomes are updated and translated. New proteomes are immediately active.
+        Forces host synchronization.
         """
+        # forces host sync
         c = len(genomes)
         if c == 0:
             return
@@ -160,6 +164,11 @@ class Cells(TensorClass):
         cell, prot, tok, p = self.genomics.encode_proteomes(genomes=genomes)
         if p == 0:
             return
+
+        # sync host
+        self.genomes[idxs.cpu().numpy()] = genomes
+        if self.genomes.utilization <= 0.5:
+            self.genomes.compact()
 
         params = self.proteomics.get_cell_params(
             cells=cell, proteins=prot, tokens=tok, p=p, c=c
@@ -180,14 +189,14 @@ class Cells(TensorClass):
         # p have could been adjusted upwards or p was already < self.p
         if self.p > p:
             p_diff = self.p - p
-            v_max = self._grow(v_max, dim=1, by_n=p_diff)
-            k_f = self._grow(k_f, dim=1, by_n=p_diff)
-            k_b = self._grow(k_b, dim=1, by_n=p_diff)
-            k_r = self._grow(k_r, dim=1, by_n=p_diff)
-            N_e = self._grow(N_e, dim=1, by_n=p_diff)
-            N_f = self._grow(N_f, dim=1, by_n=p_diff)
-            N_b = self._grow(N_b, dim=1, by_n=p_diff)
-            N_h = self._grow(N_h, dim=1, by_n=p_diff)
+            v_max = self._grow_tens(v_max, dim=1, by_n=p_diff)
+            k_f = self._grow_tens(k_f, dim=1, by_n=p_diff)
+            k_b = self._grow_tens(k_b, dim=1, by_n=p_diff)
+            k_r = self._grow_tens(k_r, dim=1, by_n=p_diff)
+            N_e = self._grow_tens(N_e, dim=1, by_n=p_diff)
+            N_f = self._grow_tens(N_f, dim=1, by_n=p_diff)
+            N_b = self._grow_tens(N_b, dim=1, by_n=p_diff)
+            N_h = self._grow_tens(N_h, dim=1, by_n=p_diff)
 
         # p could have been > p_max
         if self.p < p:
@@ -207,49 +216,88 @@ class Cells(TensorClass):
         self.k_r[idxs] = k_r
         self.v_max[idxs] = v_max
 
-        # sync with host
-        idxs = idxs.cpu()
-
-        # update genomes
-        self.genomes[idxs.numpy()] = genomes
-        if self.genomes.utilization <= 0.5:
-            self.genomes.compact()
-
-    def copy_proteomes(self, from_idxs: T, to_idxs: T) -> None:
+    # TODO: test on cells?
+    def allocate_children(self, divided: T) -> tuple[T, T]:
         """
-        Copy cell proteomes
+        Allocate children onto free slots
 
         Arguments:
-            from_idxs: (k,) cell index tensor of cells to copy from
-            to_idxs: (k,) cell index tensor of cells to copy to
+            divided: (c,) bool tensor of parents that successfully divided
 
-        Position `i` of `genomes` relates to position `i` of `idxs`.
-        New proteomes are immediately active.
+        Returns:
+            tuple of `parent_of` (c,) index tensor and `child_slot` (c,) index tensor
+            where `parent_of[s]` is the parent slot that produced the child now
+            occupying slot `s`, else -1;
         """
-        # update kinetics parameters
-        self.N_e[to_idxs] = self.N_e[from_idxs]
-        self.N_f[to_idxs] = self.N_f[from_idxs]
-        self.N_b[to_idxs] = self.N_b[from_idxs]
-        self.N_h[to_idxs] = self.N_h[from_idxs]
-        self.k_f[to_idxs] = self.k_f[from_idxs]
-        self.k_b[to_idxs] = self.k_b[from_idxs]
-        self.k_r[to_idxs] = self.k_r[from_idxs]
-        self.v_max[to_idxs] = self.v_max[from_idxs]
+        # assign the i-th successful parent to the i-th free cell slot
+        c = divided.shape[0]
+        free = ~self.alive  # (c,)
+        order = self.idxarange(c)  # (c,)
 
-    def copy_proteomes_masked(self, parent_of: torch.Tensor) -> None:
+        # map "r-th free slot" -> its cell index (non-free rows routed to dump c)
+        rank_of_free = torch.where(
+            free, free.cumsum(0, dtype=self.idxtype) - 1, self.idxtensor(c)
+        )  # (c,)
+        slot_of_rank = order.new_full((c + 1,), -1)
+        slot_of_rank.scatter_(0, rank_of_free, order)
+
+        # each successful parent -> next free slot
+        prank = divided.cumsum(0, dtype=self.idxtype) - 1  # (c,)
+        child_slot = torch.where(
+            divided, slot_of_rank[prank.clamp(min=0)], self.idxtensor(-1)
+        )  # (c,)
+
+        # invert to parent_of[child_slot] = parent
+        cs = torch.where(divided, child_slot, self.idxtensor(c))  # non-succ -> dump
+        parent_of = self.idxfull(c + 1, value=-1)
+        parent_of.scatter_(0, cs, order)
+        return parent_of[:c], child_slot
+
+    # TODO: test on cells?
+    def update_descendants(self, parent_of: T, divided: T) -> None:
         """
-        Copy proteome parameters from parents to children.
+        Update descendants after cell division
 
         Arguments:
             parent_of: (c,) index tensor where `parent_of[s]` is the parent slot
-                whose proteome should be copied into child slot `s`, or -1 for
-                non-child slots.
+                that produced the child now occupying slot `s`, else -1.
+            divided: (c,) bool tensor of parents that successfully divided
 
-        Full-width and sync-free: processes all `c` rows (non-child rows keep
-        their own values) so no boolean-mask gather or nonzero is needed.
+        Updates cell parameters and proteomes. Forces host synchronization.
         """
+        # first sync with host
+        po_cpu = parent_of.cpu().numpy()
+        is_child_cpu = po_cpu >= 0
+        parents_cpu = po_cpu[is_child_cpu]
+        self.genomes[is_child_cpu] = self.genomes[parents_cpu]
+        self.lineages[is_child_cpu] = self.lineages[parents_cpu]
+
+        # then device operations
         is_child = parent_of >= 0  # (c,)
         src = parent_of.clamp(min=0)  # (c,)
+        descendant = is_child | divided  # (c,) children + parents that divided
+
+        # children become alive
+        self.alive = self.alive | is_child
+
+        # children inherit parent generation; all descendants then increment
+        self.generations = torch.where(
+            is_child, self.generations[src], self.generations
+        )
+        self.generations = self.generations + descendant.to(self.generations.dtype)
+
+        # descendants reset age
+        self.ages = torch.where(descendant, self.ftensor(0.0), self.ages)
+
+        # children share parent molecules, then all descendants split in half
+        self.molecules = torch.where(
+            is_child[:, None], self.molecules[src], self.molecules
+        )
+        self.molecules = torch.where(
+            descendant[:, None], self.molecules * 0.5, self.molecules
+        )
+
+        # copy proteomes
         m1 = is_child[:, None]  # (c, 1)
         m2 = is_child[:, None, None]  # (c, 1, 1)
         self.N_e = torch.where(m2, self.N_e[src], self.N_e)
@@ -261,16 +309,40 @@ class Cells(TensorClass):
         self.k_b = torch.where(m1, self.k_b[src], self.k_b)
         self.k_r = torch.where(m1, self.k_r[src], self.k_r)
 
+    # TODO: test in cells?
+    def unset_cells(self, mask: T) -> None:
+        """
+        Unset cell parameters and proteomes
+
+        Arguments:
+            mask: (c,) bool tensor of cells whose parameters should be unset
+        """
+        m1 = mask[:, None]
+        m2 = mask[:, None, None]
+        self.alive = self.alive & ~mask
+        self.ages = torch.where(mask, self.ftensor(0.0), self.ages)
+        self.generations = torch.where(mask, self.idxtensor(0), self.generations)
+        self.molecules = torch.where(m1, self.ftensor(0.0), self.molecules)
+        self.v_max = torch.where(m1, self.ftensor(0.0), self.v_max)
+        self.k_f = torch.where(m1, self.ftensor(0.0), self.k_f)
+        self.k_b = torch.where(m1, self.ftensor(0.0), self.k_b)
+        self.k_r = torch.where(m1, self.ftensor(0.0), self.k_r)
+        self.N_f = torch.where(m2, self.itensor(0), self.N_f)
+        self.N_b = torch.where(m2, self.itensor(0), self.N_b)
+        self.N_h = torch.where(m2, self.itensor(0), self.N_h)
+        self.N_e = torch.where(m2, self.ftensor(0.0), self.N_e)
+
     def reconcile_host(self) -> np.ndarray:
         """
         Clear genomes and lineages of dead cells.
+        Returns:
+            alive mask as a numpy bool array.
 
-        Kill defers this host-side cleanup; call it (directly or via
-        `mutate_cells`/`save`/`get_cell`) to bring the genome and lineage arrays
-        back in sync with the `alive` mask. Returns the alive mask as a numpy bool
-        array. Synchronizes once.
+        This is defered by device operations (e.g. killing cells).
+        Forces host synchronization.
         """
-        alive_host = self.alive.cpu().numpy()  # sync with host
+        # forces host sync
+        alive_host = self.alive.cpu().numpy()
         dead = ~alive_host
         self.genomes[dead] = ""
         self.lineages[dead] = ""
@@ -281,8 +353,6 @@ class Cells(TensorClass):
         Grow the `c` dimension to fit `c_req` cells (plus hysteresis margin).
 
         Never shrinks; use [compact()][.compact] to reclaim surplus slots.
-        Growing is kept in the methods that need the new size (so the one
-        required host synchronization stays at the call site).
         """
         if c_req <= self.c:
             return
@@ -315,69 +385,12 @@ class Cells(TensorClass):
             that stores cell indices (e.g. the cell map).
 
         Synchronizes with the host. Intended to be called periodically
-        (e.g. after subsampling), not inside the hot step.
+        (e.g. after subsampling), not inside a hot step.
         """
+        # forces host sync
         new_idx = self._compact_c()
         self._compact_p()
         return new_idx
-
-    def _compact_c(self) -> torch.Tensor:
-        # keep all living cells plus a hysteresis margin of free slots
-        n_alive = int(self.alive.sum())  # sync with host
-        pad = math.ceil(n_alive * self.dim_scaling)
-        keep = self.alive.clone()
-        free = (~self.alive).nonzero(as_tuple=True)[0]  # sync with host
-        keep[free[:pad]] = True
-
-        # old -> new index map (-1 for dropped slots); length is the old c
-        new_idx = torch.where(
-            keep, keep.cumsum(0).to(self.idxtype) - 1, self.idxtensor(-1)
-        )
-
-        # sync with host
-        cpu_keep = keep.cpu().numpy()
-
-        # cell parameters
-        self.genomes = self.genomes[cpu_keep]
-        self.lineages = self.lineages[cpu_keep]
-        self.alive = self.alive[keep]
-        self.ages = self.ages[keep]
-        self.generations = self.generations[keep]
-        self.molecules = self.molecules[keep]
-
-        # kinetics parameters
-        self.v_max = self.v_max[keep]
-        self.k_f = self.k_f[keep]
-        self.k_b = self.k_b[keep]
-        self.k_r = self.k_r[keep]
-        self.N_f = self.N_f[keep]
-        self.N_b = self.N_b[keep]
-        self.N_h = self.N_h[keep]
-        self.N_e = self.N_e[keep]
-
-        # set new c
-        self.c = len(self.genomes)
-        return new_idx
-
-    def _used_p(self) -> int:
-        # largest proteome size currently in use (host sync)
-        # a protein column is in use if any cell has non-zero params there;
-        # every protein has v_max > 0 (catalytic/transporter) or k_r > 0 (regulatory)
-        if self.p == 0:
-            return 0
-        used = (self.v_max != 0).any(dim=0) | (self.k_r != 0).any(dim=0)  # (p,)
-        cols = self.idxarange(self.p)
-        highest = torch.where(used, cols, self.idxtensor(-1)).max()
-        return int(highest) + 1  # sync with host
-
-    def _compact_p(self) -> None:
-        if self.p == 0:
-            return
-
-        p_used = self._used_p()
-        to_p = min(p_used + math.ceil(p_used * self.dim_scaling), self.p)
-        if to_p < self.p:
-            self._shrink_p(by_n=self.p - to_p)
 
     def save_state(self, statedir: Path) -> None:
         """
@@ -388,6 +401,8 @@ class Cells(TensorClass):
 
         Only attributes which update during the simulation are saved.
         """
+        self.reconcile_host()  # otherwise fasta contained dead genomes
+
         statedir = statedir / type(self).__name__
         statedir.mkdir(parents=True, exist_ok=True)
 
@@ -448,70 +463,132 @@ class Cells(TensorClass):
         cpu_idxs = idxs.cpu().numpy()  # sync with host
         self.update_genomes(genomes=self.genomes[cpu_idxs], idxs=idxs)
 
-    def _grow_c(self, by_n: int) -> None:
-        # cell paramaters
-        self.genomes = self._grow(self.genomes, dim=0, by_n=by_n)
-        self.lineages = self._grow(self.lineages, dim=0, by_n=by_n)
-        self.alive = self._grow(self.alive, dim=0, by_n=by_n)
-        self.ages = self._grow(self.ages, dim=0, by_n=by_n)
-        self.generations = self._grow(self.generations, dim=0, by_n=by_n)
-        self.molecules = self._grow(self.molecules, dim=0, by_n=by_n)
+    def _compact_c(self) -> torch.Tensor:
+        # keep all living cells plus a hysteresis margin of free slots
+        # returns new cell_idxs
+        # forces host sync
+        keep = self.alive.clone()
+
+        # sync with host
+        n_alive = int(self.alive.sum())
+        free = (~self.alive).nonzero(as_tuple=True)[0]  # sync with host
+
+        pad = math.ceil(n_alive * self.dim_scaling)
+        keep[free[:pad]] = True
+
+        # sync with host
+        cpu_keep = keep.cpu().numpy()
+
+        # old -> new index map (-1 for dropped slots); length is the old c
+        new_idx = torch.where(
+            keep, keep.cumsum(0).to(self.idxtype) - 1, self.idxtensor(-1)
+        )
+
+        # cell parameters
+        self.genomes = self.genomes[cpu_keep]
+        self.lineages = self.lineages[cpu_keep]
+        self.alive = self.alive[keep]
+        self.ages = self.ages[keep]
+        self.generations = self.generations[keep]
+        self.molecules = self.molecules[keep]
 
         # kinetics parameters
-        self.v_max = self._grow(self.v_max, dim=0, by_n=by_n)
-        self.k_f = self._grow(self.k_f, dim=0, by_n=by_n)
-        self.k_b = self._grow(self.k_b, dim=0, by_n=by_n)
-        self.k_r = self._grow(self.k_r, dim=0, by_n=by_n)
-        self.N_f = self._grow(self.N_f, dim=0, by_n=by_n)
-        self.N_b = self._grow(self.N_b, dim=0, by_n=by_n)
-        self.N_h = self._grow(self.N_h, dim=0, by_n=by_n)
-        self.N_e = self._grow(self.N_e, dim=0, by_n=by_n)
+        self.v_max = self.v_max[keep]
+        self.k_f = self.k_f[keep]
+        self.k_b = self.k_b[keep]
+        self.k_r = self.k_r[keep]
+        self.N_f = self.N_f[keep]
+        self.N_b = self.N_b[keep]
+        self.N_h = self.N_h[keep]
+        self.N_e = self.N_e[keep]
+
+        self.genomes.compact()
+        self.lineages.compact()
+
+        # set new c
+        self.c = len(self.genomes)
+        return new_idx
+
+    def _compact_p(self) -> None:
+        # forces host sync if p > 0
+        if self.p == 0:
+            return
+
+        p_used = self._used_p()
+        to_p = min(p_used + math.ceil(p_used * self.dim_scaling), self.p)
+        if to_p < self.p:
+            # shrink p
+            by_n = self.p - to_p
+
+            # kinetics parameters
+            self.v_max = self.v_max[:, :-by_n]
+            self.k_f = self.k_f[:, :-by_n]
+            self.k_b = self.k_b[:, :-by_n]
+            self.k_r = self.k_r[:, :-by_n]
+            self.N_f = self.N_f[:, :-by_n]
+            self.N_b = self.N_b[:, :-by_n]
+            self.N_h = self.N_h[:, :-by_n]
+            self.N_e = self.N_e[:, :-by_n]
+
+            # set new p
+            self.p = self.v_max.shape[1]
+
+    def _used_p(self) -> int:
+        # largest proteome size currently in use (host sync)
+        # a protein column is in use if any cell has non-zero params there;
+        # every protein has v_max > 0 (catalytic/transporter) or k_r > 0 (regulatory)
+        if self.p == 0:
+            return 0
+        used = (self.v_max != 0).any(dim=0) | (self.k_r != 0).any(dim=0)  # (p,)
+        cols = self.idxarange(self.p)
+        highest = torch.where(used, cols, self.idxtensor(-1)).max()
+        return int(highest) + 1  # sync with host
+
+    def _grow_c(self, by_n: int) -> None:
+        # cell paramaters
+        self.genomes = self._grow_arr(self.genomes, by_n=by_n)
+        self.lineages = self._grow_arr(self.lineages, by_n=by_n)
+        self.alive = self._grow_tens(self.alive, dim=0, by_n=by_n)
+        self.ages = self._grow_tens(self.ages, dim=0, by_n=by_n)
+        self.generations = self._grow_tens(self.generations, dim=0, by_n=by_n)
+        self.molecules = self._grow_tens(self.molecules, dim=0, by_n=by_n)
+
+        # kinetics parameters
+        self.v_max = self._grow_tens(self.v_max, dim=0, by_n=by_n)
+        self.k_f = self._grow_tens(self.k_f, dim=0, by_n=by_n)
+        self.k_b = self._grow_tens(self.k_b, dim=0, by_n=by_n)
+        self.k_r = self._grow_tens(self.k_r, dim=0, by_n=by_n)
+        self.N_f = self._grow_tens(self.N_f, dim=0, by_n=by_n)
+        self.N_b = self._grow_tens(self.N_b, dim=0, by_n=by_n)
+        self.N_h = self._grow_tens(self.N_h, dim=0, by_n=by_n)
+        self.N_e = self._grow_tens(self.N_e, dim=0, by_n=by_n)
 
         # set new c
         self.c = len(self.genomes)
 
     def _grow_p(self, by_n: int) -> None:
         # kinetics parameters
-        self.v_max = self._grow(self.v_max, dim=1, by_n=by_n)
-        self.k_f = self._grow(self.k_f, dim=1, by_n=by_n)
-        self.k_b = self._grow(self.k_b, dim=1, by_n=by_n)
-        self.k_r = self._grow(self.k_r, dim=1, by_n=by_n)
-        self.N_f = self._grow(self.N_f, dim=1, by_n=by_n)
-        self.N_b = self._grow(self.N_b, dim=1, by_n=by_n)
-        self.N_h = self._grow(self.N_h, dim=1, by_n=by_n)
-        self.N_e = self._grow(self.N_e, dim=1, by_n=by_n)
+        self.v_max = self._grow_tens(self.v_max, dim=1, by_n=by_n)
+        self.k_f = self._grow_tens(self.k_f, dim=1, by_n=by_n)
+        self.k_b = self._grow_tens(self.k_b, dim=1, by_n=by_n)
+        self.k_r = self._grow_tens(self.k_r, dim=1, by_n=by_n)
+        self.N_f = self._grow_tens(self.N_f, dim=1, by_n=by_n)
+        self.N_b = self._grow_tens(self.N_b, dim=1, by_n=by_n)
+        self.N_h = self._grow_tens(self.N_h, dim=1, by_n=by_n)
+        self.N_e = self._grow_tens(self.N_e, dim=1, by_n=by_n)
 
         # set new p
         self.p = self.v_max.shape[1]
 
-    def _shrink_p(self, by_n: int) -> None:
-        # kinetics parameters
-        self.v_max = self.v_max[:, :-by_n]
-        self.k_f = self.k_f[:, :-by_n]
-        self.k_b = self.k_b[:, :-by_n]
-        self.k_r = self.k_r[:, :-by_n]
-        self.N_f = self.N_f[:, :-by_n]
-        self.N_b = self.N_b[:, :-by_n]
-        self.N_h = self.N_h[:, :-by_n]
-        self.N_e = self.N_e[:, :-by_n]
-
-        # set new p
-        self.p = self.v_max.shape[1]
-
-    @overload
-    def _grow(self, o: A, dim: int, by_n: int) -> A: ...
-    @overload
-    def _grow(self, o: T, dim: int, by_n: int) -> T: ...
-    def _grow(self, o: T | A, dim: int, by_n: int) -> T | A:
+    def _grow_tens(self, o: T, dim: int, by_n: int) -> T:
         shape = o.shape
         size = (*shape[:dim], by_n, *shape[dim + 1 :])
-        if isinstance(o, torch.Tensor):
-            empty_tens = torch.full(size, 0, device=o.device, dtype=o.dtype)
-            return torch.cat([o, empty_tens], dim=dim)
-        elif isinstance(o, StrArray):
-            empty_arr = StrArray.empty(by_n)
-            return StrArray.concat([o, empty_arr])
-        raise ValueError(f"Unknown type {type(o)}")
+        empty_tens = torch.full(size, 0, device=o.device, dtype=o.dtype)
+        return torch.cat([o, empty_tens], dim=dim)
+
+    def _grow_arr(self, o: A, by_n: int) -> A:
+        empty_arr = StrArray.empty(by_n)
+        return StrArray.concat([o, empty_arr])
 
 
 # TODO: add n_proteins or similar as tensor
