@@ -16,3 +16,6 @@ DEFAULT_DEVICE = os.getenv("DEVICE", "cpu")
 ITYPE = torch.int8
 FTYPE = torch.float32
 IDXTYPE = torch.int32
+
+
+type T = torch.Tensor

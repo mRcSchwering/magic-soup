@@ -99,6 +99,20 @@ def test_place_cells(idxs: list[int], voxels: list[int]) -> None:
     assert act == exp
 
 
+@pytest.mark.parametrize(
+    "bfr, o2n, exp",
+    [
+        ([[0, -1], [-1, 1]], [2, 3], [[2, -1], [-1, 3]]),
+        ([[2, -1], [-1, 3]], [-1, -1, 0, 1], [[0, -1], [-1, 1]]),
+    ],
+)
+def test_update_cell_map(bfr: list, o2n: list, exp: list) -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=2)
+    culture.cell_map[:] = idxtensor(bfr)
+    culture.update_cell_map(idxtensor(o2n))
+    assert (culture.cell_map == idxtensor(exp)).all()
+
+
 def test_maps() -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=3)
 

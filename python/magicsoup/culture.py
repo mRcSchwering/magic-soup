@@ -4,15 +4,8 @@ from typing import TypedDict
 import torch
 
 from magicsoup.chemistry import Chemistry
+from magicsoup.core.config import T
 from magicsoup.core.tensorclass import TensorClass, TensorKwargs
-
-type T = torch.Tensor
-
-
-# TODO: doublecheck names of methods and variables
-#       voxels := 1D representation (N²,)
-#       coords := 2D representation (N,N)
-# write docstrings properly
 
 
 class MooreNeighborhood(TensorClass):
@@ -50,11 +43,11 @@ class MooreNeighborhood(TensorClass):
         Get all Moore neighborhoods for provided coordinates
 
         Arguments:
-            coords: (k, 2) index tensor for positions on N x N grid
+            coords: (k, 2) index tensor for (row, column) coordinates on N x N grid
             half: whether to use only half Moore neighborhood (e.g. to get unique paris)
 
         Returns:
-            (k, 8, 2) or index tensor of all Moore neighborhoods for each provided position
+            (k, 8, 2) index tensor of all Moore neighborhoods for each provided coordinate
                 ((k, 4, 2) if `half`)
         """
         offs = self.half if half else self.full
@@ -71,10 +64,10 @@ class Culture(TensorClass):
 
     Arguments:
         chemistry: Simulation [Chemistry][magicsoup.containers.Chemistry]
-        map_size: Number of voxels along one side of the 2D map
+        map_size: Number of voxels along one side of the square map
         tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
 
-    The cell culture is a periodic 2D grid of voxels represented by tensors.
+    The cell culture is a periodic (torus wrap) 2D grid of voxels represented by tensors.
     Each voxel can contain molecules and it can contain at most one cell.
 
     `cell_map` manages this cell culture as N x N index tensor where N is the `map_size`.
@@ -91,6 +84,11 @@ class Culture(TensorClass):
     A cell can interact with it the molecules of its voxel.
     _E.g._ if there is a cell in `cell_map[3, 4]`, it interacts with all molecules in `molecule_map[:, 3, 4]`.
     Molecules can permeate through the cell membrane or be transported across it by the cell itself.
+
+    N x N maps (`cell_map` and `molecule_map`) can be represented 2D with rows and columns
+    to identify items. They can also be represented 1D with flat `row_i * N + col_i` indices.
+    To highlight which representation a method requires or returns, the 2D representation is
+    refered to as *coordinates* while the 1D representation is refered to as *voxels*.
     """
 
     def __init__(
@@ -156,9 +154,9 @@ class Culture(TensorClass):
         Get current coordinates of all cells on cell map.
 
         Returns:
-            (N², 2) index coordinates tensor encoding all cells with row and column
+            (N², 2) index coordinates tensor encoding all cells with row and column (<= N)
 
-        All possible N² positions are presented in the returned tensor.
+        All possible N² coordinates are presented in the returned tensor.
         Each cell is contained with its row and column indexes at the position of its cell index.
         _E.g._ if cell 5 is at (3, 0), then the tensor at index 5 contains values 3 and 0.
         Unused cell indices contain (-1, -1).
@@ -179,15 +177,15 @@ class Culture(TensorClass):
         Get unoccupied random voxels
 
         Arguments:
-            `mask`: (c,) bool tensor of slots to get free voxels for;
-                None for all free voxels in random order
+            mask: (c,) bool tensor of slots to get free voxels for;
+                None for all free voxels in random order (c <= N²)
 
         Returns:
-            index (c,) tensor assigning each True in `mask` a index to a
-                free voxel on the flat cell map. -1 otherwise.
+            (c,) index tensor assigning each True in `mask` a free voxel
+                (<= N²) on the flat cell map. -1 otherwise.
 
-        Returned indices are -1 if `mask` was False for the slot or if it
-        was True but no more voxels were available on the cell map.
+        Returned indices are -1 if `mask` was False for the slot or if
+        no more voxels were available on the cell map.
         """
         flat_cell_map = self.cell_map.view(-1)  # (N²,) view
         n2 = self.N2
@@ -211,15 +209,13 @@ class Culture(TensorClass):
         voxels[~valid] = -1  # hide occupied voxels
         return voxels
 
-    # TODO: culture test
     def update_cell_map(self, idx_map: T) -> None:
         """
-        Update cell indixes on cell map
+        Update indices of existing cells on the cell map
 
         Arguments:
-            idx_map: (c,) index tensor mapping each *old* cell index to its new index,
-                with -1 for dropped slots. Use it to remap any external structure
-                that stores cell indices (e.g. the cell map).
+            idx_map: (c,) index tensor mapping each old cell index to its new index,
+                with -1 for dropped slots (c <= N²)
         """
         flat_cell_map = self.cell_map.view(-1)  # (N²,) view
         tmp_map = idx_map[flat_cell_map.clamp(min=0)]
@@ -230,10 +226,10 @@ class Culture(TensorClass):
         Place cells on the cell map
 
         Arguments:
-            `idxs`: (c,) index tensor containing the indices of the cells that are
+            `idxs`: (c,) index tensor containing the indices (c <= N²) of the cells that are
                 placed on the cell map voxels (-1 for cells that should not be placed)
-            `voxels`: (c,) index tensor containing the indices of the flat cell map
-                voxels that should be occupied (-1 for voxels that should not be occupied)
+            `voxels`: (c,) index tensor containing the voxels (c <= N²) where cells of `idxs`
+                should be placed (-1 for voxels that should not be placed)
 
         This method does not guarantee that `idxs` doesn't contain indices already existent on
         the cell map. It also doesn't guarantee that `voxels` doesn't point to currently
@@ -258,11 +254,11 @@ class Culture(TensorClass):
         Let cells migrate randomly around their Moore neighbourhood
 
         Arguments:
-            mask: (c,) bool tensor, which cell slots attempt to migrate
+            mask: (c,) bool tensor, which cells attempt to migrate (c <= N²)
             n_rounds: how many rounds to resolve possible conflicts among cells
 
         Returns:
-            (c,) bool tensor of cells that successfully migrated
+            (c,) bool tensor of cells that successfully migrated (c <= N²)
 
         Updates the cell map and returns successfully migrated cells.
         A cell can only migrate if it finds a free voxel in its Moore neighbourhood.
@@ -302,13 +298,13 @@ class Culture(TensorClass):
         Resolve free-voxel contention for dividing cells.
 
         Arguments:
-            mask: (c,) bool tensor, which cell slots attempt to divide
+            mask: (c,) bool tensor, which cells attempt to divide (c <= N²)
             n_rounds: how many rounds to resolve possible conflicts among cells
 
         Returns:
             Tuple `(success, won_voxel)`
-            - `success`: (c,) bool tensor of parents that won a free neighbour voxel
-            - `won_voxel`: (c,) int tensor of the claimed flat voxel idx per parent (-1 if none)
+            - `success`: (c,) bool tensor of parents that won a free neighbour voxel (c <= N²)
+            - `won_voxel`: (c,) int tensor of the claimed voxel (c <= N²) per parent (-1 if none)
 
         A cell can only divide if it finds a free voxel in its Moore neighbourhood.
         Each won voxel is reserved on the map with the parent's idx as a placeholder.
