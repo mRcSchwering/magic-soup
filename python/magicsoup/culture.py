@@ -9,6 +9,12 @@ from magicsoup.core.tensorclass import TensorClass, TensorKwargs
 type T = torch.Tensor
 
 
+# TODO: doublecheck names of methods and variables
+#       voxels := 1D representation (N²,)
+#       coords := 2D representation (N,N)
+# write docstrings properly
+
+
 class MooreNeighborhood(TensorClass):
     """
     Describe Moore neighborhood on periodic N x N grid
@@ -107,9 +113,6 @@ class Culture(TensorClass):
         # all N x N voxels with cell idxs, -1 for empty voxels (N, N)
         self.cell_map: T = self.idxfull(N, N, value=-1)
 
-        # flat representation of cell idxs in N x N map (shares memory)
-        self.cell_map_flat: T = self.cell_map.view(-1)  # (N²,)
-
         # all N x N voxels with molecule concentrations (m, N, N)
         self.molecule_map: T = self.fzeros(m, N, N)
 
@@ -126,17 +129,18 @@ class Culture(TensorClass):
         Cells are neighbors if they are within each others Moore neighbourhood.
         Note: With map size smaller 3 duplicate neighbors can be returned.
         """
-        pos = self.get_cell_positions()  # (N², 2) with (-1, -1) for empty
-        valid = pos[:, 0] >= 0  # rows which are not empty
+        cell_coords = self.get_cell_coords()  # (N², 2) with (-1, -1) for empty
+        valid = cell_coords[:, 0] >= 0  # rows which are not empty
+        flat_cell_map = self.cell_map.view(-1)  # (N²,) view
 
         # look up half cell neighborhoods to only get unique pairs (N², 4, 2)
-        nbs = self._nbh.get_neighborhoods(coords=pos, half=True)
+        nbs = self._nbh.get_neighborhoods(coords=cell_coords, half=True)
 
         # represent neighborhoods as flat indices of the N x N map
-        nbh_idxs = self._2d_to_1d(nbs)  # (N², 4)
+        nbh_idxs = self.coords_to_voxels(nbs)  # (N², 4)
 
         # select neighbor voxels on flat cell idx map
-        nb_voxels = self.cell_map_flat[nbh_idxs]  # (N², 4)
+        nb_voxels = flat_cell_map[nbh_idxs]  # (N², 4)
 
         # create mask of k cells that do have a neighbour
         mask = valid[:, None] & (nb_voxels >= 0)  # (N², 4)
@@ -147,12 +151,12 @@ class Culture(TensorClass):
         # return only valid pairs of cell indices (k, 2)
         return torch.stack((src[mask], nb_voxels[mask]), dim=1)  # (k, 2)
 
-    def get_cell_positions(self) -> T:
+    def get_cell_coords(self) -> T:
         """
-        Get current positions of all cells on cell map.
+        Get current coordinates of all cells on cell map.
 
         Returns:
-            (N², 2) position index tensor encoding all cells with positions
+            (N², 2) index coordinates tensor encoding all cells with row and column
 
         All possible N² positions are presented in the returned tensor.
         Each cell is contained with its row and column indexes at the position of its cell index.
@@ -162,92 +166,94 @@ class Culture(TensorClass):
         """
         # build (N², 2) cell x-y cell positions from current map
         # row is cell index, empty rows are (-1, -1)
-        flat = self.cell_map_flat
+        flat_cell_map = self.cell_map.view(-1)  # (N²,) view
 
         # map empty voxels into dummy row N² + 1
         pos = self.idxfull(self.N2 + 1, 2, value=-1)  # (N²+1, 2)
-        rows = torch.where(flat >= 0, flat, self.N2)  # (N²+1, 2)
+        rows = torch.where(flat_cell_map >= 0, flat_cell_map, self.N2)  # (N²+1, 2)
         pos[rows] = self.all_positions
         return pos[: self.N2]  # (N², 2) remove dummy row
 
-    def get_cell_positions_flat(self) -> T:
+    def get_random_free_voxels(self, mask: T | None = None) -> T:
         """
-        Get current positions of all cells on cell map as flat representation.
-
-        Returns:
-            (N²,) position index tensor encoding all cells with 1D positions
-
-        All possible 1D positions on the flat map are presented in the returned tensor.
-        Each cell is contained with its 1D position of its cell index.
-        _E.g._ if cell 5 is at (372,), then the tensor at index 5 contains 372.
-        Unused cell indices contain (-1,).
-        _E.g._ if there is no cell with index 4, then the tensor at index 4 contains -1.
-        """
-        pos = self.get_cell_positions()
-        return self._2d_to_1d(pos)
-
-    def get_free_positions(self, n: int) -> T:
-        """
-        Get `n` available random positions on cell map.
-        Returns fewer if fewer are avilable.
+        Get unoccupied random voxels
 
         Arguments:
-            n: Desired number of random positions
+            `mask`: (c,) bool tensor of slots to get free voxels for;
+                None for all free voxels in random order
 
         Returns:
-            (k, 2) position index tensor of available positions with `k = min(n, number of free voxels)`
-        """
-        free = self.cell_map_flat < 0  # idxs of free voxels
-        score = self.frand(free.shape).masked_fill(~free, -1.0)  # score free foxels
-        sel = score.topk(n).indices  # n distinct flat voxel idxs (prefer free ones)
-        sel = sel[free[sel]]  # drop occupied ones if fewer than n were free
-        return self._1d_to_2d(sel)  # convert into row-col (k, 2)
+            index (c,) tensor assigning each True in `mask` a index to a
+                free voxel on the flat cell map. -1 otherwise.
 
-    def occupy_cell_map_randomly(self, mask: T) -> None:
-        flat = self.cell_map_flat
+        Returned indices are -1 if `mask` was False for the slot or if it
+        was True but no more voxels were available on the cell map.
+        """
+        flat_cell_map = self.cell_map.view(-1)  # (N²,) view
         n2 = self.N2
+        if mask is None:
+            mask = self.idxfull(n2, value=1).bool()
+
+        # rank now-free voxels in random order
         c = mask.shape[0]
-        cell_idxs = self.idxarange(c)  # (c,)
+        free = flat_cell_map < 0  # (N²,)
+        scores = self.frand(n2).masked_fill(~free, float("inf"))  # (N²,) occupied last
 
-        # rank now-free voxels in random order; assign the r-th selected cell the
-        # r-th free voxel (there are always >= as many free voxels as selected
-        # cells, since each selected cell just vacated one)
-        free = flat < 0  # (N²,)
-        scores = self.frand(n2).masked_fill(~free, 2.0)  # free in [0, 1), occupied 2
-        order = scores.argsort()  # (N²,) free voxels first, in random order
-        sel_rank = mask.cumsum(0, dtype=self.idxtype) - 1  # (c,)
-        target = order[sel_rank.clamp(min=0)].int()  # (c,) target voxel per cell
+        # the c smallest keys are a uniform random sample of free slots (no replacement)
+        vals, idxs = torch.topk(scores, k=c, largest=False)  # (c,)
+        is_free = torch.isfinite(vals)  # (c,)
 
-        # place the selected cells on their target voxels
-        padded = torch.cat([flat, self.idxtensor([-1])])
-        place = torch.where(mask, target, self.idxtensor(n2))  # (c,)
-        padded.scatter_(0, place, cell_idxs)
-        flat[:] = padded[:n2]
+        # assign the i-th selected cell the i-th free voxel
+        rank = (mask.cumsum(0, dtype=self.idxtype) - 1).clamp(0)  # (c,)
+        select = idxs[rank]  # gather (c,) idxs
+        valid = is_free[rank]  # gather (c,) flags
+        voxels = torch.where(mask, select, -1)  # hide unrequested voxels
+        voxels[~valid] = -1  # hide occupied voxels
+        return voxels
 
-    def occupy_cell_map(self, mask: T, flat_voxel: T, idx: T) -> None:
+    # TODO: culture test
+    def update_cell_map(self, idx_map: T) -> None:
         """
+        Update cell indixes on cell map
+
         Arguments:
-            - `mask`: (c,) bool tensor of provided slots to place
-            - `flat_voxel`: (c,) index tensor of the claimed flat voxel idx per slot
-            - `idx`: (c,) index tensor of cell index to place on voxel per slot
+            idx_map: (c,) index tensor mapping each *old* cell index to its new index,
+                with -1 for dropped slots. Use it to remap any external structure
+                that stores cell indices (e.g. the cell map).
         """
-        flat = self.cell_map_flat
+        flat_cell_map = self.cell_map.view(-1)  # (N²,) view
+        tmp_map = idx_map[flat_cell_map.clamp(min=0)]
+        flat_cell_map[:] = torch.where(flat_cell_map >= 0, tmp_map, flat_cell_map)
+
+    def place_cells(self, idxs: T, voxels: T) -> None:
+        """
+        Place cells on the cell map
+
+        Arguments:
+            `idxs`: (c,) index tensor containing the indices of the cells that are
+                placed on the cell map voxels (-1 for cells that should not be placed)
+            `voxels`: (c,) index tensor containing the indices of the flat cell map
+                voxels that should be occupied (-1 for voxels that should not be occupied)
+
+        This method does not guarantee that `idxs` doesn't contain indices already existent on
+        the cell map. It also doesn't guarantee that `voxels` doesn't point to currently
+        occupied voxels on the cell map.
+        """
+        flat_cell_map = self.cell_map.view(-1)  # (N²,) view
         n2 = self.N2
+        mask = (idxs >= 0) & (voxels >= 0)
 
         # flat map with extra -1 voxel at the end
-        padded = torch.cat([flat, self.idxtensor([-1])])
+        padded = torch.cat([flat_cell_map, self.idxtensor([-1])])
 
         # map unused to slots to -1 voxel
-        place = torch.where(mask, flat_voxel, self.idxtensor(n2))  # (c,)
-
-        # TODO: necessary? the scatter would place ~mask to -1 anyway?!
-        cell_idxs = torch.where(mask, idx, self.idxtensor(0))  # (c,)
+        place = torch.where(mask, voxels, self.idxtensor(n2))  # (c,)
 
         # place cell idxs on flat cell map
-        padded.scatter_(dim=0, index=place, src=cell_idxs)
-        flat[:] = padded[:n2]  # drop -1 voxel again
+        padded.scatter_(dim=0, index=place, src=idxs)
+        flat_cell_map[:] = padded[:n2]  # drop -1 voxel again
 
-    def undirected_cell_migration(self, mask: T, n_rounds: int = 3) -> T:
+    def migrate_cells_randomly(self, mask: T, n_rounds: int = 3) -> T:
         """
         Let cells migrate randomly around their Moore neighbourhood
 
@@ -268,30 +274,30 @@ class Culture(TensorClass):
         #
         # Everything is kept full-width (c,) so no boolean-mask gather
         # or nonzero is used and no host synchronization happens.
-        pos = self.get_cell_positions()  # (N², 2) row = cell idx -> position
         c = mask.shape[0]
-        coords = pos[:c]  # (c, 2) fixed snapshot of each cell's position
-        old_flat = self._2d_to_1d(coords)  # (c,) current voxel
+        n2 = self.N2  # throwaway voxel slot for non-winners
+        flat_cell_map = self.cell_map.view(-1)  # (N²,) view
+        cell_coords = self.get_cell_coords()[:c]  # (c, 2) row = cell idx -> position
+        old_flat = self.coords_to_voxels(cell_coords)  # (c,) current voxel
         cell_idxs = self.idxarange(c)  # (c,)
-        dump = self.N2  # throwaway voxel slot for non-winners
         still = mask.clone()  # (c,) cells still trying
 
         for _ in range(n_rounds):
-            target, winners = self._choose_neighbourhood(coords=coords, acting=still)
+            tgt, win = self._choose_neighbourhood(coords=cell_coords, acting=still)
 
-            # commit winners: vacate old voxel, occupy target (losers -> dump slot)
-            padded = torch.cat([self.cell_map_flat, self.idxtensor([-1])])  # (N²+1,)
-            vacate = torch.where(winners, old_flat, self.idxtensor(dump))  # (c,)
-            place = torch.where(winners, target, self.idxtensor(dump))  # (c,)
+            # commit winners: vacate old voxel, occupy target (losers -> n2 slot)
+            padded = torch.cat([flat_cell_map, self.idxtensor([-1])])  # (N²+1,)
+            vacate = torch.where(win, old_flat, self.idxtensor(n2))  # (c,)
+            place = torch.where(win, tgt, self.idxtensor(n2))  # (c,)
             padded.scatter_(0, vacate, self.idxfull(c, value=-1))
             padded.scatter_(0, place, cell_idxs)
-            self.cell_map_flat[:] = padded[: self.N2]
+            flat_cell_map[:] = padded[: self.N2]
 
-            still &= ~winners
+            still &= ~win
 
         return mask & ~still  # (c,) successfully migrated
 
-    def cell_division(self, mask: T, n_rounds: int = 3) -> tuple[T, T]:
+    def divide_cells(self, mask: T, n_rounds: int = 3) -> tuple[T, T]:
         """
         Resolve free-voxel contention for dividing cells.
 
@@ -314,24 +320,36 @@ class Culture(TensorClass):
         # full-width (c,) so no boolean-mask gather or nonzero is used.
         n2 = self.N2
         c = mask.shape[0]
-        coords = self.get_cell_positions()[:c]  # (c, 2) row = cell idx -> position
+        flat_cell_map = self.cell_map.view(-1)  # (N²,) view
+        cell_coords = self.get_cell_coords()[:c]  # (c, 2) row = cell idx -> position
         cell_idxs = self.idxarange(c)  # (c,)
         still = mask.clone()  # (c,)
         won_voxel = self.idxfull(c, value=-1)  # (c,) parent -> claimed voxel
 
         for _ in range(n_rounds):
-            target, winners = self._choose_neighbourhood(coords=coords, acting=still)
+            tgt, win = self._choose_neighbourhood(coords=cell_coords, acting=still)
 
             # reserve won voxels with the parent idx so later rounds see them taken
-            padded = torch.cat([self.cell_map_flat, self.idxtensor([-1])])  # (N²+1,)
-            place = torch.where(winners, target, self.idxtensor(n2))  # (c,)
+            padded = torch.cat([flat_cell_map, self.idxtensor([-1])])  # (N²+1,)
+            place = torch.where(win, tgt, self.idxtensor(n2))  # (c,)
             padded.scatter_(0, place, cell_idxs)
-            self.cell_map_flat[:] = padded[: self.N2]
+            flat_cell_map[:] = padded[: self.N2]
 
-            won_voxel = torch.where(winners, target, won_voxel)
-            still &= ~winners
+            won_voxel = torch.where(win, tgt, won_voxel)
+            still &= ~win
 
         return (won_voxel >= 0), won_voxel  # bool (c,), idx (c,)
+
+    def voxels_to_coords(self, voxels: T) -> T:
+        """Convert (N²,) voxel indices to (N, N) coordinates"""
+        n = self.map_size
+        return torch.stack((voxels // n, voxels % n), dim=1)
+
+    def coords_to_voxels(self, coords: T) -> T:
+        """Convert (N, N) voxel indices to (N²)"""
+        has_cell = coords[..., 0] > 0
+        n = self.map_size
+        return torch.where(has_cell, coords[..., 0] * n, 0) + coords[..., 1]
 
     def save_state(self, statedir: Path) -> None:
         """
@@ -374,13 +392,14 @@ class Culture(TensorClass):
         # throwaway voxel (index N2) so no boolean-mask gather / nonzero is needed
         # and the whole method performs no host synchronization.
         n2 = self.N2
+        flat_cell_map = self.cell_map.view(-1)  # (N²,) view
 
         # 8 row-col neighbourhoods per cell, as flat idxs of the N x N map
         nbs = self._nbh.get_neighborhoods(coords=coords)  # (c, 8, 2)
-        flat_nbs = self._2d_to_1d(nbs)  # (c, 8)
+        flat_nbs = self.coords_to_voxels(nbs)  # (c, 8)
 
         # find free voxels in each neighbourhood
-        free_nbs = self.cell_map_flat[flat_nbs] < 0  # (c, 8)
+        free_nbs = flat_cell_map[flat_nbs] < 0  # (c, 8)
         can_act = free_nbs.any(1) & acting  # (c,)
 
         # propose a random free target voxel per cell
@@ -396,15 +415,6 @@ class Culture(TensorClass):
         winners = can_act & (best[target] == prios)  # (c,)
 
         return target, winners  # idx (c,), bool (c,)
-
-    def _2d_to_1d(self, rc: T) -> T:
-        # represent (n, 2) positions on N x N map as (n,) flat indices of the map
-        has_cell = rc[..., 0] > 0
-        return torch.where(has_cell, rc[..., 0] * self.map_size, 0) + rc[..., 1]
-
-    def _1d_to_2d(self, z: T) -> T:
-        # represent flat indices of N x N map as (n, 2) positions on the map
-        return torch.stack((z // self.map_size, z % self.map_size), dim=1)
 
     def _get_all_positions(self) -> T:
         L = self.map_size

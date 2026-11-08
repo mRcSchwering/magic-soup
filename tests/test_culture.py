@@ -26,6 +26,79 @@ def _gen_rand_cell_map(N: int, confl: float) -> torch.Tensor:
     return flat.reshape(N, N)
 
 
+@pytest.mark.parametrize(
+    "occ, c, req",
+    [
+        ([0, 1], 9, [0, 1]),  # 2 requested 7 free
+        ([], 9, [2, 3]),  # 2 requested 9 free
+        ([2, 3], 9, []),  # 0 requested 7 free
+        ([4, 5], 2, [0, 1]),  # 2 requested 7 free (c=2)
+        (list(range(8)), 9, [0, 1]),  # 2 requested 1 free
+        ([0, 1], None, []),  # all requested 7 free
+    ],
+)
+def test_get_random_free_voxels(occ: list[int], c: int | None, req: list[int]) -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=3)
+
+    # occupy cell map
+    flat = culture.cell_map.view(-1)
+    flat[idxtensor(occ)] = 0
+
+    # setup mask
+    if c is None:
+        mask = None
+    else:
+        mask = idxfull(c, value=0).bool()
+        mask[idxtensor(req)] = True
+
+    voxels = culture.get_random_free_voxels(mask=mask)
+
+    # voxels were only chosen for mask
+    if mask is None:
+        (voxels >= 0).all()
+    else:
+        assert (voxels[~mask] == -1).all()
+
+    # result voxels are unique
+    res_voxels = voxels[voxels >= 0].tolist()
+    assert len(set(res_voxels)) == len(res_voxels)
+
+    # result voxels were not already occupied
+    occ_voxels = (flat >= 0).argwhere().flatten().tolist()
+    assert len(set(occ_voxels) & set(res_voxels)) == 0
+
+
+@pytest.mark.parametrize(
+    "idxs, voxels",
+    [
+        ([3, 4, 5, -1], [1, 2, 3, -1]),  # 3 new cells on free voxels
+        ([3, 4, 5, 1], [1, 2, 3, -1]),  # idx wrongly >= 0
+        ([3, 4, 5, -1], [1, 2, 3, 1]),  # voxel wrongly >= 0
+        ([-1, -1, 0, -1], [-1, -1, 0, -1]),  # override existing voxel and index
+        ([-1, 3, 1, 0], [-1, 4, 0, 3]),  # 2 existing, 1 new cell
+    ],
+)
+def test_place_cells(idxs: list[int], voxels: list[int]) -> None:
+    culture = Culture(chemistry=CHEMISTRY, map_size=3)
+
+    # pre-occupy cell map
+    idxs0 = [0, 1, 2]
+    voxels0 = [0, 4, 7]
+    flat = culture.cell_map.view(-1)
+    flat[voxels0] = idxtensor(idxs0)
+
+    culture.place_cells(idxs=idxtensor(idxs), voxels=idxtensor(voxels))
+
+    # no duplicate indexes
+    act_idxs = flat[flat >= 0].tolist()
+    assert len(set(act_idxs)) == len(act_idxs)
+
+    # map as expected
+    exp = {i: v for i, v in zip(idxs0 + idxs, voxels0 + voxels) if i >= 0 and v >= 0}
+    act = {i: v for v, i in enumerate(flat.tolist()) if i >= 0 and v >= 0}
+    assert act == exp
+
+
 def test_maps() -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=3)
 
@@ -33,7 +106,7 @@ def test_maps() -> None:
     culture.cell_map[0, 0] = 0
     culture.cell_map[0, 2] = 1
     culture.cell_map[1, 1] = 2
-    culture.cell_map_flat[-1] = 9
+    culture.cell_map.view(-1)[-1] = 9
 
     # expected maps
     exp_coords = idxtensor([tuple(d) for d in product(range(3), range(3))])
@@ -50,7 +123,7 @@ def test_maps() -> None:
     # check expectations
     torch.testing.assert_close(culture.all_positions, exp_coords)
     torch.testing.assert_close(culture.cell_map, exp_cell_map)
-    torch.testing.assert_close(culture.cell_map_flat, exp_cell_map_flat)
+    torch.testing.assert_close(culture.cell_map.view(-1), exp_cell_map_flat)
     torch.testing.assert_close(culture.molecule_map, exp_mol_map)
 
 
@@ -83,11 +156,11 @@ def test_maps() -> None:
         ),
     ],
 )
-def test_get_cell_positions(cell_map: list, exp_pos: list) -> None:
+def test_get_cell_coords(cell_map: list, exp_pos: list) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
-    pos = culture.get_cell_positions()
-    torch.testing.assert_close(pos, idxtensor(exp_pos))
+    coords = culture.get_cell_coords()
+    torch.testing.assert_close(coords, idxtensor(exp_pos))
 
 
 @pytest.mark.parametrize(
@@ -138,70 +211,6 @@ def test_get_cell_neighbor_pairs(cell_map: list, exp_pairs: list) -> None:
     pairs = culture.get_cell_neighbor_pairs()
     exp = idxtensor(exp_pairs) if exp_pairs else idxzeros(0, 2)
     torch.testing.assert_close(pairs, exp)
-
-
-@pytest.mark.parametrize(
-    "cell_map, n, exp_n",
-    [
-        (
-            # empty map: ask 4, get 4
-            [
-                [-1, -1],
-                [-1, -1],
-            ],
-            4,
-            4,
-        ),
-        (
-            # empty map: ask 2, get 2
-            [
-                [-1, -1],
-                [-1, -1],
-            ],
-            2,
-            2,
-        ),
-        (
-            # full map, ask 4, get 0
-            [
-                [0, 1],
-                [2, 3],
-            ],
-            4,
-            0,
-        ),
-        (
-            # interspersed cells: ask 2 get 2
-            [
-                [0, -1],
-                [2, -1],
-            ],
-            2,
-            2,
-        ),
-        (
-            # interspersed cells: ask 4 get 2
-            [
-                [0, -1],
-                [2, -1],
-            ],
-            4,
-            2,
-        ),
-    ],
-)
-def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
-    culture.cell_map[:] = idxtensor(cell_map)
-    pos = culture.get_free_positions(n)
-
-    # check correct number of positions
-    assert pos.shape == (exp_n, 2)
-
-    # make sure positions are free
-    xs = pos[:, 0]
-    ys = pos[:, 1]
-    assert (culture.cell_map[xs, ys] < 0).all()
 
 
 @pytest.mark.parametrize(
@@ -291,7 +300,7 @@ def test_get_free_positions(cell_map: list, n: int, exp_n: int) -> None:
         ),
     ],
 )
-def test_cell_division(cell_map: list, parents: list[int], n_exp: int) -> None:
+def test_divide_cells(cell_map: list, parents: list[int], n_exp: int) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
 
@@ -300,11 +309,11 @@ def test_cell_division(cell_map: list, parents: list[int], n_exp: int) -> None:
     mask[idxtensor(parents)] = True
 
     # remember positions before
-    cell_pos_0 = culture.get_cell_positions()
+    coords_0 = culture.get_cell_coords()
     cell_map_before = culture.cell_map.clone()
 
     # resolve division contention (reserves won voxels on the map)
-    success, won_voxel = culture.cell_division(mask=mask)
+    success, won_voxel = culture.divide_cells(mask=mask)
     scc_parents = success.nonzero(as_tuple=True)[0].to(torch.int32)
 
     # expected number of successful divisions (= won free voxels)
@@ -329,11 +338,11 @@ def test_cell_division(cell_map: list, parents: list[int], n_exp: int) -> None:
         x, y = v // culture.map_size, v % culture.map_size
         assert cell_map_before[x, y] < 0
         assert int(culture.cell_map[x, y]) == p
-        assert is_moore_nbd(tuple(cell_pos_0[p].tolist()), (x, y), n=culture.map_size)
+        assert is_moore_nbd(tuple(coords_0[p].tolist()), (x, y), n=culture.map_size)
 
 
 @pytest.mark.slow
-def test_cell_division_randomly() -> None:
+def test_divide_cells_randomly() -> None:
     N = 100
     for _ in range(100):
         culture = Culture(chemistry=CHEMISTRY, map_size=N)
@@ -343,7 +352,7 @@ def test_cell_division_randomly() -> None:
         n = int(culture.cell_map.max()) + 1
 
         # remember positions before
-        cell_pos_0 = culture.get_cell_positions()
+        coords_0 = culture.get_cell_coords()
         cell_map_before = culture.cell_map.clone()
 
         # pick random parents that want to divide
@@ -352,7 +361,7 @@ def test_cell_division_randomly() -> None:
         mask[parents_0] = True
 
         # divide cells (resolves voxel contention, reserves won voxels)
-        success, won_voxel = culture.cell_division(mask=mask)
+        success, won_voxel = culture.divide_cells(mask=mask)
         scc_parents = success.nonzero(as_tuple=True)[0].to(torch.int32)
 
         # some should have divided
@@ -374,7 +383,7 @@ def test_cell_division_randomly() -> None:
         assert (culture.cell_map[xs, ys] == scc_parents).all()
 
         # each won voxel is in the parent's Moore neighborhood
-        par_pos = cell_pos_0[scc_parents].tolist()
+        par_pos = coords_0[scc_parents].tolist()
         vox_pos = torch.stack([xs, ys], dim=1).tolist()
         for p0, p1 in zip(par_pos, vox_pos):
             assert is_moore_nbd(p0, p1, n=culture.map_size)
@@ -447,7 +456,7 @@ def test_cell_division_randomly() -> None:
         ),
     ],
 )
-def test_undirected_cell_migration(cell_map: list, idxs: list[int], exp_n: int) -> None:
+def test_migrate_cells_randomly(cell_map: list, idxs: list[int], exp_n: int) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
 
@@ -458,15 +467,15 @@ def test_undirected_cell_migration(cell_map: list, idxs: list[int], exp_n: int) 
 
     # remember idxs and positions before
     cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
-    cell_pos_0 = culture.get_cell_positions()
+    cell_pos_0 = culture.get_cell_coords()
 
     # migrate
-    migrated = culture.undirected_cell_migration(mask=mask)
+    migrated = culture.migrate_cells_randomly(mask=mask)
     succ_idxs = migrated.nonzero(as_tuple=True)[0].to(torch.int32)
 
     # remember idxs and positions after
     cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
-    cell_pos_1 = culture.get_cell_positions()
+    cell_pos_1 = culture.get_cell_coords()
     unsucc_idxs = req_idxs[~torch.isin(req_idxs, succ_idxs)]
 
     # check expected number of successful migrations
@@ -490,7 +499,7 @@ def test_undirected_cell_migration(cell_map: list, idxs: list[int], exp_n: int) 
 
 
 @pytest.mark.slow
-def test_undirected_cell_migration_randomly() -> None:
+def test_randomly_migrate_cells_randomly() -> None:
     N = 100
     for _ in range(100):
         culture = Culture(chemistry=CHEMISTRY, map_size=N)
@@ -501,19 +510,19 @@ def test_undirected_cell_migration_randomly() -> None:
 
         # remember idxs and positions before
         cell_idxs_0 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
-        cell_pos_0 = culture.get_cell_positions()
+        coords_0 = culture.get_cell_coords()
 
         # migrate
         k = random.randint(10, n)
         req_idxs = idxrandperm(n)[:k]
         mask = idxzeros(culture.N2).bool()
         mask[req_idxs] = True
-        migrated = culture.undirected_cell_migration(mask=mask)
+        migrated = culture.migrate_cells_randomly(mask=mask)
         succ_idxs = migrated.nonzero(as_tuple=True)[0].to(torch.int32)
 
         # remember idxs and positions after
         cell_idxs_1 = culture.cell_map[culture.cell_map >= 0].flatten().sort()[0]
-        cell_pos_1 = culture.get_cell_positions()
+        coords_1 = culture.get_cell_coords()
         unsucc_idxs = req_idxs[~torch.isin(req_idxs, succ_idxs)]
 
         # at least some should have migrated
@@ -526,15 +535,15 @@ def test_undirected_cell_migration_randomly() -> None:
         assert torch.equal(cell_idxs_0, cell_idxs_1)
 
         # unsuccessful cells are still in same positions
-        assert torch.equal(cell_pos_0[unsucc_idxs], cell_pos_1[unsucc_idxs])
+        assert torch.equal(coords_0[unsucc_idxs], coords_1[unsucc_idxs])
 
         # successful cells all have new positions
-        assert ((cell_pos_0[succ_idxs] != cell_pos_1[succ_idxs]).sum(dim=1) > 0).all()
+        assert ((coords_0[succ_idxs] != coords_1[succ_idxs]).sum(dim=1) > 0).all()
 
         # they are all in Moore neighborhood of each other
         for p0, p1 in zip(
-            cell_pos_0[succ_idxs].tolist(),
-            cell_pos_1[succ_idxs].tolist(),
+            coords_0[succ_idxs].tolist(),
+            coords_1[succ_idxs].tolist(),
         ):
             assert is_moore_nbd(p0, p1, n=culture.map_size)
 

@@ -93,7 +93,7 @@ class _State:
         return cls(
             p=world.cells.p,
             idx=world.cells.get_cell_idxs().clone(),
-            pos=world.culture.get_cell_positions().clone(),
+            pos=world.culture.get_cell_coords().clone(),
             mass=_get_mol_mass(world),
             cell_tensors=_get_cell_tensors(world.cells),
             cell_arrays=_get_cell_arrays(world.cells),
@@ -178,7 +178,7 @@ def test_spawn_cells(caplog, world: World, n_spawn: int, exp_n_spawn: int) -> No
 def test_get_cell(world: World) -> None:
     _spawn_cells(world, n=50)
 
-    pos = world.culture.get_cell_positions()
+    coords = world.culture.get_cell_coords()
 
     c0 = world.get_cell(by_idx=25)
     assert c0.lineage == world.cells.lineages[25]
@@ -186,7 +186,7 @@ def test_get_cell(world: World) -> None:
     assert torch.equal(c0.molecules, world.cells.molecules[25])
     assert len(c0.proteome) > 0
 
-    c1 = world.get_cell(by_position=(int(pos[20, 0]), int(pos[20, 1])))
+    c1 = world.get_cell(by_position=(int(coords[20, 0]), int(coords[20, 1])))
     assert c1.lineage == world.cells.lineages[20]
     assert c1.genome == world.cells.genomes[20]
     assert torch.equal(c1.molecules, world.cells.molecules[20])
@@ -647,7 +647,7 @@ def test_kill_cells(world: World, n_spawn: int, n_kill: int) -> None:
 def test_compact_remaps_cell_map(world: World) -> None:
     world = _spawn_cells(world, n=60)
 
-    positions = world.culture.get_cell_positions()
+    coords = world.culture.get_cell_coords()
     idxs0 = world.cells.get_cell_idxs()
 
     # record each living cell's identity (its genome) by its map position;
@@ -655,8 +655,7 @@ def test_compact_remaps_cell_map(world: World) -> None:
     survivors = idxs0[1::2]
     kill_idxs = idxs0[::2]
     survivor_pos_genome = {
-        tuple(positions[int(i)].tolist()): world.cells.genomes[int(i)]
-        for i in survivors
+        tuple(coords[int(i)].tolist()): world.cells.genomes[int(i)] for i in survivors
     }
 
     c_before = world.cells.c
@@ -804,7 +803,7 @@ def test_saving_loading_state(world: World, tmp_path: Path) -> None:
     # it was really cleared
     assert world.cells.get_n_cells() == 0
     assert world.cells.get_cell_idxs().numel() == 0
-    assert (world.culture.get_cell_positions() == -1).all()
+    assert (world.culture.get_cell_coords() == -1).all()
 
     # load state
     world.load_state(statedir=statedir)

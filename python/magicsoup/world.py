@@ -140,18 +140,15 @@ class World(TensorClass):
     ) -> "Cell":
         # forces host sync
         idx = -1
-        positions = self.culture.get_cell_positions()
 
         if by_idx is not None:
-            idxs = np.where(self.cells.get_cell_idxs() == by_idx)[0]
-            if idxs.shape[0] == 0:
+            if by_idx >= self.cells.c or not bool(self.cells.alive[by_idx]):
                 raise ValueError(f"Cell with idx {by_idx} not found")
             idx = by_idx
 
         if by_position is not None and by_position != (-1, -1):
-            cellpos = self.idxtensor([by_position])
-            positions = self.culture.get_cell_positions()
-            mask = (positions == cellpos).all(dim=1)
+            cell_coords = self.culture.get_cell_coords()
+            mask = (cell_coords == self.idxtensor([by_position])).all(dim=1)
             if not mask.any():
                 raise ValueError(f"Cell at {by_position} not found")
             idx = int(torch.argwhere(mask)[0].item())
@@ -184,8 +181,7 @@ class World(TensorClass):
         if n_new_cells == 0:
             return self.idxtensor([])
 
-        free_pos = self.culture.get_free_positions(n=n_new_cells)
-        n_avail_pos = free_pos.size(0)
+        n_avail_pos = int((self.culture.cell_map < 0).sum())
         if n_avail_pos == 0:
             _log.warning("No free positions to spawn %d cells", n_new_cells)
             return self.idxtensor([])
@@ -198,23 +194,36 @@ class World(TensorClass):
             random.shuffle(genomes)
             genomes = genomes[:n_new_cells]
 
-        n_living_cells = self.cells.get_n_cells()
-        self.cells.update_c(c_req=n_living_cells + n_new_cells)
-        free_idxs = self.cells.get_free_idxs()
-        new_idxs = free_idxs[:n_new_cells]
+        # adjust c if necessary (sync with host)
+        n_cells = self.cells.get_n_cells()
+        self.cells.update_c(c_req=n_cells + n_new_cells)
 
-        # occupy positions
-        new_pos = free_pos[:n_new_cells]
-        xs = new_pos[:, 0]
-        ys = new_pos[:, 1]
-        self.culture.cell_map[xs, ys] = new_idxs
+        # get random target voxels
+        mask = self.cells.get_free_mask(n=n_new_cells)  # (c,)
+        voxels = self.culture.get_random_free_voxels(mask=mask)  # (c,)
+
+        # place the selected cells on their target voxels
+        cell_idxs = self.idxarange(self.cells.c)  # (c,)
+        self.culture.place_cells(idxs=cell_idxs, voxels=voxels)
 
         # cell is picking up the molecules of the pxl it is born on
         # it receives the same concentration, total volume increases
+        coords = self.culture.voxels_to_coords(voxels)
+        rows = coords[:, 0]
+        cols = coords[:, 1]
         f = self.v_voxel / (self.v_voxel + self.v_cell)
-        pickup = self.culture.molecule_map[:, xs, ys]
-        self.cells.molecules[new_idxs, :] = pickup.T * f
-        self.culture.molecule_map[:, xs, ys] = pickup * f
+        pickup = self.culture.molecule_map[:, rows, cols]
+        self.cells.molecules = torch.where(
+            mask[:, None], pickup.T * f, self.cells.molecules
+        )
+        self.culture.molecule_map[:, rows, cols] = pickup * f
+
+        # TODO: convert update_genomes to mask?
+        new_idxs = (
+            mask.nonzero_static(size=n_new_cells, fill_value=-1)
+            .to(self.idxtype)
+            .flatten()
+        )
 
         # update genomes and proteomes
         self.cells.update_genomes(genomes=StrArray.from_strings(genomes), idxs=new_idxs)
@@ -240,31 +249,33 @@ class World(TensorClass):
         if n_new_cells == 0:
             return self.idxtensor([])
 
-        free_pos = self.culture.get_free_positions(n=n_new_cells)
-        n_avail_pos = free_pos.size(0)
+        n_avail_pos = int((self.culture.cell_map < 0).sum())
         if n_avail_pos == 0:
-            _log.warning("No free positions to add %d cells", n_new_cells)
+            _log.warning("No free voxels to add %d cells", n_new_cells)
             return self.idxtensor([])
 
         if n_avail_pos < n_new_cells:
             _log.warning(
-                "Only %d free positions to add %d cells", n_avail_pos, n_new_cells
+                "Only %d free voxels to add %d cells", n_avail_pos, n_new_cells
             )
             n_new_cells = n_avail_pos
             random.shuffle(cells)
             cells = cells[:n_new_cells]
 
-        # sync with host
+        # adjust c if necessary (sync with host)
         n_cells = self.cells.get_n_cells()
         self.cells.update_c(c_req=n_cells + n_new_cells)
-        new_idxs = self.cells.get_free_idxs()[:n_new_cells]
 
-        # place cells
-        mask = self.idxfull(self.cells.c, value=0).bool()
-        mask[new_idxs] = True
-        self.culture.occupy_cell_map_randomly(mask=mask)
+        # get random target voxels
+        mask = self.cells.get_free_mask(n=n_new_cells)  # (c,)
+        voxels = self.culture.get_random_free_voxels(mask=mask)
 
-        # update parameters from genomes
+        # place the selected cells on their target voxels
+        cell_idxs = self.idxarange(self.cells.c)  # (c,)
+        self.culture.place_cells(idxs=cell_idxs, voxels=voxels)
+
+        # update parameters from genomes (sync with host)
+        new_idxs = mask.argwhere().flatten()
         genomes = StrArray.from_strings([d.genome for d in cells])
         self.cells.update_genomes(genomes=genomes, idxs=new_idxs)
 
@@ -297,7 +308,9 @@ class World(TensorClass):
         nn_rm = (self.culture.cell_map >= 0) & mask[nn_idx]  # (N, N)
         self.culture.cell_map.masked_fill_(nn_rm, -1)
 
-        self.culture.occupy_cell_map_randomly(mask=mask)
+        cell_idxs = self.idxarange(self.cells.c)  # (c,)
+        voxels = self.culture.get_random_free_voxels(mask=mask)
+        self.culture.place_cells(voxels=voxels, idxs=cell_idxs)
 
     def migrate_cells(self, mask: T | None = None) -> T:
         """
@@ -317,7 +330,7 @@ class World(TensorClass):
             mask = mask & self.cells.alive
 
         # positions are updated in place
-        return self.culture.undirected_cell_migration(mask=mask)
+        return self.culture.migrate_cells_randomly(mask=mask)
 
     def divide_cells(self, mask: T | None = None) -> T:
         """
@@ -342,7 +355,7 @@ class World(TensorClass):
             mask = mask & cells.alive
 
         # resolve which parents win a free neighbour voxel (reserves those voxels)
-        success, won_voxel = culture.cell_division(mask=mask)  # (c,), (c,)
+        success, won_voxel = culture.divide_cells(mask=mask)  # (c,), (c,)
 
         # grow c to fit the new children (the one host sync)
         c_req = int(cells.alive.sum() + success.sum())  # sync with host
@@ -360,7 +373,7 @@ class World(TensorClass):
         cells.update_descendants(parent_of=parent_of, divided=success)
 
         # replace reservations with the real child ids
-        self.culture.occupy_cell_map(mask=success, flat_voxel=won_voxel, idx=child_slot)
+        self.culture.place_cells(voxels=won_voxel, idxs=child_slot)
 
         return parent_of
 
@@ -381,19 +394,19 @@ class World(TensorClass):
         else:
             mask = mask & cells.alive  # only living cells can be killed
 
-        # per-voxel kill mask by gathering each voxel's occupant's kill status
-        nn_idx = culture.cell_map.clamp(min=0)  # (N, N) -1 (empty) -> 0
+        # per-voxel kill mask
+        nn_idx = culture.cell_map.clamp(min=0)  # (N, N) -1 -> 0
         nn_kill = (culture.cell_map >= 0) & mask[nn_idx]  # (N, N)
 
-        # spill killed cells' molecules onto their voxels, then free the map
-        mols = cells.molecules[nn_idx].permute(2, 0, 1)  # (m, N, N) per-voxel cell mols
+        # spill killed cells' molecules onto their voxels
+        mols = cells.molecules[nn_idx].permute(2, 0, 1)  # (m, N, N)
         spill = torch.where(nn_kill, mols, self.ftensor(0.0))  # (m, N, N)
         culture.molecule_map += spill * (self.v_cell / self.v_voxel)
 
         # free up cell map
         culture.cell_map.masked_fill_(nn_kill, -1)
 
-        # unset device cell state (genomes/lineages deferred to reconcile)
+        # unset device cell state
         cells.unset_cells(mask=mask)
 
     def mutate_cells(
@@ -444,9 +457,9 @@ class World(TensorClass):
 
         cell_molecules = self.cells.molecules  # (c, m)
         molecule_map = self.culture.molecule_map  # (m, N, N)
-        cell_positions = self.culture.get_cell_positions()  # (N², 2)
-        xs = cell_positions[cell_idxs, 0]
-        ys = cell_positions[cell_idxs, 1]
+        cell_coords = self.culture.get_cell_coords()  # (N², 2)
+        cell_rows = cell_coords[cell_idxs, 0]
+        cell_cols = cell_coords[cell_idxs, 1]
 
         if cell_idxs.numel() == 0:
             return
@@ -461,7 +474,7 @@ class World(TensorClass):
 
             # collect internal and external molecules for x
             x = torch.cat(
-                [cell_molecules[cell_idxs], molecule_map[:, xs, ys].T],
+                [cell_molecules[cell_idxs], molecule_map[:, cell_rows, cell_cols].T],
                 dim=1,
             )
 
@@ -482,7 +495,7 @@ class World(TensorClass):
             )
 
             # distribute x1 to internal and external molecules
-            molecule_map[:, xs, ys] = x[:, self._ext_mol_idxs].T
+            molecule_map[:, cell_rows, cell_cols] = x[:, self._ext_mol_idxs].T
             cell_molecules[cell_idxs] = x[:, self._int_mol_idxs]
 
         # age cells
@@ -499,9 +512,8 @@ class World(TensorClass):
         """
         # forces host sync
         self.cells.reconcile_host()
-        new_idx = self.cells.compact()  # (c_old,) old -> new cell index (-1 dropped)
-        flat = self.culture.cell_map_flat
-        flat[:] = torch.where(flat >= 0, new_idx[flat.clamp(min=0)], flat)
+        old_to_new = self.cells.compact()
+        self.culture.update_cell_map(old_to_new)
 
     def save(self, rundir: Path, name: str = "world.pkl") -> None:
         rundir.mkdir(parents=True, exist_ok=True)

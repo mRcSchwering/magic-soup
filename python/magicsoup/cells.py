@@ -122,6 +122,13 @@ class Cells(TensorClass):
         """Get (k,) cell index tensor of unused cell indices (forces host syncrhonization)"""
         return (~self.alive).nonzero(as_tuple=True)[0].int()  # sync with host
 
+    def get_free_mask(self, n: int | None = None) -> T:
+        """Get (c,) mask of up to n (or all) free cell slots"""
+        rank = (~self.alive).cumsum(0)
+        if n is not None:
+            return (~self.alive) & (rank <= n)
+        return rank > 0
+
     def get_utilization(self) -> float:
         """
         Fraction of the allocated proteome tensors that currently holds live data.
@@ -348,6 +355,7 @@ class Cells(TensorClass):
         self.lineages[dead] = ""
         return alive_host
 
+    # TODO: return new c?
     def update_c(self, c_req: int) -> None:
         """
         Grow the `c` dimension to fit `c_req` cells (plus hysteresis margin).
