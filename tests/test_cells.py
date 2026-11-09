@@ -244,36 +244,115 @@ def test_update_genomes_randomly(cells: Cells) -> None:
     assert cells.p > p_init
 
 
-@pytest.mark.slow
-def atest_copy_proteomes_randomly(cells: Cells) -> None:
-    # TODO: test for update_descendants instead
-    # TODO: also test that proteins was copied
-
-    c = 100
+@pytest.mark.parametrize("c, n", [(10, 5), (10, 1), (50, 10), (50, 25)])
+def test_allocate_children(cells: Cells, c: int, n: int) -> None:
     cells.update_c(c_req=c)
-    p_init = cells.p
 
-    for _ in range(100):
-        n = random.randint(1, c // 2)
-        from_idxs = idxtensor(random.sample(range(c), n))
-        genomes0 = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
-        cells.update_genomes(genomes=genomes0, idxs=from_idxs)
+    idxs = idxtensor(random.sample(range(c), n))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+    cells.alive[idxs] = True
 
-        idxs_left = list(set(range(c)) - set(from_idxs.tolist()))
-        to_idxs = idxtensor(random.sample(idxs_left, n))
-        parent_of = idxfull(cells.c, value=-1)
-        parent_of[from_idxs] = to_idxs
-        cells.copy_proteomes(parent_of=parent_of)
+    mask = idxfull(cells.c, value=0).bool()
+    mask[idxs] = True
 
-        _asser_dtypes(cells)
+    children = cells.allocate_children(divided=mask)
 
-        # values were copied
-        ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]
-        itensors = [cells.N_b, cells.N_f, cells.N_h]
-        for tens in ftensors + itensors:
-            torch.testing.assert_close(tens[from_idxs], tens[to_idxs])
+    # all non-parent indices should be -1
+    assert (children >= 0).sum() == n
 
-    assert cells.p > p_init
+    allocated_children = set()
+    allocated_parents = set((children >= 0).nonzero(as_tuple=True)[0].tolist())
+    for parent in idxs.tolist():
+
+        # child is allocated once
+        child = int(children[parent])
+        assert child not in allocated_children
+        allocated_children.add(child)
+
+        # parent should only be allocated once
+        assert parent in allocated_parents
+        allocated_parents.remove(parent)
+
+    # all children were allocated
+    assert len(allocated_parents) == 0
+    assert len(allocated_children) == n
+
+
+@pytest.mark.parametrize("c, n", [(10, 5), (10, 1), (50, 10), (50, 25)])
+def test_update_descendants(cells: Cells, c: int, n: int) -> None:
+    cells.update_c(c_req=c)
+
+    from_idxs = idxtensor(random.sample(range(c), n))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
+    cells.update_genomes(genomes=genomes, idxs=from_idxs)
+    cells.alive[from_idxs] = True
+    cells.ages[from_idxs] = 1.0
+    molecules_t0 = cells.molecules[from_idxs].clone()
+
+    idxs_left = list(set(range(c)) - set(from_idxs.tolist()))
+    to_idxs = idxtensor(random.sample(idxs_left, n))
+
+    parent_of = idxfull(cells.c, value=-1)
+    parent_of[to_idxs] = from_idxs
+    cells.update_descendants(parent_of=parent_of)
+
+    # check types
+    _asser_dtypes(cells)
+
+    # all alive
+    desc_idxs = torch.cat([from_idxs, to_idxs])
+    assert cells.alive[desc_idxs].all()
+
+    # genomes, lineages, ages copied
+    assert (
+        cells.genomes[from_idxs.cpu().numpy()].tolist()
+        == cells.genomes[to_idxs.cpu().numpy()].tolist()
+    )
+    assert (
+        cells.lineages[from_idxs.cpu().numpy()].tolist()
+        == cells.lineages[to_idxs.cpu().numpy()].tolist()
+    )
+    assert cells.p > 0  # otherwise empty test
+    assert cells.proteins[from_idxs].tolist() == cells.proteins[to_idxs].tolist()
+
+    # ages reset
+    assert (cells.ages[desc_idxs] == 0).all()
+
+    # generations incremented
+    assert (cells.generations[desc_idxs] == 1).all()
+
+    # molecules were shared
+    assert (cells.molecules[from_idxs] == cells.molecules[to_idxs]).all()
+    torch.testing.assert_close(cells.molecules[to_idxs], molecules_t0 / 2)
+
+
+@pytest.mark.parametrize("c, n", [(10, 5), (10, 1), (50, 10), (50, 25)])
+def test_copy_proteomes(cells: Cells, c: int, n: int) -> None:
+    cells.update_c(c_req=c)
+
+    from_idxs = idxtensor(random.sample(range(c), n))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
+    cells.update_genomes(genomes=genomes, idxs=from_idxs)
+
+    idxs_left = list(set(range(c)) - set(from_idxs.tolist()))
+    to_idxs = idxtensor(random.sample(idxs_left, n))
+
+    parent_of = idxfull(cells.c, value=-1)
+    parent_of[to_idxs] = from_idxs
+    cells.copy_proteomes(idx_map=parent_of)
+
+    # check types
+    _asser_dtypes(cells)
+
+    # otherwise useless tests
+    assert cells.p > 0
+
+    # values were copied
+    ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]
+    itensors = [cells.N_b, cells.N_f, cells.N_h]
+    for tens in ftensors + itensors:
+        torch.testing.assert_close(tens[from_idxs], tens[to_idxs])
 
 
 def test_saving_loading(cells: Cells, tmp_path: Path) -> None:

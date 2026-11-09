@@ -32,6 +32,16 @@ type T = torch.Tensor
 type A = StrArray
 
 
+# TODO: adapt torch code:
+# convert IDXDTYPE to long (pre-requisite)
+# V[idx], 1-D index on dim 0        ->      V.index_select(0, idx)
+# V[idx], 2-D+ index along another axis     ->      V.gather(dim, idx)
+# a[idx] = b        ->      a.index_copy_(0, idx, b)
+# a[idx] += b       ->      a.index_put_((idx,), b, accumulate=True) or scatter_add_
+# a[mask] = b[mask]     ->      torch.where(mask, b, a, out=a)
+# prio dim-0 cases, hot path
+
+
 def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
     return lambda b: torch.load(BytesIO(b), map_location=map_loc)
@@ -196,15 +206,14 @@ class World(TensorClass):
 
         # adjust c if necessary (sync with host)
         n_cells = self.cells.get_n_cells()
-        c = self.cells.update_c(c_req=n_cells + n_new_cells)
+        self.cells.update_c(c_req=n_cells + n_new_cells)
 
         # get random target voxels
         mask = self.cells.get_free_mask(n=n_new_cells)  # (c,)
         voxels = self.culture.get_random_free_voxels(mask=mask)  # (c,)
 
         # place the selected cells on their target voxels
-        cell_idxs = self.idxarange(c)  # (c,)
-        self.culture.place_cells(idxs=cell_idxs, voxels=voxels)
+        self.culture.place_cells(voxels=voxels)
 
         # cell is picking up the molecules of the pxl it is born on
         # it receives the same concentration, total volume increases
@@ -218,7 +227,6 @@ class World(TensorClass):
         )
         self.culture.molecule_map[:, rows, cols] = pickup * f
 
-        # TODO: convert update_genomes to mask?
         new_idxs = (
             mask.nonzero_static(size=n_new_cells, fill_value=-1)
             .to(self.idxtype)
@@ -264,18 +272,22 @@ class World(TensorClass):
 
         # adjust c if necessary (sync with host)
         n_cells = self.cells.get_n_cells()
-        c = self.cells.update_c(c_req=n_cells + n_new_cells)
+        self.cells.update_c(c_req=n_cells + n_new_cells)
 
         # get random target voxels
         mask = self.cells.get_free_mask(n=n_new_cells)  # (c,)
         voxels = self.culture.get_random_free_voxels(mask=mask)
 
         # place the selected cells on their target voxels
-        cell_idxs = self.idxarange(c)  # (c,)
-        self.culture.place_cells(idxs=cell_idxs, voxels=voxels)
+        self.culture.place_cells(voxels=voxels)
+
+        new_idxs = (
+            mask.nonzero_static(size=n_new_cells, fill_value=-1)
+            .to(self.idxtype)
+            .flatten()
+        )
 
         # update parameters from genomes (sync with host)
-        new_idxs = mask.argwhere().flatten()
         genomes = StrArray.from_strings([d.genome for d in cells])
         self.cells.update_genomes(genomes=genomes, idxs=new_idxs)
 
@@ -308,9 +320,8 @@ class World(TensorClass):
         nn_rm = (self.culture.cell_map >= 0) & mask[nn_idx]  # (N, N)
         self.culture.cell_map.masked_fill_(nn_rm, -1)
 
-        cell_idxs = self.idxarange(self.cells.c)  # (c,)
         voxels = self.culture.get_random_free_voxels(mask=mask)
-        self.culture.place_cells(voxels=voxels, idxs=cell_idxs)
+        self.culture.place_cells(voxels=voxels)
 
     def migrate_cells(self, mask: T | None = None) -> T:
         """
@@ -357,7 +368,7 @@ class World(TensorClass):
         # resolve which parents win a free neighbour voxel (reserves those voxels)
         success, won_voxel = culture.divide_cells(mask=mask)  # (c,), (c,)
 
-        # grow c to fit the new children (the one host sync)
+        # grow c to fit the new children (host sync)
         c_req = int(cells.alive.sum() + success.sum())  # sync with host
         c = cells.update_c(c_req=c_req)
 
@@ -365,14 +376,21 @@ class World(TensorClass):
         success = self._pad_to_c(success, c, False)
         won_voxel = self._pad_to_c(won_voxel, c, -1)
 
-        # allocate a free child slot per successful parent (prefix-sum, device)
-        parent_of, child_slot = cells.allocate_children(divided=success)
+        # allocate a free child slot per successful parent
+        child_of = cells.allocate_children(divided=success)
+        parent_of = self.invert_idx_map(child_of)
 
-        # copy proteomes and cell state from parents to their children (sync with host)
-        cells.update_descendants(parent_of=parent_of, divided=success)
+        # copy parent params to their children (sync with host)
+        cells.update_descendants(parent_of=parent_of)
+        cells.copy_proteomes(idx_map=parent_of)
+
+        # remap gather:
+        # won_voxel: index(won_voxel) = divided parent
+        # convert: index(voxel) = child
+        voxels = self.remap_gather(won_voxel, idx_map=parent_of)
 
         # replace reservations with the real child ids
-        self.culture.place_cells(voxels=won_voxel, idxs=child_slot)
+        self.culture.place_cells(voxels=voxels)
 
         return parent_of
 
@@ -406,7 +424,8 @@ class World(TensorClass):
         culture.cell_map.masked_fill_(nn_kill, -1)
 
         # unset device cell state
-        cells.unset_cells(mask=mask)
+        cells.reset_cells(mask=mask)
+        cells.reset_proteomes(mask=mask)
 
     def mutate_cells(
         self,
@@ -500,6 +519,7 @@ class World(TensorClass):
         # age cells
         self.cells.ages += self.time_step
 
+    # TODO: add optional utilization check
     def compact(self) -> None:
         """
         Reclaim surplus cell slots and protein columns (with hysteresis).

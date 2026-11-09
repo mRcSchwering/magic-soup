@@ -221,34 +221,26 @@ class Culture(TensorClass):
         tmp_map = idx_map[flat_cell_map.clamp(0)]
         flat_cell_map[:] = torch.where(flat_cell_map >= 0, tmp_map, flat_cell_map)
 
-    def place_cells(self, idxs: T, voxels: T) -> None:
+    def place_cells(self, voxels: T) -> None:
         """
         Place cells on the cell map
 
         Arguments:
-            `idxs`: (c,) index tensor containing the indices (c <= N²) of the cells that are
-                placed on the cell map voxels (-1 for cells that should not be placed)
-            `voxels`: (c,) index tensor containing the voxels (c <= N²) where cells of `idxs`
-                should be placed (-1 for voxels that should not be placed)
+            `voxels`: (c,) index tensor (c <= N²) containing `voxel[i]` for cell `i`, -1 for unused.
 
-        This method does not guarantee that `idxs` doesn't contain indices already existent on
-        the cell map. It also doesn't guarantee that `voxels` doesn't point to currently
-        occupied voxels on the cell map.
+        This method doesn't guarantee that a cell or voxel will be in use twice.
         """
-        dump = self.idxtensor([-1])  # throwaway voxel slot
-        i_dump = self.N2  # index of throwaway voxel
+        c = voxels.shape[0]
+        n2 = self.N2
+        mask = voxels >= 0
         flat_cell_map = self.cell_map.view(-1)  # (N²,) view
-        mask = (idxs >= 0) & (voxels >= 0)
 
-        # flat map with extra dump voxel at the end
-        padded = torch.cat([flat_cell_map, dump])
+        ar = self.idxarange(c)
+        tmp = self.idxempty(n2 + 1)
+        tmp[:n2].copy_(flat_cell_map)
+        tmp.scatter_(0, torch.where(mask, voxels, n2), ar)
 
-        # map unused to slots to dump voxel
-        place = torch.where(mask, voxels, i_dump)  # (c,)
-
-        # place cell idxs on flat cell map
-        padded[place] = idxs
-        flat_cell_map[:] = padded[:i_dump]  # drop dump voxel again
+        flat_cell_map.copy_(tmp[:n2])
 
     def migrate_cells_randomly(self, mask: T, n_rounds: int = 3) -> T:
         """
@@ -304,7 +296,7 @@ class Culture(TensorClass):
             n_rounds: how many rounds to resolve possible conflicts among cells
 
         Returns:
-            Tuple `(success, won_voxel)`
+            tuple (success, won_voxel):
             - `success`: (c,) bool tensor of parents that won a free neighbour voxel (c <= N²)
             - `won_voxel`: (c,) int tensor of the claimed voxel (c <= N²) per parent (-1 if none)
 

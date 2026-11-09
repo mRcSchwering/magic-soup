@@ -16,6 +16,11 @@ def _starts_from_lens(lens: np.ndarray) -> np.ndarray:
     return starts
 
 
+# TODO: why not use torch for StrArray?
+#       "compact" could run without host sync
+#       "reconcile_host" would not be required anymore
+
+
 class StrArray:
     """
     Mutable 1-D array of variable-length strings.

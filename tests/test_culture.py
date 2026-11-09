@@ -69,34 +69,35 @@ def test_get_random_free_voxels(occ: list[int], c: int | None, req: list[int]) -
 
 
 @pytest.mark.parametrize(
-    "idxs, voxels",
+    "voxels",
     [
-        ([3, 4, 5, -1], [1, 2, 3, -1]),  # 3 new cells on free voxels
-        ([3, 4, 5, 1], [1, 2, 3, -1]),  # idx wrongly >= 0
-        ([3, 4, 5, -1], [1, 2, 3, 1]),  # voxel wrongly >= 0
-        ([-1, -1, 0, -1], [-1, -1, 0, -1]),  # override existing voxel and index
-        ([-1, 3, 1, 0], [-1, 4, 0, 3]),  # 2 existing, 1 new cell
+        ([-1, -1, -1, 1, 2, 3]),  # 3 new cells on free voxels
+        ([-1, -1]),  # move none
+        ([]),  # empty
+        ([-1, 7, 6, 4, -1]),  # 2 existing, 1 new cell
     ],
 )
-def test_place_cells(idxs: list[int], voxels: list[int]) -> None:
+def test_place_cells(voxels: list[int]) -> None:
     culture = Culture(chemistry=CHEMISTRY, map_size=3)
 
     # pre-occupy cell map
-    idxs0 = [0, 1, 2]
-    voxels0 = [0, 4, 7]
+    i2v = {0: 0, 1: 4, 2: 7}
     flat = culture.cell_map.view(-1)
-    flat[voxels0] = idxtensor(idxs0)
+    flat[idxtensor(list(i2v.values()))] = idxtensor(list(i2v))
 
-    culture.place_cells(idxs=idxtensor(idxs), voxels=idxtensor(voxels))
+    culture.place_cells(voxels=idxtensor(voxels))
+    print(flat)
 
-    # no duplicate indexes
-    act_idxs = flat[flat >= 0].tolist()
-    assert len(set(act_idxs)) == len(act_idxs)
+    for idx, vox in enumerate(voxels):
+        if vox >= 0:
+            i2v[idx] = vox
 
-    # map as expected
-    exp = {i: v for i, v in zip(idxs0 + idxs, voxels0 + voxels) if i >= 0 and v >= 0}
-    act = {i: v for v, i in enumerate(flat.tolist()) if i >= 0 and v >= 0}
-    assert act == exp
+    # voxels map to indices as expected
+    for vox, idx in enumerate(flat.tolist()):
+        if idx in i2v:
+            assert vox == i2v[idx]
+        else:
+            assert idx == -1
 
 
 @pytest.mark.parametrize(

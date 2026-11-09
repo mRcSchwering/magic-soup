@@ -98,8 +98,8 @@ class Cells(TensorClass):
         self.alive: T = self.idxzeros(0).bool()  # which ones are alive
         self.ages: T = self.fzeros(0)  # time since last division
         self.generations: T = self.idxzeros(0)  # number of divisions
-        self.molecules: T = self.fzeros(0, n_molecules)  # intracellular concentrations
         self.proteins: T = self.idxzeros(0)  # number of proteins
+        self.molecules: T = self.fzeros(0, n_molecules)  # intracellular concentrations
 
         # kinetics parameters
         self.k_f: T = self.fzeros(0, 0)  # forward reaction rates
@@ -153,6 +153,7 @@ class Cells(TensorClass):
         used_p = int(self.proteins.max())
         return (n_alive * used_p) / (self.c * self.p)
 
+    # TODO: convert to mask? (check whether rust can provide mask)
     def update_genomes(self, genomes: A, idxs: T) -> None:
         """
         Update cell genomes and their proteomes
@@ -217,7 +218,7 @@ class Cells(TensorClass):
             N_f = N_f[:, :p]
             N_b = N_b[:, :p]
             N_h = N_h[:, :p]
-            _log.warning("Proteome size %d has to be reduced to %d", p_tmp, self.p_max)
+            _log.warning("Proteome size %d has to be reduced to %d", p_max, self.p_max)
 
         # update kinetics parameters
         self.N_e[idxs] = N_e
@@ -229,8 +230,7 @@ class Cells(TensorClass):
         self.k_r[idxs] = k_r
         self.v_max[idxs] = v_max
 
-    # TODO: test on cells?
-    def allocate_children(self, divided: T) -> tuple[T, T]:
+    def allocate_children(self, divided: T) -> T:
         """
         Allocate children onto free slots
 
@@ -238,9 +238,7 @@ class Cells(TensorClass):
             divided: (c,) bool tensor of parents that successfully divided
 
         Returns:
-            tuple of `parent_of` (c,) index tensor and `child_slot` (c,) index tensor
-            where `parent_of[s]` is the parent slot that produced the child now
-            occupying slot `s`, else -1;
+            (c,) index tensor containing children `s` per divided parent, -1 for non-divided.
         """
         # assign the i-th successful parent to the i-th free cell slot
         c = divided.shape[0]
@@ -248,32 +246,22 @@ class Cells(TensorClass):
         order = self.idxarange(c)  # (c,)
 
         # map "r-th free slot" -> its cell index (non-free rows routed to dump c)
-        rank_of_free = torch.where(
-            free, free.cumsum(0, dtype=self.idxtype) - 1, self.idxtensor(c)
-        )  # (c,)
-        slot_of_rank = order.new_full((c + 1,), -1)
-        slot_of_rank.scatter_(0, rank_of_free, order)
+        rank = free.cumsum(0, dtype=self.idxtype) - 1  # (c,)
+        rank_free = torch.where(free, rank, c)  # (c,)
+        slot_rank = order.new_full((c + 1,), -1)
+        slot_rank[rank_free] = order
 
         # each successful parent -> next free slot
         prank = divided.cumsum(0, dtype=self.idxtype) - 1  # (c,)
-        child_slot = torch.where(
-            divided, slot_of_rank[prank.clamp(min=0)], self.idxtensor(-1)
-        )  # (c,)
+        return torch.where(divided, slot_rank[prank.clamp(min=0)], -1)  # (c,)
 
-        # invert to parent_of[child_slot] = parent
-        cs = torch.where(divided, child_slot, self.idxtensor(c))  # non-succ -> dump
-        parent_of = self.idxfull(c + 1, value=-1)
-        parent_of.scatter_(0, cs, order)
-        return parent_of[:c], child_slot
-
-    # TODO: test on cells?
-    def update_descendants(self, parent_of: T, divided: T) -> None:
+    def update_descendants(self, parent_of: T) -> None:
         """
         Update descendants after cell division
 
         Arguments:
-            parent_of: (c,) index tensor where `parent_of[s]` is the parent slot
-                that produced the child now occupying slot `s`, else -1.
+            parent_of: (c,) index tensor where `parent_of[s]` is the parent cell
+                that produced the child `s`, else -1.
             divided: (c,) bool tensor of parents that successfully divided
 
         Updates cell parameters and proteomes. Forces host synchronization.
@@ -286,36 +274,41 @@ class Cells(TensorClass):
         self.lineages[is_child_cpu] = self.lineages[parents_cpu]
 
         # then device operations
-        is_child = parent_of >= 0  # (c,)
+        child = parent_of >= 0  # (c,)
+        desc = child.clone()  # (c,)
+        desc[parent_of] = True  # (c,)
         src = parent_of.clamp(min=0)  # (c,)
-        descendant = is_child | divided  # (c,) children + parents that divided
 
         # children become alive
-        self.alive = self.alive | is_child
+        self.alive = self.alive | child
 
         # children inherit parent generation; all descendants then increment
-        self.generations = torch.where(
-            is_child, self.generations[src], self.generations
-        )
-        self.generations = self.generations + descendant.to(self.generations.dtype)
+        self.generations = torch.where(child, self.generations[src], self.generations)
+        self.generations = self.generations + desc.to(self.idxtype)
 
         # descendants reset age
-        self.ages = torch.where(descendant, self.ftensor(0.0), self.ages)
-
-        # children share parent molecules, then all descendants split in half
-        self.molecules = torch.where(
-            is_child[:, None], self.molecules[src], self.molecules
-        )
-        self.molecules = torch.where(
-            descendant[:, None], self.molecules * 0.5, self.molecules
-        )
+        self.ages = torch.where(desc, 0.0, self.ages)
 
         # copy protein counts
-        self.proteins = torch.where(is_child, self.proteins[src], self.proteins)
+        self.proteins = torch.where(child, self.proteins[src], self.proteins)
 
-        # copy proteomes
-        m1 = is_child[:, None]  # (c, 1)
-        m2 = is_child[:, None, None]  # (c, 1, 1)
+        # children share parent molecules, then all descendants split in half
+        mchild = child[:, None]
+        mdesc = desc[:, None]
+        self.molecules = torch.where(mchild, self.molecules[src], self.molecules)
+        self.molecules = torch.where(mdesc, self.molecules * 0.5, self.molecules)
+
+    def copy_proteomes(self, idx_map: T) -> None:
+        """Copy proteomes from one set of cells to another
+
+        Arguments:
+            idx_map: (c,) index tensor where `idx_map[s]` is the source cell that
+                should be copied to the target cell now occupying slot `s`, else -1.
+        """
+        mask = idx_map >= 0  # (c,)
+        src = idx_map.clamp(min=0)  # (c,)
+        m1 = mask[:, None]  # (c, 1)
+        m2 = mask[:, None, None]  # (c, 1, 1)
         self.N_e = torch.where(m2, self.N_e[src], self.N_e)
         self.N_f = torch.where(m2, self.N_f[src], self.N_f)
         self.N_b = torch.where(m2, self.N_b[src], self.N_b)
@@ -326,20 +319,28 @@ class Cells(TensorClass):
         self.k_r = torch.where(m1, self.k_r[src], self.k_r)
 
     # TODO: test in cells?
-    def unset_cells(self, mask: T) -> None:
-        """
-        Unset cell parameters and proteomes
+    def reset_cells(self, mask: T) -> None:
+        """Set cell parameters to empty values
 
         Arguments:
             mask: (c,) bool tensor of cells whose parameters should be unset
         """
         m1 = mask[:, None]
-        m2 = mask[:, None, None]
         self.alive = self.alive & ~mask
         self.ages = torch.where(mask, self.ftensor(0.0), self.ages)
         self.generations = torch.where(mask, self.idxtensor(0), self.generations)
-        self.molecules = torch.where(m1, self.ftensor(0.0), self.molecules)
         self.proteins = torch.where(mask, self.idxtensor(0), self.proteins)
+        self.molecules = torch.where(m1, self.ftensor(0.0), self.molecules)
+
+    # TODO: test in cells?
+    def reset_proteomes(self, mask: T) -> None:
+        """Set cell proteomes to empty values
+
+        Arguments:
+            mask: (c,) bool tensor of cells whose proteomes should be unset
+        """
+        m1 = mask[:, None]
+        m2 = mask[:, None, None]
         self.v_max = torch.where(m1, self.ftensor(0.0), self.v_max)
         self.k_f = torch.where(m1, self.ftensor(0.0), self.k_f)
         self.k_b = torch.where(m1, self.ftensor(0.0), self.k_b)
@@ -431,8 +432,8 @@ class Cells(TensorClass):
         torch.save(self.alive, statedir / "alive.pt")
         torch.save(self.ages, statedir / "ages.pt")
         torch.save(self.generations, statedir / "generations.pt")
-        torch.save(self.molecules, statedir / "molecules.pt")
         torch.save(self.proteins, statedir / "proteins.pt")
+        torch.save(self.molecules, statedir / "molecules.pt")
 
         l2g = {
             f"{i} {l}": g
@@ -462,8 +463,8 @@ class Cells(TensorClass):
         self.generations = torch.load(
             statedir / "generations.pt", map_location=self.device
         )
-        self.molecules = torch.load(statedir / "molecules.pt", map_location=self.device)
         self.proteins = torch.load(statedir / "proteins.pt", map_location=self.device)
+        self.molecules = torch.load(statedir / "molecules.pt", map_location=self.device)
 
         l2g = read_fasta(file=statedir / "genomes.fasta")
         self.lineages = StrArray.from_strings([d.partition(" ")[2] for d in l2g])
@@ -511,8 +512,8 @@ class Cells(TensorClass):
         self.alive = self.alive[keep]
         self.ages = self.ages[keep]
         self.generations = self.generations[keep]
-        self.molecules = self.molecules[keep]
         self.proteins = self.proteins[keep]
+        self.molecules = self.molecules[keep]
 
         # kinetics parameters
         self.v_max = self.v_max[keep]
@@ -562,8 +563,8 @@ class Cells(TensorClass):
         self.alive = self._grow_tens(self.alive, dim=0, by_n=by_n)
         self.ages = self._grow_tens(self.ages, dim=0, by_n=by_n)
         self.generations = self._grow_tens(self.generations, dim=0, by_n=by_n)
-        self.molecules = self._grow_tens(self.molecules, dim=0, by_n=by_n)
         self.proteins = self._grow_tens(self.proteins, dim=0, by_n=by_n)
+        self.molecules = self._grow_tens(self.molecules, dim=0, by_n=by_n)
 
         # kinetics parameters
         self.v_max = self._grow_tens(self.v_max, dim=0, by_n=by_n)
