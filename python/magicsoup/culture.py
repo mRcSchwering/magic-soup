@@ -218,7 +218,7 @@ class Culture(TensorClass):
                 with -1 for dropped slots (c <= N²)
         """
         flat_cell_map = self.cell_map.view(-1)  # (N²,) view
-        tmp_map = idx_map[flat_cell_map.clamp(min=0)]
+        tmp_map = idx_map[flat_cell_map.clamp(0)]
         flat_cell_map[:] = torch.where(flat_cell_map >= 0, tmp_map, flat_cell_map)
 
     def place_cells(self, idxs: T, voxels: T) -> None:
@@ -235,19 +235,20 @@ class Culture(TensorClass):
         the cell map. It also doesn't guarantee that `voxels` doesn't point to currently
         occupied voxels on the cell map.
         """
+        dump = self.idxtensor([-1])  # throwaway voxel slot
+        i_dump = self.N2  # index of throwaway voxel
         flat_cell_map = self.cell_map.view(-1)  # (N²,) view
-        n2 = self.N2
         mask = (idxs >= 0) & (voxels >= 0)
 
-        # flat map with extra -1 voxel at the end
-        padded = torch.cat([flat_cell_map, self.idxtensor([-1])])
+        # flat map with extra dump voxel at the end
+        padded = torch.cat([flat_cell_map, dump])
 
-        # map unused to slots to -1 voxel
-        place = torch.where(mask, voxels, self.idxtensor(n2))  # (c,)
+        # map unused to slots to dump voxel
+        place = torch.where(mask, voxels, i_dump)  # (c,)
 
         # place cell idxs on flat cell map
-        padded.scatter_(dim=0, index=place, src=idxs)
-        flat_cell_map[:] = padded[:n2]  # drop -1 voxel again
+        padded[place] = idxs
+        flat_cell_map[:] = padded[:i_dump]  # drop dump voxel again
 
     def migrate_cells_randomly(self, mask: T, n_rounds: int = 3) -> T:
         """
@@ -271,7 +272,8 @@ class Culture(TensorClass):
         # Everything is kept full-width (c,) so no boolean-mask gather
         # or nonzero is used and no host synchronization happens.
         c = mask.shape[0]
-        n2 = self.N2  # throwaway voxel slot for non-winners
+        dump = self.idxtensor([-1])  # throwaway voxel slot for non-winners
+        i_dump = self.N2  # index of throwaway voxel
         flat_cell_map = self.cell_map.view(-1)  # (N²,) view
         cell_coords = self.get_cell_coords()[:c]  # (c, 2) row = cell idx -> position
         old_flat = self.coords_to_voxels(cell_coords)  # (c,) current voxel
@@ -281,12 +283,12 @@ class Culture(TensorClass):
         for _ in range(n_rounds):
             tgt, win = self._choose_neighbourhood(coords=cell_coords, acting=still)
 
-            # commit winners: vacate old voxel, occupy target (losers -> n2 slot)
-            padded = torch.cat([flat_cell_map, self.idxtensor([-1])])  # (N²+1,)
-            vacate = torch.where(win, old_flat, self.idxtensor(n2))  # (c,)
-            place = torch.where(win, tgt, self.idxtensor(n2))  # (c,)
-            padded.scatter_(0, vacate, self.idxfull(c, value=-1))
-            padded.scatter_(0, place, cell_idxs)
+            # commit winners: vacate old voxel, occupy target (losers -> dump slot)
+            padded = torch.cat([flat_cell_map, dump])  # (N²+1,)
+            vacate = torch.where(win, old_flat, i_dump)  # (c,)
+            place = torch.where(win, tgt, i_dump)  # (c,)
+            padded[vacate] = -1
+            padded[place] = cell_idxs
             flat_cell_map[:] = padded[: self.N2]
 
             still &= ~win
@@ -314,8 +316,9 @@ class Culture(TensorClass):
         # one parent win each contested voxel. Reserve won voxels (so later rounds
         # see them taken), then repeat with the left-overs. Everything stays
         # full-width (c,) so no boolean-mask gather or nonzero is used.
-        n2 = self.N2
         c = mask.shape[0]
+        dump = self.idxtensor([-1])  # throwaway voxel slot for non-winners
+        i_dump = self.N2  # index of throwaway voxel
         flat_cell_map = self.cell_map.view(-1)  # (N²,) view
         cell_coords = self.get_cell_coords()[:c]  # (c, 2) row = cell idx -> position
         cell_idxs = self.idxarange(c)  # (c,)
@@ -326,10 +329,10 @@ class Culture(TensorClass):
             tgt, win = self._choose_neighbourhood(coords=cell_coords, acting=still)
 
             # reserve won voxels with the parent idx so later rounds see them taken
-            padded = torch.cat([flat_cell_map, self.idxtensor([-1])])  # (N²+1,)
-            place = torch.where(win, tgt, self.idxtensor(n2))  # (c,)
-            padded.scatter_(0, place, cell_idxs)
-            flat_cell_map[:] = padded[: self.N2]
+            padded = torch.cat([flat_cell_map, dump])  # (N²+1,)
+            place = torch.where(win, tgt, i_dump)  # (c,)
+            padded[place] = cell_idxs
+            flat_cell_map[:] = padded[:i_dump]
 
             won_voxel = torch.where(win, tgt, won_voxel)
             still &= ~win
