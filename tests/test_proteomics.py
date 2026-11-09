@@ -18,7 +18,7 @@ from magicsoup.proteomics import (
 )
 from magicsoup.rs import DomainSpec, DomainTokens, ProteinSpec
 
-from tests.util import FTYPE, ITYPE, ftensor, fzeros, itensor, izeros
+from tests.util import FTYPE, ITYPE, ftensor, fzeros, idxtensor, itensor, izeros
 
 _TOL = 1e-4
 _ATOL = 1e-4
@@ -278,6 +278,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     params = protics.get_cell_params(*proteomes_flat, c=c, p=p)
 
     # expected cell params
+    nprot = idxtensor([3, 3])  # proteins per cell
     ke_c0_0 = _ke([_ma, _md], [_mb, _mb, _mc])
     ke_c0_1 = _ke([_mb, _md], [_mc, _mb, _mc])
     ke_c0_2 = _ke([_md], [_mb, _mb])
@@ -353,6 +354,7 @@ def test_cell_params_with_catalytic_domains() -> None:
     N_eff = N * ftensor(_V_RATIOS)
 
     # test cell params
+    torch.testing.assert_close(params["proteins"], nprot, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
@@ -546,17 +548,18 @@ def test_cell_params_with_transporter_domains() -> None:
     params = protics.get_cell_params(*proteomes_flat, c=c, p=p)
 
     # expected cell params
-    _ke_a_b = _ke([_ma], [_mb])
+    nprot = idxtensor([2, 2])  # proteins per cell
+    ke_a_b = _ke([_ma], [_mb])
     k_f_exp = ftensor(
         [
             [0.5, _avg(0.5, 0.2)],
-            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) / math.sqrt(_ke_a_b)],
+            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) / math.sqrt(ke_a_b)],
         ]
     )
     k_b_exp = ftensor(
         [
             [0.5, _avg(0.5, 0.2)],
-            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) * math.sqrt(_ke_a_b)],
+            [_avg(0.4, 0.5, 0.6, 0.7), _avg(0.5, 0.5) * math.sqrt(ke_a_b)],
         ]
     )
     k_r_exp = fzeros(c, p)
@@ -596,6 +599,7 @@ def test_cell_params_with_transporter_domains() -> None:
     N_eff = N * ftensor(_V_RATIOS)
 
     # test cell params
+    torch.testing.assert_close(params["proteins"], nprot, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
@@ -775,6 +779,7 @@ def test_cell_params_with_regulatory_domains() -> None:
     params = protics.get_cell_params(*proteomes_flat, c=c, p=p)
 
     # expected cell params
+    nprot = idxtensor([2, 2])  # proteins per cell
     ke_a_b = _ke([_ma], [_mb])
     k_f_exp = ftensor(
         [
@@ -841,6 +846,7 @@ def test_cell_params_with_regulatory_domains() -> None:
     N_eff = N * ftensor(_V_RATIOS)
 
     # test cell params
+    torch.testing.assert_close(params["proteins"], nprot, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_f"], k_f_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_b"], k_b_exp, rtol=_RTOL, atol=_ATOL)
     torch.testing.assert_close(params["k_r"], k_r_exp, rtol=_RTOL, atol=_ATOL)
@@ -1008,6 +1014,7 @@ def test_random_cell_params() -> None:
         m = len(_MOLECULES) * 2
         n_cells = random.choice(range(1, 10))
         proteomes, p_max = _get_random_proteomes(n_cells)
+        nprots = idxtensor([len(d) for d in proteomes])
 
         # setup proteomics
         protics = Proteomics(chemistry=_CHEMISTRY)
@@ -1015,6 +1022,7 @@ def test_random_cell_params() -> None:
         params = protics.get_cell_params(*proteomes_flat, c=len(proteomes), p=p_max)
 
         # test
+        torch.testing.assert_close(params["proteins"], nprots)
         float_np = [params["k_f"], params["k_b"], params["k_r"], params["v_max"]]
         float_npm = [params["N_e"]]
         int_npm = [params["N_f"], params["N_b"], params["N_h"]]

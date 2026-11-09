@@ -99,6 +99,7 @@ class Cells(TensorClass):
         self.ages: T = self.fzeros(0)  # time since last division
         self.generations: T = self.idxzeros(0)  # number of divisions
         self.molecules: T = self.fzeros(0, n_molecules)  # intracellular concentrations
+        self.proteins: T = self.idxzeros(0)  # number of proteins
 
         # kinetics parameters
         self.k_f: T = self.fzeros(0, 0)  # forward reaction rates
@@ -149,7 +150,8 @@ class Cells(TensorClass):
             return 1.0
 
         n_alive = int(self.alive.sum())
-        return (n_alive * self._used_p()) / (self.c * self.p)
+        used_p = int(self.proteins.max())
+        return (n_alive * used_p) / (self.c * self.p)
 
     def update_genomes(self, genomes: A, idxs: T) -> None:
         """
@@ -168,8 +170,8 @@ class Cells(TensorClass):
         if c == 0:
             return
 
-        cell, prot, tok, p = self.genomics.encode_proteomes(genomes=genomes)
-        if p == 0:
+        cell, prot, tok, p_max = self.genomics.encode_proteomes(genomes=genomes)
+        if p_max == 0:
             return
 
         # sync host
@@ -178,9 +180,13 @@ class Cells(TensorClass):
             self.genomes.compact()
 
         params = self.proteomics.get_cell_params(
-            cells=cell, proteins=prot, tokens=tok, p=p, c=c
+            cells=cell, proteins=prot, tokens=tok, p=p_max, c=c
         )
 
+        # c-only
+        self.proteins[idxs] = params["proteins"]
+
+        # p dependency
         v_max = params["v_max"]
         k_f = params["k_f"]
         k_b = params["k_b"]
@@ -191,11 +197,11 @@ class Cells(TensorClass):
         N_h = params["N_h"]
 
         # new proteomes may have different p
-        self.update_p(p_req=p)
+        p = self.update_p(p_req=p_max)
 
-        # p have could been adjusted upwards or p was already < self.p
-        if self.p > p:
-            p_diff = self.p - p
+        # p have could been adjusted upwards or p_tmp was already < p
+        if p > p_max:
+            p_diff = p - p_max
             v_max = self._grow_tens(v_max, dim=1, by_n=p_diff)
             k_f = self._grow_tens(k_f, dim=1, by_n=p_diff)
             k_b = self._grow_tens(k_b, dim=1, by_n=p_diff)
@@ -206,12 +212,12 @@ class Cells(TensorClass):
             N_h = self._grow_tens(N_h, dim=1, by_n=p_diff)
 
         # p could have been > p_max
-        if self.p < p:
-            N_e = N_e[:, : self.p]
-            N_f = N_f[:, : self.p]
-            N_b = N_b[:, : self.p]
-            N_h = N_h[:, : self.p]
-            _log.warning("Proteome size %d has to be reduced to %d", p, self.p_max)
+        if p < p_max:
+            N_e = N_e[:, :p]
+            N_f = N_f[:, :p]
+            N_b = N_b[:, :p]
+            N_h = N_h[:, :p]
+            _log.warning("Proteome size %d has to be reduced to %d", p_tmp, self.p_max)
 
         # update kinetics parameters
         self.N_e[idxs] = N_e
@@ -304,6 +310,9 @@ class Cells(TensorClass):
             descendant[:, None], self.molecules * 0.5, self.molecules
         )
 
+        # copy protein counts
+        self.proteins = torch.where(is_child, self.proteins[src], self.proteins)
+
         # copy proteomes
         m1 = is_child[:, None]  # (c, 1)
         m2 = is_child[:, None, None]  # (c, 1, 1)
@@ -330,6 +339,7 @@ class Cells(TensorClass):
         self.ages = torch.where(mask, self.ftensor(0.0), self.ages)
         self.generations = torch.where(mask, self.idxtensor(0), self.generations)
         self.molecules = torch.where(m1, self.ftensor(0.0), self.molecules)
+        self.proteins = torch.where(mask, self.idxtensor(0), self.proteins)
         self.v_max = torch.where(m1, self.ftensor(0.0), self.v_max)
         self.k_f = torch.where(m1, self.ftensor(0.0), self.k_f)
         self.k_b = torch.where(m1, self.ftensor(0.0), self.k_b)
@@ -338,45 +348,6 @@ class Cells(TensorClass):
         self.N_b = torch.where(m2, self.itensor(0), self.N_b)
         self.N_h = torch.where(m2, self.itensor(0), self.N_h)
         self.N_e = torch.where(m2, self.ftensor(0.0), self.N_e)
-
-    def reconcile_host(self) -> np.ndarray:
-        """
-        Clear genomes and lineages of dead cells.
-        Returns:
-            alive mask as a numpy bool array.
-
-        This is defered by device operations (e.g. killing cells).
-        Forces host synchronization.
-        """
-        # forces host sync
-        alive_host = self.alive.cpu().numpy()
-        dead = ~alive_host
-        self.genomes[dead] = ""
-        self.lineages[dead] = ""
-        return alive_host
-
-    # TODO: return new c?
-    def update_c(self, c_req: int) -> None:
-        """
-        Grow the `c` dimension to fit `c_req` cells (plus hysteresis margin).
-
-        Never shrinks; use [compact()][.compact] to reclaim surplus slots.
-        """
-        if c_req <= self.c:
-            return
-        to_c = min(c_req + math.ceil(c_req * self.dim_scaling), self.c_max)
-        self._grow_c(by_n=to_c - self.c)
-
-    def update_p(self, p_req: int) -> None:
-        """
-        Grow the `p` dimension to fit `p_req` proteins (plus hysteresis margin).
-
-        Never shrinks; use [compact()][.compact] to reclaim surplus columns.
-        """
-        if p_req <= self.p:
-            return
-        to_p = min(p_req + math.ceil(p_req * self.dim_scaling), self.p_max)
-        self._grow_p(by_n=to_p - self.p)
 
     def compact(self) -> torch.Tensor:
         """
@@ -400,6 +371,46 @@ class Cells(TensorClass):
         self._compact_p()
         return new_idx
 
+    def reconcile_host(self) -> np.ndarray:
+        """
+        Clear genomes and lineages of dead cells.
+        Returns:
+            alive mask as a numpy bool array.
+
+        This is defered by device operations (e.g. killing cells).
+        Forces host synchronization.
+        """
+        # forces host sync
+        alive_host = self.alive.cpu().numpy()
+        dead = ~alive_host
+        self.genomes[dead] = ""
+        self.lineages[dead] = ""
+        return alive_host
+
+    def update_c(self, c_req: int) -> int:
+        """
+        Grow and return the `c` dimension to fit `c_req` cells (plus hysteresis margin).
+
+        Never shrinks; use [compact()][.compact] to reclaim surplus slots.
+        """
+        if c_req <= self.c:
+            return self.c
+        to_c = min(c_req + math.ceil(c_req * self.dim_scaling), self.c_max)
+        self._grow_c(by_n=to_c - self.c)
+        return self.c
+
+    def update_p(self, p_req: int) -> int:
+        """
+        Grow and return the `p` dimension to fit `p_req` proteins (plus hysteresis margin).
+
+        Never shrinks; use [compact()][.compact] to reclaim surplus columns.
+        """
+        if p_req <= self.p:
+            return self.p
+        to_p = min(p_req + math.ceil(p_req * self.dim_scaling), self.p_max)
+        self._grow_p(by_n=to_p - self.p)
+        return self.p
+
     def save_state(self, statedir: Path) -> None:
         """
         Save current state
@@ -421,6 +432,7 @@ class Cells(TensorClass):
         torch.save(self.ages, statedir / "ages.pt")
         torch.save(self.generations, statedir / "generations.pt")
         torch.save(self.molecules, statedir / "molecules.pt")
+        torch.save(self.proteins, statedir / "proteins.pt")
 
         l2g = {
             f"{i} {l}": g
@@ -451,6 +463,7 @@ class Cells(TensorClass):
             statedir / "generations.pt", map_location=self.device
         )
         self.molecules = torch.load(statedir / "molecules.pt", map_location=self.device)
+        self.proteins = torch.load(statedir / "proteins.pt", map_location=self.device)
 
         l2g = read_fasta(file=statedir / "genomes.fasta")
         self.lineages = StrArray.from_strings([d.partition(" ")[2] for d in l2g])
@@ -472,9 +485,9 @@ class Cells(TensorClass):
         self.update_genomes(genomes=self.genomes[cpu_idxs], idxs=idxs)
 
     def _compact_c(self) -> torch.Tensor:
+        # forces host sync
         # keep all living cells plus a hysteresis margin of free slots
         # returns new cell_idxs
-        # forces host sync
         keep = self.alive.clone()
 
         # sync with host
@@ -499,6 +512,7 @@ class Cells(TensorClass):
         self.ages = self.ages[keep]
         self.generations = self.generations[keep]
         self.molecules = self.molecules[keep]
+        self.proteins = self.proteins[keep]
 
         # kinetics parameters
         self.v_max = self.v_max[keep]
@@ -522,7 +536,7 @@ class Cells(TensorClass):
         if self.p == 0:
             return
 
-        p_used = self._used_p()
+        p_used = int(self.proteins.max())
         to_p = min(p_used + math.ceil(p_used * self.dim_scaling), self.p)
         if to_p < self.p:
             # shrink p
@@ -541,17 +555,6 @@ class Cells(TensorClass):
             # set new p
             self.p = self.v_max.shape[1]
 
-    def _used_p(self) -> int:
-        # largest proteome size currently in use (host sync)
-        # a protein column is in use if any cell has non-zero params there;
-        # every protein has v_max > 0 (catalytic/transporter) or k_r > 0 (regulatory)
-        if self.p == 0:
-            return 0
-        used = (self.v_max != 0).any(dim=0) | (self.k_r != 0).any(dim=0)  # (p,)
-        cols = self.idxarange(self.p)
-        highest = torch.where(used, cols, self.idxtensor(-1)).max()
-        return int(highest) + 1  # sync with host
-
     def _grow_c(self, by_n: int) -> None:
         # cell paramaters
         self.genomes = self._grow_arr(self.genomes, by_n=by_n)
@@ -560,6 +563,7 @@ class Cells(TensorClass):
         self.ages = self._grow_tens(self.ages, dim=0, by_n=by_n)
         self.generations = self._grow_tens(self.generations, dim=0, by_n=by_n)
         self.molecules = self._grow_tens(self.molecules, dim=0, by_n=by_n)
+        self.proteins = self._grow_tens(self.proteins, dim=0, by_n=by_n)
 
         # kinetics parameters
         self.v_max = self._grow_tens(self.v_max, dim=0, by_n=by_n)
@@ -597,8 +601,3 @@ class Cells(TensorClass):
     def _grow_arr(self, o: A, by_n: int) -> A:
         empty_arr = StrArray.empty(by_n)
         return StrArray.concat([o, empty_arr])
-
-
-# TODO: add n_proteins or similar as tensor
-#       to easily get the number fo proteins of each cell
-#       required to charge for protein expression

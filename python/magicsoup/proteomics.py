@@ -436,6 +436,7 @@ class Proteomics(TensorClass):
                 "k_b": self.fzeros(c, p),
                 "k_r": self.fzeros(c, p),
                 "v_max": self.fzeros(c, p),
+                "proteins": self.idxzeros(c),
             }
 
         # tokens:
@@ -451,6 +452,9 @@ class Proteomics(TensorClass):
         idx_flat = cell * p + prot  # in (d,) for flat (c, p)
         src_hill = self.hill_map.token_scalar[tok[:, 1]].unsqueeze(-1)  # (d,0)
         src_sign = self.sign_map.token_scalar[tok[:, 3]].unsqueeze(-1)  # (d,0)
+
+        # derive proteins per cell
+        protcount = torch.bincount(idx_flat.unique() // p, minlength=c)
 
         # aggregate domains by mean (subsample to keep uninvolved out)
 
@@ -518,6 +522,7 @@ class Proteomics(TensorClass):
             "k_b": k_b,
             "k_r": k_r,
             "v_max": v_max,
+            "proteins": protcount.to(self.idxtype),
         }
 
     def derive_stoichiometry(

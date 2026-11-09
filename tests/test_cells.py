@@ -13,6 +13,8 @@ from magicsoup.proteomics import Proteomics
 from tests.config import FTYPE, IDXTYPE, ITYPE
 from tests.util import idxfull, idxtensor
 
+# TODO: add protein counts to tests
+
 
 @pytest.fixture
 def cells() -> Cells:
@@ -100,10 +102,39 @@ def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
     cells.dim_scaling = 0.2
     cells.c_max = 1000
     cells.update_c(c_req=83)  # leaves exactly c=100
-    cells.update_c(c_req=c_req)
+    c = cells.update_c(c_req=c_req)
 
     # check c (update_c only grows)
     assert cells.c == c_exp
+    assert c == cells.c
+    _assert_shapes(cells)
+    _assert_empty_values(cells=cells)
+
+
+@pytest.mark.parametrize(
+    "p_req, p_exp",
+    [
+        (100, 100),  # stays at 100
+        (101, 122),  # grows including margin (20% of 101)
+        (800, 960),  # grows including margin (20% of 800)
+        (900, 1000),  # grow limited to 1000 (max)
+        (1000, 1000),  # stays at 1000 (max)
+        (83, 100),  # no shrink: stays at 100
+        (82, 100),  # no shrink: stays at 100
+        (40, 100),  # no shrink: stays at 100
+        (1, 100),  # no shrink: stays at 100
+        (0, 100),  # no shrink: stays at 100
+    ],
+)
+def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
+    cells.dim_scaling = 0.2
+    cells.p_max = 1000
+    cells.update_p(p_req=83)  # leaves exactly p=100
+    p = cells.update_p(p_req=p_req)
+
+    # check p (update_p only grows)
+    assert cells.p == p_exp
+    assert cells.p == p
     _assert_shapes(cells)
     _assert_empty_values(cells=cells)
 
@@ -167,33 +198,6 @@ def test_get_utilization(cells: Cells) -> None:
     # compacting reclaims the slack and restores utilization
     cells.compact()
     assert cells.get_utilization() > u_sparse
-
-
-@pytest.mark.parametrize(
-    "p_req, p_exp",
-    [
-        (100, 100),  # stays at 100
-        (101, 122),  # grows including margin (20% of 101)
-        (800, 960),  # grows including margin (20% of 800)
-        (900, 1000),  # grow limited to 1000 (max)
-        (1000, 1000),  # stays at 1000 (max)
-        (83, 100),  # no shrink: stays at 100
-        (82, 100),  # no shrink: stays at 100
-        (40, 100),  # no shrink: stays at 100
-        (1, 100),  # no shrink: stays at 100
-        (0, 100),  # no shrink: stays at 100
-    ],
-)
-def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
-    cells.dim_scaling = 0.2
-    cells.p_max = 1000
-    cells.update_p(p_req=83)  # leaves exactly c=100
-    cells.update_p(p_req=p_req)
-
-    # check p (update_p only grows)
-    assert cells.p == p_exp
-    _assert_shapes(cells)
-    _assert_empty_values(cells=cells)
 
 
 def test_update_empty_genome(cells: Cells) -> None:

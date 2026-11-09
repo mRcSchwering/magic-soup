@@ -196,14 +196,14 @@ class World(TensorClass):
 
         # adjust c if necessary (sync with host)
         n_cells = self.cells.get_n_cells()
-        self.cells.update_c(c_req=n_cells + n_new_cells)
+        c = self.cells.update_c(c_req=n_cells + n_new_cells)
 
         # get random target voxels
         mask = self.cells.get_free_mask(n=n_new_cells)  # (c,)
         voxels = self.culture.get_random_free_voxels(mask=mask)  # (c,)
 
         # place the selected cells on their target voxels
-        cell_idxs = self.idxarange(self.cells.c)  # (c,)
+        cell_idxs = self.idxarange(c)  # (c,)
         self.culture.place_cells(idxs=cell_idxs, voxels=voxels)
 
         # cell is picking up the molecules of the pxl it is born on
@@ -264,14 +264,14 @@ class World(TensorClass):
 
         # adjust c if necessary (sync with host)
         n_cells = self.cells.get_n_cells()
-        self.cells.update_c(c_req=n_cells + n_new_cells)
+        c = self.cells.update_c(c_req=n_cells + n_new_cells)
 
         # get random target voxels
         mask = self.cells.get_free_mask(n=n_new_cells)  # (c,)
         voxels = self.culture.get_random_free_voxels(mask=mask)
 
         # place the selected cells on their target voxels
-        cell_idxs = self.idxarange(self.cells.c)  # (c,)
+        cell_idxs = self.idxarange(c)  # (c,)
         self.culture.place_cells(idxs=cell_idxs, voxels=voxels)
 
         # update parameters from genomes (sync with host)
@@ -359,8 +359,7 @@ class World(TensorClass):
 
         # grow c to fit the new children (the one host sync)
         c_req = int(cells.alive.sum() + success.sum())  # sync with host
-        cells.update_c(c_req=c_req)
-        c = cells.c
+        c = cells.update_c(c_req=c_req)
 
         # pad to the (possibly grown) c; appended slots are not parents
         success = self._pad_to_c(success, c, False)
