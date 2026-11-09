@@ -13,8 +13,6 @@ from magicsoup.proteomics import Proteomics
 from tests.config import FTYPE, IDXTYPE, ITYPE
 from tests.util import idxfull, idxtensor
 
-# TODO: add protein counts to tests
-
 
 @pytest.fixture
 def cells() -> Cells:
@@ -30,6 +28,7 @@ def _assert_empty_values(cells: Cells) -> None:
     assert (cells.alive == False).all()
     assert (cells.ages == 0.0).all()
     assert (cells.generations == 0).all()
+    assert (cells.proteins == 0).all()
     assert (cells.molecules == 0.0).all()
 
     # test empty value of kinetics parameters
@@ -50,6 +49,7 @@ def _assert_shapes(cells: Cells) -> None:
     assert cells.alive.shape == (cells.c,)
     assert cells.ages.shape == (cells.c,)
     assert cells.generations.shape == (cells.c,)
+    assert cells.proteins.shape == (cells.c,)
     assert cells.molecules.shape == (cells.c, len(cells.chemistry.molecules))
 
     # check exact shape of kinetics parameters
@@ -70,6 +70,7 @@ def _asser_dtypes(cells: Cells) -> None:
     assert cells.alive.dtype == torch.bool
     assert cells.ages.dtype == FTYPE
     assert cells.generations.dtype == IDXTYPE
+    assert cells.proteins.dtype == IDXTYPE
     assert cells.molecules.dtype == FTYPE
 
     # check exact shape of kinetics parameters
@@ -148,6 +149,7 @@ def test_compact_keeps_living_cells(cells: Cells) -> None:
     idxs = list(range(0, 100, 2))
     cells.alive[idxs] = True
     assert cells.alive.sum() == 50
+    alive_old = cells.alive.clone()
 
     new_idx = cells.compact()
 
@@ -160,8 +162,6 @@ def test_compact_keeps_living_cells(cells: Cells) -> None:
     assert (new_idx == -1).sum() == 40
 
     # living cells get distinct, valid new indices that point to living slots
-    alive_old = torch.zeros(100, dtype=torch.bool, device=new_idx.device)
-    alive_old[idxs] = True
     living_new = new_idx[alive_old]
     assert (living_new >= 0).all()
     assert living_new.unique().numel() == 50
@@ -237,12 +237,17 @@ def test_update_genomes_randomly(cells: Cells) -> None:
             per_cell = (tens[idxs] != 0).sum(tuple(range(1, tens.ndim)))
             assert (per_cell > 0).sum() / n > 0.8  # a few empty proteomes possible
 
+        # check protein counts
+        prot_exp = ((cells.v_max != 0.0) | (cells.k_r != 0)).sum(dim=1).to(IDXTYPE)
+        torch.testing.assert_close(cells.proteins, prot_exp)
+
     assert cells.p > p_init
 
 
 @pytest.mark.slow
 def atest_copy_proteomes_randomly(cells: Cells) -> None:
     # TODO: test for update_descendants instead
+    # TODO: also test that proteins was copied
 
     c = 100
     cells.update_c(c_req=c)
@@ -288,6 +293,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     alive = cells.alive.clone()
     ages = cells.ages.clone()
     generations = cells.generations.clone()
+    proteins = cells.proteins.clone()
     molecules = cells.molecules.clone()
 
     v_max = cells.v_max.clone()
@@ -316,6 +322,7 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     assert (cells.alive == alive).all()
     assert (cells.ages == ages).all()
     assert (cells.generations == generations).all()
+    assert (cells.proteins == proteins).all()
     assert (cells.molecules == molecules).all()
 
     # check kinetics parameters
