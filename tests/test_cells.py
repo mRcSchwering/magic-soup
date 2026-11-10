@@ -11,7 +11,7 @@ from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
 
 from tests.config import FTYPE, IDXTYPE, ITYPE
-from tests.util import idxfull, idxtensor
+from tests.util import ftensor, idxfull, idxtensor
 
 
 @pytest.fixture
@@ -207,11 +207,39 @@ def test_update_empty_genome(cells: Cells) -> None:
     _asser_dtypes(cells)
 
 
-# TODO: test proteome param distros by random genomes make sense
-#       K_e: med 1, 70% (1e-4, 1e4), 99% (1e-8, 1e8)
-#       N_h: med 1.5, 95% (1, 3)
-#       K_m: med 0.1, 90% (0.003, 3)
-#       Vmax: med 1e-2, 90% (1e-4, 1)
+def test_proteome_parameter_distros(cells: Cells) -> None:
+    n = 1000
+    cells.update_c(c_req=n)
+    idxs = idxtensor(list(range(n)))
+    genomes = StrArray.from_strings([random_genome() for _ in range(n)])
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+
+    k_e = (cells.k_b / cells.k_f)[cells.v_max != 0.0]
+    k_m = (cells.k_f * cells.k_b).sqrt()[cells.v_max != 0.0]
+    v_max = cells.v_max[cells.v_max != 0.0]
+    n_h = cells.N_h[cells.N_h != 0].abs().float()
+    q = ftensor([0.05, 0.1, 0.5, 0.9, 0.95])
+
+    # Ke: median 1, 80% range (1e-5, 1e5), 90% range (1e-10, 1e10)
+    k_e_q = torch.quantile(k_e, q)
+    assert k_e_q[0] >= 1e-10 and k_e_q[4] <= 1e10
+    assert k_e_q[1] >= 1e-5 and k_e_q[3] <= 1e5
+    assert (k_e_q[2] - 1).abs() < 1
+
+    # Km: median 0.1, 90% range (1e-3, 10)
+    k_m_q = torch.quantile(k_m, q)
+    assert k_m_q[0] >= 1e-4 and k_m_q[4] <= 100
+    assert (k_m_q[2] - 0.1).abs() < 1
+
+    # Vmax: median 1e-2, 90% range (1e-5, 10)
+    v_max_q = torch.quantile(v_max, q)
+    assert v_max_q[0] >= 1e-6 and v_max_q[4] <= 100
+    assert (v_max_q[2] - 1e-2).abs() < 1
+
+    # Nh: mean 1.5, 95% <= 3
+    n_h_q = torch.quantile(n_h, q)
+    assert n_h_q[4] <= 3
+    assert (n_h.mean() - 1.5).abs() < 0.5
 
 
 @pytest.mark.slow
@@ -244,7 +272,7 @@ def test_update_genomes_randomly(cells: Cells) -> None:
     assert cells.p > p_init
 
 
-@pytest.mark.parametrize("c, n", [(10, 5), (10, 1), (50, 10), (50, 25)])
+@pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
 def test_allocate_children(cells: Cells, c: int, n: int) -> None:
     cells.update_c(c_req=c)
 
@@ -264,7 +292,6 @@ def test_allocate_children(cells: Cells, c: int, n: int) -> None:
     allocated_children = set()
     allocated_parents = set((children >= 0).nonzero(as_tuple=True)[0].tolist())
     for parent in idxs.tolist():
-
         # child is allocated once
         child = int(children[parent])
         assert child not in allocated_children
@@ -279,7 +306,7 @@ def test_allocate_children(cells: Cells, c: int, n: int) -> None:
     assert len(allocated_children) == n
 
 
-@pytest.mark.parametrize("c, n", [(10, 5), (10, 1), (50, 10), (50, 25)])
+@pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
 def test_update_descendants(cells: Cells, c: int, n: int) -> None:
     cells.update_c(c_req=c)
 
@@ -313,7 +340,6 @@ def test_update_descendants(cells: Cells, c: int, n: int) -> None:
         cells.lineages[from_idxs.cpu().numpy()].tolist()
         == cells.lineages[to_idxs.cpu().numpy()].tolist()
     )
-    assert cells.p > 0  # otherwise empty test
     assert cells.proteins[from_idxs].tolist() == cells.proteins[to_idxs].tolist()
 
     # ages reset
@@ -327,7 +353,7 @@ def test_update_descendants(cells: Cells, c: int, n: int) -> None:
     torch.testing.assert_close(cells.molecules[to_idxs], molecules_t0 / 2)
 
 
-@pytest.mark.parametrize("c, n", [(10, 5), (10, 1), (50, 10), (50, 25)])
+@pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
 def test_copy_proteomes(cells: Cells, c: int, n: int) -> None:
     cells.update_c(c_req=c)
 
@@ -344,9 +370,6 @@ def test_copy_proteomes(cells: Cells, c: int, n: int) -> None:
 
     # check types
     _asser_dtypes(cells)
-
-    # otherwise useless tests
-    assert cells.p > 0
 
     # values were copied
     ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]

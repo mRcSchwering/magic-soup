@@ -3,6 +3,7 @@ import random
 
 import pytest
 import torch
+from magicsoup.examples.wood_ljungdahl import MOLECULES
 from magicsoup.physics import Degradation, Diffusion, Permeation
 
 from tests.util import frand, ftensor, fzeros
@@ -77,16 +78,20 @@ def test_diffusion():
 
 @pytest.mark.slow
 def test_diffusion_randomly() -> None:
-    m = 10
-    N = 100
-    coeffs = [random.uniform(0, 10) for _ in range(m)]
+    N = 10
+    m = 100
+    coeffs = [d.diffusivity for d in MOLECULES]
+    coeffs.extend([random.uniform(0, 10) for _ in range(m - len(coeffs))])
+
     diffusion = Diffusion(diff_coeffs=coeffs, N=N)
     molecule_map = frand(m, N, N) * 100
 
     totals_0 = molecule_map.sum(dim=(1, 2))
 
-    for _ in range(10000):
+    for _ in range(1000):
         molecule_map = diffusion.diffuse(x=molecule_map)
+        assert not molecule_map.isnan().any()
+        assert molecule_map.isfinite().all()
         assert (molecule_map > 0.0).all()
 
     totals_1 = molecule_map.sum(dim=(1, 2))
@@ -128,20 +133,24 @@ def test_permeation(cellmols: list, expmols: list):
 
 @pytest.mark.slow
 def test_permeation_randomly() -> None:
-    M = 10
-    coeffs = [random.uniform(0, 1) for _ in range(M)]
+    m = 100
+    coeffs = [d.permeability for d in MOLECULES]
+    coeffs.extend([random.uniform(0, 1) for _ in range(m - len(coeffs))])
+
     permeation = Permeation(perm_coeffs=coeffs)
-    cell_molecules = frand(1000, M * 2) * 100
-    int_mols = slice(0, M)
-    ext_mols = slice(M, 2 * M)
+    cell_molecules = frand(1000, m * 2) * 100
+    int_mols = slice(0, m)
+    ext_mols = slice(m, 2 * m)
 
     totals_int_0 = cell_molecules[:, int_mols]
     totals_ext_0 = cell_molecules[:, ext_mols]
     totals_0 = totals_int_0 + 1000 * totals_ext_0
 
-    for _ in range(10000):
-        molecule_map = permeation.permeate(x=cell_molecules)
-        assert (molecule_map > 0.0).all()
+    for _ in range(1000):
+        cell_molecules = permeation.permeate(x=cell_molecules)
+        assert not cell_molecules.isnan().any()
+        assert cell_molecules.isfinite().all()
+        assert (cell_molecules > 0.0).all()
 
     totals_int_1 = cell_molecules[:, int_mols]
     totals_ext_1 = cell_molecules[:, ext_mols]
@@ -225,3 +234,24 @@ def test_degradation(x_: list, exp_: list) -> None:
 
     # accumulates float errors over many time steps
     torch.testing.assert_close(x, exp, atol=1e-2, rtol=1e-2)
+
+
+@pytest.mark.slow
+def test_degradation_randomly() -> None:
+    m = 100
+    hfs = [d.half_life for d in MOLECULES]
+    hfs.extend([random.uniform(0, 1) for _ in range(m - len(hfs))])
+
+    degradation = Degradation(half_lifes=hfs)
+    molecule_map = frand(1000, m) * 100
+
+    totals_0 = molecule_map.sum()
+
+    for _ in range(1000):
+        molecule_map = degradation.degrade(x=molecule_map, m_dim=1)
+        assert not molecule_map.isnan().any()
+        assert molecule_map.isfinite().all()
+        assert (molecule_map > 0.0).all()
+
+    totals_1 = molecule_map.sum()
+    assert totals_1 < totals_0

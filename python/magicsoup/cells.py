@@ -153,7 +153,6 @@ class Cells(TensorClass):
         used_p = int(self.proteins.max())
         return (n_alive * used_p) / (self.c * self.p)
 
-    # TODO: convert to mask? (check whether rust can provide mask)
     def update_genomes(self, genomes: A, idxs: T) -> None:
         """
         Update cell genomes and their proteomes
@@ -318,7 +317,6 @@ class Cells(TensorClass):
         self.k_b = torch.where(m1, self.k_b[src], self.k_b)
         self.k_r = torch.where(m1, self.k_r[src], self.k_r)
 
-    # TODO: test in cells?
     def reset_cells(self, mask: T) -> None:
         """Set cell parameters to empty values
 
@@ -332,7 +330,6 @@ class Cells(TensorClass):
         self.proteins = torch.where(mask, self.idxtensor(0), self.proteins)
         self.molecules = torch.where(m1, self.ftensor(0.0), self.molecules)
 
-    # TODO: test in cells?
     def reset_proteomes(self, mask: T) -> None:
         """Set cell proteomes to empty values
 
@@ -437,9 +434,7 @@ class Cells(TensorClass):
 
         l2g = {
             f"{i} {l}": g
-            for i, (l, g) in enumerate(
-                zip(self.lineages.tolist(), self.genomes.tolist())
-            )
+            for i, (l, g) in enumerate(zip(self.lineages.tolist(), self.genomes.tolist()))
         }
         write_fasta(file=statedir / "genomes.fasta", name_2_seq=l2g)
 
@@ -460,9 +455,7 @@ class Cells(TensorClass):
 
         self.alive = torch.load(statedir / "alive.pt", map_location=self.device)
         self.ages = torch.load(statedir / "ages.pt", map_location=self.device)
-        self.generations = torch.load(
-            statedir / "generations.pt", map_location=self.device
-        )
+        self.generations = torch.load(statedir / "generations.pt", map_location=self.device)
         self.proteins = torch.load(statedir / "proteins.pt", map_location=self.device)
         self.molecules = torch.load(statedir / "molecules.pt", map_location=self.device)
 
@@ -502,9 +495,7 @@ class Cells(TensorClass):
         cpu_keep = keep.cpu().numpy()
 
         # old -> new index map (-1 for dropped slots); length is the old c
-        new_idx = torch.where(
-            keep, keep.cumsum(0).to(self.idxtype) - 1, self.idxtensor(-1)
-        )
+        new_idx = torch.where(keep, keep.cumsum(0).to(self.idxtype) - 1, self.idxtensor(-1))
 
         # cell parameters
         self.genomes = self.genomes[cpu_keep]

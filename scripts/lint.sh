@@ -8,3 +8,4 @@ uv run --no-sync mypy python
 uv run --no-sync mypy tests
 uv run --no-sync ruff check --fix
 uv run pylint python
+uv run ruff format python/

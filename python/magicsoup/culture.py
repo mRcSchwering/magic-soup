@@ -230,17 +230,8 @@ class Culture(TensorClass):
 
         This method doesn't guarantee that a cell or voxel will be in use twice.
         """
-        c = voxels.shape[0]
-        n2 = self.N2
-        mask = voxels >= 0
         flat_cell_map = self.cell_map.view(-1)  # (N²,) view
-
-        ar = self.idxarange(c)
-        tmp = self.idxempty(n2 + 1)
-        tmp[:n2].copy_(flat_cell_map)
-        tmp.scatter_(0, torch.where(mask, voxels, n2), ar)
-
-        flat_cell_map.copy_(tmp[:n2])
+        flat_cell_map[:] = self.idxmap_scatter(tgt=flat_cell_map, src=voxels)
 
     def migrate_cells_randomly(self, mask: T, n_rounds: int = 3) -> T:
         """
@@ -365,12 +356,8 @@ class Culture(TensorClass):
             statedir: Directory that contains all files of that state
         """
         statedir = statedir / type(self).__name__
-        self.cell_map[:] = torch.load(
-            statedir / "cell_map.pt", map_location=self.device
-        )
-        self.molecule_map[:] = torch.load(
-            statedir / "molecule_map.pt", map_location=self.device
-        )
+        self.cell_map[:] = torch.load(statedir / "cell_map.pt", map_location=self.device)
+        self.molecule_map[:] = torch.load(statedir / "molecule_map.pt", map_location=self.device)
 
     def _choose_neighbourhood(self, coords: T, acting: T) -> tuple[T, T]:
         # coords: (c, 2) current row-col position of each cell slot

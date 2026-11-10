@@ -262,9 +262,7 @@ def test_add_cells(caplog, world: World, n_add: int, exp_n_add: int) -> None:
     assert all(len(d) > 0 for d in t1.cell_arrays["lineages"][new_idx.cpu().numpy()])
 
     # molecule map is as before
-    assert torch.equal(
-        t0.culture_tensors["molecule_map"], t1.culture_tensors["molecule_map"]
-    )
+    assert torch.equal(t0.culture_tensors["molecule_map"], t1.culture_tensors["molecule_map"])
 
     # molecules were carried over
     assert (world.cells.molecules[new_idx] == cell.molecules).all()
@@ -730,13 +728,14 @@ def test_advance_time(world: World, n_spawn: int) -> None:
     # ages incremented, molecules changed
     assert (t1.cell_tensors["ages"] == 2.0).all()
     assert not torch.equal(t0.cell_tensors["molecules"], t1.cell_tensors["molecules"])
-    assert not torch.equal(
-        t0.culture_tensors["molecule_map"], t1.culture_tensors["molecule_map"]
-    )
+    assert not torch.equal(t0.culture_tensors["molecule_map"], t1.culture_tensors["molecule_map"])
 
 
 def test_zero_protein_cell(world: World) -> None:
     world = _spawn_cells(world, n=1, g=0)
+
+    # remove molecule degradation to not hide energy laws
+    world.degradation.decay[:] = 1.0
 
     t0 = _State.from_world(world)
 

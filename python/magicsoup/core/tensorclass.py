@@ -25,15 +25,41 @@ class TensorClass:
         self.itype = ITYPE
         self.ftype = FTYPE
         self.idxtype = IDXTYPE
+        self.limits = (-1e38, 1e38)
 
-    def remap_gather(self, t: T, idx_map: T, na: int = -1) -> T:
-        """With index(i) -> j convert values from values(i) to values(j)"""
-        out = t.index_select(0, idx_map.clamp(0))
-        out.masked_fill_(idx_map < 0, na)
+    def idxmap_scatter(self, src: T, tgt: T) -> T:
+        """Scatter 1D elements from src to tgt so that tgt[src[i]] = i
+
+        Index of src becomes value in tgt at index of value of src.
+        Elements < 0 are considered empty and are not copied.
+        All tensors must be of index type and tgt.shape[0] >= src.shape[0].
+        """
+        c = src.shape[0]
+        n = tgt.shape[0]
+        idx = self.idxarange(c)
+        out = self.idxempty(n + 1)
+        out[:n].copy_(tgt)
+        out.scatter_(0, torch.where(src >= 0, src, n), idx)
+        return out[:n]
+
+    def remap_gather(self, tgt: T, src: T, na: int = -1) -> T:
+        """Gather 1D elements from tgt using src so that tgt[src[i]] = tgt[i]
+
+        Converts tgt[i] -> tgt[j] using src[i] -> j.
+        Elements < 0 are considered empty and are filled with na.
+        src must be of index type and tgt.shape[0] >= src.shape[0].
+        """
+        out = tgt.index_select(0, src.clamp(0))
+        out.masked_fill_(src < 0, na)
         return out
 
-    def invert_idx_map(self, t: T, na: int = -1) -> T:
-        """Convert index(i) -> j to index(j) -> i"""
+    def invert_idxmap(self, t: T, na: int = -1) -> T:
+        """Invert 1D elements of t so that t[t[i]] = i
+
+        Converts index map t[i] -> j to t[j] -> i.
+        Elements < 0 are considered empty and are filled with na.
+        t must be of index type.
+        """
         c = t.shape[0]
         buf = self.idxfull(c + 1, value=na)
         idx = torch.where(t >= 0, t, c)  # c -> na

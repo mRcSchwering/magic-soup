@@ -62,7 +62,6 @@ class _CPU_Unpickler(pickle.Unpickler):
 
 
 class World(TensorClass):
-
     def __init__(
         self,
         chemistry: Chemistry,
@@ -197,9 +196,7 @@ class World(TensorClass):
             return self.idxtensor([])
 
         if n_avail_pos < n_new_cells:
-            _log.warning(
-                "Only %d free positions to spawn %d cells", n_avail_pos, n_new_cells
-            )
+            _log.warning("Only %d free positions to spawn %d cells", n_avail_pos, n_new_cells)
             n_new_cells = n_avail_pos
             random.shuffle(genomes)
             genomes = genomes[:n_new_cells]
@@ -222,16 +219,10 @@ class World(TensorClass):
         cols = coords[:, 1]
         f = self.v_voxel / (self.v_voxel + self.v_cell)
         pickup = self.culture.molecule_map[:, rows, cols]
-        self.cells.molecules = torch.where(
-            mask[:, None], pickup.T * f, self.cells.molecules
-        )
+        self.cells.molecules = torch.where(mask[:, None], pickup.T * f, self.cells.molecules)
         self.culture.molecule_map[:, rows, cols] = pickup * f
 
-        new_idxs = (
-            mask.nonzero_static(size=n_new_cells, fill_value=-1)
-            .to(self.idxtype)
-            .flatten()
-        )
+        new_idxs = mask.nonzero_static(size=n_new_cells, fill_value=-1).to(self.idxtype).flatten()
 
         # update genomes and proteomes
         self.cells.update_genomes(genomes=StrArray.from_strings(genomes), idxs=new_idxs)
@@ -240,9 +231,7 @@ class World(TensorClass):
         self.cells.alive[new_idxs] = True
         self.cells.ages[new_idxs] = 0.0
         self.cells.generations[new_idxs] = 0
-        self.cells.lineages[new_idxs.cpu().numpy()] = [
-            randstr(n=12) for _ in range(n_new_cells)
-        ]
+        self.cells.lineages[new_idxs.cpu().numpy()] = [randstr(n=12) for _ in range(n_new_cells)]
 
         return new_idxs
 
@@ -263,9 +252,7 @@ class World(TensorClass):
             return self.idxtensor([])
 
         if n_avail_pos < n_new_cells:
-            _log.warning(
-                "Only %d free voxels to add %d cells", n_avail_pos, n_new_cells
-            )
+            _log.warning("Only %d free voxels to add %d cells", n_avail_pos, n_new_cells)
             n_new_cells = n_avail_pos
             random.shuffle(cells)
             cells = cells[:n_new_cells]
@@ -281,11 +268,7 @@ class World(TensorClass):
         # place the selected cells on their target voxels
         self.culture.place_cells(voxels=voxels)
 
-        new_idxs = (
-            mask.nonzero_static(size=n_new_cells, fill_value=-1)
-            .to(self.idxtype)
-            .flatten()
-        )
+        new_idxs = mask.nonzero_static(size=n_new_cells, fill_value=-1).to(self.idxtype).flatten()
 
         # update parameters from genomes (sync with host)
         genomes = StrArray.from_strings([d.genome for d in cells])
@@ -378,18 +361,14 @@ class World(TensorClass):
 
         # allocate a free child slot per successful parent
         child_of = cells.allocate_children(divided=success)
-        parent_of = self.invert_idx_map(child_of)
+        parent_of = self.invert_idxmap(child_of)
 
         # copy parent params to their children (sync with host)
         cells.update_descendants(parent_of=parent_of)
         cells.copy_proteomes(idx_map=parent_of)
 
-        # remap gather:
-        # won_voxel: index(won_voxel) = divided parent
-        # convert: index(voxel) = child
-        voxels = self.remap_gather(won_voxel, idx_map=parent_of)
-
         # replace reservations with the real child ids
+        voxels = self.remap_gather(tgt=won_voxel, src=parent_of)
         self.culture.place_cells(voxels=voxels)
 
         return parent_of
@@ -519,16 +498,27 @@ class World(TensorClass):
         # age cells
         self.cells.ages += self.time_step
 
-    # TODO: add optional utilization check
-    def compact(self) -> None:
-        """
-        Reclaim surplus cell slots and protein columns (with hysteresis).
+    def compact(self, util_lt: float | None = None) -> None:
+        """Reclaim surplus cell slots and protein columns
 
-        Shrinks the `c` and `p` dimensions of all cell tensors to the current
-        occupancy, reindexes cells, and remaps the cell map so that cells keep
-        their positions. Synchronizes with the host; call periodically
-        (e.g. after subsampling), not inside the hot step.
+        Arguments:
+            util_lt: If defined, get current utilization (host synchronization)
+                and only compact if current utilization is less than `util_lt`.
+
+        Reconciles device with host and re-shapes tensors on device to cover
+        current number of cells (`c` dimension) and maximum number of proteins (`p` dimension)
+        more effectively. Call it periodically (e.g. after subsampling), not inside a hot step.
+
+        With default scaling dimension (`dim_scaling` in `Cells`) the hysteresis during normal
+        growth conditions creates a maximum utilization of about 70%. So, if `util_lt` is used
+        it should be considerably lower (e.g. 50%) to avoid frequent re-shaping.
         """
+        if util_lt is not None:
+            # forces host sync
+            util = self.cells.get_utilization()
+            if util >= util_lt:
+                return
+
         # forces host sync
         self.cells.reconcile_host()
         old_to_new = self.cells.compact()

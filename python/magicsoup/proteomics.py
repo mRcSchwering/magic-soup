@@ -22,10 +22,9 @@ from magicsoup.genomics import DomainType
 
 
 class _LogNormMap(TensorClass):
-    """
-    Get a map that maps tokens to floats
-    which is sampled from a log normal distribution.
-    """
+    """Get a map that maps tokens to floats.
+
+    Floats are sampled from a log normal distribution."""
 
     def __init__(
         self,
@@ -53,9 +52,9 @@ class _LogNormMap(TensorClass):
 
 
 class _MirrGeoMap(TensorClass):
-    """
-    Get a map that maps tokens to ints
-    which are sampled from a geometric distribution with p=1/2, p0=0 mirrored around 0.
+    """Get a map that maps tokens to integers.
+
+    Integers are sampled from a geometric distribution with p=1/2, p0=0 mirrored around 0.
     """
 
     def __init__(
@@ -86,8 +85,8 @@ class _MirrGeoMap(TensorClass):
 
 
 class _ReactionMap(TensorClass):
-    """
-    Get a map that maps tokens to a list of vectors.
+    """Get a map that maps tokens to a list of vectors.
+
     Each vector will be mapped with the same frequency.
     Each vector has number of molecules length and represents the
     stoichiometry of a reaction.
@@ -144,8 +143,8 @@ class _ReactionMap(TensorClass):
 
 
 class _TransporterMap(TensorClass):
-    """
-    Get a map that maps tokens to a list of vectors.
+    """Get a map that maps tokens to a list of vectors.
+
     Each vector has number of molecules length and represents the
     stoichiometry of a molecule transport into or out of the cell.
     """
@@ -186,8 +185,8 @@ class _TransporterMap(TensorClass):
 
 
 class _EffectorMap(TensorClass):
-    """
-    Get a map that maps tokens to a list of vectors.
+    """Get a map that maps tokens to a list of vectors.
+
     Each vector has number of molecules length and represents the
     either activating (+1) or inhibiting (-1) effect
     of an effector molecule.
@@ -238,8 +237,7 @@ class ProteomicsKwargs(TypedDict, total=False):
 
 
 class Proteomics(TensorClass):
-    """
-    Manage parameters that make up proteomes of all cells
+    """Manage parameters that make up proteomes of all cells
 
     Arguments:
         chemistry: simulation [Chemistry][magicsoup.chemistry.Chemistry]
@@ -270,7 +268,7 @@ class Proteomics(TensorClass):
         cv_ratio: float = 1e-3,
         abs_temp: float = ROOM_TEMP,  # in K
         km_range: tuple[float, float] = (1e-3, 10.0),  # in mM
-        vmax_range: tuple[float, float] = (1e-3, 1e4),  # in mM/s
+        vmax_range: tuple[float, float] = (1e-5, 1e1),  # in mM/s
         hill_max: int = 3,
         scalar_enc_size: int = 64 - 3,  # 1 codon w/o stop
         vector_enc_size: int = 4096 - 3 * 64,  # 2 codons w/o stop in 1st
@@ -299,9 +297,7 @@ class Proteomics(TensorClass):
             max_token=scalar_enc_size, value_range=km_range, tensor_kwargs=tensor_kwargs
         )
         self.vmax_map = _LogNormMap(
-            max_token=scalar_enc_size,
-            value_range=vmax_range,
-            tensor_kwargs=tensor_kwargs,
+            max_token=scalar_enc_size, value_range=vmax_range, tensor_kwargs=tensor_kwargs
         )
         self.sign_map = _MirrGeoMap(
             max_token=scalar_enc_size, max_value=1, tensor_kwargs=tensor_kwargs
@@ -320,8 +316,7 @@ class Proteomics(TensorClass):
         )
 
     def get_proteome(self, proteome: list[rs.ProteinSpec]) -> list[Protein]:
-        """
-        Translate proteome of a single cell
+        """Translate proteome of a single cell
 
         Arguments:
             proteome: list of proteins which should be translated and returned
@@ -404,8 +399,7 @@ class Proteomics(TensorClass):
         c: int,
         p: int,
     ) -> dict[str, torch.Tensor]:
-        """
-        Derive proteome parameters from a buffer of protein specifications
+        """Derive proteome parameters from a buffer of protein specifications
 
         Arguments:
             cells: (d,) ndarray of cell indices
@@ -420,9 +414,9 @@ class Proteomics(TensorClass):
         For a more readable representation of a proteome use [get_cell_params()][.get_cell_params].
         """
         # parameters in flat (d,) representation of (c, p)
-        cell = torch.from_numpy(cells).to(self.device, torch.int32)
-        prot = torch.from_numpy(proteins).to(self.device, torch.int32)
-        tok = torch.from_numpy(tokens).to(self.device, torch.int32)
+        cell = torch.from_numpy(cells).to(self.device, self.idxtype, non_blocking=True)
+        prot = torch.from_numpy(proteins).to(self.device, self.idxtype, non_blocking=True)
+        tok = torch.from_numpy(tokens).to(self.device, self.idxtype, non_blocking=True)
         m = self.m
 
         # indexing won't work
@@ -462,25 +456,19 @@ class Proteomics(TensorClass):
         v_max = self.fzeros(c, p)
         idx = idx_flat[is_catal | is_trnsp]
         src = self.vmax_map.token_scalar[tok[is_catal | is_trnsp, 1]]
-        v_max.view(-1).scatter_reduce_(
-            dim=0, index=idx, src=src, reduce="mean", include_self=False
-        )
+        v_max.view(-1).scatter_reduce_(dim=0, index=idx, src=src, reduce="mean", include_self=False)
 
         # catalytic and transporter sensitivity
         k_m = self.fzeros(c, p)
         idx = idx_flat[is_catal | is_trnsp]
         src = self.km_map.token_scalar[tok[is_catal | is_trnsp, 2]]
-        k_m.view(-1).scatter_reduce_(
-            dim=0, index=idx, src=src, reduce="mean", include_self=False
-        )
+        k_m.view(-1).scatter_reduce_(dim=0, index=idx, src=src, reduce="mean", include_self=False)
 
         # allosteric sensitivity
         k_r = self.fzeros(c, p)
         idx = idx_flat[is_regul]
         src = self.km_map.token_scalar[tok[is_regul, 2]]
-        k_r.view(-1).scatter_reduce_(
-            dim=0, index=idx, src=src, reduce="mean", include_self=False
-        )
+        k_r.view(-1).scatter_reduce_(dim=0, index=idx, src=src, reduce="mean", include_self=False)
 
         # aggregate domains by sum (0s as defaults)
 
@@ -509,9 +497,21 @@ class Proteomics(TensorClass):
         src = self.effector_map.token_vector[src_idx] * src_sign * src_hill
         N_h.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
 
-        N = self.derive_stoichiometry(N_f=N_f, N_b=N_b)
-        k_f, k_b = self.derive_rates(N=N, k_m=k_m)
-        N_e = self.derive_effective_stoichiometry(N=N)
+        # drive stoichiometry for energy and affinities
+        N = (N_b - N_f).to(self.ftype)  # (c,p,2m)
+
+        # energies define k_e which defines k_e = k_f/k_b
+        e = torch.einsum("cpm,m->cp", N, self.mol_energies)
+        k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(1e-36, 1e36)
+
+        # derive affinities from km: Liebermeister and Klipp's convenience kinetics (2006)
+        is_defined = k_e > 0
+        sqrt_ke = torch.sqrt(k_e)
+        k_f = torch.where(is_defined, k_m / sqrt_ke, 0)
+        k_b = torch.where(is_defined, k_m * sqrt_ke, 0)
+
+        # derive effective stoichiometry
+        N_e = N * self.cv_ratio
 
         return {
             "N_e": N_e,
@@ -524,63 +524,3 @@ class Proteomics(TensorClass):
             "v_max": v_max,
             "proteins": protcount.to(self.idxtype),
         }
-
-    def derive_stoichiometry(
-        self, N_f: torch.Tensor, N_b: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Get stoichiometric numbers from stoichiometric coeffcients.
-
-        Arguments:
-            N_f: (c,p,2m) integer tensor of stoichiometric coefficients of substrates
-            N_b: (c,p,2m) integer tensor of stoichiometric coefficients of products
-
-        Returns:
-            (c,p,2m) float tensor of stoichiometric numbers
-
-        Signs of stoichiometric numbers and coefficients are viewed from forward
-        direction as of protein specifications.
-        """
-        # N_b and N_f is kept separate for MM-kinetics
-        # otherwise co-factors (with N=0) would be ignored
-        return (N_b - N_f).to(self.ftype)  # (c,p,2m)
-
-    def derive_rates(
-        self, N: torch.Tensor, k_m: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Get reaction rates from stoichiometric numbers and affinities
-
-        Arguments:
-            N: (c, p, m) float tensor of stoichiometric numbers
-            k_m: (c, p) float tensor of reaction affinities
-
-        Returns:
-            Tuple (k_f, k_b) each a (c,p) float tensor describing reaction rates.
-        """
-        # energies define k_e which defines k_e = k_f/k_b
-        e = torch.einsum("cpm,m->cp", N, self.mol_energies)
-        k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(1e-36, 1e36)
-
-        # derive rates from km: Liebermeister and Klipp's convenience kinetics (2006)
-        is_defined = k_e > 0
-        sqrt_ke = torch.sqrt(k_e)
-        k_f = torch.where(is_defined, k_m / sqrt_ke, 0)
-        k_b = torch.where(is_defined, k_m * sqrt_ke, 0)
-
-        return k_f, k_b
-
-    def derive_effective_stoichiometry(self, N: torch.Tensor) -> torch.Tensor:
-        """
-        Get effective stoichiometric numbers from stoichiometric numbers.
-
-        Arguments:
-            N: (c,p,2m) float tensor of stoichiometric numbers
-
-        Returns:
-            (c,p,2m) float tensor of effective stoichiometric numbers
-
-        Effective stoichiometric numbers means stoichiometric numbers adjusted to volume differences between cell and voxel.
-        """
-        # effective stoichiometry considering volume difference of cell and medium
-        return N * self.cv_ratio

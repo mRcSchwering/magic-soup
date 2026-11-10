@@ -33,9 +33,11 @@ class Molecule:
         name: str,
         energy: float,  # kJ/mol
         half_life: float = -1,  # days
-        diffusivity: float = 6.7 * 1e-6,  # cm²/s
-        permeability: float = 2.4 * 1e-10,  # cm/s
+        diffusivity: float = 5 * 1e-6,  # cm²/s
+        permeability: float = 0,  # cm/s
     ) -> None:
+        assert permeability >= 0, "permeability must not be negative"
+        assert diffusivity >= 0, "diffusivity must not be negative"
         self.name = name
         self.energy = energy
         self.half_life = half_life
@@ -65,10 +67,7 @@ class Molecule:
         }
         for attr, (a, b) in attrs.items():
             if a != b:
-                raise ValueError(
-                    f"2 molecule species defined as {self.name}"
-                    f" have different {attr}"
-                )
+                raise ValueError(f"2 molecule species defined as {self.name} have different {attr}")
 
         return True
 
@@ -95,9 +94,7 @@ class Reaction:
     E.g. for `2A + B <-> C` use `Reaction([A, A, B], [C])` or equally `Reaction([A]*2 + [B], [C])`.
     """
 
-    def __init__(
-        self, substrates: Iterable[Molecule], products: Iterable[Molecule]
-    ) -> None:
+    def __init__(self, substrates: Iterable[Molecule], products: Iterable[Molecule]) -> None:
         self.substrates = tuple(sorted(substrates))
         self.products = tuple(sorted(products))
         self._hash = hash(tuple(sorted([self.substrates, self.products])))
