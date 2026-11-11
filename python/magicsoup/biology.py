@@ -192,9 +192,7 @@ class Protein:
     you have to do `n - cds_start` and `n - cds_stop` if `n` is the genome length.
     """
 
-    def __init__(
-        self, domains: list[Domain], cds_start: int, cds_end: int, is_53: bool
-    ):
+    def __init__(self, domains: list[Domain], cds_start: int, cds_end: int, is_53: bool):
         self.domains = domains
         self.n_domains = len(domains)
         self.cds_start = cds_start

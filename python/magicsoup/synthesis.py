@@ -111,11 +111,12 @@ class RegulatoryDomainSynthesizer:
         return f"{self.effector} receptor"
 
 
-type DomainSynthesizer = CatalyticDomainSynthesizer | TransporterDomainSynthesizer | RegulatoryDomainSynthesizer
+type DomainSynthesizer = (
+    CatalyticDomainSynthesizer | TransporterDomainSynthesizer | RegulatoryDomainSynthesizer
+)
 
 
 class ProteinSynthesizer:
-
     def __init__(
         self,
         catalyzed_reactions: list[Reaction] | None = None,
@@ -196,8 +197,7 @@ class GenomeSynthesizer:
         """Generate a genome with the desired proteome"""
         return self.world.cells.genomics.generate_genome(
             cdss=[
-                [d.gen_coding_sequence(world=self.world) for d in p.domains]
-                for p in self.proteins
+                [d.gen_coding_sequence(world=self.world) for d in p.domains] for p in self.proteins
             ],
             n_pad_nts=self.target_size - self.req_nts,
         )

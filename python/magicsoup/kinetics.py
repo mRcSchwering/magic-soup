@@ -10,7 +10,7 @@ class KineticsKwargs(TypedDict, total=False):
     eps: float
     n_sweeps: int
     n_bisect: int
-    compile: bool
+    compile_solver: bool
 
 
 class Kinetics(TensorClass):
@@ -22,6 +22,7 @@ class Kinetics(TensorClass):
         n_sweeps: number of block Jacobi sweeps to perform when solving ODEs
         n_bisect: number of bisections when solving for xi
         eps: Smallest possible non-zero positive value
+        compile_solver: Whether to torch compile the solver; None for auto (on for CUDA, else off)
         tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
 
     Reaction kinetics are modelled as reversible Michaelis-Menten (MM) kinetics.
@@ -41,7 +42,7 @@ class Kinetics(TensorClass):
         n_sweeps: int = 3,
         n_bisect: int = 10,
         eps: float = 1e-40,
-        compile: bool | None = None,
+        compile_solver: bool | None = None,
         tensor_kwargs: TensorKwargs | None = None,
     ):
         super().__init__(**(tensor_kwargs or {}))
@@ -52,7 +53,7 @@ class Kinetics(TensorClass):
         self.n_bisect = n_bisect
 
         # torch.compile the solver; None = auto (on for CUDA, off for CPU)
-        self.compile = compile
+        self.compile_solver = compile_solver
         self._solver = None  # built lazily, rebuilt after unpickling (__getstate__)
 
     def get_x1(
@@ -97,7 +98,7 @@ class Kinetics(TensorClass):
         # lazily build the (optionally compiled) solver. The compiled callable is
         # not pickled (see __getstate__); it is rebuilt here on first use.
         if self._solver is None:
-            use = self.compile
+            use = self.compile_solver
             if use is None:
                 use = "cuda" in str(self.device)
             self._solver = torch.compile(self._solve, dynamic=True) if use else self._solve
