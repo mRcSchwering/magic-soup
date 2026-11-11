@@ -61,6 +61,24 @@ class _CPU_Unpickler(pickle.Unpickler):
             return super().find_class(module, name)
 
 
+def _iter_tensorclasses(root: object):
+    """Yield every [TensorClass][magicsoup.core.tensorclass.TensorClass] reachable from `root` (incl. `root`).
+
+    Descends only through `TensorClass` instances; within a `World` they all
+    reference each other (`World` -> `cells`/`culture`/..., `cells` -> `proteomics`
+    -> maps, `culture` -> neighbourhood), so this reaches every one.
+    """
+    seen: set[int] = set()
+    stack: list[object] = [root]
+    while stack:
+        obj = stack.pop()
+        if not isinstance(obj, TensorClass) or id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        yield obj
+        stack.extend(vars(obj).values())
+
+
 class World(TensorClass):
     def __init__(
         self,
@@ -541,8 +559,10 @@ class World(TensorClass):
             obj: World = unpickler.load()
 
         if device is not None:
-            obj.device = device
-            obj.kinetics.device = device
+            # map_location relocated the tensors; realign every sub-object's cached
+            # device so later tensor creation (e.g. self.fzeros) lands on the new one
+            for tc in _iter_tensorclasses(obj):
+                tc.device = device
 
         return obj
 
