@@ -13,7 +13,6 @@ from plotnine import *  # pylint: disable=W0614,W0401
 # from docs.plots.biochemical_patterns import create_plots as plot_biochemical_patterns
 from docs.plots.free_energy import create_plots as plot_free_energy
 from docs.plots.genomes import create_plots as plot_genomes
-from docs.plots.kinetic_constants import create_plots as plot_kinetic_constants
 from docs.plots.molecule_physics import create_plots as plot_molecule_physics
 from docs.plots.mutations import create_plots as plot_mutations
 from docs.plots.param_distros import create_plots as plot_param_distros
@@ -32,7 +31,6 @@ _PLOTS: dict[str, Callable] = {
     #  "biochemical_patterns": plot_biochemical_patterns,
     "free_energy": plot_free_energy,
     "survival_replication": plot_survival_replication,
-    "kinetic_constants": plot_kinetic_constants,
 }
 
 

@@ -8,6 +8,7 @@ import torch
 from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDomain
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
 from magicsoup.core.config import GAS_CONSTANT
+from magicsoup.core.rs import DomainSpec, DomainTokens, ProteinSpec
 from magicsoup.proteomics import (
     Proteomics,
     _EffectorMap,
@@ -16,7 +17,6 @@ from magicsoup.proteomics import (
     _ReactionMap,
     _TransporterMap,
 )
-from magicsoup.rs import DomainSpec, DomainTokens, ProteinSpec
 
 from tests.util import FTYPE, ITYPE, ftensor, fzeros, idxtensor, itensor, izeros
 
@@ -992,7 +992,7 @@ def _get_random_proteomes(n_cells: int) -> tuple[list[list[ProteinSpec]], int]:
                 idx0 = random.choice(range(1, 64 - 3))
                 idx1 = random.choice(range(1, 64 - 3))
                 idx2 = random.choice(range(1, 64 - 3))
-                idx3 = random.choice(range(1, 4096 - 3 * 64))
+                idx3 = random.choice(range(1, 4096 - 6 * 64))
                 dom_start = random.choice(range(1, 100))
                 dom_end = random.choice(range(dom_start, 200))
                 doms.append(((domtype, idx0, idx1, idx2, idx3), dom_start, dom_end))
@@ -1049,18 +1049,23 @@ def test_random_cell_reprs() -> None:
     proteomes, _ = _get_random_proteomes(1000)
     protics = Proteomics(chemistry=_CHEMISTRY)
 
-    # TODO: check that the amount of proteins
-    #       in the parameters reflects the number of proteins
-    #       in the proteomes
-
     # test
     for proteome in proteomes:
-        _ = protics.get_proteome(proteome=proteome)
+        p = len(proteome)
+
+        # class representation
+        proteins = protics.get_proteome(proteome=proteome)
+        assert len(proteins) == p
+
+        # params representation
+        cell, prot, tok = _flatten_proteomes([proteome])
+        params = protics.get_cell_params(cell, prot, tok, 1, p)
+        assert params["v_max"].shape[0] == 1
+        is_prot = (params["v_max"] != 0.0) | (params["k_r"] != 0.0)
+        assert is_prot[0].sum() == p
 
 
-def _assert_bijective(
-    max_token: int, tokens_map: dict[int, Any], table: torch.Tensor
-) -> None:
+def _assert_bijective(max_token: int, tokens_map: dict[int, Any], table: torch.Tensor) -> None:
     assert table.shape[0] == max_token + 1
     all_tokens = list(range(1, max_token + 1))
     assert set(tokens_map) == set(all_tokens)

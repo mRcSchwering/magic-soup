@@ -38,18 +38,18 @@ def _plot_default_mutations(n_gens: int = 1000) -> tuple[ggplot, str]:
             sub_rate=mutator.sub_rate * mut["sub"],
             indel_rate=mutator.indel_rate * mut["indel"],
         )
-        orig_genomes = [ms.random_genome() for _ in range(n_cells)]
-        genomes = [d for d in orig_genomes]
+        orig_genomes = ms.StrArray.from_strings([ms.random_genome() for _ in range(n_cells)])
+        genomes = ms.StrArray.from_strings([d for d in orig_genomes])
         label = ",".join(f"{v} x {k}" for k, v in mut.items() if v > 1)
         label = label or "default"
 
         for gen_i in range(n_gens + 1):
             mutated = mutator.mutate(genomes=genomes)
             for idx, genome in mutated:
-                genomes[idx] = genome
+                genomes[idx] = genome  # type: ignore
 
             if gen_i % nth == 0:
-                n_mut, jacc, ani = _get_stats(genomes, orig_genomes)
+                n_mut, jacc, ani = _get_stats(genomes.tolist(), orig_genomes.tolist())
                 records.append(
                     {
                         "generation": gen_i + 1,

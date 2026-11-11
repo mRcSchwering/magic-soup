@@ -29,16 +29,6 @@ from magicsoup.proteomics import Proteomics, ProteomicsKwargs
 _log = logging.getLogger(__name__)
 
 
-# TODO: adapt torch code:
-# convert IDXDTYPE to long (pre-requisite)
-# V[idx], 1-D index on dim 0        ->      V.index_select(0, idx)
-# V[idx], 2-D+ index along another axis     ->      V.gather(dim, idx)
-# a[idx] = b        ->      a.index_copy_(0, idx, b)
-# a[idx] += b       ->      a.index_put_((idx,), b, accumulate=True) or scatter_add_
-# a[mask] = b[mask]     ->      torch.where(mask, b, a, out=a)
-# prio dim-0 cases, hot path
-
-
 def _torch_load(map_loc: str | None = None):
     # Closure rather than a lambda to preserve map_loc
     return lambda b: torch.load(BytesIO(b), map_location=map_loc)
@@ -460,7 +450,8 @@ class World(TensorClass):
             return
 
         self.cells.update_genomes(
-            genomes=mutated, idxs=torch.from_numpy(sel_idxs[idxs]).to(self.device)
+            genomes=mutated,
+            idxs=torch.from_numpy(sel_idxs[idxs]).to(self.device, self.idxtype, non_blocking=True),
         )
 
     def advance_time(self, n_steps: int = 1) -> None:

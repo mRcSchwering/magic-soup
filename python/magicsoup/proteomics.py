@@ -7,7 +7,6 @@ from typing import TypedDict
 import numpy as np
 import torch
 
-from magicsoup import rs
 from magicsoup.biology import (
     CatalyticDomain,
     Domain,
@@ -16,6 +15,7 @@ from magicsoup.biology import (
     TransporterDomain,
 )
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
+from magicsoup.core import rs
 from magicsoup.core.config import GAS_CONSTANT, ROOM_TEMP
 from magicsoup.core.tensorclass import TensorClass, TensorKwargs
 from magicsoup.genomics import DomainType

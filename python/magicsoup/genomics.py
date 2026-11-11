@@ -6,7 +6,7 @@ from typing import TypedDict
 
 import numpy as np
 
-from magicsoup import rs
+from magicsoup.core import rs
 from magicsoup.core.config import CODON_SIZE
 from magicsoup.core.strarray import StrArray
 from magicsoup.core.util import codons, random_genome
@@ -22,7 +22,6 @@ class DomainType(IntEnum):
 
 
 class _CodonMap:
-
     def __init__(self, n_codons: int, stop_codons: Iterable[str]) -> None:
         # all possible sequences (stop codons excluded from every codon)
         seqs = codons(n=n_codons, excl_codons=list(stop_codons))
@@ -34,7 +33,6 @@ class _CodonMap:
 
 
 class _DomainTypeMap:
-
     def __init__(
         self,
         dom_type_probs: dict[DomainType, float],
@@ -55,8 +53,7 @@ class _DomainTypeMap:
         for dom_type, n in dom_type_2_n.items():
             if n == 0 and dom_type_probs[dom_type] > 0:
                 warnings.warn(
-                    f"{n_dom_type_codons} domain type codons"
-                    f" are too small to encode {dom_type}"
+                    f"{n_dom_type_codons} domain type codons are too small to encode {dom_type}"
                 )
 
         # domain types -> nt sequences
@@ -78,18 +75,6 @@ class GenomicsKwargs(TypedDict, total=False):
     p_transp_dom: float
     p_reg_dom: float
     n_dom_type_codons: int
-
-
-# TODO: domain-type-encoding codons can hide each other
-#       e.g. one could be ATG CTG and another CTG TTA
-#       then a CDS with ATG CTG TTA will always translate the first one
-#       these collisions reduce the actual occurence of these domains
-#       compared to their intended one (p_catal_dom, ...) by about 44%
-#       this is symmetric (all domains can hide each other)
-#       when the first codon however happens to be a START codon, the domain starts itself
-#       this makes it 3x more likely to hide other domains (asymmetric)
-#       A similar mechanism happens with stop codons that are part of a domain (stops itself)
-# => it's probably better to not allow starts/stops in domain encodings at all
 
 
 class Genomics:
@@ -176,7 +161,7 @@ class Genomics:
         self._setup_rs()
 
     def _setup_rs(self) -> None:
-        self.rs = rs.Genomics(
+        self._rs = rs.Genomics(
             start_codons=self.start_codons,
             stop_codons=self.stop_codons,
             domain_type_2_token=self.domain_type_map.seq_2_token,
@@ -190,15 +175,13 @@ class Genomics:
     def translate_genomes(self, genomes: StrArray) -> list[list[rs.ProteinSpec]]:
         if len(genomes) == 0:
             return []
-        return self.rs.translate_genomes(*genomes.as_buffers())
+        return self._rs.translate_genomes(*genomes.as_buffers())
 
-    def encode_proteomes(
-        self, genomes: StrArray
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    def encode_proteomes(self, genomes: StrArray) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
         """Get proteomes in form of domain specifications from genomes"""
         if len(genomes) == 0:
             return (np.zeros(0), np.zeros(0), np.zeros((0, 5)), 0)
-        return self.rs.encode_proteomes(*genomes.as_buffers())
+        return self._rs.encode_proteomes(*genomes.as_buffers())
 
     def get_coding_regions(
         self,
@@ -207,9 +190,7 @@ class Genomics:
         is_fwd: bool,
     ) -> list[rs.CdsSpec]:
         """Get CDS markers for a genome"""
-        return self.rs.get_coding_regions(
-            seq=seq, min_cds_size=min_cds_size, is_fwd=is_fwd
-        )
+        return self._rs.get_coding_regions(seq=seq, min_cds_size=min_cds_size, is_fwd=is_fwd)
 
     def extract_domains(
         self,
@@ -217,7 +198,7 @@ class Genomics:
         cdss: list[rs.CdsSpec],
     ) -> list[rs.ProteinSpec]:
         """Get proteome in form of domain specifications for a genome and CDS markers"""
-        return self.rs.extract_domains(genome=genome, cdss=cdss)
+        return self._rs.extract_domains(genome=genome, cdss=cdss)
 
     def generate_domain_seq(self, domain_type: DomainType, tokens: list[int]) -> str:
         """

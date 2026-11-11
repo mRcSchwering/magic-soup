@@ -7,7 +7,7 @@
 //! Rate heterogeneity is implemented by rejection sampling: candidates arrive
 //! at `indel_rate * indel_max_multiplier` and are accepted with
 //! `multiplier / indel_max_multiplier`.
-use crate::config::Config;
+use crate::config::MutatorConfig;
 use crate::seq::geometric_len;
 use rand::Rng;
 use std::borrow::Cow;
@@ -72,7 +72,7 @@ struct Indel {
 }
 
 /// Read-only step: draw a candidate site and decide the event (or reject it).
-fn plan_indel<R: Rng>(seq: &[u8], cfg: &Config, rng: &mut R) -> Option<Indel> {
+fn plan_indel<R: Rng>(seq: &[u8], cfg: &MutatorConfig, rng: &mut R) -> Option<Indel> {
     let n = seq.len();
     if n == 0 {
         return None;
@@ -132,7 +132,7 @@ fn apply_indel(seq: &mut Vec<u8>, e: Indel) {
 }
 
 /// Plan and apply in one call.
-pub fn try_indel<R: Rng>(seq: &mut Cow<[u8]>, cfg: &Config, rng: &mut R) {
+pub fn try_indel<R: Rng>(seq: &mut Cow<[u8]>, cfg: &MutatorConfig, rng: &mut R) {
     if let Some(e) = plan_indel(seq, cfg, rng) {
         apply_indel(&mut seq.to_mut(), e);
     }

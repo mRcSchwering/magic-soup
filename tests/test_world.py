@@ -538,7 +538,6 @@ def test_mutate_cells(world: World, n_spawn: int, n_mutate: int) -> None:
         assert not torch.equal(ten0, ten1), key
 
 
-# TODO: combine with test above?
 def test_mutate_cells_reconciles_deferred_host_state(world: World) -> None:
     _spawn_cells(world, n=30)
     idxs = world.cells.get_cell_idxs()

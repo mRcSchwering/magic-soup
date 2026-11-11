@@ -4,8 +4,8 @@ import magicsoup as ms
 import matplotlib.patheffects as path_effects
 import numpy as np
 import pandas as pd
+from magicsoup.core.rs import ProteinSpec
 from magicsoup.genomics import Genomics
-from magicsoup.rs import ProteinSpec
 from mizani.formatters import percent_format
 from plotnine import *  # pylint: disable=W0614,W0401
 
@@ -28,9 +28,7 @@ def _record_proteome_stats(
         if n_prots > 0:
             n_doms = sum(len(d[0]) for d in proteome)
             records.append({**record, "n": n_doms / n_prots, "v": "domains/protein"})
-            records.append(
-                {**record, "n": n_doms * dom_size / size, "v": "coding bps/bp"}
-            )
+            records.append({**record, "n": n_doms * dom_size / size, "v": "coding bps/bp"})
 
 
 def _plot(df: pd.DataFrame, by: str) -> ggplot:
@@ -73,7 +71,7 @@ def _plot_genome_sizes(ncells: int):
     records: list[dict] = []
     for size in (500, 1000, 2000):
         genomics = Genomics()
-        genomes = [ms.random_genome(s=size) for _ in range(ncells)]
+        genomes = ms.StrArray.from_strings([ms.random_genome(s=size) for _ in range(ncells)])
         proteomes = genomics.translate_genomes(genomes=genomes)
         _record_proteome_stats(
             proteomes=proteomes,
@@ -92,7 +90,7 @@ def _plot_domain_probabilities(ncells: int, size: int):
     records: list[dict] = []
     for prob in (0.02, 0.05, 0.1):
         genetics = Genomics(p_reg_dom=prob, p_catal_dom=prob, p_transp_dom=prob)
-        genomes = [ms.random_genome(s=size) for _ in range(ncells)]
+        genomes = ms.StrArray.from_strings([ms.random_genome(s=size) for _ in range(ncells)])
         proteomes = genetics.translate_genomes(genomes=genomes)
         _record_proteome_stats(
             proteomes=proteomes,
@@ -119,7 +117,7 @@ def _plot_start_stop_codons(ncells: int, size: int):
     records: list[dict] = []
     for label, kwargs in kwargs_map.items():
         genetics = Genomics(**kwargs)  # type: ignore
-        genomes = [ms.random_genome(s=size) for _ in range(ncells)]
+        genomes = ms.StrArray.from_strings([ms.random_genome(s=size) for _ in range(ncells)])
         proteomes = genetics.translate_genomes(genomes=genomes)
         _record_proteome_stats(
             proteomes=proteomes,

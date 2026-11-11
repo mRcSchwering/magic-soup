@@ -11,7 +11,7 @@
 //!    direct   X A Y B Z -> deletion      X B Z
 //!                       -> duplication   X A Y A Y B Z
 //!    inverted X A Y B Z -> inversion     X A rc(Y) B Z   (B = rc(A))
-use crate::config::Config;
+use crate::config::MutatorConfig;
 use crate::seq::{complement, reverse_complement, reverse_complement_in_place};
 use memchr::memmem;
 use rand::Rng;
@@ -62,7 +62,7 @@ fn extend_inverted(s: &[u8], mut f: usize, mut r: usize, k: usize) -> (usize, us
     (f, r, h)
 }
 
-fn homology_weight(h: usize, cfg: &Config) -> f64 {
+fn homology_weight(h: usize, cfg: &MutatorConfig) -> f64 {
     if h < cfg.min_homology {
         return 0.0;
     }
@@ -72,7 +72,7 @@ fn homology_weight(h: usize, cfg: &Config) -> f64 {
 }
 
 /// All recombination partners for a break at `brk`, with weights.
-fn find_partners(s: &[u8], brk: usize, cfg: &Config) -> Vec<(Pair, f64)> {
+fn find_partners(s: &[u8], brk: usize, cfg: &MutatorConfig) -> Vec<(Pair, f64)> {
     let k = cfg.seed_len;
     let seed = &s[brk..brk + k];
     let rc = reverse_complement(seed);
@@ -119,7 +119,7 @@ fn find_partners(s: &[u8], brk: usize, cfg: &Config) -> Vec<(Pair, f64)> {
 
 /// Read-only step: draw a break and decide whether and with which partner it
 /// recombines. `Err` carries the outcome when nothing will change.
-fn plan_rearrangement<R: Rng>(seq: &[u8], cfg: &Config, rng: &mut R) -> Option<Pair> {
+fn plan_rearrangement<R: Rng>(seq: &[u8], cfg: &MutatorConfig, rng: &mut R) -> Option<Pair> {
     let n = seq.len();
     let k = cfg.seed_len;
     if n < 2 * k {
@@ -149,7 +149,7 @@ fn plan_rearrangement<R: Rng>(seq: &[u8], cfg: &Config, rng: &mut R) -> Option<P
 }
 
 /// Apply the recombination product of a chosen repeat pair.
-fn apply_rearrangement<R: Rng>(seq: &mut Vec<u8>, pair: Pair, cfg: &Config, rng: &mut R) {
+fn apply_rearrangement<R: Rng>(seq: &mut Vec<u8>, pair: Pair, cfg: &MutatorConfig, rng: &mut R) {
     let n = seq.len();
     match pair {
         Pair::Direct { a, b, .. } => {
@@ -175,7 +175,7 @@ fn apply_rearrangement<R: Rng>(seq: &mut Vec<u8>, pair: Pair, cfg: &Config, rng:
 }
 
 /// Plan and apply in one call (convenience for use outside the engine).
-pub fn try_rearrangement<R: Rng>(seq: &mut Cow<[u8]>, cfg: &Config, rng: &mut R) {
+pub fn try_rearrangement<R: Rng>(seq: &mut Cow<[u8]>, cfg: &MutatorConfig, rng: &mut R) {
     if let Some(pair) = plan_rearrangement(seq, cfg, rng) {
         apply_rearrangement(&mut seq.to_mut(), pair, cfg, rng);
     }

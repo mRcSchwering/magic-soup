@@ -12,7 +12,7 @@ IntIndex = npt.NDArray[np.integer] | npt.NDArray[np.bool_] | Sequence[int]
 
 def _starts_from_lens(lens: np.ndarray) -> np.ndarray:
     """Start offsets for a fresh, contiguous layout of the given lengths"""
-    starts = np.zeros(len(lens), dtype=np.int64)
+    starts = np.zeros(len(lens), dtype=np.intp)
     if len(lens) > 1:
         np.cumsum(lens[:-1], out=starts[1:])
     return starts
@@ -54,7 +54,7 @@ class StrArray:
     @classmethod
     def from_strings(cls, strings: Iterable[str] = ()) -> "StrArray":
         blobs = [s.encode() for s in strings]
-        lens = np.fromiter((len(b) for b in blobs), dtype=np.int64, count=len(blobs))
+        lens = np.fromiter((len(b) for b in blobs), dtype=np.intp, count=len(blobs))
         buf = np.frombuffer(b"".join(blobs), dtype=np.uint8).copy()
         starts = _starts_from_lens(lens)
         return cls(buf=buf, starts=starts, lens=lens)
@@ -64,7 +64,7 @@ class StrArray:
     @classmethod
     def empty(cls, n: int = 0) -> "StrArray":
         """Create an array of `n` empty strings"""
-        zeros = np.zeros(n, dtype=np.int64)
+        zeros = np.zeros(n, dtype=np.intp)
         return cls(buf=np.empty(0, dtype=np.uint8), starts=zeros, lens=zeros.copy())
 
     @classmethod
@@ -145,7 +145,7 @@ class StrArray:
         value: "str | Iterable[str] | StrArray",
     ) -> None:
         if isinstance(idx, (int, np.integer)):
-            ii = np.array([idx], dtype=np.int64)
+            ii = np.array([idx], dtype=np.intp)
             if isinstance(value, str):
                 value = [value]
         else:
@@ -178,7 +178,7 @@ class StrArray:
             return
 
         blobs = [s.encode() for s in strings]
-        lens = np.fromiter((len(b) for b in blobs), dtype=np.int64, count=len(blobs))
+        lens = np.fromiter((len(b) for b in blobs), dtype=np.intp, count=len(blobs))
         base = self._buf.size
         self._buf = np.concatenate([self._buf, np.frombuffer(b"".join(blobs), dtype=np.uint8)])
         self._starts[ii] = base + _starts_from_lens(lens)
@@ -229,7 +229,7 @@ class StrArray:
         if arr.dtype == bool:
             arr = np.nonzero(arr)[0]
 
-        return arr.astype(np.int64, copy=False)
+        return arr.astype(np.intp, copy=False)
 
     def _contiguous(self) -> tuple[np.ndarray, np.ndarray]:
         """Gather live bytes into a dense buffer; returns `(buffer, lens)`"""
@@ -239,7 +239,7 @@ class StrArray:
             return np.empty(0, dtype=np.uint8), lens.copy()
 
         starts = _starts_from_lens(lens)
-        src = np.repeat(self._starts - starts, lens) + np.arange(total, dtype=np.int64)
+        src = np.repeat(self._starts - starts, lens) + np.arange(total, dtype=np.intp)
         return self._buf[src], lens.copy()
 
     def __repr__(self) -> str:

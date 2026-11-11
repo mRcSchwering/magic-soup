@@ -19,9 +19,6 @@ use std::collections::HashMap;
 //       e.g. into separate classes like Mutator with inner?
 //       keep other modules python-free
 
-// TODO: I need to make sure numpy dtypes and rust types are aligned
-//       shouldn't use usize for that because usize may be lower/higher
-
 // Mutator
 
 #[pyclass]
@@ -52,7 +49,7 @@ impl Mutator {
         min_genome_len: usize,
         max_genome_len: Option<usize>,
     ) -> PyResult<Self> {
-        let cfg = config::Config {
+        let cfg = config::MutatorConfig {
             sub_rate,
             transition_prob,
             indel_rate,

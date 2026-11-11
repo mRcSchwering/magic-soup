@@ -6,12 +6,8 @@ import torch
 from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 from plotnine import *  # pylint: disable=W0614,W0401
 
-# TODO: add physical units to plots in general
 
-
-def _run_simulation(
-    reactions: list[ms.Reaction], label: str, n_seconds=100
-) -> pd.DataFrame:
+def _run_simulation(reactions: list[ms.Reaction], label: str, n_seconds=100) -> pd.DataFrame:
     print("starting", label)
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=reactions)
     E = torch.tensor([d.energy for d in chemistry.molecules], dtype=torch.double)

@@ -17,7 +17,7 @@ def test_empty() -> None:
     arr = StrArray.empty(3)
     assert len(arr) == 3
     assert arr.tolist() == ["", "", ""]
-    assert np.isnan(arr.utilization)
+    assert arr.utilization == 1.0
     assert StrArray.empty().tolist() == []
     assert StrArray.from_strings().tolist() == []
 
@@ -117,7 +117,6 @@ def test_concat() -> None:
     assert StrArray.concat([]).tolist() == []
 
 
-# TODO: rm?
 def test_grow() -> None:
     genomes = StrArray.from_strings(["ATG", "GGGCC"])
     grown = StrArray.concat([genomes, StrArray.empty(3)])
@@ -144,18 +143,14 @@ def test_copy_is_independent() -> None:
     assert dup.tolist() == ["ATG", "GG"]  # unaffected
 
 
-# TODO: what is this testing?!
 def test_as_buffers_roundtrip() -> None:
     strings = ["ATG", "", "GGGCC", "T"]
     arr = StrArray.from_strings(strings)
     buf, starts, lens = arr.as_buffers()
     assert buf.dtype == np.uint8
-    assert starts.dtype == np.int64
-    assert lens.dtype == np.int64
-    rebuilt = [
-        buf[s : s + n].tobytes().decode()
-        for s, n in zip(starts.tolist(), lens.tolist())
-    ]
+    assert starts.dtype == np.intp
+    assert lens.dtype == np.intp
+    rebuilt = [buf[s : s + n].tobytes().decode() for s, n in zip(starts.tolist(), lens.tolist())]
     assert rebuilt == strings
 
 

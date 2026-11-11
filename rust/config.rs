@@ -3,7 +3,7 @@
 //! rate of order 0.01-0.1
 
 #[derive(Clone, Debug)]
-pub struct Config {
+pub struct MutatorConfig {
     // ---- substitutions ----
     /// Per-bp substitution rate.
     pub sub_rate: f64,
@@ -47,9 +47,9 @@ pub struct Config {
     pub max_genome_len: Option<usize>,
 }
 
-impl Default for Config {
+impl Default for MutatorConfig {
     fn default() -> Self {
-        Config {
+        MutatorConfig {
             sub_rate: 1e-5,
             transition_prob: 0.55,
             indel_rate: 1e-7,
@@ -71,7 +71,7 @@ impl Default for Config {
     }
 }
 
-impl Config {
+impl MutatorConfig {
     pub fn validate(&self) -> Result<(), String> {
         let probs = [
             ("transition_prob", self.transition_prob),

@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from itertools import product
 from pathlib import Path
 
-from magicsoup import rs
+from magicsoup.core import rs
 from magicsoup.core.config import ALL_NTS, CODON_SIZE
 
 
@@ -22,9 +22,7 @@ def randstr(n: int = 12) -> str:
     (birthday paradox)
     """
     return "".join(
-        random.choices(
-            string.ascii_uppercase + string.ascii_lowercase + string.digits, k=n
-        )
+        random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=n)
     )
 
 

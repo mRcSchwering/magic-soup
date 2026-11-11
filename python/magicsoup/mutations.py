@@ -3,7 +3,7 @@ from typing import TypedDict
 
 import numpy as np
 
-from magicsoup import rs
+from magicsoup.core import rs
 from magicsoup.core.strarray import A, StrArray
 
 
@@ -130,11 +130,11 @@ class Mutator:
 
     def mutate(self, genomes: A) -> tuple[np.ndarray, A]:
         """Apply mutations"""
-        idxs, seqs = self.rs.mutate(*genomes.as_buffers())
+        idxs, seqs = self._rs.mutate(*genomes.as_buffers())
         return idxs, StrArray.from_strings(seqs)
 
     def _setup_rs(self) -> None:
-        self.rs = rs.Mutator(
+        self._rs = rs.Mutator(
             seed=self.seed or random.getrandbits(8),
             sub_rate=self.sub_rate,
             transition_prob=self.transition_prob,

@@ -61,7 +61,7 @@ def _plot_perm_degrad(chemistry: ms.Chemistry):
     dt = 0.01
     mols = ["CO2", "acetat", "glucose"]
 
-    world = ms.World(time_step=dt, time_resolution=dt, chemistry=chemistry)
+    world = ms.World(time_step=dt, chemistry=chemistry)
     n_cells = 1000
     idxs = world.spawn_cells(genomes=["" for _ in range(n_cells)])
     world.culture.molecule_map[:] = 100.0
@@ -83,7 +83,7 @@ def _plot_perm_degrad(chemistry: ms.Chemistry):
     n_seconds = 10_000_000
     mols = ["CO2", "NADH", "acetyl-phosphate"]
 
-    world = ms.World(time_step=dt, time_resolution=dt, chemistry=chemistry)
+    world = ms.World(time_step=dt, chemistry=chemistry)
     N = world.culture.map_size
     world.culture.molecule_map[:] = 100.0
 

@@ -170,7 +170,6 @@ fn translate_genome(
         two_codon_2_token,
     );
 
-    // TODO: reverse complement could be done live without allocation
     let bwd = reverse_complement(genome);
     let cds_bwd = get_coding_regions(&bwd, min_cds_size, start_codons, stop_codons, false);
     let mut doms_bwd = extract_domains(

@@ -1,3 +1,5 @@
+from typing import Annotated
+
 import numpy as np
 
 from magicsoup import _lib  # type: ignore
@@ -20,7 +22,6 @@ class _ReduceMixin:
 
 
 class Mutator(_ReduceMixin):
-
     def __init__(
         self,
         seed: float,
@@ -91,10 +92,12 @@ class Mutator(_ReduceMixin):
 
 # genomics
 
-type CdsSpec = tuple[int, int, bool]
-type DomainTokens = tuple[int, int, int, int, int]
-type DomainSpec = tuple[DomainTokens, int, int]
-type ProteinSpec = tuple[list[DomainSpec], int, int, bool]
+type CdsSpec = Annotated[tuple[int, int, bool], "CDS start, stop, is 5'-3'"]
+type DomainTokens = Annotated[tuple[int, int, int, int, int], "Domain definition in tokens"]
+type DomainSpec = Annotated[tuple[DomainTokens, int, int], "Domain definition, start, stop"]
+type ProteinSpec = Annotated[
+    tuple[list[DomainSpec], int, int, bool], "Domains, CDS start and stop, is 5'-3'"
+]
 
 
 def reverse_complement(seq: str) -> str:
@@ -102,7 +105,6 @@ def reverse_complement(seq: str) -> str:
 
 
 class Genomics(_ReduceMixin):
-
     def __init__(
         self,
         start_codons: list[str],

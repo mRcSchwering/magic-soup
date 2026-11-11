@@ -68,18 +68,6 @@ def spawn_cells(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
-def update_cells(device: str, n: int, s: int):
-    tds = []
-    for _ in range(R):
-        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
-        genomes = _gen_genomes(n=n, s=s)
-        idxs = world.spawn_cells(genomes=genomes)
-        t0 = time.time()
-        world.update_cells(genomes=ms.StrArray.from_strings(genomes), cell_idxs=idxs)
-        tds.append(time.time() - t0)
-    return _summary(tds=tds)
-
-
 def replicate_cells(device: str, n: int, s: int):
     tds = []
     for _ in range(R):
@@ -127,10 +115,6 @@ def main(parts: list, n: int, s: int, device: str):
     if "spawn_cells" in parts:
         smry = spawn_cells(device=device, n=n, s=s)
         print(f"{smry} - spawn cells")
-
-    if "update_cells" in parts:
-        smry = update_cells(device=device, n=n, s=s)
-        print(f"{smry} - update cells")
 
     if "replicate_cells" in parts:
         smry = replicate_cells(device=device, n=n, s=s)

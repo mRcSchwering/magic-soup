@@ -1,13 +1,13 @@
 //! Single-nucleotide substitutions.
 
-use crate::config::Config;
+use crate::config::MutatorConfig;
 use crate::seq::{base_index, BASES};
 use rand::Rng;
 use std::borrow::Cow;
 
 /// Replace the base at `pos` with a different base. Returns false (and changes
 /// nothing) if the position holds a non-ACGT byte.
-pub fn try_substitution<R: Rng>(seq: &mut Cow<[u8]>, pos: usize, cnf: &Config, rng: &mut R) {
+pub fn try_substitution<R: Rng>(seq: &mut Cow<[u8]>, pos: usize, cnf: &MutatorConfig, rng: &mut R) {
     let Some(i) = base_index(seq[pos]) else {
         return;
     };

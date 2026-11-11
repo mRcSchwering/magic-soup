@@ -9,7 +9,7 @@
 //! rearrangements. Substitution positions are drawn on the original sequence;
 //! indel and break positions are drawn on the current sequence when applied.
 
-use crate::config::Config;
+use crate::config::MutatorConfig;
 use crate::homology::try_rearrangement;
 use crate::indel::try_indel;
 use crate::substitutions::try_substitution;
@@ -26,11 +26,11 @@ enum Kind {
 }
 
 pub struct Mutator {
-    pub cfg: Config,
+    pub cfg: MutatorConfig,
     rng: SmallRng,
 }
 
-fn apply_event(seq: &mut Cow<[u8]>, kind: Kind, cfg: &Config, rng: &mut SmallRng) {
+fn apply_event(seq: &mut Cow<[u8]>, kind: Kind, cfg: &MutatorConfig, rng: &mut SmallRng) {
     match kind {
         Kind::Sub(pos) => try_substitution(seq, pos, cfg, rng),
         Kind::Indel => try_indel(seq, cfg, rng),
@@ -39,7 +39,7 @@ fn apply_event(seq: &mut Cow<[u8]>, kind: Kind, cfg: &Config, rng: &mut SmallRng
 }
 
 impl Mutator {
-    pub fn new(cfg: Config, seed: u64) -> Result<Self, String> {
+    pub fn new(cfg: MutatorConfig, seed: u64) -> Result<Self, String> {
         cfg.validate()?;
         Ok(Mutator {
             cfg,
