@@ -2,7 +2,6 @@ import random
 import warnings
 from collections.abc import Iterable
 from enum import IntEnum
-from itertools import product
 from typing import TypedDict
 
 import numpy as np
@@ -24,16 +23,9 @@ class DomainType(IntEnum):
 
 class _CodonMap:
 
-    def __init__(
-        self, n_codons: int, stop_codons: Iterable[str], allow_last_stop: bool = False
-    ) -> None:
-        # all possible sequences
-        if allow_last_stop:
-            seqs0 = codons(n=n_codons - 1, excl_codons=list(stop_codons))
-            seqs1 = codons(n=1)
-            seqs = [a + b for a, b in product(seqs0, seqs1)]
-        else:
-            seqs = codons(n=n_codons, excl_codons=list(stop_codons))
+    def __init__(self, n_codons: int, stop_codons: Iterable[str]) -> None:
+        # all possible sequences (stop codons excluded from every codon)
+        seqs = codons(n=n_codons, excl_codons=list(stop_codons))
 
         # tokens 1...n+1 (none token 0 gets no sequence)
         self.seq_2_token = {d: i + 1 for i, d in enumerate(seqs)}
@@ -48,9 +40,13 @@ class _DomainTypeMap:
         dom_type_probs: dict[DomainType, float],
         n_dom_type_codons: int,
         stop_codons: list[str],
+        start_codons: list[str],
     ) -> None:
-        # generate all possible valid sequences for domain types
+        # generate all possible valid sequences for domain types; stop codons
+        # are excluded everywhere and start codons are excluded as the first
+        # codon (a start codon there would let the domain open its own CDS)
         seqs = codons(n=n_dom_type_codons, excl_codons=stop_codons)
+        seqs = [d for d in seqs if d[:CODON_SIZE] not in start_codons]
         n_seqs = len(seqs)
         dom_type_2_n = {k: int(p * n_seqs) for k, p in dom_type_probs.items()}
 
@@ -152,10 +148,12 @@ class Genomics:
         # domain type definition (n domain type codons)
         # 3 x 1-codon specifications (3 simple tokens)
         # 1 x 2-codon specification (1 complex token)
-        # a domain can begin and end with start/stop codons
-        # so min CDS size = dom_size
+        # start/stop codons are excluded from domain encodings, so a CDS needs a
+        # dedicated start and stop codon flanking its domain(s):
+        # min CDS size = dom_size + start codon + stop codon
         self.dom_size_nt = (n_dom_type_codons + 5) * CODON_SIZE
         self.dom_type_size_nt = n_dom_type_codons * CODON_SIZE
+        self.min_cds_size_nt = self.dom_size_nt + 2 * CODON_SIZE
 
         # setup nt sequences which start a domain
         domain_type_probs = {
@@ -167,13 +165,12 @@ class Genomics:
             dom_type_probs=domain_type_probs,
             n_dom_type_codons=n_dom_type_codons,
             stop_codons=self.stop_codons,
+            start_codons=self.start_codons,
         )
 
-        # pre-mature stop codons are excluded
+        # start/stop codons are excluded from all domain-internal codons
         self.one_codon_map = _CodonMap(n_codons=1, stop_codons=stop_codons)
-        self.two_codon_map = _CodonMap(
-            n_codons=2, stop_codons=stop_codons, allow_last_stop=True
-        )
+        self.two_codon_map = _CodonMap(n_codons=2, stop_codons=stop_codons)
 
         # setup rust class
         self._setup_rs()
@@ -187,6 +184,7 @@ class Genomics:
             two_codon_2_token=self.two_codon_map.seq_2_token,
             dom_size_nt=self.dom_size_nt,
             dom_type_size_nt=self.dom_type_size_nt,
+            min_cds_size_nt=self.min_cds_size_nt,
         )
 
     def translate_genomes(self, genomes: StrArray) -> list[list[rs.ProteinSpec]]:
@@ -240,7 +238,7 @@ class Genomics:
         # idx0: Vmax/hill (1 codon, no stop)
         # idx1: Km (1 codon, no stop)
         # idx2: sign/orientation (1 codon, no stop)
-        # idx3: reaction/molecule/effector (2 codon, 2nd can be stop)
+        # idx3: reaction/molecule/effector (2 codon, no stop)
         dom_seq = random.choice(domtype_2_seqs[domain_type])
         i0_seq = random.choice(one_codons)
         i1_seq = random.choice(one_codons)

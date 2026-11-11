@@ -120,6 +120,7 @@ struct Genomics {
     two_codon_2_token: HashMap<[u8; 2 * genomics::CODON_SIZE], u16>,
     dom_size: usize,
     dom_type_size: usize,
+    min_cds_size: usize,
 }
 
 #[pymethods]
@@ -133,6 +134,7 @@ impl Genomics {
         two_codon_2_token: HashMap<[u8; 2 * genomics::CODON_SIZE], u16>,
         dom_size: usize,
         dom_type_size: usize,
+        min_cds_size: usize,
     ) -> Self {
         Genomics {
             start_codons,
@@ -142,6 +144,7 @@ impl Genomics {
             two_codon_2_token,
             dom_size,
             dom_type_size,
+            min_cds_size,
         }
     }
 
@@ -168,6 +171,7 @@ impl Genomics {
                 &self.two_codon_2_token,
                 &self.dom_size,
                 &self.dom_type_size,
+                &self.min_cds_size,
             )
         })
     }
@@ -201,6 +205,7 @@ impl Genomics {
                 &self.two_codon_2_token,
                 &self.dom_size,
                 &self.dom_type_size,
+                &self.min_cds_size,
             )
         });
 

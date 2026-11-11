@@ -112,6 +112,7 @@ class Genomics(_ReduceMixin):
         two_codon_2_token: dict[str, int],
         dom_size_nt: int,
         dom_type_size_nt: int,
+        min_cds_size_nt: int,
     ) -> None:
         # encode to be converted to [u8]
         self._cls = _lib.Genomics(
@@ -122,6 +123,7 @@ class Genomics(_ReduceMixin):
             {k.encode(): v for k, v in two_codon_2_token.items()},
             dom_size_nt,
             dom_type_size_nt,
+            min_cds_size_nt,
         )
         self._state = (
             start_codons,
@@ -131,6 +133,7 @@ class Genomics(_ReduceMixin):
             two_codon_2_token,
             dom_size_nt,
             dom_type_size_nt,
+            min_cds_size_nt,
         )
 
     def translate_genomes(

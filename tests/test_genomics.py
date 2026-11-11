@@ -19,13 +19,17 @@ def test_domain_type_map() -> None:
         DomainType.REGULATORY: 0.1,
     }
     stop_codons = ["TGA", "TAG", "TAA"]
+    start_codons = ["TTG", "GTG", "ATG"]
     dom_type_map = _DomainTypeMap(
         dom_type_probs=probs,
         n_dom_type_codons=2,
         stop_codons=stop_codons,
+        start_codons=start_codons,
     )
 
+    # stop codons excluded everywhere, start codons excluded as first codon
     possible_codons = codons(n=2, excl_codons=stop_codons)
+    possible_codons = [d for d in possible_codons if d[:CODON_SIZE] not in start_codons]
     n_total = len(possible_codons)
 
     all_seqs = [dd for d in dom_type_map.type_2_seqs.values() for dd in d]
@@ -191,6 +195,31 @@ def test_extract_domains() -> None:
     assert res[3][0][1][0] == (2, 1, 2, 3, 4)
     assert res[3][0][1][1] == 24
     assert res[3][0][1][2] == 24 + genomics.dom_size_nt
+
+
+def test_extract_domains_rejects_uncovered_spec_codon() -> None:
+    # start/stop codons are excluded from the codon maps, so a domain whose spec
+    # codon is not covered (e.g. its last codon coinciding with the CDS's
+    # terminal stop codon) must be rejected instead of panicking.
+    genomics = Genomics()
+    genomics.domain_type_map.seq_2_token = {"AAAAAA": 1}
+    genomics.one_codon_map.seq_2_token = {"ACT": 1, "CTG": 2, "CCG": 3}
+    genomics.two_codon_map.seq_2_token = {"ACTCTG": 1}
+    genomics.dom_type_size_nt = 6
+    genomics.dom_size_nt = genomics.dom_type_size_nt + 5 * CODON_SIZE  # 21
+    genomics._setup_rs()
+
+    # type AAAAAA + ACT + CTG + CCG + [ACT TGA]: vector "ACTTGA" ends in a stop
+    # and is not in the two-codon map -> the whole domain is rejected
+    bad = "AAAAAA" + "ACT" + "CTG" + "CCG" + "ACTTGA"
+    assert len(bad) == genomics.dom_size_nt
+    assert genomics.extract_domains(genome=bad, cdss=[(0, 21, True)]) == []
+
+    # identical layout but with a covered vector "ACTCTG" -> domain is extracted
+    good = "AAAAAA" + "ACT" + "CTG" + "CCG" + "ACTCTG"
+    res = genomics.extract_domains(genome=good, cdss=[(0, 21, True)])
+    assert len(res) == 1
+    assert res[0][0][0][0] == (1, 1, 2, 3, 1)
 
 
 def test_translate_genomes() -> None:

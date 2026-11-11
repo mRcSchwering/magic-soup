@@ -111,30 +111,30 @@ pub fn extract_domains(
             let dom_type_end = dom_start + *dom_type_size;
             let dom_type_seq = &genome[dom_start..dom_type_end];
 
-            if let Some(dom_type_token) = domain_type_2_token.get(dom_type_seq) {
-                // 1=catal, 2=trnsp, 3=reg
-                if *dom_type_token != 3 {
-                    is_useful_prot = true;
+            // A domain is only valid if its type AND all four spec codons map to
+            // tokens. start/stop codons are excluded from the codon maps, so a
+            // lookup miss means there is no domain here. In particular, a domain
+            // whose last codon coincides with the CDS's terminal stop codon has
+            // an unmapped two-codon spec and is correctly rejected. On any miss
+            // advance a single codon and retry (like a domain-type non-match).
+            let dom_end = dom_start + *dom_size;
+            let dom_spec_seq = &genome[dom_type_end..dom_end];
+            match (
+                domain_type_2_token.get(dom_type_seq),
+                one_codon_2_token.get(&dom_spec_seq[0..i0e]),
+                one_codon_2_token.get(&dom_spec_seq[i0e..i1e]),
+                one_codon_2_token.get(&dom_spec_seq[i1e..i2e]),
+                two_codon_2_token.get(&dom_spec_seq[i2e..i3e]),
+            ) {
+                (Some(dom_type_token), Some(t0), Some(t1), Some(t2), Some(t3)) => {
+                    // 1=catal, 2=trnsp, 3=reg
+                    if *dom_type_token != 3 {
+                        is_useful_prot = true;
+                    }
+                    domains.push(((*dom_type_token, *t0, *t1, *t2, *t3), i, i + *dom_size));
+                    i += *dom_size;
                 }
-                let dom_end = dom_start + *dom_size as usize;
-                let dom_spec_seq = &genome[dom_type_end..dom_end];
-                let t0 = one_codon_2_token
-                    .get(&dom_spec_seq[0..i0e])
-                    .expect("Incomplete one_codon_1_token");
-                let t1 = one_codon_2_token
-                    .get(&dom_spec_seq[i0e..i1e])
-                    .expect("Incomplete one_codon_1_token");
-                let t2 = one_codon_2_token
-                    .get(&dom_spec_seq[i1e..i2e])
-                    .expect("Incomplete one_codon_1_token");
-                let t3 = two_codon_2_token
-                    .get(&dom_spec_seq[i2e..i3e])
-                    .expect("Incomplete two_codon_2_token");
-
-                domains.push(((*dom_type_token, *t0, *t1, *t2, *t3), i, i + *dom_size));
-                i += *dom_size as usize;
-            } else {
-                i += CODON_SIZE;
+                _ => i += CODON_SIZE,
             }
         }
 
@@ -157,8 +157,9 @@ fn translate_genome(
     two_codon_2_token: &HashMap<[u8; 2 * CODON_SIZE], u16>,
     dom_size: &usize,
     dom_type_size: &usize,
+    min_cds_size: &usize,
 ) -> Vec<ProteinSpec> {
-    let cds_fwd = get_coding_regions(genome, dom_size, start_codons, stop_codons, true);
+    let cds_fwd = get_coding_regions(genome, min_cds_size, start_codons, stop_codons, true);
     let mut doms_fwd = extract_domains(
         &genome,
         &cds_fwd,
@@ -171,7 +172,7 @@ fn translate_genome(
 
     // TODO: reverse complement could be done live without allocation
     let bwd = reverse_complement(genome);
-    let cds_bwd = get_coding_regions(&bwd, dom_size, start_codons, stop_codons, false);
+    let cds_bwd = get_coding_regions(&bwd, min_cds_size, start_codons, stop_codons, false);
     let mut doms_bwd = extract_domains(
         &bwd,
         &cds_bwd,
@@ -196,6 +197,7 @@ pub fn translate_genomes_threaded(
     two_codon_2_token: &HashMap<[u8; 2 * CODON_SIZE], u16>,
     dom_size: &usize,
     dom_type_size: &usize,
+    min_cds_size: &usize,
 ) -> Vec<Vec<ProteinSpec>> {
     genomes
         .into_par_iter()
@@ -208,7 +210,8 @@ pub fn translate_genomes_threaded(
                 one_codon_2_token,
                 two_codon_2_token,
                 dom_size,
-                &dom_type_size,
+                dom_type_size,
+                min_cds_size,
             )
         })
         .collect()
