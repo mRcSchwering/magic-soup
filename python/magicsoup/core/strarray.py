@@ -1,8 +1,10 @@
 from collections.abc import Iterable, Iterator, Sequence
-from typing import overload
+from typing import Annotated, overload
 
 import numpy as np
 import numpy.typing as npt
+
+A = Annotated["StrArray", "cpu"]
 
 # a selection of several positions: integer indices or a boolean mask
 IntIndex = npt.NDArray[np.integer] | npt.NDArray[np.bool_] | Sequence[int]
@@ -16,14 +18,8 @@ def _starts_from_lens(lens: np.ndarray) -> np.ndarray:
     return starts
 
 
-# TODO: why not use torch for StrArray?
-#       "compact" could run without host sync
-#       "reconcile_host" would not be required anymore
-
-
 class StrArray:
-    """
-    Mutable 1-D array of variable-length strings.
+    """Mutable 1-D array of variable-length strings.
 
     Arguments:
         strings: Initial strings. Defaults to an empty array.
@@ -83,7 +79,7 @@ class StrArray:
         lens: list[np.ndarray] = []
         base = 0
         for arr in arrays:
-            blob, arr_lens = arr._contiguous()
+            blob, arr_lens = arr._contiguous()  # pylint: disable=W0212
             starts.append(base + _starts_from_lens(arr_lens))
             lens.append(arr_lens)
             blobs.append(blob)
@@ -108,6 +104,8 @@ class StrArray:
     @property
     def utilization(self) -> float:
         """Number of live bytes divided by the total buffer size (see [compact()][.compact])."""
+        if self._buf.size == 0:
+            return 1.0
         return float(self._lens.sum() / self._buf.size)
 
     # reading
@@ -174,9 +172,7 @@ class StrArray:
 
     def _scatter_strings(self, ii: np.ndarray, strings: list[str]) -> None:
         if len(ii) != len(strings):
-            raise ValueError(
-                f"Cannot assign {len(strings)} strings to {len(ii)} positions"
-            )
+            raise ValueError(f"Cannot assign {len(strings)} strings to {len(ii)} positions")
 
         if not strings:
             return
@@ -184,24 +180,20 @@ class StrArray:
         blobs = [s.encode() for s in strings]
         lens = np.fromiter((len(b) for b in blobs), dtype=np.int64, count=len(blobs))
         base = self._buf.size
-        self._buf = np.concatenate(
-            [self._buf, np.frombuffer(b"".join(blobs), dtype=np.uint8)]
-        )
+        self._buf = np.concatenate([self._buf, np.frombuffer(b"".join(blobs), dtype=np.uint8)])
         self._starts[ii] = base + _starts_from_lens(lens)
         self._lens[ii] = lens
 
     def _scatter_strarray(self, ii: np.ndarray, value: "StrArray") -> None:
         if len(ii) != len(value):
-            raise ValueError(
-                f"Cannot assign {len(value)} strings to {len(ii)} positions"
-            )
+            raise ValueError(f"Cannot assign {len(value)} strings to {len(ii)} positions")
 
-        if value._buf is self._buf:
-            self._starts[ii] = value._starts
-            self._lens[ii] = value._lens
+        if value._buf is self._buf:  # pylint: disable=W0212
+            self._starts[ii] = value._starts  # pylint: disable=W0212
+            self._lens[ii] = value._lens  # pylint: disable=W0212
             return
 
-        blob, lens = value._contiguous()
+        blob, lens = value._contiguous()  # pylint: disable=W0212
         base = self._buf.size
         self._buf = np.concatenate([self._buf, blob])
         self._starts[ii] = base + _starts_from_lens(lens)
@@ -210,8 +202,7 @@ class StrArray:
     # maintenance
 
     def compact(self) -> None:
-        """
-        Drop dead bytes, repacking the buffer to hold only live strings.
+        """Drop dead bytes, repacking the buffer to hold only live strings.
 
         Scatter and kill operations leave overwritten bytes behind. Call this
         (e.g. periodically, or after large deletions) to reclaim that memory.
@@ -222,8 +213,7 @@ class StrArray:
         self._lens = lens
 
     def as_buffers(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Expose the backing arrays `(buffer, starts, lens)` for zero-copy exchange.
+        """Expose the backing arrays `(buffer, starts, lens)` for zero-copy exchange.
 
         Element `i` is `buffer[starts[i] : starts[i] + lens[i]]`. The buffer may
         contain dead bytes; always honour `starts`/`lens` rather than reading it
@@ -253,6 +243,4 @@ class StrArray:
         return self._buf[src], lens.copy()
 
     def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}(n={len(self)}, utilization={self.utilization:.2f})"
-        )
+        return f"{type(self).__name__}(n={len(self)}, utilization={self.utilization:.2f})"

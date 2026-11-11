@@ -11,7 +11,7 @@ from magicsoup.biology import Cell
 from magicsoup.cells import Cells, CellsKwargs
 from magicsoup.chemistry import Chemistry
 from magicsoup.core.strarray import StrArray
-from magicsoup.core.tensorclass import TensorClass, TensorKwargs
+from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 from magicsoup.core.util import randstr
 from magicsoup.culture import Culture, CultureKwargs
 from magicsoup.genomics import Genomics, GenomicsKwargs
@@ -27,9 +27,6 @@ from magicsoup.physics import (
 from magicsoup.proteomics import Proteomics, ProteomicsKwargs
 
 _log = logging.getLogger(__name__)
-
-type T = torch.Tensor
-type A = StrArray
 
 
 # TODO: adapt torch code:

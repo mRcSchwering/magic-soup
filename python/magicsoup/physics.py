@@ -6,7 +6,7 @@ import torch
 # pylint: disable=not-callable
 from torch.fft import fftfreq, irfft2, rfft2, rfftfreq
 
-from magicsoup.core.tensorclass import TensorClass, TensorKwargs
+from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 
 
 class DiffusionKwargs(TypedDict, total=False):
@@ -60,7 +60,7 @@ class Diffusion(TensorClass):
         # decay factor for ĉ(t) = ĉ(0) exp(-D λ dt)
         self.decay = torch.exp(-D[:, None, None] * dt * lam)  # (m, N, N//2 + 1)
 
-    def diffuse(self, x: torch.Tensor) -> torch.Tensor:
+    def diffuse(self, x: T) -> T:
         """
         Diffuse molecule map
 
@@ -76,8 +76,8 @@ class Diffusion(TensorClass):
         before = x.sum(dim=(1, 2), dtype=torch.float64)
 
         # diffuse molecules for dt along dx
-        c_hat: torch.Tensor = rfft2(x)
-        out: torch.Tensor = irfft2(c_hat * self.decay, s=(N, N))
+        c_hat: T = rfft2(x)
+        out: T = irfft2(c_hat * self.decay, s=(N, N))
         out = out.clamp(min=0)
 
         # accurately track molecule totals after
@@ -136,7 +136,7 @@ class Permeation(TensorClass):
         k = P * a_cell * (1 / v_cell + 1 / v_vox)  # (m,) exchange rate in 1/s
         self.decay = torch.exp(-k * dt)  # (m,) remaining fraction per step
 
-    def permeate(self, x: torch.Tensor) -> torch.Tensor:
+    def permeate(self, x: T) -> T:
         """
         Permeate and return cell molecule concentrations (c, m)
 
@@ -182,7 +182,7 @@ class Degradation(TensorClass):
         k = torch.log(self.ftensor(2)) / t_half  # (m,)
         self.decay = torch.where(t_half > 0, torch.exp(-k * dt), 1.0)  # (m,)
 
-    def degrade(self, x: torch.Tensor, m_dim: int) -> torch.Tensor:
+    def degrade(self, x: T, m_dim: int) -> T:
         """
         Degrade molecules.
 

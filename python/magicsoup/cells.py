@@ -2,23 +2,19 @@ import json
 import logging
 import math
 from pathlib import Path
-from typing import Annotated, TypedDict
+from typing import TypedDict
 
 import numpy as np
 import torch
 
 from magicsoup.chemistry import Chemistry
-from magicsoup.core.strarray import StrArray
-from magicsoup.core.tensorclass import TensorClass, TensorKwargs
+from magicsoup.core.strarray import A, StrArray
+from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 from magicsoup.core.util import read_fasta, write_fasta
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.proteomics import Proteomics, ProteomicsKwargs
 
 _log = logging.getLogger(__name__)
-
-
-A = Annotated[StrArray, "cpu"]
-T = Annotated[torch.Tensor, "cuda"]
 
 
 class CellsKwargs(TypedDict, total=False):

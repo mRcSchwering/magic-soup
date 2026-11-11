@@ -4,7 +4,7 @@ from typing import TypedDict
 import numpy as np
 
 from magicsoup import rs
-from magicsoup.core.strarray import StrArray
+from magicsoup.core.strarray import A, StrArray
 
 
 class MutatorKwargs(TypedDict, total=False):
@@ -128,7 +128,7 @@ class Mutator:
         # setup rust class
         self._setup_rs()
 
-    def mutate(self, genomes: StrArray) -> tuple[np.ndarray, StrArray]:
+    def mutate(self, genomes: A) -> tuple[np.ndarray, A]:
         """Apply mutations"""
         idxs, seqs = self.rs.mutate(*genomes.as_buffers())
         return idxs, StrArray.from_strings(seqs)

@@ -1,8 +1,10 @@
-from typing import Any, TypedDict
+from typing import Annotated, Any, TypedDict
 
 import torch
 
-from magicsoup.core.config import DEFAULT_DEVICE, FTYPE, IDXTYPE, ITYPE, T
+from magicsoup.core.config import DEFAULT_DEVICE, FTYPE, IDXTYPE, ITYPE
+
+T = Annotated[torch.Tensor, "cuda"]
 
 
 class TensorKwargs(TypedDict, total=False):
@@ -10,8 +12,7 @@ class TensorKwargs(TypedDict, total=False):
 
 
 class TensorClass:
-    """
-    Setup pytorch tensors
+    """Consolidates tensor device and dtypes
 
     Arguments:
         device: Device to use for torch tensors

@@ -4,8 +4,7 @@ from typing import TypedDict
 import torch
 
 from magicsoup.chemistry import Chemistry
-from magicsoup.core.config import T
-from magicsoup.core.tensorclass import TensorClass, TensorKwargs
+from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 
 
 class MooreNeighborhood(TensorClass):

@@ -3,7 +3,7 @@ from typing import TypedDict
 import torch
 import torch.nn.functional as F
 
-from magicsoup.core.tensorclass import TensorClass, TensorKwargs
+from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 
 
 class KineticsKwargs(TypedDict, total=False):
@@ -57,16 +57,16 @@ class Kinetics(TensorClass):
 
     def get_x1(
         self,
-        x0: torch.Tensor,  # (c, 2m)
-        N_e: torch.Tensor,  # (c, p, 2m)
-        N_h: torch.Tensor,  # (c, p, 2m)
-        N_f: torch.Tensor,  # (c, p, 2m)
-        N_b: torch.Tensor,  # (c, p, 2m)
-        k_f: torch.Tensor,  # (c, p)
-        k_b: torch.Tensor,  # (c, p)
-        k_r: torch.Tensor,  # (c, p)
-        v_max: torch.Tensor,  # (c, p)
-    ) -> torch.Tensor:
+        x0: T,  # (c, 2m)
+        N_e: T,  # (c, p, 2m)
+        N_h: T,  # (c, p, 2m)
+        N_f: T,  # (c, p, 2m)
+        N_b: T,  # (c, p, 2m)
+        k_f: T,  # (c, p)
+        k_b: T,  # (c, p)
+        k_r: T,  # (c, p)
+        v_max: T,  # (c, p)
+    ) -> T:
         """
         Calculate concentrations after one time step
 
@@ -100,23 +100,21 @@ class Kinetics(TensorClass):
             use = self.compile
             if use is None:
                 use = "cuda" in str(self.device)
-            self._solver = (
-                torch.compile(self._solve, dynamic=True) if use else self._solve
-            )
+            self._solver = torch.compile(self._solve, dynamic=True) if use else self._solve
         return self._solver
 
     def _solve(
         self,
-        x0: torch.Tensor,  # (c, 2m)
-        N_e: torch.Tensor,  # (c, p, 2m)
-        N_h: torch.Tensor,  # (c, p, 2m)
-        N_f: torch.Tensor,  # (c, p, 2m)
-        N_b: torch.Tensor,  # (c, p, 2m)
-        k_f: torch.Tensor,  # (c, p)
-        k_b: torch.Tensor,  # (c, p)
-        k_r: torch.Tensor,  # (c, p)
-        v_max: torch.Tensor,  # (c, p)
-    ) -> torch.Tensor:
+        x0: T,  # (c, 2m)
+        N_e: T,  # (c, p, 2m)
+        N_h: T,  # (c, p, 2m)
+        N_f: T,  # (c, p, 2m)
+        N_b: T,  # (c, p, 2m)
+        k_f: T,  # (c, p)
+        k_b: T,  # (c, p)
+        k_r: T,  # (c, p)
+        v_max: T,  # (c, p)
+    ) -> T:
         # Block-Jacobi sweeps with inner bisection; all loops are fixed-count and
         # the whole body is elementwise/reduction-only, so it is torch.compile- and
         # CUDA-graph-friendly (no host synchronization).
@@ -180,18 +178,18 @@ class Kinetics(TensorClass):
         self,
         n_iters: int,
         dt: float,
-        B: torch.Tensor,  # (c, p, 2m)
-        xi_lo: torch.Tensor,  # (c, p)
-        xi_hi: torch.Tensor,  # (c, p)
-        N: torch.Tensor,  # (c, p, 2m)
-        N_h: torch.Tensor,  # (c, p, 2m)
-        N_f: torch.Tensor,  # (c, p, 2m)
-        N_b: torch.Tensor,  # (c, p, 2m)
-        k_f: torch.Tensor,  # (c, p)
-        k_b: torch.Tensor,  # (c, p)
-        k_r: torch.Tensor,  # (c, p)
-        v_max: torch.Tensor,  # (c, p)
-    ) -> torch.Tensor:
+        B: T,  # (c, p, 2m)
+        xi_lo: T,  # (c, p)
+        xi_hi: T,  # (c, p)
+        N: T,  # (c, p, 2m)
+        N_h: T,  # (c, p, 2m)
+        N_f: T,  # (c, p, 2m)
+        N_b: T,  # (c, p, 2m)
+        k_f: T,  # (c, p)
+        k_b: T,  # (c, p)
+        k_r: T,  # (c, p)
+        v_max: T,  # (c, p)
+    ) -> T:
         # solve for xi per protein
         # - B must be concentrations of all other activity at initial xi
         # - xi_lo, xi_hi must ensure concentration positivity
@@ -241,10 +239,10 @@ class Kinetics(TensorClass):
 
     def _get_alpha_reg(
         self,
-        x: torch.Tensor,  # (c, p, 2m)
-        N_h: torch.Tensor,  # (c, p, 2m)
-        k_r: torch.Tensor,  # (c, p)
-    ) -> torch.Tensor:
+        x: T,  # (c, p, 2m)
+        N_h: T,  # (c, p, 2m)
+        k_r: T,  # (c, p)
+    ) -> T:
         # calculate per protein regulatory activity
         # - N_h defines hill coefficients
         # - x must be >= 0 for all elements where N_h > 0
@@ -269,12 +267,12 @@ class Kinetics(TensorClass):
 
     def _get_alpha_cat(
         self,
-        x: torch.Tensor,  # (c, p, 2m)
-        N_f: torch.Tensor,  # (c, p, 2m)
-        N_b: torch.Tensor,  # (c, p, 2m)
-        k_f: torch.Tensor,  # (c, p)
-        k_b: torch.Tensor,  # (c, p)
-    ) -> torch.Tensor:
+        x: T,  # (c, p, 2m)
+        N_f: T,  # (c, p, 2m)
+        N_b: T,  # (c, p, 2m)
+        k_f: T,  # (c, p)
+        k_b: T,  # (c, p)
+    ) -> T:
         # calculate per protein catalytic activity
         # - N_f defines forward stoichiometric coefficients
         # - N_b defines backward stoichiometric coefficients
@@ -305,9 +303,7 @@ class Kinetics(TensorClass):
         alpha = (e_f - e_b) / (e_max + e_f + e_b)  # (c, p)
         return alpha.nan_to_num(0.0)  # (c, p)
 
-    def _dampen_cells(
-        self, x0: torch.Tensor, dx: torch.Tensor, xi: torch.Tensor, pad: float = 1e-3
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _dampen_cells(self, x0: T, dx: T, xi: T, pad: float = 1e-3) -> tuple[T, T]:
         # Rescale xi and x0 to ensure positive concentrations
         #
         # Rescaling happens per cell (whole cell is slowed down) but is quick
@@ -325,11 +321,11 @@ class Kinetics(TensorClass):
     @classmethod
     def _get_bounds(
         cls,
-        B: torch.Tensor,  # (c, p, 2m)
-        N_e: torch.Tensor,  # (c, p, 2m)
-        v_max: torch.Tensor,  # (c, p)
+        B: T,  # (c, p, 2m)
+        N_e: T,  # (c, p, 2m)
+        v_max: T,  # (c, p)
         dt: float,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[T, T]:
         # calculate xi bounds for bisection
         # - B represents molecule concentration per protein if all other proteins were active
         # - N represents stoichiometric numbers per protein
