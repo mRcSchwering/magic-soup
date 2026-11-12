@@ -6,6 +6,8 @@ from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDoma
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from plotnine import *  # pylint: disable=W0614,W0401
 
+# TODO: wrap CDSs in plot
+
 
 def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, cdsw=4):
     cell = world.get_cell(by_idx=cell_idx)
@@ -60,25 +62,21 @@ def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, 
     sizes = {d: gw if d == "genome" else cdsw for d in tags}
     return (
         ggplot(df)
-        + geom_segment(
-            aes(x="start", y="tag", xend="stop", yend="tag", color="type", size="tag")
-        )
+        + geom_segment(aes(x="start", y="tag", xend="stop", yend="tag", color="type", size="tag"))
         + scale_color_manual(values=colors)  # pylint: disable=all
         + scale_size_manual(values=sizes)
         + guides(size=False)
         + theme(figure_size=(w, h * len(sizes) + 0.3))
         + theme(panel_grid_major=element_blank(), panel_grid_minor=element_blank())
         + theme(axis_title_x=element_blank(), axis_title_y=element_blank())
-        + theme(
-            legend_position="bottom", legend_title=element_blank(), legend_margin=10.0
-        )
+        + theme(legend_position="bottom", legend_title=element_blank(), legend_margin=10.0)
     ), "transcriptome"
 
 
-def create_plots(imgs_dir: Path):
+def create_plots(imgs_dir: Path, transparent: bool):
     world = ms.World(chemistry=CHEMISTRY)
     world.spawn_cells(genomes=[ms.random_genome(s=1000) for _ in range(10)])
 
     for idx in range(3):
         g, name = _plot_genome_transcripts(cell_idx=idx, world=world)
-        g.save(imgs_dir / f"{name}{idx}.png", dpi=200, transparent=True)
+        g.save(imgs_dir / f"{name}{idx}.png", dpi=200, transparent=transparent)

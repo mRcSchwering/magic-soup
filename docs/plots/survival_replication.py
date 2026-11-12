@@ -56,7 +56,7 @@ def _plot_random_splits(
     ), "random_splits"
 
 
-def create_plots(imgs_dir: Path):
+def create_plots(imgs_dir: Path, transparent: bool):
     def replicate(t: torch.Tensor, k=15, n=5) -> torch.Tensor:
         return t**n / (t**n + k**n)
 
@@ -74,4 +74,4 @@ def create_plots(imgs_dir: Path):
         split_ratios=[0.1, 0.2, 0.3],
         n_mols=[3, 4, 5, 6],
     )
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)

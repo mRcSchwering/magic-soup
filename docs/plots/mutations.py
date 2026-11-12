@@ -44,9 +44,8 @@ def _plot_default_mutations(n_gens: int = 1000) -> tuple[ggplot, str]:
         label = label or "default"
 
         for gen_i in range(n_gens + 1):
-            mutated = mutator.mutate(genomes=genomes)
-            for idx, genome in mutated:
-                genomes[idx] = genome  # type: ignore
+            idxs, mutated = mutator.mutate(genomes=genomes)
+            genomes[idxs] = mutated
 
             if gen_i % nth == 0:
                 n_mut, jacc, ani = _get_stats(genomes.tolist(), orig_genomes.tolist())
@@ -78,6 +77,6 @@ def _plot_default_mutations(n_gens: int = 1000) -> tuple[ggplot, str]:
     ), "mutations"
 
 
-def create_plots(imgs_dir: Path):
+def create_plots(imgs_dir: Path, transparent: bool):
     g, name = _plot_default_mutations()
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)

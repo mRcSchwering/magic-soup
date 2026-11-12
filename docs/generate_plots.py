@@ -21,37 +21,44 @@ from docs.plots.param_distros import create_plots as plot_param_distros
 from docs.plots.survival_replication import create_plots as plot_survival_replication
 from docs.plots.transcriptomes import create_plots as plot_transcriptomes
 
-_PLOTS: dict[str, Callable] = {
+_SUPPORTING_PLOTS: dict[str, Callable] = {
     "genomes": plot_genomes,
     "transcriptomes": plot_transcriptomes,
     "mutations": plot_mutations,
-    "molecule_physics": plot_molecule_physics,
-    "param_distros": plot_param_distros,
+    "molecule-physics": plot_molecule_physics,
+    "param-distros": plot_param_distros,
     #  "reaction_kinetics": plot_reaction_kinetics,
     #  "biochemical_patterns": plot_biochemical_patterns,
-    "free_energy": plot_free_energy,
-    "survival_replication": plot_survival_replication,
+    "free-energy": plot_free_energy,
+    "survival-replication": plot_survival_replication,
 }
 
 
-def main(plots: list[str]):
-    if len(plots) == 0:
-        plots = list(_PLOTS)
+def generate_supporting_plots(plots: list[str] | None, not_transparent: bool):
+    if plots is None or len(plots) == 0:
+        plots = list(_SUPPORTING_PLOTS)
 
     imgs_dir = Path(__file__).parent.parent / "docs" / "img" / "supporting"
     if not imgs_dir.is_dir():
         raise ValueError(f"{imgs_dir} is not a directory")
 
     theme_set(theme_minimal())
-    for name, fun in _PLOTS.items():
+    for name, fun in _SUPPORTING_PLOTS.items():
         if name in plots:
             print(f"plotting {name}...")
-            fun(imgs_dir)
+            fun(imgs_dir, not not_transparent)
             print(f"... done plotting {name}")
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--plots", nargs="*", action="store")
-    args = parser.parse_args()
-    main(plots=args.plots)
+    subparsers = parser.add_subparsers(dest="cmd")
+
+    supporting = subparsers.add_parser("supporting")
+    supporting.add_argument("--plots", nargs="*", action="store")
+    supporting.add_argument("--not-transparent", action="store_true")
+
+    kwargs = vars(parser.parse_args())
+    cmd = kwargs.pop("cmd")
+    if cmd == "supporting":
+        generate_supporting_plots(**kwargs)

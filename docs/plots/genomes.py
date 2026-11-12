@@ -132,12 +132,12 @@ def _plot_start_stop_codons(ncells: int, size: int):
     return plot, "different_start_stop_codons"
 
 
-def create_plots(imgs_dir: Path):
+def create_plots(imgs_dir: Path, transparent: bool):
     ncells = 1000
     size = 1000
     g, name = _plot_genome_sizes(ncells=ncells)
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)
     g, name = _plot_domain_probabilities(ncells=ncells, size=size)
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)
     g, name = _plot_start_stop_codons(ncells=ncells, size=size)
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)

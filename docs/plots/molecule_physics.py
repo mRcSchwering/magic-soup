@@ -6,9 +6,10 @@ import pandas as pd
 from plotnine import *  # pylint: disable=W0614,W0401
 
 
+# TODO: molecules don't diffuse at all
 def _plot_diff(chemistry: ms.Chemistry):
     N = 32
-    dt = 0.1
+    dt = 100
     world = ms.World(time_step=dt, chemistry=chemistry, culture_kwargs={"map_size": N})
     h = N // 2
 
@@ -18,11 +19,11 @@ def _plot_diff(chemistry: ms.Chemistry):
     world.culture.molecule_map[:, h, h + 1] = 100
     world.culture.molecule_map[:, h + 1, h + 1] = 100
 
-    n_seconds = 10
+    n_steps = 10
     mols = ["CO2", "glucose", "NADH"]
 
     records = []
-    for ti in range(n_seconds):
+    for ti in range(n_steps):
         for mol in mols:
             mi = chemistry.molname_2_idx[mol]
             record = {"second": round(ti * dt, 1), "molecule": mol}
@@ -57,7 +58,7 @@ def _plot_diff(chemistry: ms.Chemistry):
 
 def _plot_perm_degrad(chemistry: ms.Chemistry):
     # permeability
-    n_seconds = 10
+    n_seconds = 1
     dt = 0.01
     mols = ["CO2", "acetat", "glucose"]
 
@@ -78,6 +79,7 @@ def _plot_perm_degrad(chemistry: ms.Chemistry):
     dfp = pd.DataFrame.from_records(records)
     dfp["type"] = "permeability"
 
+    # TODO: for some reason molecules don't degrade here
     # half-life
     dt = 1000
     n_seconds = 10_000_000
@@ -108,18 +110,18 @@ def _plot_perm_degrad(chemistry: ms.Chemistry):
     ), "permeation-degradation"
 
 
-def create_plots(imgs_dir: Path):
+def create_plots(imgs_dir: Path, transparent: bool):
     # half-lfie (days) diffusion coef (cm²/s), permeability coef (cm/s),
     molecules = [
         ms.Molecule("CO2", 1, diffusivity=1.9e-5, permeability=3.5e-1),
         ms.Molecule("glucose", 1, diffusivity=6.7e-6, permeability=1e-8),
-        ms.Molecule("NADH", 1, half_life=100, diffusivity=2.5e-6, permeability=-1),
+        ms.Molecule("NADH", 1, half_life=100, diffusivity=2.5e-6),
         ms.Molecule("acetat", 1, permeability=2.0e-4),
         ms.Molecule("acetyl-phosphate", 1, half_life=0.5),
     ]
 
     chemistry = ms.Chemistry(molecules=molecules, reactions=[])
     g, name = _plot_diff(chemistry=chemistry)
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)
     g, name = _plot_perm_degrad(chemistry=chemistry)
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)

@@ -69,8 +69,7 @@ def _plot_distributions_discrete():
     df = pd.DataFrame(
         {
             "value": N_e.tolist() + H.tolist(),
-            "variable": ["Stoichiometric number"] * N_e.numel()
-            + ["Hill coefficient"] * H.numel(),
+            "variable": ["Stoichiometric number"] * N_e.numel() + ["Hill coefficient"] * H.numel(),
         }
     )
     df["variable"] = pd.Categorical(
@@ -87,8 +86,8 @@ def _plot_distributions_discrete():
     ), "discrete-parameter-distributions"
 
 
-def create_plots(imgs_dir: Path):
+def create_plots(imgs_dir: Path, transparent: bool):
     g, name = _plot_distributions_continuous()
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)
     g, name = _plot_distributions_discrete()
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)

@@ -7,11 +7,12 @@ from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 from plotnine import *  # pylint: disable=W0614,W0401
 
 
+# TODO: for some reason energy only decreases with degradation, reactions don't work?
 def _run_simulation(reactions: list[ms.Reaction], label: str, n_seconds=100) -> pd.DataFrame:
-    print("starting", label)
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=reactions)
     E = torch.tensor([d.energy for d in chemistry.molecules], dtype=torch.double)
     world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 10})
+    world.degradation.decay[:] = 1.0  # TODO: temporarily turned off degradation
     world.culture.molecule_map[:] = 10.0
     N = world.culture.map_size
 
@@ -25,7 +26,6 @@ def _run_simulation(reactions: list[ms.Reaction], label: str, n_seconds=100) -> 
 
     records = []
     for t in range(n_seconds):
-        print(f"  {t}s")
         records.append({"t": t, "e": _get_energy_dens(world)})
         world.advance_time()
 
@@ -50,6 +50,6 @@ def _plot_energy():
     ), "energy-density"
 
 
-def create_plots(imgs_dir: Path):
+def create_plots(imgs_dir: Path, transparent: bool):
     g, name = _plot_energy()
-    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=True)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)
