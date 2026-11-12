@@ -461,15 +461,12 @@ class World(TensorClass):
     def advance_time(self, n_steps: int = 1) -> None:
         # forces host sync
         cell_idxs = self.cells.get_cell_idxs()  # (c,)
-
+        has_cells = cell_idxs.numel() > 0
         cell_molecules = self.cells.molecules  # (c, m)
         molecule_map = self.culture.molecule_map  # (m, N, N)
         cell_coords = self.culture.get_cell_coords()  # (N², 2)
         cell_rows = cell_coords[cell_idxs, 0]
         cell_cols = cell_coords[cell_idxs, 1]
-
-        if cell_idxs.numel() == 0:
-            return
 
         for _ in range(n_steps):
             # degradation
@@ -478,6 +475,9 @@ class World(TensorClass):
 
             # diffusion
             molecule_map[:] = self.diffusion.diffuse(molecule_map)
+
+            if not has_cells:
+                continue
 
             # collect internal and external molecules for x
             x = torch.cat(

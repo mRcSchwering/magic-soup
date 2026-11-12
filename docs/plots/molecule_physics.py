@@ -6,10 +6,9 @@ import pandas as pd
 from plotnine import *  # pylint: disable=W0614,W0401
 
 
-# TODO: molecules don't diffuse at all
 def _plot_diff(chemistry: ms.Chemistry):
     N = 32
-    dt = 100
+    dt = 0.1
     world = ms.World(time_step=dt, chemistry=chemistry, culture_kwargs={"map_size": N})
     h = N // 2
 
@@ -40,9 +39,7 @@ def _plot_diff(chemistry: ms.Chemistry):
         world.advance_time()
 
     df = pd.DataFrame.from_records(records)
-    df["molecule"] = pd.Categorical(
-        df["molecule"], categories=[d.name for d in chemistry.molecules], ordered=True
-    )
+    df["molecule"] = pd.Categorical(df["molecule"], categories=mols, ordered=True)
 
     return (
         ggplot(df)
@@ -79,7 +76,6 @@ def _plot_perm_degrad(chemistry: ms.Chemistry):
     dfp = pd.DataFrame.from_records(records)
     dfp["type"] = "permeability"
 
-    # TODO: for some reason molecules don't degrade here
     # half-life
     dt = 1000
     n_seconds = 10_000_000

@@ -28,27 +28,50 @@ def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, 
     records = [{"tag": "genome", "dir": "", "start": 0, "stop": n, "type": "genome"}]
     for pi, prot in enumerate(cell.proteome):
         tag = f"CDS{pi}"
-        start = prot.cds_start if prot.is_53 else n - prot.cds_start
-        stop = prot.cds_end if prot.is_53 else n - prot.cds_end
-        records.append(
-            {
-                "tag": tag,
-                "dir": "fwd" if prot.is_53 else "bwd",
-                "start": start,
-                "stop": stop,
-                "type": "CDS",
-            }
-        )
-        for dom in prot.domains:
-            records.append(
-                {
-                    "tag": tag,
-                    "dir": "fwd" if prot.is_53 else "bwd",
-                    "start": start + dom.start if prot.is_53 else start - dom.start,
-                    "stop": start + dom.end if prot.is_53 else start - dom.end,
-                    "type": dom_type_map[type(dom)],
-                }
-            )
+        rec = {"tag": tag}
+
+        # 5'-3'
+        if prot.is_53:
+            rec["dir"] = "fwd"
+            rec["type"] = "CDS"
+            cds_start = prot.cds_start
+            cds_end = prot.cds_end
+            records.append({**rec, "start": cds_start, "stop": min(cds_end, n)})
+
+            if cds_end > n:
+                records.append({**rec, "start": 0, "stop": cds_end % n})
+
+            for dom in prot.domains:
+                rec["type"] = dom_type_map[type(dom)]
+                dom_start = cds_start + dom.start
+                dom_end = cds_start + dom.end
+                records.append({**rec, "start": dom_start, "stop": min(dom_end, n)})
+
+                if dom_end > n:
+                    records.append({**rec, "start": 0, "stop": dom_end % n})
+
+        # 3'-5'
+        else:
+            rec["dir"] = "bwd"
+            rec["type"] = "CDS"
+            cds_start = n - prot.cds_start
+            cds_end = n - prot.cds_end
+            records.append({**rec, "start": cds_start, "stop": max(cds_end, 0)})
+
+            if cds_end < 0:
+                records.append({**rec, "start": n, "stop": n + cds_end})
+
+            for dom in prot.domains:
+                rec["type"] = dom_type_map[type(dom)]
+                dom_start = cds_start - dom.start
+                dom_end = cds_start - dom.end
+                records.append({**rec, "start": max(dom_start, 0), "stop": max(dom_end, 0)})
+
+                if dom_start < 0:
+                    records.append({**rec, "start": n + dom_start, "stop": n + dom_end})
+                elif dom_end < 0:
+                    records.append({**rec, "start": n, "stop": n + dom_end})
+
     df = pd.DataFrame.from_records(records)
 
     tags = (

@@ -7,12 +7,11 @@ from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
 from plotnine import *  # pylint: disable=W0614,W0401
 
 
-# TODO: for some reason energy only decreases with degradation, reactions don't work?
-def _run_simulation(reactions: list[ms.Reaction], label: str, n_seconds=100) -> pd.DataFrame:
+def _run_simulation(reactions: list[ms.Reaction], label: str, n_seconds=1000) -> pd.DataFrame:
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=reactions)
     E = torch.tensor([d.energy for d in chemistry.molecules], dtype=torch.double)
     world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 10})
-    world.degradation.decay[:] = 1.0  # TODO: temporarily turned off degradation
+    world.degradation.decay[:] = 1.0  # degradation would overshadow reactions
     world.culture.molecule_map[:] = 10.0
     N = world.culture.map_size
 
