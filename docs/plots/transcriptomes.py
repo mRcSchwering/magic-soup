@@ -6,8 +6,6 @@ from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDoma
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
 from plotnine import *  # pylint: disable=W0614,W0401
 
-# TODO: wrap CDSs in plot
-
 
 def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, cdsw=4):
     cell = world.get_cell(by_idx=cell_idx)
