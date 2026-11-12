@@ -22,10 +22,13 @@ def randstr(n: int = 12) -> str:
     (birthday paradox)
     """
     return "".join(
-        random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=n)
+        random.choices(
+            string.ascii_uppercase + string.ascii_lowercase + string.digits, k=n
+        )
     )
 
 
+# TODO: adapt excl logic?
 def random_genome(s: int = 500, excl: Iterable[str] | None = None) -> str:
     """
     Generate a random nucleotide sequence string
@@ -42,6 +45,9 @@ def random_genome(s: int = 500, excl: Iterable[str] | None = None) -> str:
     the resulting genome.
     If you also want to get rid of those, you have to also provide their
     reverse-complement in `excl`.
+    Genomes are treated as circular elsewhere in the simulation, but this
+    function only removes `excl` from the linear string; an excluded sequence
+    may still form across the seam where the end meets the start.
     """
     n = s
     out = "".join(random.choices(ALL_NTS, k=s))

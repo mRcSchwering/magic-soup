@@ -50,6 +50,14 @@ pub fn geometric_len<R: rand::Rng>(rng: &mut R, mean: f64, max: usize) -> usize 
     len
 }
 
+/// Circular substring of length `len` starting at `start`; indices wrap mod n.
+/// The genome has no canonical origin, so reads that run past the end continue
+/// from the beginning.
+pub fn circular_slice(s: &[u8], start: usize, len: usize) -> Vec<u8> {
+    let n = s.len();
+    (0..len).map(|t| s[(start + t) % n]).collect()
+}
+
 /// Convert offset-buffer to vector
 pub fn buffer_to_vec<'a>(buf: &'a [u8], starts: &[isize], lens: &[isize]) -> Vec<&'a [u8]> {
     starts

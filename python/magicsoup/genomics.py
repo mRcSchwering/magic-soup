@@ -97,7 +97,9 @@ class Genomics:
 
     Translation happens only within coding sequences (CDSs).
     A CDS starts at every start codon and ends with the first in-frame encountered stop codon.
-    Un-stopped CDSs are discarded.
+    The genome is circular, so a CDS (and a codon) may wrap around the origin.
+    A CDS that finds no in-frame stop within one full turn (_i.e._ would be longer
+    than the genome) is discarded, as are un-stopped CDSs.
     Both the forward and reverse complement of the nucleotide sequence are considered.
     Each CDS represents one [Protein][magicsoup.biology.Protein].
     All domains found within a CDS will be added as domains to that protein.
@@ -237,6 +239,10 @@ class Genomics:
             n_pad_nts: number of padding nucleotides between all CDSs
 
         The generated genome has at least the provided CDSs but it may have more.
+        The genome is circular, so the trailing padding wraps around to meet the
+        leading padding; a spurious CDS may form across this seam (covered by
+        "it may have more"). The provided CDSs are always flanked by padding and
+        are therefore never split by the seam.
         """
         n_pads = len(cdss) + 1
         pad_size = n_pad_nts // n_pads

@@ -46,6 +46,7 @@ A cell's [genome](https://en.wikipedia.org/wiki/Genome) is a chain of [nucleotid
 T, C, G, A. There are [start and stop codons](https://en.wikipedia.org/wiki/Genetic_code) which define [coding regions (CDSs)](https://en.wikipedia.org/wiki/Coding_region).
 Transcription can start at any start codon and will end when the first [in-frame](https://en.wikipedia.org/wiki/Reading_frame) stop codon encountered.
 CDSs without a stop codon are not considered [[James NR 2016](https://pubmed.ncbi.nlm.nih.gov/27934701/)].
+The genome is [circular](https://en.wikipedia.org/wiki/Circular_DNA), so a coding region can continue past the end of the sequence and wrap around the origin (a region that finds no stop within one full turn is likewise discarded).
 It differs to [real-life transcription](https://en.wikipedia.org/wiki/Transcription_(biology)) in that there are no promotor and terminator sequences.
 Each CDS is translated into one protein, giving each cell a certain [proteome](https://en.wikipedia.org/wiki/Proteome).
 What each protein can do is defined by its [domains](https://en.wikipedia.org/wiki/Protein_domain).

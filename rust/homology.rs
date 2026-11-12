@@ -11,8 +11,15 @@
 //!    direct   X A Y B Z -> deletion      X B Z
 //!                       -> duplication   X A Y A Y B Z
 //!    inverted X A Y B Z -> inversion     X A rc(Y) B Z   (B = rc(A))
+//!
+//! The genome is circular: the seed, the homology search and its extension, and
+//! the resulting edit may all cross the seam. The seed is read with wrap, the
+//! partner search runs on a once-doubled buffer, extension uses modular indices
+//! (capped so the two copies stay disjoint on the ring), and an edit whose
+//! region crosses the seam is rotated to the front before the contiguous
+//! splice/drain/reverse applies.
 use crate::config::MutatorConfig;
-use crate::seq::{complement, reverse_complement, reverse_complement_in_place};
+use crate::seq::{circular_slice, complement, reverse_complement, reverse_complement_in_place};
 use memchr::memmem;
 use rand::Rng;
 use std::borrow::Cow;
@@ -25,38 +32,70 @@ enum Pair {
     Inverted { f: usize, r: usize, h: usize },
 }
 
-/// Extend a direct-repeat seed match (copies at a < b, initial length k).
-fn extend_direct(s: &[u8], mut a: usize, mut b: usize, k: usize) -> (usize, usize, usize) {
+/// Extend a direct-repeat seed match (copies starting at a and b, initial
+/// length k) around the ring. The homology length is capped so the two copies
+/// stay disjoint on the circle; extension may cross the seam.
+fn extend_direct(s: &[u8], a: usize, b: usize, k: usize) -> (usize, usize, usize) {
     let n = s.len();
-    let mut h = k;
+    let d = (b + n - a) % n; // forward arc a -> b (the segment A..Y)
+    let max_h = d.min(n - d); // disjoint on both arcs of the ring
+    let mut a = a;
+    let mut b = b;
+    let mut h = k.min(max_h);
 
-    while a > 0 && s[a - 1] == s[b - 1] {
-        a -= 1;
-        b -= 1;
+    // extend left: both copies move back together (segment length d unchanged)
+    while h < max_h && s[(a + n - 1) % n] == s[(b + n - 1) % n] {
+        a = (a + n - 1) % n;
+        b = (b + n - 1) % n;
         h += 1;
     }
 
-    while b + h < n && a + h < b && s[a + h] == s[b + h] {
+    // extend right: grow the shared homology length
+    while h < max_h && s[(a + h) % n] == s[(b + h) % n] {
         h += 1;
     }
 
     (a, b, h)
 }
 
-/// Extend an inverted-repeat seed match. Invariant: s[f+t] == comp(s[r+h-1-t]).
-fn extend_inverted(s: &[u8], mut f: usize, mut r: usize, k: usize) -> (usize, usize, usize) {
+/// Extend an inverted-repeat seed match around the ring.
+/// Invariant: s[(f+t) % n] == comp(s[(r+h-1-t) % n]) for t in 0..h.
+/// The forward copy grows left and the reverse copy grows right into the outward
+/// gap, then both grow into the inward gap; each gap is consumed from both ends
+/// (two bases per step) and extension stops before the copies would touch.
+fn extend_inverted(s: &[u8], f: usize, r: usize, k: usize) -> (usize, usize, usize) {
     let n = s.len();
+    let mut f = f;
+    let mut r = r;
     let mut h = k;
 
-    // outward: f-1 pairs with r+h
-    while f > 0 && r + h < n && s[f - 1] == complement(s[r + h]) {
-        f -= 1;
+    // outward: (f-1) pairs with (r+h)
+    loop {
+        let outward = (f + n - ((r + h) % n)) % n; // arc (r+h) -> f
+        if outward < 2 {
+            break;
+        }
+        let bf = (f + n - 1) % n;
+        let br = (r + h) % n;
+        if s[bf] != complement(s[br]) {
+            break;
+        }
+        f = bf;
         h += 1;
     }
 
-    // inward: f+h pairs with r-1, keeping the copies separate
-    while f + h + 1 < r && s[f + h] == complement(s[r - 1]) {
-        r -= 1;
+    // inward: (f+h) pairs with (r-1), keeping the copies separate
+    loop {
+        let inward = (r + n - ((f + h) % n)) % n; // arc (f+h) -> r
+        if inward < 2 {
+            break;
+        }
+        let bf = (f + h) % n;
+        let br = (r + n - 1) % n;
+        if s[bf] != complement(s[br]) {
+            break;
+        }
+        r = (r + n - 1) % n;
         h += 1;
     }
     (f, r, h)
@@ -73,13 +112,17 @@ fn homology_weight(h: usize, cfg: &MutatorConfig) -> f64 {
 
 /// All recombination partners for a break at `brk`, with weights.
 fn find_partners(s: &[u8], brk: usize, cfg: &MutatorConfig) -> Vec<(Pair, f64)> {
+    let n = s.len();
     let k = cfg.seed_len;
-    let seed = &s[brk..brk + k];
-    let rc = reverse_complement(seed);
+    let seed = circular_slice(s, brk, k); // may wrap the seam
+    let rc = reverse_complement(&seed);
 
-    // memchr's SIMD substring search is faster here than a rolling k-mer hash
-    let direct_hits = memmem::find_iter(s, seed);
-    let inverted_hits: Vec<usize> = memmem::find_iter(s, &rc).collect();
+    // search a once-doubled buffer so seam-wrapping occurrences are found, then
+    // keep one representative per ring position (memchr's SIMD search beats a
+    // rolling k-mer hash here)
+    let ss = [s, s].concat();
+    let direct_hits: Vec<usize> = memmem::find_iter(&ss, &seed).filter(|&j| j < n).collect();
+    let inverted_hits: Vec<usize> = memmem::find_iter(&ss, &rc).filter(|&j| j < n).collect();
 
     let mut out: Vec<(Pair, f64)> = Vec::new();
     for j in direct_hits {
@@ -87,7 +130,7 @@ fn find_partners(s: &[u8], brk: usize, cfg: &MutatorConfig) -> Vec<(Pair, f64)> 
             continue;
         }
         let (a, b, h) = extend_direct(s, brk.min(j), brk.max(j), k);
-        if b - a < cfg.min_segment {
+        if (b + n - a) % n < cfg.min_segment {
             continue;
         }
         let w = homology_weight(h, cfg);
@@ -104,7 +147,7 @@ fn find_partners(s: &[u8], brk: usize, cfg: &MutatorConfig) -> Vec<(Pair, f64)> 
             continue; // overlapping (palindromic) seed: no separate copy
         }
         let (f, r, h) = extend_inverted(s, lo, hi, k);
-        let gap = r - (f + h);
+        let gap = (r + n - ((f + h) % n)) % n;
         if gap < cfg.min_segment {
             continue;
         }
@@ -126,7 +169,7 @@ fn plan_rearrangement<R: Rng>(seq: &[u8], cfg: &MutatorConfig, rng: &mut R) -> O
         return None;
     }
 
-    let brk = rng.random_range(0..=n - k);
+    let brk = rng.random_range(0..n); // seed may wrap the seam
     let partners = find_partners(seq, brk, cfg);
     if partners.is_empty() {
         return None;
@@ -148,28 +191,47 @@ fn plan_rearrangement<R: Rng>(seq: &[u8], cfg: &MutatorConfig, rng: &mut R) -> O
     Some(partners[partners.len() - 1].0)
 }
 
-/// Apply the recombination product of a chosen repeat pair.
+/// Apply the recombination product of a chosen repeat pair. A region that runs
+/// past the end is rotated to the front first so the contiguous edit applies.
 fn apply_rearrangement<R: Rng>(seq: &mut Vec<u8>, pair: Pair, cfg: &MutatorConfig, rng: &mut R) {
     let n = seq.len();
     match pair {
         Pair::Direct { a, b, .. } => {
-            let d = b - a; // segment A..Y up to the start of B
+            let d = (b + n - a) % n; // segment A..Y up to the start of B
             if rng.random_bool(cfg.duplication_prob) {
                 if cfg.max_genome_len.is_some_and(|m| n + d > m) {
                     return; // rejected
                 }
-                let segment: Vec<u8> = seq[a..b].to_vec();
-                seq.splice(b..b, segment); // duplication
+                if a + d <= n {
+                    let segment: Vec<u8> = seq[a..a + d].to_vec();
+                    seq.splice((a + d)..(a + d), segment); // duplication
+                } else {
+                    seq.rotate_left(a);
+                    let segment: Vec<u8> = seq[0..d].to_vec();
+                    seq.splice(d..d, segment);
+                }
             } else {
                 if n - d < cfg.min_genome_len {
                     return; // rejected
                 }
-                seq.drain(a..b); // deletion
+                if a + d <= n {
+                    seq.drain(a..a + d); // deletion
+                } else {
+                    seq.rotate_left(a);
+                    seq.drain(0..d);
+                }
             }
         }
         Pair::Inverted { f, r, h } => {
             // rc(A Y B) == A rc(Y) B because B == rc(A)
-            reverse_complement_in_place(&mut seq[f..r + h]); // inversion
+            let gap = (r + n - ((f + h) % n)) % n; // middle region Y
+            let span = 2 * h + gap; // A Y B, always <= n
+            if f + span <= n {
+                reverse_complement_in_place(&mut seq[f..f + span]); // inversion
+            } else {
+                seq.rotate_left(f);
+                reverse_complement_in_place(&mut seq[0..span]);
+            }
         }
     }
 }

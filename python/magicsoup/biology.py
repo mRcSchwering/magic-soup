@@ -185,11 +185,16 @@ class Protein:
     _I.e._ the index starts with 0, start is included, end is excluded.
     _E.g._ `cds_start=2`, `cds_end=31` starts with the 3rd and ends with the 31st base pair on the genome.
 
+    The genome is circular, so a CDS can wrap around the origin. Such a CDS has
+    `cds_end > n` (and thus `cds_end % n < cds_start`) where `n` is the genome
+    length. To slice it you have to wrap, _e.g._ `genome[cds_start:] + genome[:cds_end % n]`.
+
     `is_53` describes whether the CDS is found on the forward (hypothetical 5'-3')
     or the reverse-complement (hypothetical 3'-5') side of the genome.
     `cds_start` and `cds_end` always describe the parsing direction / the direction of the hypothetical transcriptase.
     So, if you want to visualize a `is_53=False` CDS on the genome in 5'-3' direction
-    you have to do `n - cds_start` and `n - cds_stop` if `n` is the genome length.
+    you have to do `n - cds_start` and `n - cds_stop` if `n` is the genome length
+    (taking `cds_end % n` first for a CDS that wraps the origin).
     """
 
     def __init__(self, domains: list[Domain], cds_start: int, cds_end: int, is_53: bool):

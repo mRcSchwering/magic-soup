@@ -1,5 +1,6 @@
 extern crate pyo3;
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 pub static CODON_SIZE: usize = 3;
@@ -23,7 +24,16 @@ pub fn reverse_complement(seq: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-/// Find all CDSs in genome using start and stop codons.
+/// Find all CDSs in a circular genome using start and stop codons.
+///
+/// The genome is a ring, so a CDS may wrap past the end of the sequence and a
+/// codon may straddle the seam. Scanning runs over an extended index range
+/// `0..2n`: codons are read with wrap (`seq[i % n]`), reading frame follows the
+/// extended index (`i % CODON_SIZE`) so it stays continuous across the seam for
+/// any genome length, and starts are only opened in the first turn (`i < n`).
+/// A start that finds no in-frame stop within one full turn would wrap forever,
+/// so any CDS longer than `n` is dropped (same spirit as discarding un-stopped
+/// CDSs). For a wrapped CDS the returned stop index exceeds `n`.
 /// Each CDS has a minimum size of min_cds_size.
 /// Returns each CDS with start and stop indices on genome and is_fwd.
 pub fn get_coding_regions(
@@ -48,17 +58,34 @@ pub fn get_coding_regions(
         Vec::with_capacity(12),
     ];
 
-    for i in 0..(n - CODON_SIZE + 1) {
+    // number of open starts; scanning the second turn stops once none remain
+    let mut pending: usize = 0;
+
+    for i in 0..(2 * n) {
+        // first turn opened all starts; stop as soon as they are all closed
+        if i >= n && pending == 0 {
+            break;
+        }
+
         let frame = i % CODON_SIZE;
 
-        let j = i + CODON_SIZE;
-        let codon = &seq[i..j];
+        // codon with wrap across the seam
+        let codon = if i + CODON_SIZE <= n {
+            [seq[i], seq[i + 1], seq[i + 2]]
+        } else {
+            [seq[i % n], seq[(i + 1) % n], seq[(i + 2) % n]]
+        };
 
-        if start_codons.iter().any(|d| d == codon) {
+        if i < n && start_codons.iter().any(|d| *d == codon) {
             starts[frame].push(i);
-        } else if stop_codons.iter().any(|d| d == codon) {
+            pending += 1;
+        } else if stop_codons.iter().any(|d| *d == codon) {
+            let j = i + CODON_SIZE;
             while let Some(d) = starts[frame].pop() {
-                if j - d >= *min_cds_size as usize {
+                pending -= 1;
+                let len = j - d;
+                // too long means the CDS wrapped a full turn without a stop
+                if len >= *min_cds_size as usize && len <= n {
                     res.push((d, j, is_53));
                 }
             }
@@ -87,6 +114,17 @@ pub fn extract_domains(
     if n_cdss == 0 {
         return Vec::with_capacity(0);
     }
+
+    // A wrapped CDS (from a circular genome) has a stop index beyond the end of
+    // the genome. Its domain regions are read from a once-doubled buffer so the
+    // slices stay in bounds; non-wrapping genomes avoid the extra allocation.
+    let n = genome.len();
+    let buf: Cow<[u8]> = if cdss.iter().any(|(_, stop, _)| *stop > n) {
+        Cow::Owned([genome, genome].concat())
+    } else {
+        Cow::Borrowed(genome)
+    };
+    let genome: &[u8] = &buf;
 
     // ofsets for domain regions
     let i0e = CODON_SIZE;

@@ -22,8 +22,14 @@ struct RepeatContext {
     pub copies: usize,
 }
 
-/// Find the longest tandem repeat (unit <= max_unit) containing `i`.
-/// Ties are resolved in favour of the shorter unit.
+/// Find the longest tandem repeat (unit <= max_unit) containing `i` on the
+/// circular genome. Ties are resolved in favour of the shorter unit.
+///
+/// A repeat may wrap the seam, so periodicity is tested with wrap
+/// (`m(j) := s[j % n] == s[(j + u) % n]`) and runs are grown with modular
+/// indices. Seeds are taken in the "middle copy" (`i + n`) so a run can extend
+/// backward across the seam; the run length is capped at `n` (which also bounds
+/// a fully periodic genome and keeps the loops finite).
 fn repeat_context(s: &[u8], i: usize, max_unit: usize) -> RepeatContext {
     let n = s.len();
     let mut best = RepeatContext {
@@ -31,29 +37,31 @@ fn repeat_context(s: &[u8], i: usize, max_unit: usize) -> RepeatContext {
         unit: 1,
         copies: 1,
     };
-    for u in 1..=max_unit.min(n.saturating_sub(1)) {
-        // m(j) := s[j] == s[j+u]. A maximal interval [p, q) of true m(j)
-        // gives the periodic run s[p .. q+u). It contains i iff some
-        // j in [i-u, i] lies in [p, q). The window can touch two runs, so
-        // all of them are checked.
-        let m = |j: usize| j + u < n && s[j] == s[j + u];
-        let lo = i.saturating_sub(u);
-        for j0 in lo..=i {
+    if n < 2 {
+        return best;
+    }
+    for u in 1..=max_unit.min(n - 1) {
+        let m = |j: usize| s[j % n] == s[(j + u) % n];
+        // max number of linked positions so the run (count + u bases) <= n
+        let cap = n - u;
+        // seeds j0 = i - d (mod n), placed near i + n so extension stays >= 0
+        for d in 0..=u {
+            let j0 = i + n - d;
             if !m(j0) {
                 continue;
             }
             let mut p = j0;
-            while p > 0 && m(p - 1) {
+            let mut q = j0 + 1; // [p, q) are linked positions
+            while (q - (p - 1)) <= cap && m(p - 1) {
                 p -= 1;
             }
-            let mut q = j0 + 1;
-            while m(q) {
+            while (q + 1 - p) <= cap && m(q) {
                 q += 1;
             }
-            let copies = (q + u - p) / u;
+            let copies = (q - p + u) / u;
             if copies > best.copies {
                 best = RepeatContext {
-                    start: p,
+                    start: p % n,
                     unit: u,
                     copies,
                 };
@@ -107,7 +115,8 @@ fn plan_indel<R: Rng>(seq: &[u8], cfg: &MutatorConfig, rng: &mut R) -> Option<In
         let k = geometric_len(rng, cfg.indel_mean_len, max_units);
         (ctx.start, k * ctx.unit)
     } else {
-        let len = geometric_len(rng, cfg.indel_mean_len, max_len).min(n - i);
+        // no end to clamp against on a ring; a short indel may wrap the seam
+        let len = geometric_len(rng, cfg.indel_mean_len, max_len);
         (i, len)
     };
 
@@ -122,7 +131,18 @@ fn plan_indel<R: Rng>(seq: &[u8], cfg: &MutatorConfig, rng: &mut R) -> Option<In
 
 fn apply_indel(seq: &mut Vec<u8>, e: Indel) {
     let Indel { start, len, insert } = e;
-    if insert {
+    let n = seq.len();
+    // a region that runs past the end is rotated to the front first, so the
+    // existing contiguous splice/drain applies (the ring has no fixed origin)
+    if start + len > n {
+        seq.rotate_left(start);
+        if insert {
+            let dup: Vec<u8> = seq[0..len].to_vec();
+            seq.splice(0..0, dup);
+        } else {
+            seq.drain(0..len);
+        }
+    } else if insert {
         // tandem duplication of seq[start .. start+len]
         let dup: Vec<u8> = seq[start..start + len].to_vec();
         seq.splice(start..start, dup); // insertion

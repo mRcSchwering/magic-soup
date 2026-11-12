@@ -186,3 +186,44 @@ For $k = 0 \cdots S - 1$:
 &nbsp;&nbsp;&nbsp;&nbsp;2. Compute boundaries for $\boldsymbol{\xi^{*(k+1)}} = (\xi_1^{*(k+1)} \cdots \xi_p^{*(k+1)})^\text{T}$  
 &nbsp;&nbsp;&nbsp;&nbsp;3. Find $\boldsymbol{\xi^{*(k+1)}}$ using Bisection  
 After $S$ sweeps return $\boldsymbol{x_{n+1}} = \boldsymbol{N} \Delta \boldsymbol{\xi^{*(S)}} + \boldsymbol{x_n}$
+
+## Circular genomes
+
+As described in [Mechanics > Genetics](./mechanics.md#genetics) a genome is a
+[circular](https://en.wikipedia.org/wiki/Circular_DNA) string of $n$
+nucleotides. It is stored as a plain string with no extra metadata; the
+circularity is only a matter of interpretation. A circular genome has no
+canonical origin, which is what makes the implementation simple: every operation
+that must act across the _seam_ (the junction where the stored string's end
+meets its start) is handled by one of two primitives.
+
+**Detection on a doubled buffer.** Any search that may need to wrap is run over
+the genome concatenated with itself ($s\mathbin\Vert s$, length $2n$) instead of
+over $s$ alone. Only features anchored in the first copy (start index $< n$) are
+kept, and their length is capped at $n$, so each feature is found exactly once
+and no base is ever read twice.
+
+- *Translation.* Coding regions are found by scanning an extended index range
+  $i = 0 \dots 2n$. Codons are read with wrap ($s_{i \bmod n}$) and the reading
+  frame follows the extended index ($i \bmod 3$), so it stays continuous across
+  the seam for any genome length. Start codons are only opened during the first
+  turn ($i < n$); a start that finds no in-frame stop within one full turn would
+  wrap forever and is discarded, so any CDS longer than $n$ is dropped. A CDS
+  that wraps the seam is reported with a stop index $> n$, and its domains are
+  extracted from a once-doubled buffer. Because the origin is arbitrary, the set
+  of proteins is invariant under rotation of the genome.
+- *Homology search (rearrangements).* The break seed is read with wrap, and both
+  the direct seed and its reverse complement are located in the doubled buffer so
+  that partners spanning the seam are found. Homology is then extended with
+  modular indices, capped so the two repeat copies stay disjoint on the ring.
+- *Tandem repeats (indels).* Periodicity is tested with wrap
+  ($s_j = s_{(j+u) \bmod n}$) and runs are grown modularly, so a tandem repeat
+  that crosses the seam is recognised and its length is capped at $n$.
+
+**Application by rotation.** When the region an edit acts on crosses the seam, the
+genome is first rotated so that region starts at index $0$. The edit is then a
+contiguous operation (`splice`, `drain`, or in-place reverse-complement) on an
+ordinary linear slice, and the rotated result is an equivalent circular genome.
+This applies to small indels, to the deletion / duplication of a direct-repeat
+segment, and to the inversion of an inverted-repeat span. Substitutions act on a
+single base and need no special handling.
