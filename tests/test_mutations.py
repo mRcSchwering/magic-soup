@@ -101,12 +101,10 @@ def test_indel_slippage_on_circular_tandem_repeat() -> None:
     assert n_changed > 0
 
 
-# TODO: seed?
 def test_homology_rearrangement_across_seam() -> None:
     # a 60 bp direct repeat with one copy wrapping the seam; the segment between
     # the two copies has length d, so a duplication grows the genome by d and a
     # deletion shrinks it by d (the chosen recombination product spans the seam)
-    random.seed(9)
     repeat = random_genome(60)
     mid1 = random_genome(40)
     mid2 = random_genome(40)
@@ -146,10 +144,9 @@ def test_homology_rearrangement_across_seam() -> None:
 
 
 @pytest.mark.slow
-def test_mutations_preserve_validity_under_seam_pressure() -> None:
+def test_mutations_preserve_validity_under_seam_pressure(rng: random.Random) -> None:
     # hammer repeat-heavy genomes with every mechanism at a high rate so many
     # events fall on the seam; outputs must stay valid and within size bounds
-    random.seed(7)
     lo, hi = 30, 2000
     mutator = Mutator(
         sub_rate=1e-3,
@@ -161,17 +158,15 @@ def test_mutations_preserve_validity_under_seam_pressure() -> None:
 
     pool: list[str] = []
     for _ in range(2000):
-        kind = random.random()
+        kind = rng.random()
         if kind < 0.4:
-            pool.append(random_genome(random.randint(100, 500)))
+            pool.append(random_genome(rng.randint(100, 500)))
         elif kind < 0.7:
-            unit = random_genome(random.randint(4, 12))
-            pool.append((unit * 100)[: random.randint(100, 500)])  # tandem repeats
+            unit = random_genome(rng.randint(4, 12))
+            pool.append((unit * 100)[: rng.randint(100, 500)])  # tandem repeats
         else:
-            arm = random_genome(random.randint(30, 60))
-            pool.append(
-                arm + random_genome(random.randint(30, 80)) + arm + random_genome(40)
-            )
+            arm = random_genome(rng.randint(30, 60))
+            pool.append(arm + random_genome(rng.randint(30, 80)) + arm + random_genome(40))
     genomes = StrArray.from_strings(pool)
 
     n_changed = 0

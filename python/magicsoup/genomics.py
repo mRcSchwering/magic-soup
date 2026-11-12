@@ -7,7 +7,7 @@ from typing import TypedDict
 import numpy as np
 
 from magicsoup.core import rs
-from magicsoup.core.config import CODON_SIZE
+from magicsoup.core.config import CODON_SIZE, DEFAULT_RNG
 from magicsoup.core.strarray import StrArray
 from magicsoup.core.util import codons, random_genome
 
@@ -39,6 +39,7 @@ class _DomainTypeMap:
         n_dom_type_codons: int,
         stop_codons: list[str],
         start_codons: list[str],
+        rng: random.Random = DEFAULT_RNG,
     ) -> None:
         # generate all possible valid sequences for domain types; stop codons
         # are excluded everywhere and start codons are excluded as the first
@@ -59,7 +60,7 @@ class _DomainTypeMap:
         # domain types -> nt sequences
         self.type_2_seqs: dict[DomainType, list[str]] = {k: [] for k in dom_type_probs}
 
-        random.shuffle(seqs)
+        rng.shuffle(seqs)
         for dom_type, n in dom_type_2_n.items():
             for _ in range(n):
                 self.type_2_seqs[dom_type].append(seqs.pop())
@@ -109,10 +110,11 @@ class Genomics:
         self,
         start_codons: tuple[str, ...] = ("TTG", "GTG", "ATG"),
         stop_codons: tuple[str, ...] = ("TGA", "TAG", "TAA"),
-        p_catal_dom: float = 0.05,
-        p_transp_dom: float = 0.05,
-        p_reg_dom: float = 0.05,
+        p_catal_dom: float = 0.03,
+        p_transp_dom: float = 0.03,
+        p_reg_dom: float = 0.03,
         n_dom_type_codons: int = 2,
+        rng: random.Random = DEFAULT_RNG,
     ):
         if any(len(d) != CODON_SIZE for d in start_codons):
             raise ValueError(f"Not all start codons are of length {CODON_SIZE}")
@@ -153,6 +155,7 @@ class Genomics:
             n_dom_type_codons=n_dom_type_codons,
             stop_codons=self.stop_codons,
             start_codons=self.start_codons,
+            rng=rng,
         )
 
         # start/stop codons are excluded from all domain-internal codons
@@ -202,7 +205,9 @@ class Genomics:
         """Get proteome in form of domain specifications for a genome and CDS markers"""
         return self._rs.extract_domains(genome=genome, cdss=cdss)
 
-    def generate_domain_seq(self, domain_type: DomainType, tokens: list[int]) -> str:
+    def generate_domain_seq(
+        self, domain_type: DomainType, tokens: list[int], rng: random.Random = DEFAULT_RNG
+    ) -> str:
         """
         Generate a nucleotide sequence encoding a domain:
 
@@ -222,15 +227,17 @@ class Genomics:
         # idx1: Km (1 codon, no stop)
         # idx2: sign/orientation (1 codon, no stop)
         # idx3: reaction/molecule/effector (2 codon, no stop)
-        dom_seq = random.choice(domtype_2_seqs[domain_type])
-        i0_seq = random.choice(one_codons)
-        i1_seq = random.choice(one_codons)
-        i2_seq = random.choice(one_codons)
-        i3_seq = token_2_two_codon[random.choice(tokens)]
+        dom_seq = rng.choice(domtype_2_seqs[domain_type])
+        i0_seq = rng.choice(one_codons)
+        i1_seq = rng.choice(one_codons)
+        i2_seq = rng.choice(one_codons)
+        i3_seq = token_2_two_codon[rng.choice(tokens)]
 
         return dom_seq + i0_seq + i1_seq + i2_seq + i3_seq
 
-    def generate_genome(self, cdss: list[list[str]], n_pad_nts: int = 10) -> str:
+    def generate_genome(
+        self, cdss: list[list[str]], n_pad_nts: int = 10, rng: random.Random = DEFAULT_RNG
+    ) -> str:
         """
         Generate a genome based on CDSs
 
@@ -255,9 +262,9 @@ class Genomics:
         parts: list[str] = []
         for cds in cdss:
             parts.append(pads.pop())
-            parts.append(random.choice(self.start_codons))
+            parts.append(rng.choice(self.start_codons))
             parts.extend([d for d in cds])
-            parts.append(random.choice(self.stop_codons))
+            parts.append(rng.choice(self.stop_codons))
         parts.append(pads.pop())
         parts.append(tail)
 

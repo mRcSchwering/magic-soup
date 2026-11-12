@@ -1,14 +1,14 @@
-import random
 from typing import TypedDict
 
 import numpy as np
 
 from magicsoup.core import rs
+from magicsoup.core.config import RNG_SEED
 from magicsoup.core.strarray import A, StrArray
 
 
 class MutatorKwargs(TypedDict, total=False):
-    seed: float | None
+    seed: int
     sub_rate: float
     transition_prob: float
     indel_rate: float
@@ -87,7 +87,7 @@ class Mutator:
 
     def __init__(
         self,
-        seed: float | None = None,
+        seed: int = RNG_SEED,
         sub_rate: float = 1e-5,
         transition_prob: float = 0.55,
         indel_rate: float = 1e-6,
@@ -135,7 +135,7 @@ class Mutator:
 
     def _setup_rs(self) -> None:
         self._rs = rs.Mutator(
-            seed=self.seed or random.getrandbits(8),
+            seed=self.seed,
             sub_rate=self.sub_rate,
             transition_prob=self.transition_prob,
             indel_rate=self.indel_rate,

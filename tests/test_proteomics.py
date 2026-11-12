@@ -975,31 +975,31 @@ def test_cell_params_with_regulatory_domains() -> None:
     assert p1.domains[2].end == 120
 
 
-def _get_random_proteomes(n_cells: int) -> tuple[list[list[ProteinSpec]], int]:
+def _get_random_proteomes(n_cells: int, rng: random.Random) -> tuple[list[list[ProteinSpec]], int]:
     proteomes: list[list[ProteinSpec]] = []
     p_max = 0
 
     for _ in range(n_cells):
         prots: list[ProteinSpec] = []
-        n_prots = random.choice(range(1, 10))
+        n_prots = rng.choice(range(1, 10))
 
         for _ in range(n_prots):
             doms: list[DomainSpec] = []
-            n_doms = random.choice(range(1, 4))
+            n_doms = rng.choice(range(1, 4))
 
             for _ in range(n_doms):
-                domtype = random.choice([1, 2, 3])
-                idx0 = random.choice(range(1, 64 - 3))
-                idx1 = random.choice(range(1, 64 - 3))
-                idx2 = random.choice(range(1, 64 - 3))
-                idx3 = random.choice(range(1, 4096 - 6 * 64))
-                dom_start = random.choice(range(1, 100))
-                dom_end = random.choice(range(dom_start, 200))
+                domtype = rng.choice([1, 2, 3])
+                idx0 = rng.choice(range(1, 64 - 3))
+                idx1 = rng.choice(range(1, 64 - 3))
+                idx2 = rng.choice(range(1, 64 - 3))
+                idx3 = rng.choice(range(1, 4096 - 6 * 64))
+                dom_start = rng.choice(range(1, 100))
+                dom_end = rng.choice(range(dom_start, 200))
                 doms.append(((domtype, idx0, idx1, idx2, idx3), dom_start, dom_end))
 
-            dom_start = random.choice(range(1, 100))
-            dom_end = random.choice(range(dom_start, 200))
-            is_fwd = random.choice([True, False])
+            dom_start = rng.choice(range(1, 100))
+            dom_end = rng.choice(range(dom_start, 200))
+            is_fwd = rng.choice([True, False])
             prots.append((doms, dom_start, dom_end, is_fwd))
 
         p_max = max(p_max, len(prots))
@@ -1009,11 +1009,11 @@ def _get_random_proteomes(n_cells: int) -> tuple[list[list[ProteinSpec]], int]:
 
 
 @pytest.mark.slow
-def test_random_cell_params() -> None:
+def test_random_cell_params(rng: random.Random) -> None:
     for _ in range(100):
         m = len(_MOLECULES) * 2
         n_cells = random.choice(range(1, 10))
-        proteomes, p_max = _get_random_proteomes(n_cells)
+        proteomes, p_max = _get_random_proteomes(n_cells, rng=rng)
         nprots = idxtensor([len(d) for d in proteomes])
 
         # setup proteomics
@@ -1045,8 +1045,8 @@ def test_random_cell_params() -> None:
 
 
 @pytest.mark.slow
-def test_random_cell_reprs() -> None:
-    proteomes, _ = _get_random_proteomes(1000)
+def test_random_cell_reprs(rng: random.Random) -> None:
+    proteomes, _ = _get_random_proteomes(1000, rng=rng)
     protics = Proteomics(chemistry=_CHEMISTRY)
 
     # test

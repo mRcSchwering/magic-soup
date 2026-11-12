@@ -5,7 +5,9 @@ from itertools import product
 from pathlib import Path
 
 from magicsoup.core import rs
-from magicsoup.core.config import ALL_NTS, CODON_SIZE
+from magicsoup.core.config import CODON_SIZE, DEFAULT_RNG
+
+_ALL_NTS = tuple("TCGA")
 
 
 def reverse_complement(seq: str) -> str:
@@ -13,7 +15,7 @@ def reverse_complement(seq: str) -> str:
     return rs.reverse_complement(seq=seq)
 
 
-def randstr(n: int = 12) -> str:
+def randstr(n: int = 12, rng: random.Random = DEFAULT_RNG) -> str:
     """
     Generate random string of length `n`.
 
@@ -22,14 +24,13 @@ def randstr(n: int = 12) -> str:
     (birthday paradox)
     """
     return "".join(
-        random.choices(
-            string.ascii_uppercase + string.ascii_lowercase + string.digits, k=n
-        )
+        rng.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=n)
     )
 
 
-# TODO: adapt excl logic?
-def random_genome(s: int = 500, excl: Iterable[str] | None = None) -> str:
+def random_genome(
+    s: int = 500, excl: Iterable[str] | None = None, rng: random.Random = DEFAULT_RNG
+) -> str:
     """
     Generate a random nucleotide sequence string
 
@@ -42,15 +43,10 @@ def random_genome(s: int = 500, excl: Iterable[str] | None = None) -> str:
 
     If `excl` is given, all sequences in `excl` will be removed.
     However, these sequences might still appear in the reverse-complement of
-    the resulting genome.
-    If you also want to get rid of those, you have to also provide their
-    reverse-complement in `excl`.
-    Genomes are treated as circular elsewhere in the simulation, but this
-    function only removes `excl` from the linear string; an excluded sequence
-    may still form across the seam where the end meets the start.
+    the resulting genome or across the seam where the end meets the start.
     """
     n = s
-    out = "".join(random.choices(ALL_NTS, k=s))
+    out = "".join(rng.choices(_ALL_NTS, k=s))
 
     if excl is not None:
         for seq in excl:

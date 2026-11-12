@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import random
 from pathlib import Path
 from typing import TypedDict
 
@@ -8,6 +9,7 @@ import numpy as np
 import torch
 
 from magicsoup.chemistry import Chemistry
+from magicsoup.core.config import DEFAULT_RNG
 from magicsoup.core.strarray import A, StrArray
 from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 from magicsoup.core.util import read_fasta, write_fasta
@@ -61,6 +63,7 @@ class Cells(TensorClass):
         genomics_kwargs: GenomicsKwargs | None = None,
         proteomics_kwargs: ProteomicsKwargs | None = None,
         tensor_kwargs: TensorKwargs | None = None,
+        rng: random.Random = DEFAULT_RNG,
     ):
         super().__init__(**(tensor_kwargs or {}))
         self.chemistry = chemistry
@@ -73,13 +76,14 @@ class Cells(TensorClass):
         if len(chemistry.reactions) == 0:
             genomics_kwargs["p_catal_dom"] = 0
 
-        self.genomics = genomics or Genomics(**genomics_kwargs)
+        self.genomics = genomics or Genomics(**genomics_kwargs, rng=rng)
         self.proteomics = proteomics or Proteomics(
             **(proteomics_kwargs or {}),
             chemistry=chemistry,
             scalar_enc_size=self.genomics.one_codon_map.encoding_size,
             vector_enc_size=self.genomics.two_codon_map.encoding_size,
             tensor_kwargs=tensor_kwargs,
+            rng=rng,
         )
 
         molecules = chemistry.molecules

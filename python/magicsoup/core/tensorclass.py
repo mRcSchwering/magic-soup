@@ -2,7 +2,7 @@ from typing import Annotated, Any, TypedDict
 
 import torch
 
-from magicsoup.core.config import DEFAULT_DEVICE, FTYPE, IDXTYPE, ITYPE
+from magicsoup.core.config import DEFAULT_DEVICE
 
 T = Annotated[torch.Tensor, "cuda"]
 
@@ -23,9 +23,9 @@ class TensorClass:
 
     def __init__(self, device: torch.device | str = DEFAULT_DEVICE) -> None:
         self.device = device
-        self.itype = ITYPE
-        self.ftype = FTYPE
-        self.idxtype = IDXTYPE
+        self.itype = torch.int8
+        self.ftype = torch.float32
+        self.idxtype = torch.int32
         self.limits = (-1e38, 1e38)
 
     def idxmap_scatter(self, src: T, tgt: T) -> T:
@@ -68,34 +68,34 @@ class TensorClass:
         return buf[:c]
 
     def itensor(self, d: Any) -> T:
-        return torch.tensor(d, device=self.device, dtype=ITYPE)
+        return torch.tensor(d, device=self.device, dtype=self.itype)
 
     def izeros(self, *args) -> T:
-        return torch.zeros(*args, device=self.device, dtype=ITYPE)
+        return torch.zeros(*args, device=self.device, dtype=self.itype)
 
     def ftensor(self, d: Any) -> T:
-        return torch.tensor(d, device=self.device, dtype=FTYPE)
+        return torch.tensor(d, device=self.device, dtype=self.ftype)
 
     def fzeros(self, *args) -> T:
-        return torch.zeros(*args, device=self.device, dtype=FTYPE)
+        return torch.zeros(*args, device=self.device, dtype=self.ftype)
 
     def frand(self, *args) -> T:
-        return torch.rand(*args, device=self.device, dtype=FTYPE)
+        return torch.rand(*args, device=self.device, dtype=self.ftype)
 
     def idxtensor(self, d: Any) -> T:
-        return torch.tensor(d, device=self.device, dtype=IDXTYPE)
+        return torch.tensor(d, device=self.device, dtype=self.idxtype)
 
     def idxfull(self, *args, value: int) -> T:
-        return torch.full(args, fill_value=value, device=self.device, dtype=IDXTYPE)
+        return torch.full(args, fill_value=value, device=self.device, dtype=self.idxtype)
 
     def idxzeros(self, *args) -> T:
-        return torch.zeros(*args, device=self.device, dtype=IDXTYPE)
+        return torch.zeros(*args, device=self.device, dtype=self.idxtype)
 
     def idxrandperm(self, n: int) -> T:
-        return torch.randperm(n, device=self.device, dtype=IDXTYPE)
+        return torch.randperm(n, device=self.device, dtype=self.idxtype)
 
     def idxarange(self, n: int) -> T:
-        return torch.arange(n, device=self.device, dtype=IDXTYPE)
+        return torch.arange(n, device=self.device, dtype=self.idxtype)
 
     def idxempty(self, *args) -> T:
-        return torch.empty(*args, device=self.device, dtype=IDXTYPE)
+        return torch.empty(*args, device=self.device, dtype=self.idxtype)

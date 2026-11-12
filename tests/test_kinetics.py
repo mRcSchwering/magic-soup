@@ -62,12 +62,12 @@ def test_get_bounds(kinetics: Kinetics):
 
 
 @pytest.mark.slow
-def test_get_bounds_randomly(kinetics: Kinetics):
+def test_get_bounds_randomly(rng: random.Random, kinetics: Kinetics):
     for _ in range(100):
-        c = random.randint(2, 1000)
-        p = random.randint(1, 100)
-        m = random.randint(2, 100)
-        dt = random.uniform(0, 10)
+        c = rng.randint(2, 1000)
+        p = rng.randint(1, 100)
+        m = rng.randint(2, 100)
+        dt = rng.uniform(0, 10)
         v_max = frand(c, p) * 1e4
         B = frand(c, p, m) * 1000
         N_e = irand(-100, 100, c, p, m)
@@ -195,11 +195,11 @@ def test_get_alpha_cat(kinetics: Kinetics):
 
 
 @pytest.mark.slow
-def test_get_alpha_cat_randomly(kinetics: Kinetics):
+def test_get_alpha_cat_randomly(rng: random.Random, kinetics: Kinetics):
     for _ in range(100):
-        c = random.randint(2, 1000)
-        p = random.randint(1, 100)
-        m = random.randint(2, 100)
+        c = rng.randint(2, 1000)
+        p = rng.randint(1, 100)
+        m = rng.randint(2, 100)
         x = frand(c, p, m) * 1000
         N_f = irand(-100, 100, c, p, m)
         N_b = irand(-100, 100, c, p, m)
@@ -267,11 +267,11 @@ def test_get_alpha_reg(kinetics: Kinetics):
 
 
 @pytest.mark.slow
-def test_get_alpha_reg_randomly(kinetics: Kinetics):
+def test_get_alpha_reg_randomly(rng: random.Random, kinetics: Kinetics):
     for _ in range(100):
-        c = random.randint(2, 1000)
-        p = random.randint(1, 100)
-        m = random.randint(2, 100)
+        c = rng.randint(2, 1000)
+        p = rng.randint(1, 100)
+        m = rng.randint(2, 100)
         x = frand(c, p, m) * 1000
         N_h = irand(-100, 100, c, p, m)
         k_r = frand(c, p) * 10
@@ -541,12 +541,12 @@ def test_step_protein_activity_convergence(kinetics: Kinetics):
 
 
 @pytest.mark.slow
-def test_step_protein_activity_randomly():
+def test_step_protein_activity_randomly(rng: random.Random):
     for i in range(10):
-        c = random.randint(2, 1000)
-        p = random.randint(1, 100)
-        m = random.randint(2, 100)
-        dt = random.uniform(0, 10)
+        c = rng.randint(2, 1000)
+        p = rng.randint(1, 100)
+        m = rng.randint(2, 100)
+        dt = rng.uniform(0, 10)
         x = frand(c, m) * 1000
         N_f = irand(-100, 100, c, p, m)
         N_b = irand(-100, 100, c, p, m)

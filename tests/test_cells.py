@@ -243,14 +243,14 @@ def test_proteome_parameter_distros(cells: Cells) -> None:
 
 
 @pytest.mark.slow
-def test_update_genomes_randomly(cells: Cells) -> None:
+def test_update_genomes_randomly(rng: random.Random, cells: Cells) -> None:
     c = 100
     cells.update_c(c_req=c)
     p_init = cells.p
 
     for _ in range(100):
-        n = random.randint(10, c)
-        idxs = idxtensor(random.sample(range(c), n))
+        n = rng.randint(10, c)
+        idxs = idxtensor(rng.sample(range(c), n))
         genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
         cells.update_genomes(genomes=genomes, idxs=idxs)
 
@@ -273,10 +273,10 @@ def test_update_genomes_randomly(cells: Cells) -> None:
 
 
 @pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
-def test_allocate_children(cells: Cells, c: int, n: int) -> None:
+def test_allocate_children(rng: random.Random, cells: Cells, c: int, n: int) -> None:
     cells.update_c(c_req=c)
 
-    idxs = idxtensor(random.sample(range(c), n))
+    idxs = idxtensor(rng.sample(range(c), n))
     genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
     cells.update_genomes(genomes=genomes, idxs=idxs)
     cells.alive[idxs] = True
@@ -307,10 +307,10 @@ def test_allocate_children(cells: Cells, c: int, n: int) -> None:
 
 
 @pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
-def test_update_descendants(cells: Cells, c: int, n: int) -> None:
+def test_update_descendants(rng: random.Random, cells: Cells, c: int, n: int) -> None:
     cells.update_c(c_req=c)
 
-    from_idxs = idxtensor(random.sample(range(c), n))
+    from_idxs = idxtensor(rng.sample(range(c), n))
     genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
     cells.update_genomes(genomes=genomes, idxs=from_idxs)
     cells.alive[from_idxs] = True
@@ -318,7 +318,7 @@ def test_update_descendants(cells: Cells, c: int, n: int) -> None:
     molecules_t0 = cells.molecules[from_idxs].clone()
 
     idxs_left = list(set(range(c)) - set(from_idxs.tolist()))
-    to_idxs = idxtensor(random.sample(idxs_left, n))
+    to_idxs = idxtensor(rng.sample(idxs_left, n))
 
     parent_of = idxfull(cells.c, value=-1)
     parent_of[to_idxs] = from_idxs
@@ -354,15 +354,15 @@ def test_update_descendants(cells: Cells, c: int, n: int) -> None:
 
 
 @pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
-def test_copy_proteomes(cells: Cells, c: int, n: int) -> None:
+def test_copy_proteomes(rng: random.Random, cells: Cells, c: int, n: int) -> None:
     cells.update_c(c_req=c)
 
-    from_idxs = idxtensor(random.sample(range(c), n))
+    from_idxs = idxtensor(rng.sample(range(c), n))
     genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
     cells.update_genomes(genomes=genomes, idxs=from_idxs)
 
     idxs_left = list(set(range(c)) - set(from_idxs.tolist()))
-    to_idxs = idxtensor(random.sample(idxs_left, n))
+    to_idxs = idxtensor(rng.sample(idxs_left, n))
 
     parent_of = idxfull(cells.c, value=-1)
     parent_of[to_idxs] = from_idxs

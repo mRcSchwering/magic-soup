@@ -10,6 +10,7 @@ import torch
 from magicsoup.biology import Cell
 from magicsoup.cells import Cells, CellsKwargs
 from magicsoup.chemistry import Chemistry
+from magicsoup.core.config import DEFAULT_RNG
 from magicsoup.core.strarray import StrArray
 from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 from magicsoup.core.util import randstr
@@ -91,12 +92,14 @@ class World(TensorClass):
         mutator_kwargs: MutatorKwargs | None = None,
         proteomics_kwargs: ProteomicsKwargs | None = None,
         tensor_kwargs: TensorKwargs | None = None,
+        rng: random.Random = DEFAULT_RNG,
     ):
         super().__init__(**(tensor_kwargs or {}))
 
         self.time_step = time_step
         self.v_cell = v_cell
         self.v_voxel = v_voxel
+        self.rng = rng
 
         self.chemistry = chemistry
         self.culture = culture or (
@@ -115,6 +118,7 @@ class World(TensorClass):
             genomics_kwargs=genomics_kwargs,
             proteomics_kwargs=proteomics_kwargs,
             tensor_kwargs=tensor_kwargs,
+            rng=rng,
         )
         self.kinetics = kinetics or Kinetics(
             **(kinetics_kwargs or {}),
@@ -203,7 +207,7 @@ class World(TensorClass):
         if n_avail_pos < n_new_cells:
             _log.warning("Only %d free positions to spawn %d cells", n_avail_pos, n_new_cells)
             n_new_cells = n_avail_pos
-            random.shuffle(genomes)
+            self.rng.shuffle(genomes)
             genomes = genomes[:n_new_cells]
 
         # adjust c if necessary (sync with host)
@@ -259,7 +263,7 @@ class World(TensorClass):
         if n_avail_pos < n_new_cells:
             _log.warning("Only %d free voxels to add %d cells", n_avail_pos, n_new_cells)
             n_new_cells = n_avail_pos
-            random.shuffle(cells)
+            self.rng.shuffle(cells)
             cells = cells[:n_new_cells]
 
         # adjust c if necessary (sync with host)

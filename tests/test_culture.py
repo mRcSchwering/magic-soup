@@ -357,7 +357,7 @@ def test_divide_cells(cell_map: list, parents: list[int], n_exp: int) -> None:
 
 
 @pytest.mark.slow
-def test_divide_cells_randomly() -> None:
+def test_divide_cells_randomly(rng: random.Random) -> None:
     N = 100
     for _ in range(100):
         culture = Culture(chemistry=CHEMISTRY, map_size=N)
@@ -371,7 +371,7 @@ def test_divide_cells_randomly() -> None:
         cell_map_before = culture.cell_map.clone()
 
         # pick random parents that want to divide
-        parents_0 = idxrandperm(n)[: random.randint(5, n)]
+        parents_0 = idxrandperm(n)[: rng.randint(5, n)]
         mask = idxzeros(culture.N2).bool()
         mask[parents_0] = True
 
@@ -514,7 +514,7 @@ def test_migrate_cells_randomly(cell_map: list, idxs: list[int], exp_n: int) -> 
 
 
 @pytest.mark.slow
-def test_randomly_migrate_cells_randomly() -> None:
+def test_randomly_migrate_cells_randomly(rng: random.Random) -> None:
     N = 100
     for _ in range(100):
         culture = Culture(chemistry=CHEMISTRY, map_size=N)
@@ -528,7 +528,7 @@ def test_randomly_migrate_cells_randomly() -> None:
         coords_0 = culture.get_cell_coords()
 
         # migrate
-        k = random.randint(10, n)
+        k = rng.randint(10, n)
         req_idxs = idxrandperm(n)[:k]
         mask = idxzeros(culture.N2).bool()
         mask[req_idxs] = True

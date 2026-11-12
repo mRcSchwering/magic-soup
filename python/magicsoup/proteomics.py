@@ -16,7 +16,7 @@ from magicsoup.biology import (
 )
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
 from magicsoup.core import rs
-from magicsoup.core.config import GAS_CONSTANT, ROOM_TEMP
+from magicsoup.core.config import DEFAULT_RNG, GAS_CONSTANT, ROOM_TEMP
 from magicsoup.core.tensorclass import TensorClass, TensorKwargs
 from magicsoup.genomics import DomainType
 
@@ -31,6 +31,7 @@ class _LogNormMap(TensorClass):
         max_token: int,
         value_range: tuple[float, float],
         tensor_kwargs: TensorKwargs | None = None,
+        rng: random.Random = DEFAULT_RNG,
     ) -> None:
         super().__init__(**(tensor_kwargs or {}))
 
@@ -45,7 +46,7 @@ class _LogNormMap(TensorClass):
 
         # assign tokens
         for token in range(1, max_token + 1):
-            value = random.lognormvariate(mu, sig)
+            value = rng.lognormvariate(mu, sig)
             self.token_scalar[token] = value
             self.token_2_scalar[token] = value
             self.scalar_2_tokens[value].append(token)
@@ -62,6 +63,7 @@ class _MirrGeoMap(TensorClass):
         max_token: int,
         max_value: int,
         tensor_kwargs: TensorKwargs | None = None,
+        rng: random.Random = DEFAULT_RNG,
     ) -> None:
         super().__init__(**(tensor_kwargs or {}))
 
@@ -78,7 +80,7 @@ class _MirrGeoMap(TensorClass):
 
         # assign tokens
         for token in range(1, max_token + 1):
-            value = random.choice(pop)
+            value = rng.choice(pop)
             self.token_scalar[token] = value
             self.token_2_scalar[token] = value
             self.scalar_2_tokens[value].append(token)
@@ -275,6 +277,7 @@ class Proteomics(TensorClass):
         max_k: float = 1e36,
         eps: float = 1e-40,
         tensor_kwargs: TensorKwargs | None = None,
+        rng: random.Random = DEFAULT_RNG,
     ) -> None:
         super().__init__(**(tensor_kwargs or {}))
 
@@ -294,16 +297,16 @@ class Proteomics(TensorClass):
         self.mol_energies = self.ftensor([d.energy for d in molecules] * 2) * 1e3
 
         self.km_map = _LogNormMap(
-            max_token=scalar_enc_size, value_range=km_range, tensor_kwargs=tensor_kwargs
+            max_token=scalar_enc_size, value_range=km_range, tensor_kwargs=tensor_kwargs, rng=rng
         )
         self.vmax_map = _LogNormMap(
-            max_token=scalar_enc_size, value_range=vmax_range, tensor_kwargs=tensor_kwargs
+            max_token=scalar_enc_size, value_range=vmax_range, tensor_kwargs=tensor_kwargs, rng=rng
         )
         self.sign_map = _MirrGeoMap(
-            max_token=scalar_enc_size, max_value=1, tensor_kwargs=tensor_kwargs
+            max_token=scalar_enc_size, max_value=1, tensor_kwargs=tensor_kwargs, rng=rng
         )
         self.hill_map = _MirrGeoMap(
-            max_token=scalar_enc_size, max_value=hill_max, tensor_kwargs=tensor_kwargs
+            max_token=scalar_enc_size, max_value=hill_max, tensor_kwargs=tensor_kwargs, rng=rng
         )
         self.transport_map = _TransporterMap(
             chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs

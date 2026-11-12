@@ -1,7 +1,7 @@
 import random
 
 from magicsoup.chemistry import Molecule, Reaction
-from magicsoup.core.config import CODON_SIZE
+from magicsoup.core.config import CODON_SIZE, DEFAULT_RNG
 from magicsoup.genomics import DomainType
 from magicsoup.world import World
 
@@ -30,7 +30,7 @@ class CatalyticDomainSynthesizer:
                 " But this world's chemistry doesn't define this reaction."
             )
 
-    def gen_coding_sequence(self, world: World) -> str:
+    def gen_coding_sequence(self, world: World, rng: random.Random = DEFAULT_RNG) -> str:  # pylint: disable=W0613
         """Generate a nucleotide sequence for this domain"""
         react_2_tokens = world.cells.proteomics.reaction_map.react_2_tokens
         return world.cells.genomics.generate_domain_seq(
@@ -63,7 +63,7 @@ class TransporterDomainSynthesizer:
                 " This world's chemistry doesn't define this molecule species."
             )
 
-    def gen_coding_sequence(self, world: World) -> str:
+    def gen_coding_sequence(self, world: World, rng: random.Random = DEFAULT_RNG) -> str:  # pylint: disable=W0613
         """Generate a nucleotide sequence for this domain"""
         mol_2_tokens = world.cells.proteomics.transport_map.mol_2_tokens
         return world.cells.genomics.generate_domain_seq(
@@ -96,12 +96,12 @@ class RegulatoryDomainSynthesizer:
                 " This world's chemistry doesn't define this molecule species."
             )
 
-    def gen_coding_sequence(self, world: World) -> str:
+    def gen_coding_sequence(self, world: World, rng: random.Random = DEFAULT_RNG) -> str:
         """Generate a nucleotide sequence for this domain"""
         eff_2_tokens = world.cells.proteomics.effector_map.eff_2_tokens
         return world.cells.genomics.generate_domain_seq(
             domain_type=DomainType.REGULATORY,
-            tokens=eff_2_tokens[(self.effector, random.choice([True, False]))],
+            tokens=eff_2_tokens[(self.effector, rng.choice([True, False]))],
         )
 
     def __repr__(self) -> str:
@@ -173,9 +173,11 @@ class GenomeSynthesizer:
         world: World,
         proteins: list[ProteinSynthesizer],
         target_size: int | None = None,
+        rng: random.Random = DEFAULT_RNG,
     ) -> None:
         self.world = world
         self.proteins = proteins
+        self.rng = rng
 
         for prot in proteins:
             for dom in prot.domains:
@@ -197,7 +199,9 @@ class GenomeSynthesizer:
         """Generate a genome with the desired proteome"""
         return self.world.cells.genomics.generate_genome(
             cdss=[
-                [d.gen_coding_sequence(world=self.world) for d in p.domains] for p in self.proteins
+                [d.gen_coding_sequence(world=self.world, rng=self.rng) for d in p.domains]
+                for p in self.proteins
             ],
             n_pad_nts=self.target_size - self.req_nts,
+            rng=self.rng,
         )

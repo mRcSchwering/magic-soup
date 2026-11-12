@@ -1,4 +1,5 @@
 import math
+import random
 from collections import Counter, defaultdict
 
 import pytest
@@ -116,25 +117,20 @@ def test_get_coding_regions_circular(
     assert {(d[0], d[1]) for d in res} == _ref_coding_regions(seq, min_cds_size)
 
 
-# TODO: rm seed?
-def test_get_coding_regions_matches_reference() -> None:
+def test_get_coding_regions_matches_reference(rng: random.Random) -> None:
     # cross-check the Rust circular CDS finder against the brute-force reference
     # on many random genomes, incl. codons straddling the seam
-    import random
 
     with pytest.warns(UserWarning):
         genomics = Genomics(n_dom_type_codons=0)
 
-    random.seed(123)
     for _ in range(2000):
-        n = random.randint(18, 150)
-        seq = "".join(random.choice("ACGT") for _ in range(n))
-        min_cds_size = random.choice([6, 9, 18])
+        n = rng.randint(18, 150)
+        seq = "".join(rng.choice("ACGT") for _ in range(n))
+        min_cds_size = rng.choice([6, 9, 18])
         res = {
             (d[0], d[1])
-            for d in genomics.get_coding_regions(
-                seq=seq, min_cds_size=min_cds_size, is_fwd=True
-            )
+            for d in genomics.get_coding_regions(seq=seq, min_cds_size=min_cds_size, is_fwd=True)
         }
         assert res == _ref_coding_regions(seq, min_cds_size)
 
@@ -142,25 +138,20 @@ def test_get_coding_regions_matches_reference() -> None:
 def _tokens_multiset(genomics: Genomics, genome: str) -> Counter:
     """Order-independent multiset of a genome's proteins by their domain tokens."""
     specs = genomics.translate_genomes(genomes=StrArray.from_strings([genome]))[0]
-    return Counter(
-        tuple(sorted(tuple(dom[0]) for dom in doms)) for doms, _, _, _ in specs
-    )
+    return Counter(tuple(sorted(tuple(dom[0]) for dom in doms)) for doms, _, _, _ in specs)
 
 
-# TODO: wrong import
-def test_translation_is_rotation_invariant() -> None:
+def test_translation_is_rotation_invariant(rng: random.Random) -> None:
     # a circular genome has no origin, so rotating it must not change the set of
     # proteins it encodes (exercises CDS wrapping and domain extraction at the
     # seam for every rotation)
-    import random
 
     genomics = Genomics()
-    random.seed(321)
     for _ in range(100):
-        genome = random_genome(s=random.randint(100, 500))
+        genome = random_genome(s=rng.randint(100, 500))
         base = _tokens_multiset(genomics, genome)
         for _ in range(3):
-            k = random.randint(1, len(genome) - 1)
+            k = rng.randint(1, len(genome) - 1)
             rotated = genome[k:] + genome[:k]
             assert _tokens_multiset(genomics, rotated) == base
 
@@ -293,7 +284,6 @@ def test_extract_domains_wrapped_cds() -> None:
     assert res[0][0][0][2] == genomics.dom_size_nt
 
 
-# TODO: check this test again (and comments)
 def test_translate_genomes() -> None:
     # fmt: off
     seq = """
@@ -317,8 +307,7 @@ def test_translate_genomes() -> None:
     genomics.two_codon_map.seq_2_token = load_test_json("Genomics.two_codon_map.json")
     genomics._setup_rs()
 
-    # these non-wrapping CDSs are found unchanged on the circular genome; a
-    # circular genome also yields additional CDSs that wrap the seam
+    # at least these non-wrapping CDSs are found on the circular genome
     exp_proteins = [
         ([((1, 18, 44, 50, 783), 60, 81)], 14, 95, True),
         ([((1, 33, 5, 3, 163), 27, 48)], 58, 199, False),
@@ -326,34 +315,31 @@ def test_translate_genomes() -> None:
     ]
 
     genome = "".join(seq.replace("\n", "").split())
-    n = len(genome)
+
     genomes = StrArray.from_strings([genome])
     proteome = genomics.translate_genomes(genomes=genomes)[0]
     for protein in exp_proteins:
         assert protein in proteome
+
     # every CDS is at most one full turn; wrapped CDSs have stop > n
+    n = len(genome)
     assert all(cds_stop - cds_start <= n for _, cds_start, cds_stop, _ in proteome)
 
     # the flat encoding is consistent with the list representation
-    cell, _prot, tok, p = genomics.encode_proteomes(genomes=genomes)
+    cell, _, tok, p = genomics.encode_proteomes(genomes=genomes)
     assert p == len(proteome)
     assert cell.tolist() == [0] * tok.shape[0]
-    tok_from_list = Counter(
-        tuple(dom[0]) for prot_spec in proteome for dom in prot_spec[0]
-    )
+    tok_from_list = Counter(tuple(dom[0]) for prot_spec in proteome for dom in prot_spec[0])
     tok_from_arr = Counter(tuple(row) for row in tok.tolist())
     assert tok_from_list == tok_from_arr
 
 
-# TODO: downscale domain likelihoods?
 def test_genomics_domain_likelihoods() -> None:
     n_genomes = 1000
     genome_size = 1000
 
     genomics = Genomics()  # type: ignore
-    genomes = StrArray.from_strings(
-        [random_genome(s=genome_size) for _ in range(n_genomes)]
-    )
+    genomes = StrArray.from_strings([random_genome(s=genome_size) for _ in range(n_genomes)])
 
     # translate into lists
     proteomes = genomics.translate_genomes(genomes=genomes)
@@ -391,13 +377,9 @@ def test_genomics_domain_likelihoods() -> None:
     assert d_cnts_lst == d_cnts_arr
     assert d_cnts_lst == d_cnts_arr
 
-    # TODO: should be 2.0
-    # ~2.5 domains per protein on average (circular genomes add seam-wrapping
-    # CDSs, which skew slightly longer and lift this above the ~2 of a purely
-    # linear genome)
-    assert 2.0 < d_arr / p_arr < 3.0
+    # ~2 domains per protein on average
+    assert 1.5 < d_arr / p_arr < 2.5
 
-    # TODO: should be between 20% and 40%
-    # 20% to 45% should have more than 2 domains
+    # ~30% have more than 2 domains
     n_multi_dom = sum([n for d, n in d_cnts_lst.items() if d > 2])
-    assert 0.2 <= n_multi_dom / p_arr <= 0.45
+    assert 0.25 <= n_multi_dom / p_arr <= 0.35
