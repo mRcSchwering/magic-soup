@@ -1,64 +1,11 @@
-import math
-from collections import Counter
-from collections.abc import Iterable
 from itertools import product
 from pathlib import Path
 
 import magicsoup as ms
 import pandas as pd
-from magicsoup.core.config import GAS_CONSTANT, ROOM_TEMP
 from plotnine import *  # pylint: disable=W0614,W0401
 
-
-def _get_rates(energy: float, km: float) -> tuple[float, float]:
-    k_e = math.exp(-energy / ROOM_TEMP / GAS_CONSTANT)
-    return (km / math.sqrt(k_e), km * math.sqrt(k_e))
-
-
-def _set_trnsp(world: ms.World, c: int, p: int, mol: ms.Molecule, km: float, vmax: float) -> None:
-    cells = world.cells
-    molecules = world.chemistry.molecules
-    m2i = world.chemistry.mol_2_idx
-    k_f, k_b = _get_rates(0, km)
-    cells.v_max[c, p] = vmax
-    cells.k_f[c, p] = k_f
-    cells.k_b[c, p] = k_b
-    cells.N_f[c, p, m2i[mol]] = 1
-    cells.N_b[c, p, m2i[mol] + len(molecules)] = 1
-    N = (world.cells.N_b[c, p] - world.cells.N_f[c, p]).to(world.ftype)
-    cells.N_e[c, p] = N * cells.proteomics.cv_ratio
-
-
-def _set_catal(
-    world: ms.World,
-    c: int,
-    p: int,
-    prods: Iterable[ms.Molecule],
-    subs: Iterable[ms.Molecule],
-    km: float,
-    vmax: float,
-) -> None:
-    cells = world.cells
-    energy = sum(d.energy for d in prods) - sum(d.energy for d in subs)
-    fwd_cntr = Counter(subs)
-    bwd_cntr = Counter(prods)
-    k_f, k_b = _get_rates(energy, km)
-    cells.v_max[c, p] = vmax
-    cells.k_f[c, p] = k_f
-    cells.k_b[c, p] = k_b
-    for mol, n in fwd_cntr.items():
-        cells.N_f[c, p, world.chemistry.mol_2_idx[mol]] = n
-    for mol, n in bwd_cntr.items():
-        cells.N_b[c, p, world.chemistry.mol_2_idx[mol]] = n
-    N = (world.cells.N_b[c, p] - world.cells.N_f[c, p]).to(world.ftype)
-    cells.N_e[c, p] = N * cells.proteomics.cv_ratio
-
-
-def _set_regul(world: ms.World, c: int, p: int, kr: float, mol: ms.Molecule, act: bool) -> None:
-    cells = world.cells
-    sign = 1 if act else -1
-    cells.k_r[c, p] = kr
-    cells.N_h[c, p, world.chemistry.mol_2_idx[mol]] = sign
+from docs.plots.util import set_catal, set_regul, set_trnsp
 
 
 def _plot_simple_exporter_kinetics(
@@ -75,7 +22,7 @@ def _plot_simple_exporter_kinetics(
         c = int(world.spawn_cells(genomes=[""])[0])
         world.cells.update_p(p_req=1)
 
-        _set_trnsp(world=world, c=c, p=0, mol=A, km=km, vmax=vmax)
+        set_trnsp(world=world, c=c, p=0, mol=A, km=km, vmax=vmax)
         world.culture.molecule_map[m2i[A]] = 10.0
         world.cells.molecules[:] = 0.0
 
@@ -117,7 +64,7 @@ def _plot_simple_catalysis_kinetics(
         world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 1})
         c = int(world.spawn_cells(genomes=[""])[0])
         world.cells.update_p(p_req=1)
-        _set_catal(
+        set_catal(
             world=world, c=c, p=0, subs=react.substrates, prods=react.products, km=km, vmax=vmax
         )
         world.cells.molecules[c, m2i[A]] = 10.0
@@ -163,7 +110,7 @@ def _plot_coupled_kinetics(
         c = int(world.spawn_cells(genomes=[""])[0])
         world.cells.update_p(p_req=2)
         for p, (subs, prods) in enumerate(proteins):
-            _set_catal(world=world, c=c, p=p, subs=subs, prods=prods, km=km, vmax=vmax)
+            set_catal(world=world, c=c, p=p, subs=subs, prods=prods, km=km, vmax=vmax)
 
         world.cells.molecules[c, m2i[A]] = 10.0
         world.cells.molecules[c, m2i[B]] = 10.0
@@ -203,8 +150,8 @@ def _plot_simple_exporter_inhibition(
         c = int(world.spawn_cells(genomes=[""])[0])
         world.cells.update_p(p_req=1)
 
-        _set_trnsp(world=world, c=c, p=0, mol=A, km=km, vmax=vmax)
-        _set_regul(world=world, c=c, p=0, kr=kr, mol=B, act=False)
+        set_trnsp(world=world, c=c, p=0, mol=A, km=km, vmax=vmax)
+        set_regul(world=world, c=c, p=0, kr=kr, mol=B, act=False)
         world.culture.molecule_map[m2i[A]] = 10.0
         world.cells.molecules[:] = 0.0
         world.cells.molecules[c, m2i[B]] = xb
@@ -243,14 +190,14 @@ def _plot_negative_feedback(
         c = int(world.spawn_cells(genomes=[""])[0])
         world.cells.update_p(p_req=2)
 
-        _set_catal(world=world, c=c, p=0, subs=[A, B], prods=[C], km=km, vmax=vmax)
-        _set_regul(world=world, c=c, p=0, kr=kr, mol=C, act=False)
+        set_catal(world=world, c=c, p=0, subs=[A, B], prods=[C], km=km, vmax=vmax)
+        set_regul(world=world, c=c, p=0, kr=kr, mol=C, act=False)
 
-        _set_catal(world=world, c=c, p=1, subs=[A] * 3, prods=[C], km=km, vmax=vmax)
-        _set_regul(world=world, c=c, p=1, kr=kr, mol=B, act=False)
+        set_catal(world=world, c=c, p=1, subs=[A] * 3, prods=[C], km=km, vmax=vmax)
+        set_regul(world=world, c=c, p=1, kr=kr, mol=B, act=False)
 
         world.cells.molecules[:] = 0.0
-        world.cells.molecules[m2i[A]] = 10.0
+        world.cells.molecules[c, m2i[A]] = 10.0
 
         for t in range(n_seconds):
             xs = {f"[{m}]": float(world.cells.molecules[c, m2i[m]]) for m in chemistry.molecules}

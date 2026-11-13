@@ -205,52 +205,36 @@ Columns show catalysis at different inhibitor affinities (analog to $K_{\text{M}
 
 ## 7. Biochemical Patterns
 
-![](./img/supporting/switch_relay.png)
+![](./img/supporting/relay-switch.png)
 
 _**7.1. Switch with relay controlled by third molecule.**
-Intracellular molecule A and B concentrations are shown while the abundance of a molecule C is changed.
-Dashed vertical lines indicate when molecule C is alternatingly added or removed.
-Cell has 2 proteins:
-one catalyzing A + E $\rightleftharpoons$ B | -10 kJ inhibited by C,
-one catalyzing B + E $\rightleftharpoons$ A | -10 kJ activated by C.
-All Km and Vmax values are 1, intracellular C alternates between 0 and 4.
-E is supplied each step._
+Intracellular molecule concentrations over time in a cell with one protein that catalyzes A + E $\rightleftharpoons$ B | -10 kJ and is inhibited by C and one protein that catalyzes B + E $\rightleftharpoons$ A | -10 kJ and is activated by C.
+E was supplied in abundance and C was alternated between high and low concentrations at time points shown as dashed vertical lines._
 
 <br/>
 
-![](./img/supporting/bistable_switch.png)
+![](./img/supporting/bistable-switch.png)
 
-_**7.2. Self-activating enzymes create bistable switches.**
-Intracellular A and B concentrations are shown over time.
-Left shows a situation with A slightly higher than B, right shows the opposite.
-Cell has 2 proteins:
-one catalyzing A + E $\rightleftharpoons$ B | -100 kJ inhibited by A,
-one catalyzing B + E $\rightleftharpoons$ A | -100 kJ inhibited by B.
-All Km and Vmax values are 1, E is supplied each step._
-
-<br/>
-
-![](./img/supporting/bistable_switch_cascade.png)
-
-_**7.3. Signal propagation through neighbouring cells with bistable switches based on self-activating enzymes.**
-Intracellular A and B concentrations of 4 neighbouring cells are shown over time.
-All cells have 2 proteins:
-one catalyzing A + E $\rightleftharpoons$ B | -100 kJ inhibited by A,
-one catalyzing B + E $\rightleftharpoons$ A | -100 kJ inhibited by B.
-All Km and Vmax values are 1, E is supplied each step, A and B have permeability 0.1.
-Slight concentration variations in one cell strengthen and propagate to other cells._
+_**7.2. Bistable switches from competing enzymes.**
+Intracellular molecule concentrations over time in a cell with one protein that
+catalyzes A + E $\rightleftharpoons$ B | -10 kJ and is inhibited by A
+and one protein that catalyzes B + E $\rightleftharpoons$ A | -10 kJ and is inhibited by B.
+E was provided in abundance.
+Slight variation in initial A and B concentrations favor either molecule._
 
 <br/>
 
-![](./img/supporting/cyclic_pathway.png)
+![](./img/supporting/bistable-switch-signal-propagation.png)
 
-_**7.4. Simulated cyclic biochemical pathway.**
-Intracellular molecule concentrations of cell with 4 proteins catalyzing
-$A + E \rightleftharpoons B$ | -100 kJ, $B + E \rightleftharpoons C$ | -100 kJ,
-$C + E \rightleftharpoons D$ | -100 kJ, and $D + E \rightleftharpoons A$ | -100 kJ.
-Simulation starts with only intracellular A, E is supplied at each step._
+_**7.3. Signal propagation through neighbouring cells with bistable switches.**
+Intracellular molecule concentrations over time in multiple neighbouring cells that all have one protein that catalyzes A + E $\rightleftharpoons$ B | -10 kJ and is inhibited by A
+and one protein that catalyzes B + E $\rightleftharpoons$ A | -10 kJ and is inhibited by B, as well as transporters for A and B.
+E was provided in abundance.
+Slight variation in initial concentrations in cell 0 favor one molecule.
+The concentration change eventually arrives at the other cells and also makes them favor the same molecule._
 
 <br/>
+
 
 ## 8. Free Energy in Simulation
 

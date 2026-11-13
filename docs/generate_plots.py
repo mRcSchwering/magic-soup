@@ -10,7 +10,7 @@ from pathlib import Path
 
 from plotnine import *  # pylint: disable=W0614,W0401
 
-# from docs.plots.biochemical_patterns import create_plots as plot_biochemical_patterns
+from docs.plots.biochemical_patterns import create_plots as plot_biochemical_patterns
 from docs.plots.free_energy import create_plots as plot_free_energy
 from docs.plots.genomes import create_plots as plot_genomes
 from docs.plots.molecule_physics import create_plots as plot_molecule_physics
@@ -27,7 +27,7 @@ _SUPPORTING_PLOTS: dict[str, Callable] = {
     "molecule-physics": plot_molecule_physics,
     "param-distros": plot_param_distros,
     "reaction-kinetics": plot_reaction_kinetics,
-    #  "biochemical_patterns": plot_biochemical_patterns,
+    "biochemical-patterns": plot_biochemical_patterns,
     "free-energy": plot_free_energy,
     "survival-replication": plot_survival_replication,
 }

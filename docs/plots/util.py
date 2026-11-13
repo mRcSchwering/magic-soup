@@ -1,4 +1,9 @@
 import math
+from collections import Counter
+from collections.abc import Iterable
+
+import magicsoup as ms
+from magicsoup.core.config import GAS_CONSTANT, ROOM_TEMP
 
 
 def _parse_cigar(cigar: str) -> list[tuple[str, int]]:
@@ -50,3 +55,57 @@ def ani_from_jaccard(jacc: float, kmer: int = 21) -> float:
         return 0.0  # no shared k-mers
     d = -math.log(2 * jacc / (1 + jacc)) / kmer  # Mash distance
     return 1 - d
+
+
+def _get_kf_kb(energy: float, km: float) -> tuple[float, float]:
+    k_e = math.exp(-energy / ROOM_TEMP / GAS_CONSTANT)
+    return (km / math.sqrt(k_e), km * math.sqrt(k_e))
+
+
+def set_trnsp(world: ms.World, c: int, p: int, mol: ms.Molecule, km: float, vmax: float) -> None:
+    """Set transporter domain for molecule in cell c protein p with Km, Vmax"""
+    cells = world.cells
+    molecules = world.chemistry.molecules
+    m2i = world.chemistry.mol_2_idx
+    k_f, k_b = _get_kf_kb(0, km)
+    cells.v_max[c, p] = vmax
+    cells.k_f[c, p] = k_f
+    cells.k_b[c, p] = k_b
+    cells.N_f[c, p, m2i[mol]] = 1
+    cells.N_b[c, p, m2i[mol] + len(molecules)] = 1
+    N = (world.cells.N_b[c, p] - world.cells.N_f[c, p]).to(world.ftype)
+    cells.N_e[c, p] = N * cells.proteomics.cv_ratio
+
+
+def set_catal(
+    world: ms.World,
+    c: int,
+    p: int,
+    prods: Iterable[ms.Molecule],
+    subs: Iterable[ms.Molecule],
+    km: float,
+    vmax: float,
+) -> None:
+    """Set catalytic domain for reaction in cell c protein p with Km, Vmax"""
+    cells = world.cells
+    energy = sum(d.energy for d in prods) - sum(d.energy for d in subs)
+    fwd_cntr = Counter(subs)
+    bwd_cntr = Counter(prods)
+    k_f, k_b = _get_kf_kb(energy, km)
+    cells.v_max[c, p] = vmax
+    cells.k_f[c, p] = k_f
+    cells.k_b[c, p] = k_b
+    for mol, n in fwd_cntr.items():
+        cells.N_f[c, p, world.chemistry.mol_2_idx[mol]] = n
+    for mol, n in bwd_cntr.items():
+        cells.N_b[c, p, world.chemistry.mol_2_idx[mol]] = n
+    N = (world.cells.N_b[c, p] - world.cells.N_f[c, p]).to(world.ftype)
+    cells.N_e[c, p] = N * cells.proteomics.cv_ratio
+
+
+def set_regul(world: ms.World, c: int, p: int, kr: float, mol: ms.Molecule, act: bool) -> None:
+    """Set regulatory domain for molecule in cell c protein p with Kr"""
+    cells = world.cells
+    sign = 1 if act else -1
+    cells.k_r[c, p] = kr
+    cells.N_h[c, p, world.chemistry.mol_2_idx[mol]] = sign

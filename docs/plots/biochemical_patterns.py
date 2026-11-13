@@ -2,242 +2,177 @@ from pathlib import Path
 
 import magicsoup as ms
 import pandas as pd
-from plotnine import *
+from plotnine import *  # pylint: disable=W0614,W0401
 
-from docs.plots.util import generate_cell, record_concentrations
+from docs.plots.util import set_catal, set_regul, set_trnsp
 
 
-def _plot_switch_relay(nsteps=100, reg_km=1.0, low_high=(0.0, 4.0)):
-    switches = [10, 30, 50, 70, 90]
+def _plot_relay_switch(
+    chemistry: ms.Chemistry, n_seconds: int = 100, vmax: float = 1, km: float = 10, kr: float = 1
+) -> tuple[ggplot, str]:
+    m2i = chemistry.mol_2_idx
+    A = chemistry.molname_2_mol["A"]
+    B = chemistry.molname_2_mol["B"]
+    C = chemistry.molname_2_mol["C"]
+    E = chemistry.molname_2_mol["E"]
 
-    ms.Molecule._instances = {}  # rm previous instances
-    _ma = ms.Molecule("A", 10 * 1e3)
-    _mb = ms.Molecule("B", 10 * 1e3)
-    _mc = ms.Molecule("C", 10 * 1e3)
-    _me = ms.Molecule("E", 10 * 1e3)
-    molecules = [_ma, _mb, _mc, _me]
-    reactions = [([_ma, _me], [_mb]), ([_mb, _me], [_ma])]
-    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
-    world = ms.World(chemistry=chemistry, map_size=2)
+    switch_seconds = n_seconds // 4
+    switches = [i for i in range(n_seconds) if i % switch_seconds == 0]
 
-    p0 = [
-        ms.CatalyticDomainFact(reaction=([_ma, _me], [_mb]), km=1.0, vmax=1.0),
-        ms.RegulatoryDomainFact(
-            effector=_mc, is_transmembrane=False, is_inhibiting=True, km=reg_km, hill=1
-        ),
-    ]
-    p1 = [
-        ms.CatalyticDomainFact(reaction=([_mb, _me], [_ma]), km=1.0, vmax=1.0),
-        ms.RegulatoryDomainFact(
-            effector=_mc, is_transmembrane=False, is_inhibiting=False, km=reg_km, hill=1
-        ),
-    ]
-
-    ggen = ms.GenomeFact(world=world, proteome=[p0, p1])
-    ci = generate_cell(ggen=ggen, world=world, max_tries=10)
-    cell = world.get_cell(by_idx=ci)
-    records = [{"cell": ci, "x": cell.position[0], "y": cell.position[1]}]
-    cells_df = pd.DataFrame.from_records(records)
-
-    world.cell_molecules[:] = 2.0
-    is_high = False
     records = []
-    for step in range(nsteps):
-        if step in switches:
-            is_high = not is_high
-        world.cell_molecules[:, 2] = low_high[1 if is_high else 0]
-        world.cell_molecules[:, 3] = 10.0
-        record_concentrations(
-            record={"step": step}, records=records, world=world, cells_df=cells_df
-        )
-        world.enzymatic_activity()
+    world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 1})
+    c = int(world.spawn_cells(genomes=[""])[0])
+    world.cells.update_p(p_req=3)
 
-    sim_df = pd.DataFrame.from_records(records)
-    df = pd.merge(cells_df, sim_df[sim_df["location"] == "int"], on="cell")
+    set_catal(world=world, c=c, p=0, subs=[A, E], prods=[B], km=km, vmax=vmax)
+    set_regul(world=world, c=c, p=0, kr=kr, mol=C, act=False)
+
+    set_catal(world=world, c=c, p=1, subs=[B, E], prods=[A], km=km, vmax=vmax)
+    set_regul(world=world, c=c, p=1, kr=kr, mol=C, act=True)
+
+    set_trnsp(world=world, c=c, p=2, km=0.1, vmax=10, mol=E)
+
+    world.culture.molecule_map[m2i[E]] = 10.0
+    world.cells.molecules[:] = 0.0
+    world.cells.molecules[c, m2i[E]] = 10.0
+    world.cells.molecules[c, m2i[A]] = 2.0
+    world.cells.molecules[c, m2i[B]] = 2.0
+
+    has_c = False
+    for t in range(n_seconds):
+        if t in switches:
+            has_c = not has_c
+
+        world.cells.molecules[c, m2i[C]] = 10.0 if has_c else 0.0
+
+        xs = {f"[{m}]": float(world.cells.molecules[c, m2i[m]]) for m in [A, B]}
+        records.append({"t": t, **xs})
+        world.advance_time()
+
+    df = pd.DataFrame.from_records(records)
+    df = df.melt(id_vars=["t"])
 
     return (
-        ggplot(df[df["molecule"].isin(["A", "B"])])
-        + geom_vline(
-            aes(xintercept="x"),
-            linetype="dashed",
-            color="gray",
-            data=pd.DataFrame({"x": switches}),
-        )
-        + geom_line(aes(x="step", y="[x]", color="molecule"))
-        + scale_color_brewer(type="Qualitative", palette="Set2")
-        + theme(figure_size=(8, 2))
-    ), "switch_relay"
+        ggplot(df)
+        + geom_line(aes(x="t", y="value", color="variable"))
+        + geom_vline(xintercept=switches, color="gray", linetype="dashed")
+        + xlab("time[s]")
+        + ylab("concentration[mM]")
+        + theme(figure_size=(8, 2), legend_title=element_blank())
+    ), "relay-switch"
 
 
-def _plot_bistable_switch(nsteps=25, reg_km=1.0):
-    ms.Molecule._instances = {}  # rm previous instances
-    _ma = ms.Molecule("A", 10 * 1e3)
-    _mb = ms.Molecule("B", 10 * 1e3)
-    _me = ms.Molecule("E", 100 * 1e3)
-    molecules = [_ma, _mb, _me]
-    reactions = [([_ma, _me], [_mb]), ([_mb, _me], [_ma])]
-    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
-    world = ms.World(chemistry=chemistry, map_size=2)
-
-    p0 = [
-        ms.CatalyticDomainFact(reaction=([_ma, _me], [_mb]), km=1.0, vmax=1.0),
-        ms.RegulatoryDomainFact(
-            effector=_ma, is_transmembrane=False, is_inhibiting=True, km=reg_km, hill=3
-        ),
-    ]
-    p1 = [
-        ms.CatalyticDomainFact(reaction=([_mb, _me], [_ma]), km=1.0, vmax=1.0),
-        ms.RegulatoryDomainFact(
-            effector=_mb, is_transmembrane=False, is_inhibiting=True, km=reg_km, hill=3
-        ),
-    ]
-    ggen = ms.GenomeFact(world=world, proteome=[p0, p1])
+def _plot_bistable_switch(
+    chemistry: ms.Chemistry, n_seconds: int = 25, vmax: float = 1, km: float = 10, kr: float = 1
+) -> tuple[ggplot, str]:
+    m2i = chemistry.mol_2_idx
+    A = chemistry.molname_2_mol["A"]
+    B = chemistry.molname_2_mol["B"]
+    E = chemistry.molname_2_mol["E"]
+    favors = [A, B]
 
     records = []
-    for mol in (_ma, _mb):
-        ci = generate_cell(ggen=ggen, world=world, max_tries=10)
-        cell = world.get_cell(by_idx=ci)
-        records.append(
-            {
-                "cell": ci,
-                "x": cell.position[0],
-                "y": cell.position[1],
-                "favor": mol.name,
-            }
-        )
-        world.cell_molecules[ci, :] = 2.0
-        world.cell_molecules[ci, world.chemistry.mol_2_idx[mol]] += 0.1
-    cells_df = pd.DataFrame.from_records(records)
+    for favor in favors:
+        world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 1})
+        c = int(world.spawn_cells(genomes=[""])[0])
+        world.cells.update_p(p_req=3)
 
-    records = []
-    for step in range(nsteps):
-        world.cell_molecules[:, 2] = 10.0
-        record_concentrations(
-            record={"step": step}, records=records, world=world, cells_df=cells_df
-        )
-        world.enzymatic_activity()
+        set_catal(world=world, c=c, p=0, subs=[A, E], prods=[B], km=km, vmax=vmax)
+        set_regul(world=world, c=c, p=0, kr=kr, mol=A, act=False)
 
-    sim_df = pd.DataFrame.from_records(records)
-    df = pd.merge(cells_df, sim_df[sim_df["location"] == "int"], on="cell")
+        set_catal(world=world, c=c, p=1, subs=[B, E], prods=[A], km=km, vmax=vmax)
+        set_regul(world=world, c=c, p=1, kr=kr, mol=B, act=False)
+
+        set_trnsp(world=world, c=c, p=2, km=0.1, vmax=10, mol=E)
+
+        world.culture.molecule_map[m2i[E]] = 10.0
+        world.cells.molecules[:] = 0.0
+        world.cells.molecules[c, m2i[E]] = 10.0
+        world.cells.molecules[c, m2i[A]] = 2.0
+        world.cells.molecules[c, m2i[B]] = 2.0
+        world.cells.molecules[c, m2i[favor]] += 0.01
+
+        for t in range(n_seconds):
+            xs = {f"[{m}]": float(world.cells.molecules[c, m2i[m]]) for m in [A, B]}
+            records.append({"t": t, "favor": str(favor), **xs})
+            world.advance_time()
+
+    df = pd.DataFrame.from_records(records)
+    df = df.melt(id_vars=["t", "favor"])
 
     return (
-        ggplot(df[df["molecule"].isin(["A", "B"])])
-        + geom_line(aes(x="step", y="[x]", color="molecule"))
+        ggplot(df)
+        + geom_line(aes(x="t", y="value", color="variable"))
         + facet_grid(". ~ favor", labeller="label_both")
-        + scale_color_brewer(type="Qualitative", palette="Set2")
-        + theme(figure_size=(8, 2))
-    ), "bistable_switch"
+        + xlab("time[s]")
+        + ylab("concentration[mM]")
+        + theme(figure_size=(8, 2), legend_title=element_blank())
+    ), "bistable-switch"
 
 
-def _plot_bistable_switch_cascade(nsteps=50, reg_km=1.0):
-    ms.Molecule._instances = {}  # rm previous instances
-    _ma = ms.Molecule("A", 10 * 1e3, permeability=0.1)
-    _mb = ms.Molecule("B", 10 * 1e3, permeability=0.1)
-    _me = ms.Molecule("E", 100 * 1e3)
-    molecules = [_ma, _mb, _me]
-    reactions = [([_ma, _me], [_mb]), ([_mb, _me], [_ma])]
-    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
-    world = ms.World(chemistry=chemistry, map_size=2, mol_map_init="zeros")
-
-    p0 = [
-        ms.CatalyticDomainFact(reaction=([_ma, _me], [_mb]), km=1.0, vmax=1.0),
-        ms.RegulatoryDomainFact(
-            effector=_ma, is_transmembrane=False, is_inhibiting=True, km=reg_km, hill=3
-        ),
-    ]
-    p1 = [
-        ms.CatalyticDomainFact(reaction=([_mb, _me], [_ma]), km=1.0, vmax=1.0),
-        ms.RegulatoryDomainFact(
-            effector=_mb, is_transmembrane=False, is_inhibiting=True, km=reg_km, hill=3
-        ),
-    ]
-    ggen = ms.GenomeFact(world=world, proteome=[p0, p1])
+def _plot_bistable_switch_signal_propagation(
+    chemistry: ms.Chemistry, n_seconds: int = 50, vmax: float = 10, km: float = 1, kr: float = 1
+) -> tuple[ggplot, str]:
+    m2i = chemistry.mol_2_idx
+    A = chemistry.molname_2_mol["A"]
+    B = chemistry.molname_2_mol["B"]
+    E = chemistry.molname_2_mol["E"]
 
     records = []
-    for _ in range(world.map_size**2):
-        ci = generate_cell(ggen=ggen, world=world, max_tries=10)
-        cell = world.get_cell(by_idx=ci)
-        records.append({"cell": ci, "x": cell.position[0], "y": cell.position[1]})
-    cells_df = pd.DataFrame.from_records(records)
+    world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 2})
+    world.spawn_cells(genomes=[""] * 4)[0]
+    world.cells.update_p(p_req=5)
 
-    world.molecule_map[:] = 2.0
-    world.cell_molecules[:] = 2.0
-    records = []
-    for step in range(nsteps):
-        world.cell_molecules[:, 2] = 10.0
-        record_concentrations(
-            record={"step": step}, records=records, world=world, cells_df=cells_df
-        )
-        world.enzymatic_activity()
-        world.diffuse_molecules()
+    for c in range(4):
+        set_catal(world=world, c=c, p=0, subs=[A, E], prods=[B], km=km, vmax=vmax)
+        set_regul(world=world, c=c, p=0, kr=kr, mol=A, act=False)
 
-    sim_df = pd.DataFrame.from_records(records)
-    df = pd.merge(cells_df, sim_df[sim_df["location"] == "int"], on="cell")
+        set_catal(world=world, c=c, p=1, subs=[B, E], prods=[A], km=km, vmax=vmax)
+        set_regul(world=world, c=c, p=1, kr=kr, mol=B, act=False)
+
+        set_trnsp(world=world, c=c, p=2, km=1, vmax=10, mol=E)
+        set_trnsp(world=world, c=c, p=3, km=1, vmax=1, mol=A)
+        set_trnsp(world=world, c=c, p=4, km=1, vmax=1, mol=B)
+
+    world.culture.molecule_map[m2i[A]] = 2.0
+    world.culture.molecule_map[m2i[B]] = 2.0
+    world.cells.molecules[:] = 0.0
+    world.cells.molecules[:, m2i[A]] = 2.0
+    world.cells.molecules[:, m2i[B]] = 2.0
+    world.cells.molecules[0, m2i[B]] += 0.01
+
+    for t in range(n_seconds):
+        for c in range(4):
+            xs = {f"[{m}]": float(world.cells.molecules[c, m2i[m]]) for m in [A, B]}
+            records.append({"t": t, "cell": c, **xs})
+        world.advance_time()
+        world.culture.molecule_map[m2i[E]] = 10.0
+
+    df = pd.DataFrame.from_records(records)
+    df = df.melt(id_vars=["t", "cell"])
 
     return (
-        ggplot(df[df["molecule"].isin(["A", "B"])])
-        + geom_line(aes(x="step", y="[x]", color="molecule"))
+        ggplot(df)
+        + geom_line(aes(x="t", y="value", color="variable"))
         + facet_grid("cell ~ .", labeller="label_both")
-        + scale_color_brewer(type="Qualitative", palette="Set2")
-        + theme(figure_size=(6, 4))
-    ), "bistable_switch_cascade"
+        + xlab("time[s]")
+        + ylab("concentration[mM]")
+        + theme(figure_size=(8, 5), legend_title=element_blank())
+    ), "bistable-switch-signal-propagation"
 
 
-def _plot_cyclic_pathway(km=10.0, vmax=0.3, nsteps=50):
-    ms.Molecule._instances = {}  # rm previous instances
-    _ma = ms.Molecule("A", 10 * 1e3, permeability=0.1)
-    _mb = ms.Molecule("B", 10 * 1e3, permeability=0.1)
-    _mc = ms.Molecule("C", 10 * 1e3, permeability=0.1)
-    _md = ms.Molecule("D", 10 * 1e3, permeability=0.1)
-    _me = ms.Molecule("E", 100 * 1e3)
-    molecules = [_ma, _mb, _mc, _md, _me]
-    reactions = [
-        ([_ma, _me], [_mb]),
-        ([_mb, _me], [_mc]),
-        ([_mc, _me], [_md]),
-        ([_md, _me], [_ma]),
-    ]
-    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
-    world = ms.World(chemistry=chemistry, map_size=2, mol_map_init="zeros")
+def create_plots(imgs_dir: Path, transparent: bool):
+    A = ms.Molecule("A", 1e3)
+    B = ms.Molecule("B", 1e3)
+    C = ms.Molecule("C", 1e3)
+    E = ms.Molecule("E", 10 * 1e3)
+    AB = ms.Reaction([A, E], [B])
+    BA = ms.Reaction([B, E], [A])
+    chemistry = ms.Chemistry(molecules=[A, B, C, E], reactions=[AB, BA])
 
-    p0 = [ms.CatalyticDomainFact(reaction=([_ma, _me], [_mb]), km=km, vmax=vmax)]
-    p1 = [ms.CatalyticDomainFact(reaction=([_mb, _me], [_mc]), km=km, vmax=vmax)]
-    p2 = [ms.CatalyticDomainFact(reaction=([_mc, _me], [_md]), km=km, vmax=vmax)]
-    p3 = [ms.CatalyticDomainFact(reaction=([_md, _me], [_ma]), km=km, vmax=vmax)]
-    ggen = ms.GenomeFact(world=world, proteome=[p0, p1, p2, p3])
-
-    ci = generate_cell(ggen=ggen, world=world, max_tries=10)
-    cell = world.get_cell(by_idx=ci)
-    record = {"cell": ci, "x": cell.position[0], "y": cell.position[1]}
-    cells_df = pd.DataFrame.from_records([record])
-
-    world.cell_molecules[0, 0] = 5.0
-    records = []
-    for step in range(nsteps):
-        world.cell_molecules[:, 4] = 10.0
-        record_concentrations(
-            record={"step": step}, records=records, world=world, cells_df=cells_df
-        )
-        world.enzymatic_activity()
-        world.diffuse_molecules()
-
-    sim_df = pd.DataFrame.from_records(records)
-    df = pd.merge(cells_df, sim_df[sim_df["location"] == "int"], on="cell")
-
-    return (
-        ggplot(df[df["molecule"] != "E"])
-        + geom_line(aes(x="step", y="[x]", color="molecule"))
-        + scale_color_brewer(type="Qualitative", palette="Set2")
-        + theme(figure_size=(8, 3))
-    ), "cyclic_pathway"
-
-
-def create_plots(imgs_dir: Path):
-    g, name = _plot_switch_relay()
-    g.save(imgs_dir / f"{name}.png", dpi=200)
-    g, name = _plot_bistable_switch()
-    g.save(imgs_dir / f"{name}.png", dpi=200)
-    g, name = _plot_bistable_switch_cascade()
-    g.save(imgs_dir / f"{name}.png", dpi=200)
-    g, name = _plot_cyclic_pathway()
-    g.save(imgs_dir / f"{name}.png", dpi=200)
+    g, name = _plot_relay_switch(chemistry=chemistry)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)
+    g, name = _plot_bistable_switch(chemistry=chemistry)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)
+    g, name = _plot_bistable_switch_signal_propagation(chemistry=chemistry)
+    g.save(imgs_dir / f"{name}.png", dpi=200, transparent=transparent)
