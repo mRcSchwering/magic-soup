@@ -6,6 +6,8 @@ import torch
 from magicsoup.chemistry import Chemistry
 from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 
+# TODO: add docstrings to all attributes (below attribute)
+
 
 class MooreNeighborhood(TensorClass):
     """

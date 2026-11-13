@@ -152,65 +152,54 @@ The bottom row shows the distribution of Hill coefficients of allosteric domains
 
 <br/>
 
-## 6. Simple Reaction Kinetics
+## 6. Simple Kinetics
 
-![](./img/supporting/simple_exporter_kinetics.png)
+![](./img/supporting/simple-exporter-kinetics.png)
 
-_**6.1. Molecule export over time with different parameters.**
-Molecule concentrations inside and outside a cell are shown as molecules get transferred each step by
-a single protein with a single transporter domain.
-Rows show different Km values, columns different Vmax values for the protein._
-
-<br/>
-
-![](./img/supporting/simple_catalysis_kinetics.png)
-
-_**6.2. Simple molecule catalysis over time with different parameters.**
-Molecule concentrations inside a cell while it catalyzes 3A $\rightleftharpoons$ C | -10 kJ each step
-by a single protein with a single catalytic domain.
-Rows show different Km values, columns different Vmax values for the protein._
+_**6.1. Molecule import over time.**
+Intra- and extracellular molecule concentrations over time
+of a cell with a single transporter protein for this molecule species.
+Rows show transport at different transporter $K_{\text{M}}$, columns at different $V_{\text{max}}$._
 
 <br/>
 
-![](./img/supporting/simple_catalysis_kinetics2.png)
+![](./img/supporting/simple-reaction-kinetics.png)
 
-_**6.3. Simple molecule catalysis over time with different parameters.**
-Molecule concentrations inside a cell while it catalyzes A + B $\rightleftharpoons$ C | 5 kJ each step
-by a single protein with a single catalytic domain.
-Rows show different Km values, columns different Vmax values for the protein._
-
-<br/>
-
-![](./img/supporting/coupled_vs_seperate_kinetics.png)
-
-_**6.4. Uncoupled and coupled catalysis over time.**
-Molecule concentrations inside a cell while it catalyzes 3A $\rightleftharpoons$ C | -10 kJ 
-and A + B $\rightleftharpoons$ C | 5 kJ each step.
-Left shows a cell with a single protein with 2 domains which are energetically coupled
-as 4A + B $\rightleftharpoons$ 2C | -5 kJ.
-Right shows a cell with 2 proteins with a single domain each for both reactions respectively._
+_**6.2. Sample reactions catalyzed over time.**
+Intracellular molecule concentrations over time in a cell with one protein that catalyzes
+3A $\rightleftharpoons$ C | -10 kJ (left column),
+A + B $\rightleftharpoons$ C | 5 kJ (middle column),
+A $\rightleftharpoons$ B | -5 kJ (right column).
+Rows show different Km values for the protein._
 
 <br/>
 
-![](./img/supporting/inhibited_exporter_kinetics.png)
+![](./img/supporting/coupled-reaction-kinetics.png)
 
-_**6.5. Inhibited molecule export over time with different parameters.**
-Molecule concentrations inside and outside a cell are shown as molecules get transferred each step by
-a single protein with a transporter domain and a inhibiting regulatory domain.
-Rows show different Km values for the inhibitor, columns different inhibitor concentrations.
-Transport has Vmax=1.0 and Km=1.0._
+_**6.3. Uncoupled and coupled catalysis over time.**
+Intracellular molecule concentrations over time in a cell with
+two proteins that catalyze 
+3A $\rightleftharpoons$ C | -10 kJ and A + B $\rightleftharpoons$ C | 5 kJ (left column),
+one protein that catalyzes 4A + B $\rightleftharpoons$ 2C | -5 kJ (middle column),
+one protein that catalyzes 3A + C $\rightleftharpoons$ A + B + C | -15 kJ (right column)._
 
 <br/>
 
-![](./img/supporting/inhibited_catalysis_kinetics.png)
+![](./img/supporting/simple-exporter-inhibition.png)
 
-_**6.6. Inhibited molecule catalysis over time with different parameters.**
-Molecule concentrations inside a cell while it catalyzes reactions each step
-by 2 proteins with 2 domains each.
-One protein catalyzes A + B $\rightleftharpoons$ C | 5 kJ and is inhibited by C,
-the other catalyzes 3A $\rightleftharpoons$ C | -10 kJ and is inhibited by B.
-Columns show different Km values for both inhibitors.
-Catalytic domains have Vmax=0.3 and Km=1.0._
+_**6.4. Inhibited molecule import over time.**
+Intra- and extracellular molecule concentrations over time
+of a cell with a single regulated transporter protein for this molecule species.
+Rows show transport at different inhibitor affinities (analog to $K_{\text{M}}$), columns at different inhibitor concentrations._
+
+<br/>
+
+![](./img/supporting/negative-feedback.png)
+
+_**6.5. Molecule catalysis with negative feedback over time.**
+Intracellular molecule concentrations over time in a cell with a protein
+that catalyze A + B $\rightleftharpoons$ C | 5 kJ and is inhibited by C and a protein that catalyzes 3A $\rightleftharpoons$ C | -10 kJ and is inhibited by B.
+Columns show catalysis at different inhibitor affinities (analog to $K_{\text{M}}$) of both regulatory regions._
 
 <br/>
 
