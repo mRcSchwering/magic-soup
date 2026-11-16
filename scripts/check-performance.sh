@@ -2,7 +2,7 @@
 #
 # Tools for checking performance. Use:
 #
-# bash scripts/compare-performance.sh --help
+# bash scripts/check-performance.sh --help
 #
 set -e
 
