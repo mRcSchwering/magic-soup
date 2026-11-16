@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 #
-# Check performance of specific functions
-#
-# Use:
+# Tools for checking performance. Use:
 #
 # bash scripts/check-performance.sh
 #
 
 set -e
 
-PYTHONPATH=$PYTHONPATH:./python python performance/check.py "$@"
+uv run python -m performance "$@"

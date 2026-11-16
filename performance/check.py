@@ -1,49 +1,14 @@
 """
 Little helper script for checking the performance of some functions.
-For local python package:
-
-    PYTHONPATH=./python python performance/check.py
-
-For installed python package:
-
-    python check.py
-
-v0.14.1 GPU (g4dn.xlarge):
-Running spawn_cells, update_cells, replicate_cells, enzymatic_activity, mutations
-10,000 cells, 1,000 genome size, on cuda
-(6.64+-1.08)s - spawn cells
-(5.95+-0.22)s - update cells
-(0.28+-0.00)s - replicate cells
-(0.16+-0.00)s - enzymatic activity
-(0.46+-0.00)s - mutations
-
-v0.14.1 CPU (Intel Core i5-10210U):
-10,000 cells, 1,000 genome size, on cpu
-(7.66+-0.51)s - spawn cells
-(7.17+-0.10)s - update cells
-(0.37+-0.01)s - replicate cells
-(4.51+-0.12)s - enzymatic activity
-(0.40+-0.00)s - mutations
-
-a033a935266d0e010c1eb79be2f3c64642e97824 (Intel Core i5-10210U):
-10,000 cells, 1,000 genome size, on cpu
-(1.70+-0.17)s - spawn cells
-(1.43+-0.05)s - update cells
-(0.47+-0.01)s - replicate cells
-(50.01+-5.57)s - advance_time
-(0.03+-0.00)s - mutations
 """
 
 import random
 import statistics
 import time
-from argparse import ArgumentParser
 
 import magicsoup as ms
 import torch
 from magicsoup.examples.wood_ljungdahl import CHEMISTRY
-
-R = 5
 
 
 def _summary(tds: list[float]) -> str:
@@ -57,9 +22,9 @@ def _gen_genomes(n: int, s: int, d=0.1) -> list[str]:
     return [ms.random_genome(s + random.choice(pop)) for _ in range(n)]
 
 
-def spawn_cells(device: str, n: int, s: int):
+def spawn_cells(device: str, n: int, s: int, n_rep: int):
     tds = []
-    for _ in range(R):
+    for _ in range(n_rep):
         world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
@@ -68,9 +33,9 @@ def spawn_cells(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
-def replicate_cells(device: str, n: int, s: int):
+def replicate_cells(device: str, n: int, s: int, n_rep: int):
     tds = []
-    for _ in range(R):
+    for _ in range(n_rep):
         world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
@@ -80,9 +45,9 @@ def replicate_cells(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
-def advance_time(device: str, n: int, s: int):
+def advance_time(device: str, n: int, s: int, n_rep: int):
     tds = []
-    for _ in range(R):
+    for _ in range(n_rep):
         world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
@@ -92,12 +57,12 @@ def advance_time(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
-def mutations(device: str, n: int, s: int):
+def mutations(device: str, n: int, s: int, n_rep: int):
     world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
     genomes = _gen_genomes(n=n, s=s)
     world.spawn_cells(genomes=genomes)
     tds = []
-    for _ in range(R):
+    for _ in range(n_rep):
         world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
@@ -107,41 +72,19 @@ def mutations(device: str, n: int, s: int):
     return _summary(tds=tds)
 
 
+default_parts = {
+    "spawn_cells": spawn_cells,
+    "replicate_cells": replicate_cells,
+    "advance_time": advance_time,
+    "mutations": mutations,
+}
+
+
 @torch.inference_mode()
-def main(parts: list, n: int, s: int, device: str):
+def main(parts: list, n_cells: int, genome_size: int, device: str, n_rep: int = 5, **_):
     print(f"Running {', '.join(parts)}")
-    print(f"{n:,} cells, {s:,} genome size, on {device}")
+    print(f"{n_cells:,} cells, {genome_size:,} genome size, on {device}")
 
-    if "spawn_cells" in parts:
-        smry = spawn_cells(device=device, n=n, s=s)
-        print(f"{smry} - spawn cells")
-
-    if "replicate_cells" in parts:
-        smry = replicate_cells(device=device, n=n, s=s)
-        print(f"{smry} - replicate cells")
-
-    if "advance_time" in parts:
-        smry = advance_time(device=device, n=n, s=s)
-        print(f"{smry} - advance_time")
-
-    if "mutations" in parts:
-        smry = mutations(device=device, n=n, s=s)
-        print(f"{smry} - mutations")
-
-
-if __name__ == "__main__":
-    default_parts: list[str] = [
-        "spawn_cells",
-        "update_cells",
-        "replicate_cells",
-        "advance_time",
-        "mutations",
-    ]
-
-    parser = ArgumentParser()
-    parser.add_argument("--parts", default=default_parts, nargs="*", action="store")
-    parser.add_argument("--n-cells", default=10_000, type=int)
-    parser.add_argument("--genome-size", default=1_000, type=int)
-    parser.add_argument("--device", default="cpu", type=str)
-    args = parser.parse_args()
-    main(parts=args.parts, n=args.n_cells, s=args.genome_size, device=args.device)
+    for part in parts:
+        smry = default_parts[part](device=device, n=n_cells, s=genome_size, n_rep=n_rep)
+        print(f"{smry} - {part}")
