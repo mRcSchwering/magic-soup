@@ -10,7 +10,7 @@ It stores a simulation's state and provides methods for advancing a simulation.
 
 ::: magicsoup.world
 
-## magicsoup.containers
+## magicsoup.chemistry
 
 This module defines some data classes.
 [Chemistry][magicsoup.containers.Chemistry] is the most important one.
@@ -18,7 +18,27 @@ A [Chemistry][magicsoup.containers.Chemistry] object is needed when initializing
 It describes [Molecules][magicsoup.containers.Molecule] and reactions of a simulation.
 [Molecule][magicsoup.containers.Molecule] defines a molecule species and each reaction is a grouping of molecule species.
 
-::: magicsoup.containers
+::: magicsoup.chemistry
+
+## magicsoup.biology
+
+This module defines some data classes.
+[Chemistry][magicsoup.containers.Chemistry] is the most important one.
+A [Chemistry][magicsoup.containers.Chemistry] object is needed when initializing [World][magicsoup.world.World].
+It describes [Molecules][magicsoup.containers.Molecule] and reactions of a simulation.
+[Molecule][magicsoup.containers.Molecule] defines a molecule species and each reaction is a grouping of molecule species.
+
+::: magicsoup.chemistry
+
+## magicsoup.physics
+
+This module defines some data classes.
+[Chemistry][magicsoup.containers.Chemistry] is the most important one.
+A [Chemistry][magicsoup.containers.Chemistry] object is needed when initializing [World][magicsoup.world.World].
+It describes [Molecules][magicsoup.containers.Molecule] and reactions of a simulation.
+[Molecule][magicsoup.containers.Molecule] defines a molecule species and each reaction is a grouping of molecule species.
+
+::: magicsoup.physics
 
 ## magicsoup.factories
 

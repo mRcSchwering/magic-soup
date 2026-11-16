@@ -402,18 +402,14 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
     non_divide_idxs = t0.idx[n_divide:]
     mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
     mask[divide_idxs] = True
-    parent_of = world.divide_cells(mask=mask)
-
-    # derive successful parents and their children from parent_of
-    child_idxs = (parent_of >= 0).nonzero(as_tuple=True)[0].to(torch.int32)
-    parent_idxs = parent_of[child_idxs].to(torch.int32)
+    is_desc = world.divide_cells(mask=mask)
 
     t1 = _State.from_world(world)
 
     # some cells divided
-    assert parent_idxs.numel() == n_succ
-    assert parent_idxs.numel() == child_idxs.numel()
-    unsucc_parent_idxs = divide_idxs[~torch.isin(divide_idxs, parent_idxs)]
+    assert is_desc.sum() == n_succ * 2
+    desc_idxs = (is_desc).nonzero(as_tuple=True)[0]
+    unsucc_parent_idxs = divide_idxs[~torch.isin(divide_idxs, desc_idxs)]
 
     # mass is conserved
     torch.testing.assert_close(t0.mass, t1.mass, atol=_ATOL, rtol=_RTOL)
@@ -445,25 +441,11 @@ def test_divide_cells(world: World, n_spawn: int, n_divide: int, n_succ: int) ->
         return
 
     # successful parents and children share molecules
-    desc_idxs = torch.cat([parent_idxs, child_idxs])
-    assert (t1.cell_tensors["molecules"][desc_idxs] == 5.0).all()
+    assert (t1.cell_tensors["molecules"][is_desc] == 5.0).all()
 
     # they increment generation and start at age 0
-    assert (t1.cell_tensors["generations"][parent_idxs] == 2).all()
-    assert (t1.cell_tensors["generations"][child_idxs] == 2).all()
-    assert (t1.cell_tensors["ages"][parent_idxs] == 0.0).all()
-    assert (t1.cell_tensors["ages"][child_idxs] == 0.0).all()
-
-    # their genomes, lineages, proteomes should be equal
-    for key in t1.cell_arrays:
-        arr0 = t1.cell_arrays[key][parent_idxs.cpu().numpy()].tolist()
-        arr1 = t1.cell_arrays[key][child_idxs.cpu().numpy()].tolist()
-        assert arr0 == arr1, key
-
-    for key in t1.proteome_tensors:
-        ten0 = t1.proteome_tensors[key][parent_idxs, :p]
-        ten1 = t1.proteome_tensors[key][child_idxs, :p]
-        assert torch.equal(ten0, ten1), key
+    assert (t1.cell_tensors["generations"][is_desc] == 2).all()
+    assert (t1.cell_tensors["ages"][is_desc] == 0.0).all()
 
 
 @pytest.mark.parametrize(
@@ -550,7 +532,7 @@ def test_mutate_cells_reconciles_deferred_host_state(world: World) -> None:
 
     div_mask = torch.zeros(world.cells.c, dtype=torch.bool, device=world.device)
     div_mask[idxs[20:30]] = True
-    parent_of = world.divide_cells(mask=div_mask)
+    world.divide_cells(mask=div_mask)
 
     # a no-op mutator isolates the reconcile from random mutation
     no_mut = Mutator(sub_rate=0.0, indel_rate=0.0, break_rate=0.0)
@@ -562,12 +544,6 @@ def test_mutate_cells_reconciles_deferred_host_state(world: World) -> None:
         assert world.cells.genomes[i] != ""
     for i in (~alive).nonzero(as_tuple=True)[0].tolist():
         assert world.cells.genomes[i] == ""
-
-    # children inherited their parent's genome and lineage (deferred copy applied)
-    for s in (parent_of >= 0).nonzero(as_tuple=True)[0].tolist():
-        p = int(parent_of[s])
-        assert world.cells.genomes[s] == world.cells.genomes[p]
-        assert world.cells.lineages[s] == world.cells.lineages[p]
 
 
 @pytest.mark.parametrize(

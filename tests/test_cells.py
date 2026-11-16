@@ -306,7 +306,16 @@ def test_allocate_children(rng: random.Random, cells: Cells, c: int, n: int) -> 
     assert len(allocated_children) == n
 
 
-@pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
+@pytest.mark.parametrize(
+    "c, n",
+    [
+        (10, 5),
+        (10, 0),
+        (10, 1),
+        (50, 10),
+        (50, 25),
+    ],
+)
 def test_update_descendants(rng: random.Random, cells: Cells, c: int, n: int) -> None:
     cells.update_c(c_req=c)
 
@@ -322,7 +331,7 @@ def test_update_descendants(rng: random.Random, cells: Cells, c: int, n: int) ->
 
     parent_of = idxfull(cells.c, value=-1)
     parent_of[to_idxs] = from_idxs
-    cells.update_descendants(parent_of=parent_of)
+    desc = cells.update_descendants(parent_of=parent_of)
 
     # check types
     _asser_dtypes(cells)
@@ -330,6 +339,11 @@ def test_update_descendants(rng: random.Random, cells: Cells, c: int, n: int) ->
     # all alive
     desc_idxs = torch.cat([from_idxs, to_idxs])
     assert cells.alive[desc_idxs].all()
+
+    # descendants correct
+    desc_exp = torch.zeros_like(cells.alive).bool()
+    desc_exp[desc_idxs] = True
+    assert torch.equal(desc, desc_exp)
 
     # genomes, lineages, ages copied
     assert (

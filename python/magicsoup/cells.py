@@ -254,7 +254,7 @@ class Cells(TensorClass):
         prank = divided.cumsum(0, dtype=self.idxtype) - 1  # (c,)
         return torch.where(divided, slot_rank[prank.clamp(min=0)], -1)  # (c,)
 
-    def update_descendants(self, parent_of: T) -> None:
+    def update_descendants(self, parent_of: T) -> torch.Tensor:
         """
         Update descendants after cell division
 
@@ -262,6 +262,9 @@ class Cells(TensorClass):
             parent_of: (c,) index tensor where `parent_of[s]` is the parent cell
                 that produced the child `s`, else -1.
             divided: (c,) bool tensor of parents that successfully divided
+
+        Returns:
+            (c,) bool tensor indicating all descendants
 
         Updates cell parameters and proteomes. Forces host synchronization.
         """
@@ -274,9 +277,14 @@ class Cells(TensorClass):
 
         # then device operations
         child = parent_of >= 0  # (c,)
-        desc = child.clone()  # (c,)
-        desc[parent_of] = True  # (c,)
+        # desc = child.clone()  # (c,)
+        # desc[parent_of] = True  # (c,)
         src = parent_of.clamp(min=0)  # (c,)
+
+        # derive descendants
+        counts = child.to(self.idxtype)
+        counts.index_add_(0, index=src, source=(parent_of >= 0).to(self.idxtype))
+        desc = counts > 0  # (c,)
 
         # children become alive
         self.alive = self.alive | child
@@ -296,6 +304,8 @@ class Cells(TensorClass):
         mdesc = desc[:, None]
         self.molecules = torch.where(mchild, self.molecules[src], self.molecules)
         self.molecules = torch.where(mdesc, self.molecules * 0.5, self.molecules)
+
+        return desc
 
     def copy_proteomes(self, idx_map: T) -> None:
         """Copy proteomes from one set of cells to another

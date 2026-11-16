@@ -10,7 +10,7 @@ They are pasted next to each other horizontally.
 4. Check how it looks in documentation
 
 ```
-PYTHONPATH=./python python docs/create_cell_growth_gif.py docs/runs/2023-12-21_10-31 docs/runs/2023-12-21_10-32 docs/runs/2023-12-21_10-33
+uv run --no-sync python -m docs.gifs.create_cell_growth_gif docs/runs/2023-12-21_10-31 docs/runs/2023-12-21_10-32 docs/runs/2023-12-21_10-33
 gifsicle -i image.gif --optimize=3 --colors 32 -o image_o3_32.gif
 bash scripts/serve-docs.sh
 ```

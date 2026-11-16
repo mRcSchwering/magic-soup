@@ -343,8 +343,8 @@ class World(TensorClass):
             mask: (c,) bool tensor of parents that want to divide; None = all living
 
         Returns:
-            (c,) index tensor `parent_of` where `parent_of[s]` is the parent slot
-            that produced the child now occupying slot `s`, else -1.
+            (c',) bool tensor indicating which of the cells is a descendant of a successful
+            cell division. Note that c' >= c.
 
         Grows the `c` dimension with hysteresis if there are not enough free slots.
         Children inherit their parent's proteome and half of its molecules.
@@ -373,14 +373,14 @@ class World(TensorClass):
         parent_of = self.invert_idxmap(child_of)
 
         # copy parent params to their children (sync with host)
-        cells.update_descendants(parent_of=parent_of)
+        is_desc = cells.update_descendants(parent_of=parent_of)
         cells.copy_proteomes(idx_map=parent_of)
 
         # replace reservations with the real child ids
         voxels = self.remap_gather(tgt=won_voxel, src=parent_of)
         self.culture.place_cells(voxels=voxels)
 
-        return parent_of
+        return is_desc
 
     def kill_cells(self, mask: T | None = None) -> None:
         """

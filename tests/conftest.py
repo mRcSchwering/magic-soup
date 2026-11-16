@@ -5,7 +5,7 @@ import torch
 
 from tests.config import DEBUG, RNG_SEED
 
-if DEBUG:
+if DEBUG and torch.cuda.is_available():
     torch.cuda.set_sync_debug_mode("warn")
 
 

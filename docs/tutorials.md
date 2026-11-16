@@ -868,8 +868,14 @@ To keep performance high these data should be moved back and forth between GPU a
 ```python
 # float tensors on GPU get modified (fast)
 world.molecule_map[0] = 10.0
-world.cell_molecules[0] += 1.0
-world.cell_molecules[world.cell_divisions > 10, 3] -= 1.0
+world.cell_molecules[idx_tensor] += 1.0
+
+# subsetting tensor by boolean mask forces host sync
+mask = world.cells.generations > 10  # fast
+world.cells.molecules[mask, 3] = 1.0  # slow
+world.cells.molecules.masked_fill_(mask, 1.0)  # fast
+
+# 
 
 mask = world.cell_lifetimes > 10  # bool tensor on GPU (fast)
 idx_tensor = torch.argwhere(mask)  # long tensor on GPU (fast)

@@ -17,7 +17,7 @@ The cell maps show all cells, and the most abundant celllines only at a certain 
 8. (PyPI needs <5Mb, cut/compress further for PyPI)
 
 ```
-PYTHONPATH=./python python docs/create_cover_gif.py docs/runs/2023-12-21_10-31 --top-step 1000
+uv run --no-sync python docs.gifs.create_cover_gif.py docs/runs/2023-12-21_10-31 --top-step 1000
 gifsicle -i image.gif --optimize=3 --colors 32 -o animation.gif
 bash scripts/serve-docs.sh
 
@@ -67,8 +67,7 @@ def _collect_cellmaps(
 ) -> pd.DataFrame:
     world.load_state(statedir=rundir / f"step={top_step}", ignore_cell_params=True)
     top_labels = {
-        f"CL{i}": d[0]
-        for i, d in enumerate(Counter(world.cell_labels).most_common(n=top_n))
+        f"CL{i}": d[0] for i, d in enumerate(Counter(world.cell_labels).most_common(n=top_n))
     }
 
     cellmap_records = []
@@ -198,9 +197,7 @@ def _plot_cellmaps(
 
     textx = map_size * (1 - text_pad["x"])
     texty = map_size * (1 - text_pad["y"])
-    text_df = pd.DataFrame.from_records(
-        [{"x": textx, "y": texty, "grp": d} for d in color_map]
-    )
+    text_df = pd.DataFrame.from_records([{"x": textx, "y": texty, "grp": d} for d in color_map])
     text_df["grp"] = pd.Categorical(text_df["grp"], color_map)
 
     # fmt: off
@@ -269,9 +266,7 @@ def main(
         to_step = steps[-1]
 
     cells_df, mols_df = _collect_scalars(rundir=rundir, steps=steps, world=world)
-    cellmaps_df = _collect_cellmaps(
-        rundir=rundir, steps=steps, world=world, top_step=top_step
-    )
+    cellmaps_df = _collect_cellmaps(rundir=rundir, steps=steps, world=world, top_step=top_step)
 
     imgs = []
     for step in steps:
