@@ -40,7 +40,7 @@ def main(map_size: int, n_steps: int, init_genome_size: int, device: str, **_):
 
             if n_cells > 12_000:
                 print("Passage cells")
-                world.kill_cells(mask=torch.rand(world.cells.c) > 0.3)
+                world.kill_cells(mask=torch.rand(world.cells.c, device=world.device) > 0.3)
                 world.resuspend_cells()
 
             world.compact(util_lt=0.5)
