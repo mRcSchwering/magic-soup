@@ -4,4 +4,4 @@
 #
 set -e
 
-uv run --locked pytest "$@"
+uv run --no-sync pytest "$@"

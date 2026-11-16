@@ -1,8 +1,12 @@
 import random
 
 import pytest
+import torch
 
-from tests.config import RNG_SEED
+from tests.config import DEBUG, RNG_SEED
+
+if DEBUG:
+    torch.cuda.set_sync_debug_mode("warn")
 
 
 @pytest.fixture
