@@ -68,13 +68,13 @@ def set_trnsp(world: ms.World, c: int, p: int, mol: ms.Molecule, km: float, vmax
     molecules = world.chemistry.molecules
     m2i = world.chemistry.mol_2_idx
     k_f, k_b = _get_kf_kb(0, km)
-    cells.v_max[c, p] = vmax
-    cells.k_f[c, p] = k_f
-    cells.k_b[c, p] = k_b
-    cells.N_f[c, p, m2i[mol]] = 1
-    cells.N_b[c, p, m2i[mol] + len(molecules)] = 1
-    N = (world.cells.N_b[c, p] - world.cells.N_f[c, p]).to(world.ftype)
-    cells.N_e[c, p] = N * cells.proteomics.cv_ratio
+    cells._v_max[c, p] = vmax
+    cells._k_f[c, p] = k_f
+    cells._k_b[c, p] = k_b
+    cells._N_f[c, p, m2i[mol]] = 1
+    cells._N_b[c, p, m2i[mol] + len(molecules)] = 1
+    N = (world.cells._N_b[c, p] - world.cells._N_f[c, p]).to(world.ftype)
+    cells._N_e[c, p] = N * cells.proteomics._cv_ratio
 
 
 def set_catal(
@@ -92,20 +92,20 @@ def set_catal(
     fwd_cntr = Counter(subs)
     bwd_cntr = Counter(prods)
     k_f, k_b = _get_kf_kb(energy, km)
-    cells.v_max[c, p] = vmax
-    cells.k_f[c, p] = k_f
-    cells.k_b[c, p] = k_b
+    cells._v_max[c, p] = vmax
+    cells._k_f[c, p] = k_f
+    cells._k_b[c, p] = k_b
     for mol, n in fwd_cntr.items():
-        cells.N_f[c, p, world.chemistry.mol_2_idx[mol]] = n
+        cells._N_f[c, p, world.chemistry.mol_2_idx[mol]] = n
     for mol, n in bwd_cntr.items():
-        cells.N_b[c, p, world.chemistry.mol_2_idx[mol]] = n
-    N = (world.cells.N_b[c, p] - world.cells.N_f[c, p]).to(world.ftype)
-    cells.N_e[c, p] = N * cells.proteomics.cv_ratio
+        cells._N_b[c, p, world.chemistry.mol_2_idx[mol]] = n
+    N = (world.cells._N_b[c, p] - world.cells._N_f[c, p]).to(world.ftype)
+    cells._N_e[c, p] = N * cells.proteomics._cv_ratio
 
 
 def set_regul(world: ms.World, c: int, p: int, kr: float, mol: ms.Molecule, act: bool) -> None:
     """Set regulatory domain for molecule in cell c protein p with Kr"""
     cells = world.cells
     sign = 1 if act else -1
-    cells.k_r[c, p] = kr
-    cells.N_h[c, p, world.chemistry.mol_2_idx[mol]] = sign
+    cells._k_r[c, p] = kr
+    cells._N_h[c, p, world.chemistry.mol_2_idx[mol]] = sign

@@ -22,9 +22,16 @@ class DomainType(IntEnum):
 
 
 class _CodonMap:
-    def __init__(self, n_codons: int, stop_codons: Iterable[str]) -> None:
+    """Mappings between codon-tuples and tokens
+
+    Arguments:
+        n_codons: Number of codons in codon-tuples
+        excl_codons: Which codon-tuples to exclude from mapping
+    """
+
+    def __init__(self, n_codons: int, excl_codons: Iterable[str]) -> None:
         # all possible sequences (stop codons excluded from every codon)
-        seqs = codons(n=n_codons, excl_codons=list(stop_codons))
+        seqs = codons(n=n_codons, excl_codons=excl_codons)
 
         # tokens 1...n+1 (none token 0 gets no sequence)
         self.seq_2_token = {d: i + 1 for i, d in enumerate(seqs)}
@@ -33,6 +40,16 @@ class _CodonMap:
 
 
 class _DomainTypeMap:
+    """Mappings between domain types and codon-tuples
+
+    Arguments:
+        dom_type_probs: Probability of encoding each domain type
+        n_dom_type_codons: Number of codons in domain type codon-tuples
+        stop_codons: Codons encoding a CDS stop
+        start_codons: Codons encoding a CDS start
+        rng: Random number generator to seed sampling.
+    """
+
     def __init__(
         self,
         dom_type_probs: dict[DomainType, float],
@@ -79,8 +96,7 @@ class GenomicsKwargs(TypedDict, total=False):
 
 
 class Genomics:
-    """
-    Defines simulation genetics and translates genomes.
+    """Defines simulation genetics and translates genomes.
 
     Arguments:
         start_codons: Codons which start a coding sequence
@@ -91,10 +107,11 @@ class Genomics:
             in a random nucleotide sequence.
         p_reg_dom: Chance of encountering a [RegulatoryDomain][magicsoup.biology.RegulatoryDomain]
             in a random nucleotide sequence.
-        n_dom_type_codons: Number of codons that encode the domain type:
+        n_dom_type_codons: Number of codons in codon-tuples that encode the domain type:
             [CatalyticDomain][magicsoup.biology.CatalyticDomain],
             [TransporterDomain][magicsoup.biology.TransporterDomain], or
             [RegulatoryDomain][magicsoup.biology.RegulatoryDomain].
+        rng: Random number generator to seed sampling.
 
     Translation happens only within coding sequences (CDSs).
     A CDS starts at every start codon and ends with the first in-frame encountered stop codon.
@@ -131,7 +148,10 @@ class Genomics:
             )
 
         self.start_codons = list(start_codons)
+        """Codons which start a coding sequence"""
+
         self.stop_codons = list(stop_codons)
+        """Codons which stop a coding sequence"""
 
         # Domain structure:
         # domain type definition (n domain type codons)
@@ -141,8 +161,11 @@ class Genomics:
         # dedicated start and stop codon flanking its domain(s):
         # min CDS size = dom_size + start codon + stop codon
         self.dom_size_nt = (n_dom_type_codons + 5) * CODON_SIZE
+        """Number of nucleotides that make up a domain"""
         self.dom_type_size_nt = n_dom_type_codons * CODON_SIZE
+        """Number of nucleotides that make up the part of a domain that encodes the domain type"""
         self.min_cds_size_nt = self.dom_size_nt + 2 * CODON_SIZE
+        """Minimum number of nucleotides that can yield a viable coding sequence"""
 
         # setup nt sequences which start a domain
         domain_type_probs = {
@@ -157,10 +180,13 @@ class Genomics:
             start_codons=self.start_codons,
             rng=rng,
         )
+        """Mappings between domain types and codons"""
 
         # start/stop codons are excluded from all domain-internal codons
-        self.one_codon_map = _CodonMap(n_codons=1, stop_codons=stop_codons)
-        self.two_codon_map = _CodonMap(n_codons=2, stop_codons=stop_codons)
+        self.one_codon_map = _CodonMap(n_codons=1, excl_codons=stop_codons)
+        """Mappings between tokens and single codons"""
+        self.two_codon_map = _CodonMap(n_codons=2, excl_codons=stop_codons)
+        """Mappings between tokens and codon-douplets"""
 
         # setup rust class
         self._setup_rs()
@@ -178,12 +204,13 @@ class Genomics:
         )
 
     def translate_genomes(self, genomes: StrArray) -> list[list[rs.ProteinSpec]]:
+        """Translate genomes into proteomes as lists of protein specifications"""
         if len(genomes) == 0:
             return []
         return self._rs.translate_genomes(*genomes.as_buffers())
 
     def encode_proteomes(self, genomes: StrArray) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-        """Get proteomes in form of domain specifications from genomes"""
+        """Translates genomes into proteomes as a buffer of domain specifications"""
         if len(genomes) == 0:
             return (np.zeros(0), np.zeros(0), np.zeros((0, 5)), 0)
         return self._rs.encode_proteomes(*genomes.as_buffers())
@@ -208,12 +235,12 @@ class Genomics:
     def generate_domain_seq(
         self, domain_type: DomainType, tokens: list[int], rng: random.Random = DEFAULT_RNG
     ) -> str:
-        """
-        Generate a nucleotide sequence encoding a domain:
+        """Generate a nucleotide sequence encoding a domain:
 
         Arguments:
             domain_type: Which domain type to encode
             tokens: Tokens which encode the main entity of the domain
+            rng: Random number generator to seed sampling.
 
         For catalytic domains the main entity is the reaction, for transporters the
         transported molecule, for regulatory domains the effector molecule.
@@ -238,12 +265,12 @@ class Genomics:
     def generate_genome(
         self, cdss: list[list[str]], n_pad_nts: int = 10, rng: random.Random = DEFAULT_RNG
     ) -> str:
-        """
-        Generate a genome based on CDSs
+        """Generate a genome based on CDSs
 
         Arguments:
             cdss: list of proteins, each a list of CDSs
             n_pad_nts: number of padding nucleotides between all CDSs
+            rng: Random number generator to seed sampling.
 
         The generated genome has at least the provided CDSs but it may have more.
         The genome is circular, so the trailing padding wraps around to meet the

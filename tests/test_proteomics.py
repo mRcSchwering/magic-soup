@@ -145,21 +145,21 @@ _V_RATIOS = [
 
 def _get_proteomics() -> Proteomics:
     protics = Proteomics(chemistry=_CHEMISTRY, abs_temp=310)
-    protics.km_map.token_scalar = ftensor(_KMS)
-    protics.km_map.token_2_scalar = _TOKEN_2_KM
-    protics.vmax_map.token_scalar = ftensor(_VMAXS)
-    protics.vmax_map.token_2_scalar = _TOKEN_2_VMAX
-    protics.sign_map.token_scalar = itensor(_SIGNS)
-    protics.sign_map.token_2_scalar = _TOKEN_2_SIGN
-    protics.hill_map.token_scalar = itensor(_HILLS)
-    protics.hill_map.token_2_scalar = _TOKEN_2_HILL
-    protics.transport_map.token_vector = itensor(_TRANSPORT_M)
-    protics.transport_map.token_2_mol = _TOKEN_2_MOL
-    protics.effector_map.token_vector = itensor(_EFFECTOR_M)
-    protics.effector_map.token_2_eff = _TOKEN_2_EFFECT
-    protics.reaction_map.token_fwd_vector = itensor(_REACTION_M_F)
-    protics.reaction_map.token_bwd_vector = itensor(_REACTION_M_B)
-    protics.reaction_map.token_2_react = _TOKEN_2_REACT
+    protics._km_map.token_scalar = ftensor(_KMS)
+    protics._km_map.token_2_scalar = _TOKEN_2_KM
+    protics._vmax_map.token_scalar = ftensor(_VMAXS)
+    protics._vmax_map.token_2_scalar = _TOKEN_2_VMAX
+    protics._sign_map.token_scalar = itensor(_SIGNS)
+    protics._sign_map.token_2_scalar = _TOKEN_2_SIGN
+    protics._hill_map.token_scalar = itensor(_HILLS)
+    protics._hill_map.token_2_scalar = _TOKEN_2_HILL
+    protics._transport_map.token_vector = itensor(_TRANSPORT_M)
+    protics._transport_map.token_2_mol = _TOKEN_2_MOL
+    protics._effector_map.token_vector = itensor(_EFFECTOR_M)
+    protics._effector_map.token_2_eff = _TOKEN_2_EFFECT
+    protics._reaction_map.token_fwd_vector = itensor(_REACTION_M_F)
+    protics._reaction_map.token_bwd_vector = itensor(_REACTION_M_B)
+    protics._reaction_map.token_2_react = _TOKEN_2_REACT
     return protics
 
 

@@ -1,23 +1,20 @@
+import pickle
 import random
 import string
 from collections.abc import Iterable
+from io import BytesIO
 from itertools import product
 from pathlib import Path
 
-from magicsoup.core import rs
+import torch
+
 from magicsoup.core.config import CODON_SIZE, DEFAULT_RNG
 
 _ALL_NTS = tuple("TCGA")
 
 
-def reverse_complement(seq: str) -> str:
-    """Get reverse complement of nucleotide sequence"""
-    return rs.reverse_complement(seq=seq)
-
-
 def randstr(n: int = 12, rng: random.Random = DEFAULT_RNG) -> str:
-    """
-    Generate random string of length `n`.
+    """Generate random string of length `n`.
 
     With `n=12` and the string consisting of 62 different characters,
     there's a 50% chance of encountering one collision after 5e10 draws.
@@ -31,10 +28,9 @@ def randstr(n: int = 12, rng: random.Random = DEFAULT_RNG) -> str:
 def random_genome(
     s: int = 500, excl: Iterable[str] | None = None, rng: random.Random = DEFAULT_RNG
 ) -> str:
-    """
-    Generate a random nucleotide sequence string
+    """Generate a random nucleotide sequence string
 
-    Parameters:
+    Arguments:
         s: Length of genome in nucleotides or base pairs
         excl: Exclude certain sequences from the genome
 
@@ -61,8 +57,7 @@ def random_genome(
 
 
 def variants(seq: str) -> list[str]:
-    """
-    Generate all possible nucleotide sequences from a template string.
+    """Generate all possible nucleotide sequences from a template string.
 
     Apart from nucleotides, the template string can include special characters:
     - `N` refers to any nucleotide
@@ -85,10 +80,7 @@ def variants(seq: str) -> list[str]:
 
 
 def codons(n: int, excl_codons: Iterable[str] | None = None) -> list[str]:
-    """
-    Return all possible nucleotide sequences of `n` codons,
-    optionally excluding codons in `excl_codons`.
-    """
+    """Return all possible nucleotide sequences of `n` codons, optionally excluding codons."""
     all_seqs = variants("N" * n * CODON_SIZE)
     if excl_codons is None:
         return all_seqs
@@ -125,3 +117,22 @@ def read_fasta(file: Path) -> dict[str, str]:
         name_2_seq[name] = "" if len(parts) < 2 else parts[1]
 
     return name_2_seq
+
+
+def _torch_load(map_loc: str | None = None):
+    # Closure rather than a lambda to preserve map_loc
+    return lambda b: torch.load(BytesIO(b), map_location=map_loc)
+
+
+class CPU_Unpickler(pickle.Unpickler):
+    """Inject map_location when unpickling tensor objects"""
+
+    def __init__(self, *args, map_location: str | None = None, **kwargs):
+        self._map_location = map_location
+        super().__init__(*args, **kwargs)
+
+    def find_class(self, module: str, name: str):
+        if module == "torch.storage" and name == "_load_from_bytes":
+            return _torch_load(map_loc=self._map_location)
+        else:
+            return super().find_class(module, name)

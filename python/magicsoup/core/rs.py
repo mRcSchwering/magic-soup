@@ -100,10 +100,6 @@ type ProteinSpec = Annotated[
 ]
 
 
-def reverse_complement(seq: str) -> str:
-    return _lib.reverse_complement(seq)
-
-
 class Genomics(_ReduceMixin):
     def __init__(
         self,

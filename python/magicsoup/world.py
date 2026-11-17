@@ -1,7 +1,6 @@
 import logging
 import pickle
 import random
-from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +11,8 @@ from magicsoup.cells import Cells, CellsKwargs
 from magicsoup.chemistry import Chemistry
 from magicsoup.core.config import DEFAULT_RNG
 from magicsoup.core.strarray import StrArray
-from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
-from magicsoup.core.util import randstr
+from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs, iter_tensorclasses
+from magicsoup.core.util import CPU_Unpickler, randstr
 from magicsoup.culture import Culture, CultureKwargs
 from magicsoup.genomics import Genomics, GenomicsKwargs
 from magicsoup.kinetics import Kinetics, KineticsKwargs
@@ -30,44 +29,42 @@ from magicsoup.proteomics import Proteomics, ProteomicsKwargs
 _log = logging.getLogger(__name__)
 
 
-def _torch_load(map_loc: str | None = None):
-    # Closure rather than a lambda to preserve map_loc
-    return lambda b: torch.load(BytesIO(b), map_location=map_loc)
-
-
-class _CPU_Unpickler(pickle.Unpickler):
-    """Inject map_location when unpickling tensor objects"""
-
-    def __init__(self, *args, map_location: str | None = None, **kwargs):
-        self._map_location = map_location
-        super().__init__(*args, **kwargs)
-
-    def find_class(self, module: str, name: str):
-        if module == "torch.storage" and name == "_load_from_bytes":
-            return _torch_load(map_loc=self._map_location)
-        else:
-            return super().find_class(module, name)
-
-
-def _iter_tensorclasses(root: object):
-    """Yield every [TensorClass][magicsoup.core.tensorclass.TensorClass] reachable from `root` (incl. `root`).
-
-    Descends only through `TensorClass` instances; within a `World` they all
-    reference each other (`World` -> `cells`/`culture`/..., `cells` -> `proteomics`
-    -> maps, `culture` -> neighbourhood), so this reaches every one.
-    """
-    seen: set[int] = set()
-    stack: list[object] = [root]
-    while stack:
-        obj = stack.pop()
-        if not isinstance(obj, TensorClass) or id(obj) in seen:
-            continue
-        seen.add(id(obj))
-        yield obj
-        stack.extend(vars(obj).values())
-
-
 class World(TensorClass):
+    """Simulation manager that coordinates updates and modules, and manages simulation state.
+
+    Arguments:
+        chemistry: [Chemistry][magicsoup.chemistry.Chemistry] definition
+        genomics: [Genomics][magicsoup.genomics.Genomics] mechanisms
+        mutator: default [Mutator][magicsoup.mutations.Mutator]
+        proteomics: [Proteomics][magicsoup.proteomics.Proteomics] mechanisms
+        kinetics: [Kinetics][magicsoup.kinetics.Kinetics] solver
+        diffusion: molecule [Diffusion][magicsoup.physics.Diffusion] mechanism
+        permeation: molecule [Permeation][magicsoup.physics.Permeation] mechanism
+        degradation: molecule [Degradation][magicsoup.physics.Degradation] mechanism
+        culture: cell [Culture][magicsoup.culture.Culture]
+        cells: [Cells][magicsoup.cells.Cells] representation
+        time_step: minimum time step in s (seconds)
+        v_cell: volume of a cell in µm³ (cubic micro meter)
+        v_voxel: volume of a cell [Culture][magicsoup.culture.Culture] voxel in µm³ (cubic micro meter)
+        kinetics_kwargs: Kwargs passed to [Kinetics][magicsoup.kinetics.Kinetics] if it wasn't provided.
+        diffusion_kwargs: Kwargs passed to [Diffusion][magicsoup.physics.Diffusion] it it wasn't provided.
+        permeation_kwargs: Kwargs passed to [Permeation][magicsoup.physics.Permeation] it it wasn't provided.
+        culture_kwargs: Kwargs passed to [Culture][magicsoup.culture.Culture] it it wasn't provided.
+        cells_kwargs: Kwargs passed to [Cells][magicsoup.cells.Cells] it it wasn't provided.
+        genomics_kwargs: Kwargs passed to [Genomics][magicsoup.genomics.Genomics] if it wasn't provided.
+        mutator_kwargs: Kwargs passed to [Mutator][magicsoup.mutations.Mutator] if it wasn't provided.
+        proteomics_kwargs: Kwargs passed to [Proteomics][magicsoup.proteomics.Proteomics] if it wasn't provided.
+        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.core.tensorclass.TensorClass]
+        rng: Random number generator to seed sampling.
+
+
+    methods during simulations (performant)
+
+    handles during simulation (cells, culture)
+
+    tensors, change device, use device when loading world onto another device
+    """
+
     def __init__(
         self,
         chemistry: Chemistry,
@@ -80,7 +77,7 @@ class World(TensorClass):
         degradation: Degradation | None = None,
         culture: Culture | None = None,
         cells: Cells | None = None,
-        time_step: float = 1.0,  # s
+        time_step: float = 1.0,
         v_cell: float = 1.0,
         v_voxel: float = 1000.0,
         kinetics_kwargs: KineticsKwargs | None = None,
@@ -96,12 +93,17 @@ class World(TensorClass):
     ):
         super().__init__(**(tensor_kwargs or {}))
 
-        self.time_step = time_step
-        self.v_cell = v_cell
-        self.v_voxel = v_voxel
-        self.rng = rng
+        self._dt = time_step
+        self._v_cell = v_cell
+        self._v_voxel = v_voxel
+        self._rng = rng
+        m = len(chemistry.molecules)
+        self._int_mol_idxs = list(range(m))
+        self._ext_mol_idxs = list(range(m, m * 2))
 
         self.chemistry = chemistry
+        """Simulation chemistry definition"""
+
         self.culture = culture or (
             Culture(
                 **(culture_kwargs or {}),
@@ -109,6 +111,8 @@ class World(TensorClass):
                 tensor_kwargs=tensor_kwargs,
             )
         )
+        """Cell culture with cell and molecule map"""
+
         self.cells = cells or Cells(
             **(cells_kwargs or {}),
             c_max=self.culture.map_size**2,
@@ -120,11 +124,15 @@ class World(TensorClass):
             tensor_kwargs=tensor_kwargs,
             rng=rng,
         )
+        """Describes all cells"""
+
         self.kinetics = kinetics or Kinetics(
             **(kinetics_kwargs or {}),
             dt=time_step,
             tensor_kwargs=tensor_kwargs,
         )
+        """Kinetics solver"""
+
         self.diffusion = diffusion or Diffusion(
             **(diffusion_kwargs or {}),
             diff_coeffs=[d.diffusivity for d in chemistry.molecules],
@@ -132,6 +140,8 @@ class World(TensorClass):
             dt=time_step,
             tensor_kwargs=tensor_kwargs,
         )
+        """Molecule diffusion mechanics"""
+
         self.permeation = permeation or Permeation(
             **(permeation_kwargs or {}),
             perm_coeffs=[d.permeability for d in chemistry.molecules],
@@ -140,22 +150,36 @@ class World(TensorClass):
             dt=time_step,
             tensor_kwargs=tensor_kwargs,
         )
+        """Molecule permeation mechanics"""
+
         self.degradation = degradation or Degradation(
             half_lifes=[d.half_life for d in chemistry.molecules],
             dt=time_step,
             tensor_kwargs=tensor_kwargs,
         )
-        self.mutator = mutator or Mutator(**(mutator_kwargs or {}))
+        """Molecule degradation mechanics"""
 
-        n_molecules = len(chemistry.molecules)
-        self._int_mol_idxs = list(range(n_molecules))
-        self._ext_mol_idxs = list(range(n_molecules, n_molecules * 2))
+        self.mutator = mutator or Mutator(**(mutator_kwargs or {}))
+        """Default genome mutator"""
 
     def get_cell(
         self,
         by_idx: int | None = None,
-        by_position: tuple[int, int] | None = None,
+        by_coordinate: tuple[int, int] | None = None,
     ) -> "Cell":
+        """Get a single cell by index or coordinate
+
+        Arguments:
+            by_idx: Index of the cell (from `world.cells`)
+            by_coordinate: Coordinate (row, column) of the cell (from `world.culture`)
+
+        Returns:
+            [Cell][magicsoup.biology.Cell] representation of the cell.
+
+        This method translates the cell's genome again into a readable proteome representation.
+        It is slow and forces host synchronization.
+        Don't use this method within the running simulation.
+        """
         # forces host sync
         idx = -1
 
@@ -164,11 +188,11 @@ class World(TensorClass):
                 raise ValueError(f"Cell with idx {by_idx} not found")
             idx = by_idx
 
-        if by_position is not None and by_position != (-1, -1):
+        if by_coordinate is not None and by_coordinate != (-1, -1):
             cell_coords = self.culture.get_cell_coords()
-            mask = (cell_coords == self.idxtensor([by_position])).all(dim=1)
+            mask = (cell_coords == self.idxtensor([by_coordinate])).all(dim=1)
             if not mask.any():
-                raise ValueError(f"Cell at {by_position} not found")
+                raise ValueError(f"Cell at {by_coordinate} not found")
             idx = int(torch.argwhere(mask)[0].item())
 
         genomes = self.cells.genomes[np.array([idx])]
@@ -189,6 +213,19 @@ class World(TensorClass):
         )
 
     def spawn_cells(self, genomes: list[str]) -> T:
+        """Spawn cells with defined genomes
+
+        Arguments:
+            genomes: Genomes as strings of the k cells to spawn
+
+        Returns:
+            index tensor (k',) of the k'<=k newly spawned cells
+
+        Cells spawn in random unoccupied voxels in the cell map and pickup
+        that voxels molecules so that their intracellular molecule concentration
+        is the same as the voxel's concentrations. If fewer than k voxels are
+        available, cells are spawned on all remaining voxels (k' <= k).
+        """
         # forces host sync
         n_new_cells = len(genomes)
         if n_new_cells > self.culture.N2:
@@ -201,13 +238,13 @@ class World(TensorClass):
 
         n_avail_pos = int((self.culture.cell_map < 0).sum())
         if n_avail_pos == 0:
-            _log.warning("No free positions to spawn %d cells", n_new_cells)
+            _log.warning("No free coordinates to spawn %d cells", n_new_cells)
             return self.idxtensor([])
 
         if n_avail_pos < n_new_cells:
-            _log.warning("Only %d free positions to spawn %d cells", n_avail_pos, n_new_cells)
+            _log.warning("Only %d free coordinates to spawn %d cells", n_avail_pos, n_new_cells)
             n_new_cells = n_avail_pos
-            self.rng.shuffle(genomes)
+            self._rng.shuffle(genomes)
             genomes = genomes[:n_new_cells]
 
         # adjust c if necessary (sync with host)
@@ -226,7 +263,7 @@ class World(TensorClass):
         coords = self.culture.voxels_to_coords(voxels)
         rows = coords[:, 0]
         cols = coords[:, 1]
-        f = self.v_voxel / (self.v_voxel + self.v_cell)
+        f = self._v_voxel / (self._v_voxel + self._v_cell)
         pickup = self.culture.molecule_map[:, rows, cols]
         self.cells.molecules = torch.where(mask[:, None], pickup.T * f, self.cells.molecules)
         self.culture.molecule_map[:, rows, cols] = pickup * f
@@ -245,6 +282,19 @@ class World(TensorClass):
         return new_idxs
 
     def add_cells(self, cells: list["Cell"]) -> T:
+        """Add fully defined cells
+
+        Arguments:
+            cells: list of k [Cells][magicsoup.biology.Cell] to add
+
+        Returns:
+            index tensor (k',) of the k'<=k newly added cells
+
+        Cells are added to unoccupied voxels on the cell map.
+        They retain their genomes, proteomes, intracellular molecule concentrations,
+        as well as all other attributes. If fewer than k voxels are
+        available, cells are added on all remaining voxels (k' <= k).
+        """
         # forces host sync
         n_new_cells = len(cells)
         if n_new_cells > self.culture.N2:
@@ -263,7 +313,7 @@ class World(TensorClass):
         if n_avail_pos < n_new_cells:
             _log.warning("Only %d free voxels to add %d cells", n_avail_pos, n_new_cells)
             n_new_cells = n_avail_pos
-            self.rng.shuffle(cells)
+            self._rng.shuffle(cells)
             cells = cells[:n_new_cells]
 
         # adjust c if necessary (sync with host)
@@ -293,13 +343,12 @@ class World(TensorClass):
         return new_idxs
 
     def resuspend_cells(self, mask: T | None = None) -> None:
-        """
-        Relocate cells to random free voxels
+        """Randomly reposition cells
 
         Arguments:
             mask: (c,) bool tensor of cells to relocate; None = all living
 
-        Positions are updated in place. Each selected cell is placed on a distinct,
+        Coordinates are updated in place. Each selected cell is placed on a distinct,
         randomly chosen free voxel (its own vacated voxel is eligible).
         """
         if mask is None:
@@ -316,8 +365,7 @@ class World(TensorClass):
         self.culture.place_cells(voxels=voxels)
 
     def migrate_cells(self, mask: T | None = None) -> T:
-        """
-        Let cells migrate to a free voxel in their Moore neighbourhood.
+        """Let cells migrate to a free voxel in their Moore neighbourhood.
 
         Arguments:
             mask: (c,) bool tensor of cells attempting to migrate; None = all living
@@ -325,7 +373,7 @@ class World(TensorClass):
         Returns:
             (c,) bool tensor of cells that successfully migrated
 
-        Positions are updated in place.
+        Coordinates are updated in place.
         """
         if mask is None:
             mask = self.cells.alive.clone()
@@ -336,17 +384,17 @@ class World(TensorClass):
         return self.culture.migrate_cells_randomly(mask=mask)
 
     def divide_cells(self, mask: T | None = None) -> T:
-        """
-        Divide cells, placing each child in a free voxel of its parent.
+        """Divide cells, placing each child in a free voxel of its parent's Moore Neighbourhood.
 
         Arguments:
             mask: (c,) bool tensor of parents that want to divide; None = all living
 
         Returns:
             (c',) bool tensor indicating which of the cells is a descendant of a successful
-            cell division. Note that c' >= c.
+            cell division (c'>=c).
 
-        Grows the `c` dimension with hysteresis if there are not enough free slots.
+        If there is no free voxel in a parent's Moore Neighbourhood, cell division fails.
+        Grows the c dimension with hysteresis if there are not enough free slots (c'>=c).
         Children inherit their parent's proteome and half of its molecules.
         Forces host synchronization.
         """
@@ -383,14 +431,13 @@ class World(TensorClass):
         return is_desc
 
     def kill_cells(self, mask: T | None = None) -> None:
-        """
-        Kill cells, spilling their molecules onto their voxels.
+        """Kill cells, spilling their molecules onto their voxels.
 
         Arguments:
             mask: (c,) bool tensor of cells to kill; None = all living
 
         To avoid host synchronization dead cells' genomes and lineages are not cleared
-        from `world.cells`. If you want to remove them use [compact()][.compact].
+        from `world.cells`. If you want to remove them use [compact()][magicsoup.world.World.compact].
         """
         cells = self.cells
         culture = self.culture
@@ -406,7 +453,7 @@ class World(TensorClass):
         # spill killed cells' molecules onto their voxels
         mols = cells.molecules[nn_idx].permute(2, 0, 1)  # (m, N, N)
         spill = torch.where(nn_kill, mols, self.ftensor(0.0))  # (m, N, N)
-        culture.molecule_map += spill * (self.v_cell / self.v_voxel)
+        culture.molecule_map += spill * (self._v_cell / self._v_voxel)
 
         # free up cell map
         culture.cell_map.masked_fill_(nn_kill, -1)
@@ -420,18 +467,14 @@ class World(TensorClass):
         mask: T | None = None,
         mutator: Mutator | None = None,
     ) -> None:
-        """
-        Mutate the genomes of the selected living cells.
+        """Mutate the genomes of the selected living cells.
 
         Arguments:
             mask: (c,) bool tensor of cells to mutate; None = all living cells
             mutator: to override the word's default [Mutator][magicsoup.mutations.Mutator]
 
-        Clears dead cells' genomes first (see
-        [reconcile()][magicsoup.world.World.reconcile]), then mutates the selected
-        living cells and updates their proteomes. Independent of division: pass a
-        mask to restrict mutation (e.g. only new children) or leave it to mutate
-        the whole population.
+        Clears dead cells' genomes first, then mutates the selected
+        living cells and updates their proteomes.
         """
         # forces host sync
         # clear dead genomes so the arena stays compact and dead cells aren't hit
@@ -459,6 +502,15 @@ class World(TensorClass):
         )
 
     def advance_time(self, n_steps: int = 1) -> None:
+        """Advance time
+
+        Arguments:
+            n_steps: How many steps to advance time by
+
+        Allows molecule diffusion, permeation, degradation, and cell protein activity
+        for `time_step * n_steps` (at `time_step` resolution). Updates cell ages.
+        Prefer `n_steps` over calling `advance_time` in a loop for performance.
+        """
         # forces host sync
         cell_idxs = self.cells.get_cell_idxs()  # (c,)
         has_cells = cell_idxs.numel() > 0
@@ -489,24 +541,14 @@ class World(TensorClass):
             x = self.permeation.permeate(x)
 
             # enzymatic activity
-            x = self.kinetics.get_x1(
-                x0=x,
-                N_e=self.cells.N_e[cell_idxs],
-                N_f=self.cells.N_f[cell_idxs],
-                N_b=self.cells.N_b[cell_idxs],
-                N_h=self.cells.N_h[cell_idxs],
-                k_f=self.cells.k_f[cell_idxs],
-                k_b=self.cells.k_b[cell_idxs],
-                k_r=self.cells.k_r[cell_idxs],
-                v_max=self.cells.v_max[cell_idxs],
-            )
+            x = self.kinetics.get_x1(x0=x, **self.cells.get_proteomes(idxs=cell_idxs))
 
             # distribute x1 to internal and external molecules
             molecule_map[:, cell_rows, cell_cols] = x[:, self._ext_mol_idxs].T
             cell_molecules[cell_idxs] = x[:, self._int_mol_idxs]
 
         # age cells
-        self.cells.ages += self.time_step
+        self.cells.ages += self._dt
 
     def compact(self, util_lt: float | None = None) -> None:
         """Reclaim surplus cell slots and protein columns
@@ -535,6 +577,16 @@ class World(TensorClass):
         self.culture.update_cell_map(old_to_new)
 
     def save(self, rundir: Path, name: str = "world.pkl") -> None:
+        """Pickle and save the entire simulation with all objects.
+
+        Arguments:
+            rundir: Directory where to place the pickle file
+            name: Name of the pickle file
+
+        Bigger and slower than [save_state()][magicsoup.world.World.save_state].
+        Save a simulation once initially with [save()][magicsoup.world.World.save]
+        and then use [save_state()][magicsoup.world.World.save_state] for checkpointing.
+        """
         rundir.mkdir(parents=True, exist_ok=True)
         with open(rundir / name, "wb") as fh:
             pickle.dump(self, fh)
@@ -546,24 +598,49 @@ class World(TensorClass):
         name: str = "world.pkl",
         device: str | None = None,
     ) -> "World":
+        """Load a previously saved simulation from a pickle file
+
+        Arguments:
+            rundir: Directory from where to load the pickle file
+            name: Name of the pickle file
+            device: On which device to map the tensors; None = as saved.
+
+        The simulation must have been saved with [save()][magicsoup.world.World.save] beforehand.
+        """
         with open(rundir / name, "rb") as fh:
-            unpickler = _CPU_Unpickler(fh, map_location=device)
+            unpickler = CPU_Unpickler(fh, map_location=device)
             obj: World = unpickler.load()
 
         if device is not None:
             # map_location relocated the tensors; realign every sub-object's cached
             # device so later tensor creation (e.g. self.fzeros) lands on the new one
-            for tc in _iter_tensorclasses(obj):
+            for tc in iter_tensorclasses(obj):
                 tc.device = device
 
         return obj
 
     def save_state(self, statedir: Path):
+        """Save the state of a simulation
+
+        Arguments:
+            statedir: Directory where to save the state files
+
+        Smaller and faster than [save()][magicsoup.world.World.save].
+        Save a simulation once initially with [save()][magicsoup.world.World.save]
+        and then use [save_state()][magicsoup.world.World.save_state] for checkpointing.
+        """
         statedir.mkdir(parents=True, exist_ok=True)
         self.culture.save_state(statedir=statedir)
         self.cells.save_state(statedir=statedir)
 
     def load_state(self, statedir: Path):
+        """Load a simulation state
+
+        Arguments:
+            statedir: Directory from where to load the state files
+
+        The simulation state must have been saved with [save_state()][magicsoup.world.World.save_state].
+        """
         self.culture.load_state(statedir=statedir)
         self.cells.load_state(statedir=statedir)
 

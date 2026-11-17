@@ -22,11 +22,13 @@ class StrArray:
     """Mutable 1-D array of variable-length strings.
 
     Arguments:
-        strings: Initial strings. Defaults to an empty array.
+        buf: UTF-8 encoded single byte buffer
+        starts: int array of string start positions
+        lens: int array of string lengths
 
     Elements are stored UTF-8 encoded in a single byte buffer; element `i` is
-    `buffer[starts[i] : starts[i] + lens[i]]`. Use [empty()][.empty] to create
-    an array of `n` empty strings and [concat()][.concat] to join arrays.
+    `buffer[starts[i] : starts[i] + lens[i]]`. Use [empty()][magicsoup.core.strarray.StrArray.empty] to create
+    an array of `n` empty strings and [concat()][magicsoup.core.strarray.StrArray.concat] to join arrays.
 
     Indexing semantics mirror a NumPy string array:
 
@@ -43,7 +45,7 @@ class StrArray:
     copy (`arr[children] = arr[parents]`) only touch the handle table and never
     copy string bytes.
     - only genuinely new strings are ever written, and they are *appended* to the
-    arena. Overwritten bytes become dead until [compact()][.compact] reclaims them.
+    arena. Overwritten bytes become dead until [compact()][magicsoup.core.strarray.StrArray.compact] reclaims them.
     """
 
     def __init__(self, buf: np.ndarray, starts: np.ndarray, lens: np.ndarray) -> None:
@@ -53,6 +55,7 @@ class StrArray:
 
     @classmethod
     def from_strings(cls, strings: Iterable[str] = ()) -> "StrArray":
+        """Generate string array from plain python strings"""
         blobs = [s.encode() for s in strings]
         lens = np.fromiter((len(b) for b in blobs), dtype=np.intp, count=len(blobs))
         buf = np.frombuffer(b"".join(blobs), dtype=np.uint8).copy()
@@ -103,7 +106,7 @@ class StrArray:
 
     @property
     def utilization(self) -> float:
-        """Number of live bytes divided by the total buffer size (see [compact()][.compact])."""
+        """Number of live bytes divided by the total buffer size (see [compact()][magicsoup.core.strarray.StrArray.compact])."""
         if self._buf.size == 0:
             return 1.0
         return float(self._lens.sum() / self._buf.size)
@@ -217,7 +220,7 @@ class StrArray:
 
         Element `i` is `buffer[starts[i] : starts[i] + lens[i]]`. The buffer may
         contain dead bytes; always honour `starts`/`lens` rather than reading it
-        contiguously. [compact()][.compact] first if a dense buffer is required.
+        contiguously. [compact()][magicsoup.core.strarray.StrArray.compact] first if a dense buffer is required.
         """
         return self._buf, self._starts, self._lens
 

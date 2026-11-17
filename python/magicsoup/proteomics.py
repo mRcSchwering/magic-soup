@@ -22,9 +22,7 @@ from magicsoup.genomics import DomainType
 
 
 class _LogNormMap(TensorClass):
-    """Get a map that maps tokens to floats.
-
-    Floats are sampled from a log normal distribution."""
+    """Mappings between tokens and log-norm-distributed scalar values"""
 
     def __init__(
         self,
@@ -53,10 +51,7 @@ class _LogNormMap(TensorClass):
 
 
 class _MirrGeoMap(TensorClass):
-    """Get a map that maps tokens to integers.
-
-    Integers are sampled from a geometric distribution with p=1/2, p0=0 mirrored around 0.
-    """
+    """Mappings between tokens and geometric-distributed scalar values with p=1/2, p=0, mirrored around 0"""
 
     def __init__(
         self,
@@ -87,12 +82,7 @@ class _MirrGeoMap(TensorClass):
 
 
 class _ReactionMap(TensorClass):
-    """Get a map that maps tokens to a list of vectors.
-
-    Each vector will be mapped with the same frequency.
-    Each vector has number of molecules length and represents the
-    stoichiometry of a reaction.
-    """
+    """Mappings between tokens and uniform-distributed reaction vectors"""
 
     def __init__(
         self,
@@ -145,11 +135,7 @@ class _ReactionMap(TensorClass):
 
 
 class _TransporterMap(TensorClass):
-    """Get a map that maps tokens to a list of vectors.
-
-    Each vector has number of molecules length and represents the
-    stoichiometry of a molecule transport into or out of the cell.
-    """
+    """Mappings between tokens and uniform-distributed transporter vectors"""
 
     def __init__(
         self,
@@ -187,12 +173,7 @@ class _TransporterMap(TensorClass):
 
 
 class _EffectorMap(TensorClass):
-    """Get a map that maps tokens to a list of vectors.
-
-    Each vector has number of molecules length and represents the
-    either activating (+1) or inhibiting (-1) effect
-    of an effector molecule.
-    """
+    """Mappings between tokens and uniform-distributed effector vectors"""
 
     def __init__(
         self,
@@ -234,8 +215,6 @@ class ProteomicsKwargs(TypedDict, total=False):
     abs_temp: float
     km_range: tuple[float, float]
     vmax_range: tuple[float, float]
-    max_k: float
-    eps: float
 
 
 class Proteomics(TensorClass):
@@ -250,9 +229,8 @@ class Proteomics(TensorClass):
             assuming 1 µM (micro molar) protein concentration
         scalar_enc_size: Number of unique codons encoding scalar protein domain specifications
         vector_enc_size: Number of unique codons encoding vector protein domain specifications
-        max_k: Upper bound for k_f and k_b (effectively limiting equilibrium constant K_e)
-        eps: Smallest possible non-zero positive value
-        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
+        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.core.tensorclass.TensorClass]
+        rng: Random number generator to seed sampling.
 
     Constant intracellular protein concentration of 1 µM (micro molar) is assumed for each protein.
     Affinities and maximum velocities are sampled from log-normal distributions,
@@ -261,7 +239,7 @@ class Proteomics(TensorClass):
     During the simulation all proteomes are represented as tensors of dimensions `c`, `p`, `2m`.
     Tensor dimension `c` describes each cell, `p` each protein, `m` each molecule species.
     In tensors intracellular molecules are represented first, then extracellular ones, hence `2m`.
-    To get a more interpretable representation of proteomes use [get_proteome()][.get_proteome].
+    To get a more interpretable representation of proteomes use [get_proteome()][magicsoup.proteomics.Proteomics.get_proteome].
     """
 
     def __init__(
@@ -274,47 +252,43 @@ class Proteomics(TensorClass):
         hill_max: int = 3,
         scalar_enc_size: int = 64 - 3,  # 1 codon w/o stop
         vector_enc_size: int = 4096 - 3 * 64,  # 2 codons w/o stop in 1st
-        max_k: float = 1e36,
-        eps: float = 1e-40,
         tensor_kwargs: TensorKwargs | None = None,
         rng: random.Random = DEFAULT_RNG,
     ) -> None:
         super().__init__(**(tensor_kwargs or {}))
 
         self.abs_temp = abs_temp
-        self.max_k = max_k
-        self.eps = eps
+        """temperature in K (Kelvin)"""
         self.chemistry = chemistry
-
-        molecules = chemistry.molecules
-        n_mols = len(molecules)
-        self.m = 2 * n_mols
+        """simulation chemistry"""
+        self.m = len(chemistry.molecules)
+        """Number of molecules"""
 
         # cell-volume-to-voxel-volume ratios for ext mols (2m,)
-        self.cv_ratio = self.ftensor([1] * n_mols + [cv_ratio] * n_mols)
+        self._cv_ratio = self.ftensor([1] * self.m + [cv_ratio] * self.m)
 
         # energies (kJ/mol -> J/mol) for all mols (2m,)
-        self.mol_energies = self.ftensor([d.energy for d in molecules] * 2) * 1e3
+        self._mol_energies = self.ftensor([d.energy for d in chemistry.molecules] * 2) * 1e3
 
-        self.km_map = _LogNormMap(
+        self._km_map = _LogNormMap(
             max_token=scalar_enc_size, value_range=km_range, tensor_kwargs=tensor_kwargs, rng=rng
         )
-        self.vmax_map = _LogNormMap(
+        self._vmax_map = _LogNormMap(
             max_token=scalar_enc_size, value_range=vmax_range, tensor_kwargs=tensor_kwargs, rng=rng
         )
-        self.sign_map = _MirrGeoMap(
+        self._sign_map = _MirrGeoMap(
             max_token=scalar_enc_size, max_value=1, tensor_kwargs=tensor_kwargs, rng=rng
         )
-        self.hill_map = _MirrGeoMap(
+        self._hill_map = _MirrGeoMap(
             max_token=scalar_enc_size, max_value=hill_max, tensor_kwargs=tensor_kwargs, rng=rng
         )
-        self.transport_map = _TransporterMap(
+        self._transport_map = _TransporterMap(
             chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs
         )
-        self.effector_map = _EffectorMap(
+        self._effector_map = _EffectorMap(
             chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs
         )
-        self.reaction_map = _ReactionMap(
+        self._reaction_map = _ReactionMap(
             chemistry, max_token=vector_enc_size, tensor_kwargs=tensor_kwargs
         )
 
@@ -325,11 +299,11 @@ class Proteomics(TensorClass):
             proteome: list of proteins which should be translated and returned
 
         Retruns:
-            List of [Proteins][magicsoup.containers.Protein] that describe
+            List of [Proteins][magicsoup.biology.Protein] that describe
             the cell's proteome.
 
         The returned list of proteins is purely for inspecting a cell.
-        The simulation uses [get_cell_params()][.get_cell_params].
+        The simulation uses [get_cell_params()][magicsoup.proteomics.Proteomics.get_cell_params].
         """
         proteins: list[Protein] = []
 
@@ -350,29 +324,29 @@ class Proteomics(TensorClass):
 
                 if dom_type is DomainType.CATALYTIC:
                     dom = CatalyticDomain(
-                        vmax=self.vmax_map.token_2_scalar[tokens[1]],
-                        km=self.km_map.token_2_scalar[tokens[2]],
-                        is_fwd=self.sign_map.token_2_scalar[tokens[3]] > 0,
-                        reaction=self.reaction_map.token_2_react[tokens[4]],
+                        vmax=self._vmax_map.token_2_scalar[tokens[1]],
+                        km=self._km_map.token_2_scalar[tokens[2]],
+                        is_fwd=self._sign_map.token_2_scalar[tokens[3]] > 0,
+                        reaction=self._reaction_map.token_2_react[tokens[4]],
                         **kwargs,
                     )
 
                 elif dom_type is DomainType.TRANSPORTER:
                     dom = TransporterDomain(
-                        vmax=self.vmax_map.token_2_scalar[tokens[1]],
-                        km=self.km_map.token_2_scalar[tokens[2]],
-                        is_exporter=self.sign_map.token_2_scalar[tokens[3]] < 0,
-                        molecule=self.transport_map.token_2_mol[tokens[4]],
+                        vmax=self._vmax_map.token_2_scalar[tokens[1]],
+                        km=self._km_map.token_2_scalar[tokens[2]],
+                        is_exporter=self._sign_map.token_2_scalar[tokens[3]] < 0,
+                        molecule=self._transport_map.token_2_mol[tokens[4]],
                         **kwargs,
                     )
 
                 elif dom_type is DomainType.REGULATORY:
-                    hill = self.hill_map.token_2_scalar[tokens[1]]
-                    mol, is_transmem = self.effector_map.token_2_eff[tokens[4]]
-                    sign = self.sign_map.token_2_scalar[tokens[3]]
+                    hill = self._hill_map.token_2_scalar[tokens[1]]
+                    mol, is_transmem = self._effector_map.token_2_eff[tokens[4]]
+                    sign = self._sign_map.token_2_scalar[tokens[3]]
                     dom = RegulatoryDomain(
                         hill=hill,
-                        km=self.km_map.token_2_scalar[tokens[2]],
+                        km=self._km_map.token_2_scalar[tokens[2]],
                         is_inhibiting=(sign * hill) < 0,
                         effector=mol,
                         is_transmembrane=is_transmem,
@@ -414,21 +388,21 @@ class Proteomics(TensorClass):
         Retruns:
             Dict of tensors describing all translated proteomes
 
-        For a more readable representation of a proteome use [get_cell_params()][.get_cell_params].
+        For a more readable representation of a proteome use [get_cell_params()][magicsoup.proteomics.Proteomics.get_cell_params].
         """
         # parameters in flat (d,) representation of (c, p)
         cell = torch.from_numpy(cells).to(self.device, self.idxtype, non_blocking=True)
         prot = torch.from_numpy(proteins).to(self.device, self.idxtype, non_blocking=True)
         tok = torch.from_numpy(tokens).to(self.device, self.idxtype, non_blocking=True)
-        m = self.m
+        m2 = 2 * self.m
 
         # indexing won't work
         if p == 0 or c == 0:
             return {
-                "N_e": self.fzeros(c, p, m),
-                "N_f": self.izeros(c, p, m),
-                "N_b": self.izeros(c, p, m),
-                "N_h": self.izeros(c, p, m),
+                "N_e": self.fzeros(c, p, m2),
+                "N_f": self.izeros(c, p, m2),
+                "N_b": self.izeros(c, p, m2),
+                "N_h": self.izeros(c, p, m2),
                 "k_f": self.fzeros(c, p),
                 "k_b": self.fzeros(c, p),
                 "k_r": self.fzeros(c, p),
@@ -447,8 +421,8 @@ class Proteomics(TensorClass):
         is_regul = tok[:, 0] == 3
 
         idx_flat = cell * p + prot  # in (d,) for flat (c, p)
-        src_hill = self.hill_map.token_scalar[tok[:, 1]].unsqueeze(-1)  # (d,0)
-        src_sign = self.sign_map.token_scalar[tok[:, 3]].unsqueeze(-1)  # (d,0)
+        src_hill = self._hill_map.token_scalar[tok[:, 1]].unsqueeze(-1)  # (d,0)
+        src_sign = self._sign_map.token_scalar[tok[:, 3]].unsqueeze(-1)  # (d,0)
 
         # derive proteins per cell
         protcount = torch.bincount(idx_flat.unique() // p, minlength=c)
@@ -458,53 +432,53 @@ class Proteomics(TensorClass):
         # maximum velocity
         v_max = self.fzeros(c, p)
         idx = idx_flat[is_catal | is_trnsp]
-        src = self.vmax_map.token_scalar[tok[is_catal | is_trnsp, 1]]
+        src = self._vmax_map.token_scalar[tok[is_catal | is_trnsp, 1]]
         v_max.view(-1).scatter_reduce_(dim=0, index=idx, src=src, reduce="mean", include_self=False)
 
         # catalytic and transporter sensitivity
         k_m = self.fzeros(c, p)
         idx = idx_flat[is_catal | is_trnsp]
-        src = self.km_map.token_scalar[tok[is_catal | is_trnsp, 2]]
+        src = self._km_map.token_scalar[tok[is_catal | is_trnsp, 2]]
         k_m.view(-1).scatter_reduce_(dim=0, index=idx, src=src, reduce="mean", include_self=False)
 
         # allosteric sensitivity
         k_r = self.fzeros(c, p)
         idx = idx_flat[is_regul]
-        src = self.km_map.token_scalar[tok[is_regul, 2]]
+        src = self._km_map.token_scalar[tok[is_regul, 2]]
         k_r.view(-1).scatter_reduce_(dim=0, index=idx, src=src, reduce="mean", include_self=False)
 
         # aggregate domains by sum (0s as defaults)
 
         # reaction stoichiometry
-        N_f = self.izeros(c, p, m)
-        N_b = self.izeros(c, p, m)
+        N_f = self.izeros(c, p, m2)
+        N_b = self.izeros(c, p, m2)
         src_idx = torch.where(is_catal, tok[:, 4], 0)
-        src_f = self.reaction_map.token_fwd_vector[src_idx]
-        src_b = self.reaction_map.token_bwd_vector[src_idx]
+        src_f = self._reaction_map.token_fwd_vector[src_idx]
+        src_b = self._reaction_map.token_bwd_vector[src_idx]
         src = torch.where(src_sign > 0, src_f, src_b)
-        N_f.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+        N_f.view(-1, m2).index_add_(dim=0, index=idx_flat, source=src)
         src = torch.where(src_sign > 0, src_b, src_f)
-        N_b.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+        N_b.view(-1, m2).index_add_(dim=0, index=idx_flat, source=src)
 
         # transporter stoichiometry
         src_idx = torch.where(is_trnsp, tok[:, 4], 0)
-        src_t = self.transport_map.token_vector[src_idx] * src_sign
+        src_t = self._transport_map.token_vector[src_idx] * src_sign
         src = torch.where(src_t < 0, -src_t, 0)
-        N_f.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+        N_f.view(-1, m2).index_add_(dim=0, index=idx_flat, source=src)
         src = torch.where(src_t > 0, src_t, 0)
-        N_b.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+        N_b.view(-1, m2).index_add_(dim=0, index=idx_flat, source=src)
 
         # hill coefficients
-        N_h = self.izeros(c, p, m)
+        N_h = self.izeros(c, p, m2)
         src_idx = torch.where(is_regul, tok[:, 4], 0)
-        src = self.effector_map.token_vector[src_idx] * src_sign * src_hill
-        N_h.view(-1, m).index_add_(dim=0, index=idx_flat, source=src)
+        src = self._effector_map.token_vector[src_idx] * src_sign * src_hill
+        N_h.view(-1, m2).index_add_(dim=0, index=idx_flat, source=src)
 
         # drive stoichiometry for energy and affinities
         N = (N_b - N_f).to(self.ftype)  # (c,p,2m)
 
         # energies define k_e which defines k_e = k_f/k_b
-        e = torch.einsum("cpm,m->cp", N, self.mol_energies)
+        e = torch.einsum("cpm,m->cp", N, self._mol_energies)
         k_e = torch.exp(-e / self.abs_temp / GAS_CONSTANT).clamp(1e-36, 1e36)
 
         # derive affinities from km: Liebermeister and Klipp's convenience kinetics (2006)
@@ -514,7 +488,7 @@ class Proteomics(TensorClass):
         k_b = torch.where(is_defined, k_m * sqrt_ke, 0)
 
         # derive effective stoichiometry
-        N_e = N * self.cv_ratio
+        N_e = N * self._cv_ratio
 
         return {
             "N_e": N_e,

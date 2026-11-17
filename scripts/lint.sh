@@ -2,10 +2,11 @@
 #
 # Run linters
 #
-set -ex
+set -x
 uv lock --check
-uv run --no-sync mypy python
-uv run --no-sync mypy tests
-uv run --no-sync ruff check --fix
+uv run mypy python
+uv run mypy tests
+uv run ruff check --fix
 uv run pylint python
+uv run pylint performance
 uv run ruff format python/

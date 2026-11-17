@@ -36,11 +36,11 @@ def _is_correct(act: Protein, exp: ProteinSynthesizer) -> bool:
     exp_effcts = []
     for exp_dom in exp.domains:
         if isinstance(exp_dom, CatalyticDomainSynthesizer):
-            exp_reacts.append(exp_dom.reaction)
+            exp_reacts.append(exp_dom._reaction)
         if isinstance(exp_dom, TransporterDomainSynthesizer):
-            exp_trnsps.append(exp_dom.molecule)
+            exp_trnsps.append(exp_dom._molecule)
         if isinstance(exp_dom, RegulatoryDomainSynthesizer):
-            exp_effcts.append(exp_dom.effector)
+            exp_effcts.append(exp_dom._effector)
 
     for act_dom in act.domains:
         if isinstance(act_dom, CatalyticDomain) and act_dom.reaction in exp_reacts:

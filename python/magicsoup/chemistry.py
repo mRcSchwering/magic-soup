@@ -3,10 +3,9 @@ from collections.abc import Iterable
 
 
 class Molecule:
-    """
-    Represents a molecule species
+    """Represents a molecule species
 
-    Parameters:
+    Arguments:
         name: Used to uniquely identify this molecule species.
         energy: Energy of this molecule species in kJ/mol (kilo Joule per mol)
             The hypothetical amount of energy that is released if the molecule would be fully deconstructed.
@@ -79,12 +78,11 @@ class Molecule:
 
 
 class Reaction:
-    """
-    Represents a reaction
+    """Represents a reaction
 
-    Parameters:
-        substrates: List of [Molecules][magicsoup.containers.Molecule] that are consumed in this reaction
-        products: List of [Molecules][magicsoup.containers.Molecule] that are produced in this reaction
+    Arguments:
+        substrates: List of [Molecules][magicsoup.chemistry.Molecule] that are consumed in this reaction
+        products: List of [Molecules][magicsoup.chemistry.Molecule] that are produced in this reaction
 
     All reactions are reversible, meaning that they can happen in both directions (left to right or vice versa).
     Also, the order in which substrates and products are listed does not matter.
@@ -127,31 +125,26 @@ class Reaction:
 
 
 class Chemistry:
-    """
-    Represents the chemistry with molecules and reactions available in a simulation.
+    """Represents the chemistry with molecules and reactions available in a simulation.
 
-    Parameters:
-        molecules: List of all [Molecules][magicsoup.containers.Molecule] that are part of this simulation
-        reactions: List of all possible reactions in this simulation given as list of [Reactions][magicsoup.containers.Reaction]
+    Arguments:
+        molecules: List of all [Molecules][magicsoup.chemistry.Molecule] that are part of this simulation
+        reactions: List of all possible reactions in this simulation given as list of [Reactions][magicsoup.chemistry.Reaction]
 
     `molecules` must include at least all molecule species that are used in `reactions`.
     Duplicate reactions and molecules will be removed on initialization.
-    Use `__and__` to combine multiple chemistries:
+    Use `__add__` to combine multiple chemistries:
 
     ```
-    both = chemistry1 & chemistry2  # union of molecules and reactions
+    both = chemistry1 + chemistry2  # union of molecules and reactions
     ```
 
     The chemistry object is used throughout the simulation to refer to molecules.
     All tensors that refer to molecule species (_e.g._ molecule concentrations) always order
     each molecule concentration according to the order of `chemistry.molecules`.
     E.g. if `chemistry.molecules[2]` is pyruvate, `culture.molecule_map[2]` ([Culture][magicsoup.culture.Culture])
-    are pyruvate concentrations on in the cell culture map and `cells.molecules[2]` ([Cells][magicsoup.cells.Cells])
-    are intracellular pyruvate concentrations.
-    For convenience mappings are provided:
-
-    - `chemistry.mol_2_idx` to map a [Molecule][magicsoup.containers.Molecule] instance to its index
-    - `chemistry.molname_2_idx` to map a [Molecule][magicsoup.containers.Molecule] name to its index
+    are pyruvate concentrations on in the cell culture map and `cells.molecules[:, 2]` ([Cells][magicsoup.cells.Cells])
+    are intracellular pyruvate concentrations of all cells.
     """
 
     def __init__(
@@ -160,7 +153,10 @@ class Chemistry:
         reactions: Iterable[Reaction],
     ) -> None:
         self.molecules = sorted(set(molecules))
+        """All supported molecules"""
+
         self.reactions = sorted(set(reactions))
+        """All supported reactions"""
 
         # check for undefined molecules in reactions
         dfnd_mols = set(molecules)
@@ -175,19 +171,22 @@ class Chemistry:
             )
 
         self.mol_2_idx = {d: i for i, d in enumerate(self.molecules)}
-        self.molname_2_idx = {d.name: i for i, d in enumerate(self.molecules)}
-        self.molname_2_mol = {d.name: d for d in self.molecules}
-        self.idx_2_mol = {i: m for m, i in self.mol_2_idx.items()}
+        """Mapping of molecule objects to their index in tensors representing molecule concentrations"""
 
-    def __and__(self, other: "Chemistry") -> "Chemistry":
+        self.molname_2_idx = {d.name: i for i, d in enumerate(self.molecules)}
+        """Mapping of molecule names to their index in tensors representing molecule concentrations"""
+
+        self.molname_2_mol = {d.name: d for d in self.molecules}
+        """Mapping of molecule names to their molecule object"""
+
+        self.idx_2_mol = {i: m for m, i in self.mol_2_idx.items()}
+        """Mapping of molecule indexes to their respective molecule object"""
+
+    def __add__(self, other: "Chemistry") -> "Chemistry":
         return Chemistry(
-            molecules=self.molecules + other.molecules,
-            reactions=self.reactions + other.reactions,
+            molecules=self.molecules + other.molecules, reactions=self.reactions + other.reactions
         )
 
     def __repr__(self) -> str:
-        args = [
-            f"{len(self.molecules):d} molecules",
-            f"{len(self.reactions):d} reactions",
-        ]
+        args = [f"{len(self.molecules):d} molecules", f"{len(self.reactions):d} reactions"]
         return f"{type(self).__name__}({','.join(args)})"

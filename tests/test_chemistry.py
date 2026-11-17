@@ -72,3 +72,23 @@ def test_chemistry_raises_missing_molecule() -> None:
 
     with pytest.raises(ValueError):
         Chemistry(molecules=[m1, m2], reactions=[r1, r2])
+
+
+def test_combine_chemistries() -> None:
+    m1 = Molecule("A", energy=10.0)
+    m2 = Molecule("B", energy=15.0)
+    m3 = Molecule("C", energy=20.0)
+    r1 = Reaction([m1], [m2])  # Reaction: A -> B
+    r2 = Reaction([m2], [m3])  # Reaction: B -> C
+    chem0 = Chemistry(molecules=[m1, m2, m3], reactions=[r1, r2])
+
+    m1 = Molecule("A", energy=10.0)
+    m2 = Molecule("B", energy=15.0)
+    m4 = Molecule("D", energy=20.0)
+    r1 = Reaction([m1], [m2])  # Reaction: A -> B
+    r3 = Reaction([m1], [m4])  # Reaction: A -> D
+    chem1 = Chemistry(molecules=[m1, m2, m4], reactions=[r1, r3])
+
+    chem = chem0 + chem1
+    assert set(chem.reactions) == {r1, r2, r3}
+    assert set(chem.molecules) == {m1, m2, m3, m4}

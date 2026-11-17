@@ -14,8 +14,7 @@ class KineticsKwargs(TypedDict, total=False):
 
 
 class Kinetics(TensorClass):
-    """
-    Solving ODE system that describes reaction kinetics
+    """Solving ODE system that describes reaction kinetics
 
     Arguments:
         dt: time interval of a step in s (seconds)
@@ -23,7 +22,7 @@ class Kinetics(TensorClass):
         n_bisect: number of bisections when solving for xi
         eps: Smallest possible non-zero positive value
         compile_solver: Whether to torch compile the solver; None for auto (on for CUDA, else off)
-        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
+        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.core.tensorclass.TensorClass]
 
     Reaction kinetics are modelled as reversible Michaelis-Menten (MM) kinetics.
     Parameters were optimized for realistic values when assuming the following units.
@@ -48,12 +47,16 @@ class Kinetics(TensorClass):
         super().__init__(**(tensor_kwargs or {}))
 
         self.eps = eps
+        """Smallest possible non-zero positive value"""
         self.dt = dt
+        """time interval of a step in s (seconds)"""
         self.n_sweeps = n_sweeps
+        """number of block Jacobi sweeps to perform when solving ODEs"""
         self.n_bisect = n_bisect
+        """number of bisections when solving for xi"""
 
         # torch.compile the solver; None = auto (on for CUDA, off for CPU)
-        self.compile_solver = compile_solver
+        self._compile_solver = compile_solver
         self._solver = None  # built lazily, rebuilt after unpickling (__getstate__)
 
     def get_x1(
@@ -68,8 +71,7 @@ class Kinetics(TensorClass):
         k_r: T,  # (c, p)
         v_max: T,  # (c, p)
     ) -> T:
-        """
-        Calculate concentrations after one time step
+        """Calculate concentrations after one time step
 
         Arguments:
             x0: (c, 2m) float tensor of initial concentrations in mM (milli molar)
@@ -79,7 +81,7 @@ class Kinetics(TensorClass):
             N_b: (c, p, 2m) integer tensor of stoichiometric coefficients of products for calculating MM kinetics
             k_f: (c, p) float tensor of reactant affinity in forward direction
             k_b: (c, p) float tensor of reactant affinity in backward direction
-            r_r: (c, p) float tensor of half occupancy concentrations of regulatory domains
+            k_r: (c, p) float tensor of half occupancy concentrations of regulatory domains
             v_max: (c, p) float tensor maximum velocity of assuming 1 µM (micro molar) of protein in mM/s (milli molar per second)
 
         Effective stoichiometric numbers means stoichiometric numbers adjusted to volume differences between cell and voxel.
@@ -98,7 +100,7 @@ class Kinetics(TensorClass):
         # lazily build the (optionally compiled) solver. The compiled callable is
         # not pickled (see __getstate__); it is rebuilt here on first use.
         if self._solver is None:
-            use = self.compile_solver
+            use = self._compile_solver
             if use is None:
                 use = "cuda" in str(self.device)
             self._solver = torch.compile(self._solve, dynamic=True) if use else self._solve

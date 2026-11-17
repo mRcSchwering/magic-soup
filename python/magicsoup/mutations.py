@@ -29,10 +29,10 @@ class MutatorKwargs(TypedDict, total=False):
 
 
 class Mutator:
-    """
-    Mutator with substitutions, small indels, and homology-dependent re-arrangements
+    """Mutator with substitutions, small indels, and homology-dependent re-arrangements
 
     Arguments:
+        seed: Seed for random number generators used
         sub_rate: per-bp substitution rate
         transition_prob: probability that a substitutions is a transitions (transversion otherwise)
         indel_rate: per-bp indel rate at sites that are not inside a tandem repeat
@@ -107,29 +107,56 @@ class Mutator:
         max_genome_len: int | None = None,
     ) -> None:
         self.seed = seed
+        """Seed for random number generators used"""
         self.sub_rate = sub_rate
+        """per-bp substitution rate"""
         self.transition_prob = transition_prob
+        """probability that a substitutions is a transitions (transversion otherwise)"""
         self.indel_rate = indel_rate
+        """per-bp indel rate at sites that are not inside a tandem repeat"""
         self.indel_repeat_factor = indel_repeat_factor
+        """rate multiplier per additional repeat copy"""
         self.indel_max_multiplier = indel_max_multiplier
+        """upper bound of the multiplier"""
         self.indel_max_unit = indel_max_unit
+        """longest repeat unit (bp) recognised as a tandem repeat"""
         self.indel_mean_len = indel_mean_len
+        """mean indel size in bp outside repeats, in repeat units inside repeats"""
         self.indel_max_len = indel_max_len
+        """hard cap on indel length in bp"""
         self.insertion_prob = insertion_prob
+        """probability that an indel is an insertion (deletion otherwise)"""
         self.break_rate = break_rate
+        """per-bp rate of breaks that start a homology search"""
         self.seed_len = seed_len
+        """seed length used to find homologous partners"""
         self.min_homology = min_homology
+        """minimum total homology (bp) for recombination to be possible"""
         self.saturating_homology = saturating_homology
+        """homology length (bp) at which a partner is used with probability 1"""
         self.min_segment = min_segment
+        """minimum length of the segment that is deleted / duplicated / inverted"""
         self.duplication_prob = duplication_prob
+        """probability of duplication among direct-repeat events (else deletion)"""
         self.min_genome_len = min_genome_len
+        """minimum acceptable genome size"""
         self.max_genome_len = max_genome_len
+        """maximum acceptable genome size"""
 
         # setup rust class
         self._setup_rs()
 
     def mutate(self, genomes: A) -> tuple[np.ndarray, A]:
-        """Apply mutations"""
+        """Apply mutations
+
+        Arguments:
+            genomes: Genomes to mutate as string array
+
+        Returns:
+            tuple (idxs, genomes):
+            - `idxs` (k,) index array of k mutated cells
+            - `genomes` string array of k mutated genomes
+        """
         idxs, seqs = self._rs.mutate(*genomes.as_buffers())
         return idxs, StrArray.from_strings(seqs)
 

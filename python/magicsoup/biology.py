@@ -6,15 +6,12 @@ from magicsoup.chemistry import Molecule, Reaction
 
 
 class CatalyticDomain:
-    """
-    Object describing a catalytic domain.
+    """Object describing a catalytic domain.
 
-    Parameters:
-        reaction: Tuple `(substrates, products)` where both `substrates` and `products`
-            are lists of [Molecules][magicsoup.containers.Molecule] which are involved in the reaction.
-            Stoichiometric coefficients > 1 are defined by listing molecules multiple times.
+    Arguments:
+        reaction: reaction catalyzed by the domain.
         km: Michaelis Menten constant of the reaction (in mM).
-        vmax: Maximum velocity of the reaction (in mmol/s).
+        vmax: Maximum velocity of the reaction (in mmol/s with 1 µM enzyme).
         start: Domain start on the CDS
         end: Domain end on the CDS
         is_fwd: How reaction is coupled with other domains in the same CDS
@@ -22,7 +19,7 @@ class CatalyticDomain:
     The simulation works with tensor representations of cell proteomes.
     This class is a helper which makes interpreting a cell's proteome easier.
     You should not instantiate this class but instead get it from `cell.proteome`
-    (see [Cell][magicsoup.containers.Cell]).
+    (see [Cell][magicsoup.biology.Cell]).
 
     Domain start and end describe the slice of the CDS python string.
     _I.e._ the index starts with 0, start is included, end is excluded.
@@ -39,11 +36,22 @@ class CatalyticDomain:
         is_fwd: bool = True,
     ):
         self.start = start
+        """Domain start on the CDS"""
+
         self.end = end
+        """Domain end on the CDS"""
+
         self.reaction = reaction
+        """Reaction catalyzed by the domain"""
+
         self.km = km
+        """Michaelis Menten constant of the catalyzed reaction (in mM)"""
+
         self.vmax = vmax
+        """Maximum velocity of the reaction (in mmol/s with 1 µM enzyme)"""
+
         self.is_fwd = is_fwd
+        """How reaction is coupled with other domains in the same CDS"""
 
     def __repr__(self) -> str:
         return f"CatalyticDomain({self.reaction},Km={self.km:.2e},Vmax={self.vmax:.2e},fwd={self.is_fwd})"
@@ -58,21 +66,20 @@ class CatalyticDomain:
 
 
 class TransporterDomain:
-    """
-    Object describing a transporter domain.
+    """Object describing a transporter domain.
 
-    Parameters:
-        molecule: [Molecule][magicsoup.containers.Molecule] which can be transported by this domain.
+    Arguments:
+        molecule: molecule which can be transported by this domain.
         km: Michaelis Menten constant of the transport (in mM).
-        vmax: Maximum velocity of the transport (in mmol/s).
-        is_exporter: Whether the transporter is exporting this molecule species out of the cell.
+        vmax: Maximum velocity of the transport (in mmol/s with 1 µM enzyme).
+        is_exporter: The direction (import or export) in which the transporter is coupled with other domains.
         start: Domain start on the CDS
         end: Domain end on the CDS
 
     The simulation works with tensor representations of cell proteomes.
     This class is a helper which makes interpreting a cell's proteome easier.
     You should not instantiate this class but instead get it from `cell.proteome`
-    (see [Cell][magicsoup.containers.Cell]).
+    (see [Cell][magicsoup.biology.Cell]).
 
     `is_exporter` is only relevant in combination with other domains on the same protein.
     It defines in which transport direction this domain is energetically coupled with others.
@@ -92,11 +99,22 @@ class TransporterDomain:
         end: int,
     ):
         self.start = start
+        """Domain start on the CDS"""
+
         self.end = end
+        """Domain end on the CDS"""
+
         self.molecule = molecule
+        """Molecule transported by this domain"""
+
         self.km = km
+        """Michaelis Menten constant of the catalyzed reaction (in mM)"""
+
         self.vmax = vmax
+        """Maximum velocity of the reaction (in mmol/s with 1 µM enzyme)"""
+
         self.is_exporter = is_exporter
+        """The direction (import or export) in which the transporter is coupled with other domains"""
 
     def __repr__(self) -> str:
         sign = "exporter" if self.is_exporter else "importer"
@@ -108,11 +126,10 @@ class TransporterDomain:
 
 
 class RegulatoryDomain:
-    """
-    Object describing a regulatory domain.
+    """Object describing a regulatory domain.
 
-    Parameters:
-        effector: Effector [Molecules][magicsoup.containers.Molecule]
+    Arguments:
+        effector: Effector molecule
         hill: Hill coefficient describing degree of cooperativity
         km: Ligand concentration producing half occupation (in mM)
         is_inhibiting: Whether this is an inhibiting regulatory domain (otherwise activating).
@@ -124,7 +141,7 @@ class RegulatoryDomain:
     The simulation works with tensor representations of cell proteomes.
     This class is a helper which makes interpreting a cell's proteome easier.
     You should not instantiate this class but instead get it from `cell.proteome`
-    (see [Cell][magicsoup.containers.Cell]).
+    (see [Cell][magicsoup.biology.Cell]).
 
     Domain start and end describe the slice of the CDS python string.
     _I.e._ the index starts with 0, start is included, end is excluded.
@@ -142,12 +159,25 @@ class RegulatoryDomain:
         end: int,
     ):
         self.start = start
+        """Domain start on the CDS"""
+
         self.end = end
+        """Domain end on the CDS"""
+
         self.effector = effector
+        """Effector molecule"""
+
         self.km = km
+        """Ligand concentration producing half occupation (in mM)"""
+
         self.hill = int(hill)
+        """Hill coefficient describing degree of cooperativity"""
+
         self.is_transmembrane = is_transmembrane
+        """Whether this is also a transmembrane domain"""
+
         self.is_inhibiting = is_inhibiting
+        """Whether this is an inhibiting regulatory domain (otherwise activating)"""
 
     def __repr__(self) -> str:
         loc = "transmembrane" if self.is_transmembrane else "cytosolic"
@@ -164,14 +194,13 @@ type Domain = RegulatoryDomain | CatalyticDomain | TransporterDomain
 
 
 class Protein:
-    """
-    Object describing a protein.
+    """Object describing a protein.
 
-    Parameters:
+    Arguments:
         domains: All domains of the protein as a list of
-            [CatalyticDomains][magicsoup.containers.CatalyticDomain],
-            [TransporterDomains][magicsoup.containers.TransporterDomain],
-            and [RegulatoryDomains][magicsoup.containers.RegulatoryDomain].
+            [CatalyticDomains][magicsoup.biology.CatalyticDomain],
+            [TransporterDomains][magicsoup.biology.TransporterDomain],
+            and [RegulatoryDomains][magicsoup.biology.RegulatoryDomain].
         cds_start: Start coordinate of its coding region
         cds_end: End coordinate of its coding region
         is_53: Whether its CDS is in the 5'-3' or 3'-5' direction of the genome.
@@ -179,7 +208,7 @@ class Protein:
     The simulation works with tensor representations of cell proteomes.
     This class is a helper which makes interpreting a cell's proteome easier.
     You should not instantiate this class but instead get it from `cell.proteome`
-    (see [Cell][magicsoup.containers.Cell]).
+    (see [Cell][magicsoup.biology.Cell]).
 
     CDS start and end describe the slice of the genome python string.
     _I.e._ the index starts with 0, start is included, end is excluded.
@@ -199,17 +228,19 @@ class Protein:
 
     def __init__(self, domains: list[Domain], cds_start: int, cds_end: int, is_53: bool):
         self.domains = domains
-        self.n_domains = len(domains)
+        """All protein domains"""
+
         self.cds_start = cds_start
+        """Start coordinate of the protein's coding region"""
+
         self.cds_end = cds_end
+        """End coordinate of the protein's coding region"""
+
         self.is_53 = is_53
+        """Whether the protein's CDS is in the 5'-3' or 3'-5' direction of the genome"""
 
     def __repr__(self) -> str:
-        kwargs = {
-            "cds_start": self.cds_start,
-            "cds_end": self.cds_end,
-            "domains": self.domains,
-        }
+        kwargs = {"cds_start": self.cds_start, "cds_end": self.cds_end, "domains": self.domains}
         args = [f"{k}:{d!r}" for k, d in kwargs.items()]
         return f"{type(self).__name__}({','.join(args)})"
 
@@ -219,37 +250,19 @@ class Protein:
 
 
 class Cell:
-    """
-    Object describing a cell and its environment.
+    """Object describing a cell.
 
-    Parameters:
+    Arguments:
         genome: Genome sequence string of this cell.
         lineage: Cell marker for lineage tracing.
-        n_steps_alive: Number of time steps this cell has lived since last division.
-        n_divisions: Number of times this cell's ancestors already divided.
-        proteome: List of [Protein][magicsoup.containers.Protein] objects.
-        molecules: Intracellular molecule concentrations. A 1D tensor that describes
-            each [Molecule][magicsoup.containers.Molecule]
-            in the same order as defined in [Chemistry][magicsoup.containers.Chemistry].
+        age: Time passed since last cell division (in s).
+        generation: Number of times this cell's ancestors divided.
+        proteome: Cell proteome as list of [Protein][magicsoup.biology.Protein].
+        molecules: float (m,) tensor for intracellular molecule concentrations.
 
     The simulation works with tensor representations of cell proteomes and molecule concentrations.
     This class is a helper which makes interpreting a cell easier.
-    You should not instantiate this class but instead get it from [get_cell()][magicsoup.world.World.get_cell].
-
-    All parameters are exposed as attributes on the cell object.
-    Some are calculated lazily just when they are accessed.
-
-    ```
-    cell = world.get_cell(by_idx=3)
-    assert cell.idx == 5  # the cell's current index
-    cell.proteome  # proteome is calculated now
-    ```
-
-    When a cell divides its genome and proteome are copied.
-    Both descendants will recieve half of all molecules each.
-    Both their `n_divisions` attributes are incremented.
-    The cell's `lineage` will be copied as well.
-    This way you can track how cells spread.
+    Pick particular cells using [world.get_cell()][magicsoup.world.World.get_cell].
     """
 
     def __init__(
@@ -262,11 +275,22 @@ class Cell:
         molecules: torch.Tensor,
     ):
         self.genome = genome
+        """Cell's genome as string"""
+
         self.lineage = lineage
+        """Cell marker for lineage tracing"""
+
         self.age = age
+        """Time passed since last cell division (in s)"""
+
         self.generation = generation
+        """Number of times this cell's ancestors divided"""
+
         self.proteome = proteome
+        """Cell proteome as list of proteins"""
+
         self.molecules = molecules
+        """float (m,) tensor for intracellular molecule concentrations"""
 
     def __repr__(self) -> str:
         kwargs = {

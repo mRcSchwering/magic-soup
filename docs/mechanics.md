@@ -63,12 +63,12 @@ What these specifications are depends on the domain type.
 _Catalytic_ domains can catalyze one reaction each.
 All possible reactions are defined in the simulation's chemistry (see [Chemistry](#chemistry)).
 Specifications are the catalyzed reaction, affinities for substrates and products,
-maximum velocity, domain orientation (see [Energy](#energy)).
+maximum velocity, domain orientation (see [Chemistry](#chemistry)).
 
 _Transporter_ domains can move molecules across the cell membrane,
 _i.e._ from the voxel medium into the cell and _vice versa_.
 All possible molecule species are defined in the simulation's chemistry (see [Chemistry](#chemistry)).
-Specifications are the molecule species, affinity, maximum velocity, domain orientation (see [Energy](#energy)).
+Specifications are the molecule species, affinity, maximum velocity, domain orientation (see [Chemistry](#chemistry)).
 
 _Regulatory_ domains can regulate a protein through an effector molecule.
 A protein with only a regulatory domain has no function.

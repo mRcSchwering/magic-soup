@@ -102,12 +102,6 @@ impl Mutator {
 
 // Genomics
 
-#[pyfunction]
-fn reverse_complement(seq: PyBackedStr) -> String {
-    let bytes = genomics::reverse_complement(&seq.as_bytes());
-    String::from_utf8(bytes).expect("Genome not ASCII")
-}
-
 #[pyclass]
 struct Genomics {
     start_codons: Vec<[u8; genomics::CODON_SIZE]>,
@@ -278,9 +272,6 @@ impl Genomics {
 
 #[pymodule]
 fn _lib(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // util
-    m.add_function(wrap_pyfunction!(reverse_complement, m)?)?;
-
     // Genomics
     m.add_class::<Genomics>()?;
 

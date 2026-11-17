@@ -32,7 +32,10 @@ plugins:
           paths: [python]
           options:
             # see https://mkdocstrings.github.io/python/usage/
-            heading_level: 3
+            docstring_style: google
+            heading_level: 2
+            show_root_heading: true
+            show_root_full_path: false
             show_bases: false
             show_root_toc_entry: false
             show_source: false
@@ -42,3 +45,6 @@ plugins:
             merge_init_into_class: true
             show_if_no_docstring: false
             filters: ["!^_", "^__init__$"]
+            separate_signature: true
+            show_signature_annotations: true
+            annotations_path: brief

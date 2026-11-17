@@ -36,8 +36,8 @@ def _spawn_cells(world: World, n: int, x: float = 10.0, g: int = 500) -> World:
 
 def _get_mol_mass(world: World) -> torch.Tensor:
     return (
-        world.culture.molecule_map.sum() * world.v_voxel
-        + world.cells.molecules.sum() * world.v_cell
+        world.culture.molecule_map.sum() * world._v_voxel
+        + world.cells.molecules.sum() * world._v_cell
     )
 
 
@@ -59,14 +59,14 @@ def _get_cell_tensors(cells: Cells) -> dict[str, torch.Tensor]:
 
 def _get_proteome_tensors(cells: Cells) -> dict[str, torch.Tensor]:
     return {
-        "v_max": cells.v_max.clone(),
-        "k_f": cells.k_f.clone(),
-        "k_b": cells.k_b.clone(),
-        "k_r": cells.k_r.clone(),
-        "N_f": cells.N_f.clone(),
-        "N_b": cells.N_b.clone(),
-        "N_h": cells.N_h.clone(),
-        "N_e": cells.N_e.clone(),
+        "v_max": cells._v_max.clone(),
+        "k_f": cells._k_f.clone(),
+        "k_b": cells._k_b.clone(),
+        "k_r": cells._k_r.clone(),
+        "N_f": cells._N_f.clone(),
+        "N_b": cells._N_b.clone(),
+        "N_h": cells._N_h.clone(),
+        "N_e": cells._N_e.clone(),
     }
 
 
@@ -186,7 +186,7 @@ def test_get_cell(world: World) -> None:
     assert torch.equal(c0.molecules, world.cells.molecules[25])
     assert len(c0.proteome) > 0
 
-    c1 = world.get_cell(by_position=(int(coords[20, 0]), int(coords[20, 1])))
+    c1 = world.get_cell(by_coordinate=(int(coords[20, 0]), int(coords[20, 1])))
     assert c1.lineage == world.cells.lineages[20]
     assert c1.genome == world.cells.genomes[20]
     assert torch.equal(c1.molecules, world.cells.molecules[20])
@@ -710,7 +710,7 @@ def test_zero_protein_cell(world: World) -> None:
     world = _spawn_cells(world, n=1, g=0)
 
     # remove molecule degradation to not hide energy laws
-    world.degradation.decay[:] = 1.0
+    world.degradation._decay[:] = 1.0
 
     t0 = _State.from_world(world)
 

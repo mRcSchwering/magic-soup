@@ -1,15 +1,6 @@
 # Figures
 
 These figures are re-generated with major _MagicSoup_ updates.
-On the one hand, they serve as sanity checks.
-There is a test suite with unit and integration tests.
-However, some things are hard to put into an automated test.
-Sometimes it's easier to create a figure and take a look at it.
-Some of the figures here are such kind of sanity checks
-(_e.g._ [6. Simple Reaction Kinetics](#6-simple-reaction-kinetics)).
-On the other hand, some plots were just created out of curiousity
-about how certain aspects play out
-(_e.g._ [9. Survival and Replication Rate](#9-survival-and-replication-rate)).
 For details see the source code that generated each figure
 [here (github.com)](https://github.com/mRcSchwering/magic-soup/blob/main/docs/create_figures.py).
 
@@ -246,57 +237,11 @@ in its chemistry (red) and one that doesn't (blue)._
 
 <br/>
 
-## 9. Survival and Replication Rate
-
-![](./img/supporting/probability_functions.png)
-
-_**9.1. y over x for probability functions.**
-Upper row shows $y = x^n / (x^n + k^n)$, lower row $y = k^n / (x^n + k^n)$.
-Columns show different values for k, colors different values for n._
-
-![](./img/supporting/cell_dying_replicating.png)
-
-<br/>
-
-_**9.2. Probability of a cell dying or dividing at least once over time.**
-The probability of dying or dividing depends on molecule concentrations x.
-Left shows the probability of dying with $p_{die} = 1^7 / (x^7 + 1^7)$ each step,
-right the probability of dividing with $p_{divide} = x^5 / (x^5 + 15^5)$ each step.
-Colors show different molecule concentrations x._
-
-<br/>
-
-![](./img/supporting/simulated_growth.png)
-
-_**9.3. Simulated cell growth at different molecule concentrations.**
-Probability of each cell dying $p_{die}$ or dividing $p_{divide}$ at each step depends on molecule concentration x
-with $p_{die} = 1^7 / (x^7 + 1^7)$ and $p_{divide} = x^5 / (x^5 + 15^5)$.
-Simulated growth or decline of overall cell number over time is shown for cells with different concentrations x._
-
-<br/>
-
-![](./img/supporting/multiple_die_divide_conditions.png)
-
-_**9.4. Simulated cell growth with multiple kill- or replicate-conditions.**
-Simulated growth or decline of overall cell number over time
-when there are multiple kill- (d) or replicate-conditions (r) as indicated by colors.
-Probability of dying is calculated as $p_{die} = 1^7 / (x^7 + 1^7)$ at each step for each condition,
-probability of dividing is calculated as $p_{divide} = x^5 / (x^5 + 15^5)$ at each step for each condition.
-Concentration x is always 3.0 (centered 1k-1r)._
-
-<br/>
-
-![](./img/supporting/cell_growth.gif)
-
-_**9.5. Example cell growth patterns.** In 4 simulations over 1000 steps with different kill and replication rates. (Left) with moderately high kill rate and low replicaiton rate.(Middle-left) with high replication rate and low kill rate. (Middle-right) with high replication and kill rate. (Right) with moderate kill and replication rate. Cell map is black, cells are white, every 5th step was captured._
-
-<br/>
-
-## 10. Passaging
+## 9. Passaging
 
 ![](./img/supporting/random_splits.png)
 
-_**10.1. Selection by random passaging over time.**
+_**9.1. Selection by random passaging over time.**
 Simulated cell growth of 4 cell lines with different growth rates.
 Gray areas describe overall cell number at each step,
 colored bars describe a passage with colors indicating relative cell line abundances
@@ -306,51 +251,5 @@ with probabilities $p_{divide} = x^5 / (x^5 + 15^5)$ and $p_{die} = 1^7 / (x^7 +
 Cell lines differ in their intracellular x concentrations as indicated by colors.
 Passaging is always done randomly when total cell number reaches 7000.
 Rows show different passaging ratios._
-
-<br/>
-
-![](./img/supporting/biased_splits.png)
-
-_**10.2. Selection by biased passaging over time.**
-Simulated cell growth of 4 cell lines with different growth rates.
-Gray areas describe overall cell number at each step,
-colored bars describe a passage with colors indicating relative cell line abundances
-before the passage.
-At each step a cell can divide or die depending on molecule concentration x
-with probabilities $p_{divide} = x^5 / (x^5 + 15^5)$ and $p_{die} = 1^7 / (x^7 + 1^7)$ respectively.
-Cell lines differ in their intracellular x concentrations as indicated by colors.
-Passaging is always done in a biased way with split ratio 0.2 when total cell number reaches 7000.
-During passaging a bias factor increases the tendency to sample the same amount of cells of every cell line.
-Rows show different values for this bias factor._
-
-<br/>
-
-## 11. Kinetics Constants
-
-![](./img/supporting/mm_kinetics.png)
-
-_**11.1. Miachelis-Menten kinetics for multiple substrates.**
-Plots show y over x with $y = V_{max} x^n / (x^n + K_m)$.
-Parameters are always Vmax=1.0, Km=1.0, n=1 except for where they are varyied as indicated by colors._
-
-<br/>
-
-![](./img/supporting/allosteric_modulation.png)
-
-_**11.2. Allosteric modulation with cooperativity over ligand concentration.**
-Modulation is $y = x^h / (x^h + K_a)$ where h is the hill coefficient and K_a the ligand concentration
-producing half occupation.
-Top row shows negative cooperativity (-h), bottom row positive (h).
-Columns show different values for K_a, colors different values for h._
-
-<br/>
-
-![](./img/supporting/constant_distributions.png)
-
-_**11.3. Vmax, Km, Ka distributions of randomly generated proteins.**
-Upper row on linear scale, lower row on log10 scale.
-Proteins are from 1000 cells with random genomes of length 1000 each.
-Reaction kinetics have a Km range of 0.01 to 100 and a Vmax range of 0.001 to 100.
-Dashed lines with text describe medians._
 
 <br/>

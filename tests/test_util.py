@@ -8,19 +8,6 @@ from magicsoup.core.config import CODON_SIZE
 from tests.util import idxtensor
 
 
-@pytest.mark.parametrize(
-    "seq, exp",
-    [
-        ("ACTGATTA", "TAATCAGT"),
-        ("GGAAT", "ATTCC"),
-        ("", ""),
-    ],
-)
-def test_reverse_complement(seq: str, exp: str) -> None:
-    res = util.reverse_complement(seq)
-    assert res == exp
-
-
 # fmt: off
 @pytest.mark.parametrize("tmp, exp", [
     ("ANC", ["ATC", "ACC", "AGC", "AAC"]),

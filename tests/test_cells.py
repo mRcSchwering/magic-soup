@@ -32,14 +32,14 @@ def _assert_empty_values(cells: Cells) -> None:
     assert (cells.molecules == 0.0).all()
 
     # test empty value of kinetics parameters
-    assert (cells.v_max == 0.0).all()
-    assert (cells.k_f == 0.0).all()
-    assert (cells.k_b == 0.0).all()
-    assert (cells.k_r == 0.0).all()
-    assert (cells.N_f == 0).all()
-    assert (cells.N_b == 0).all()
-    assert (cells.N_h == 0).all()
-    assert (cells.N_e == 0).all()
+    assert (cells._v_max == 0.0).all()
+    assert (cells._k_f == 0.0).all()
+    assert (cells._k_b == 0.0).all()
+    assert (cells._k_r == 0.0).all()
+    assert (cells._N_f == 0).all()
+    assert (cells._N_b == 0).all()
+    assert (cells._N_h == 0).all()
+    assert (cells._N_e == 0).all()
 
 
 def _assert_shapes(cells: Cells) -> None:
@@ -50,17 +50,17 @@ def _assert_shapes(cells: Cells) -> None:
     assert cells.ages.shape == (cells.c,)
     assert cells.generations.shape == (cells.c,)
     assert cells.proteins.shape == (cells.c,)
-    assert cells.molecules.shape == (cells.c, len(cells.chemistry.molecules))
+    assert cells.molecules.shape == (cells.c, cells.m)
 
     # check exact shape of kinetics parameters
-    assert cells.v_max.shape == (cells.c, cells.p)
-    assert cells.k_f.shape == (cells.c, cells.p)
-    assert cells.k_b.shape == (cells.c, cells.p)
-    assert cells.k_r.shape == (cells.c, cells.p)
-    assert cells.N_f.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_b.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_h.shape == (cells.c, cells.p, cells.m)
-    assert cells.N_e.shape == (cells.c, cells.p, cells.m)
+    assert cells._v_max.shape == (cells.c, cells.p)
+    assert cells._k_f.shape == (cells.c, cells.p)
+    assert cells._k_b.shape == (cells.c, cells.p)
+    assert cells._k_r.shape == (cells.c, cells.p)
+    assert cells._N_f.shape == (cells.c, cells.p, 2 * cells.m)
+    assert cells._N_b.shape == (cells.c, cells.p, 2 * cells.m)
+    assert cells._N_h.shape == (cells.c, cells.p, 2 * cells.m)
+    assert cells._N_e.shape == (cells.c, cells.p, 2 * cells.m)
 
 
 def _asser_dtypes(cells: Cells) -> None:
@@ -74,14 +74,14 @@ def _asser_dtypes(cells: Cells) -> None:
     assert cells.molecules.dtype == FTYPE
 
     # check exact shape of kinetics parameters
-    assert cells.v_max.dtype == FTYPE
-    assert cells.k_f.dtype == FTYPE
-    assert cells.k_b.dtype == FTYPE
-    assert cells.k_r.dtype == FTYPE
-    assert cells.N_f.dtype == ITYPE
-    assert cells.N_b.dtype == ITYPE
-    assert cells.N_h.dtype == ITYPE
-    assert cells.N_e.dtype == FTYPE
+    assert cells._v_max.dtype == FTYPE
+    assert cells._k_f.dtype == FTYPE
+    assert cells._k_b.dtype == FTYPE
+    assert cells._k_r.dtype == FTYPE
+    assert cells._N_f.dtype == ITYPE
+    assert cells._N_b.dtype == ITYPE
+    assert cells._N_h.dtype == ITYPE
+    assert cells._N_e.dtype == FTYPE
 
 
 @pytest.mark.parametrize(
@@ -190,8 +190,8 @@ def test_get_utilization(cells: Cells) -> None:
     # "kill" 90 cells (fewer alive, params zeroed) lowers utilization
     dead = idxtensor(list(range(90)))
     cells.alive[dead] = False
-    cells.v_max[dead] = 0.0
-    cells.k_r[dead] = 0.0
+    cells._v_max[dead] = 0.0
+    cells._k_r[dead] = 0.0
     u_sparse = cells.get_utilization()
     assert u_sparse < u_full
 
@@ -214,10 +214,10 @@ def test_proteome_parameter_distros(cells: Cells) -> None:
     genomes = StrArray.from_strings([random_genome() for _ in range(n)])
     cells.update_genomes(genomes=genomes, idxs=idxs)
 
-    k_e = (cells.k_b / cells.k_f)[cells.v_max != 0.0]
-    k_m = (cells.k_f * cells.k_b).sqrt()[cells.v_max != 0.0]
-    v_max = cells.v_max[cells.v_max != 0.0]
-    n_h = cells.N_h[cells.N_h != 0].abs().float()
+    k_e = (cells._k_b / cells._k_f)[cells._v_max != 0.0]
+    k_m = (cells._k_f * cells._k_b).sqrt()[cells._v_max != 0.0]
+    v_max = cells._v_max[cells._v_max != 0.0]
+    n_h = cells._N_h[cells._N_h != 0].abs().float()
     q = ftensor([0.05, 0.1, 0.5, 0.9, 0.95])
 
     # Ke: median 1, 80% range (1e-5, 1e5), 90% range (1e-10, 1e10)
@@ -260,13 +260,13 @@ def test_update_genomes_randomly(rng: random.Random, cells: Cells) -> None:
         assert cells.genomes[idxs.cpu().numpy()].tolist() == genomes.tolist()
 
         # check at least some non-placeholder values
-        denstensors = [cells.v_max, cells.k_b, cells.k_f, cells.N_f, cells.N_b]
+        denstensors = [cells._v_max, cells._k_b, cells._k_f, cells._N_f, cells._N_b]
         for tens in denstensors:
             per_cell = (tens[idxs] != 0).sum(tuple(range(1, tens.ndim)))
             assert (per_cell > 0).sum() / n > 0.8  # a few empty proteomes possible
 
         # check protein counts
-        prot_exp = ((cells.v_max != 0.0) | (cells.k_r != 0)).sum(dim=1).to(IDXTYPE)
+        prot_exp = ((cells._v_max != 0.0) | (cells._k_r != 0)).sum(dim=1).to(IDXTYPE)
         torch.testing.assert_close(cells.proteins, prot_exp)
 
     assert cells.p > p_init
@@ -386,8 +386,8 @@ def test_copy_proteomes(rng: random.Random, cells: Cells, c: int, n: int) -> Non
     _asser_dtypes(cells)
 
     # values were copied
-    ftensors = [cells.v_max, cells.k_b, cells.k_f, cells.k_r, cells.N_e]
-    itensors = [cells.N_b, cells.N_f, cells.N_h]
+    ftensors = [cells._v_max, cells._k_b, cells._k_f, cells._k_r, cells._N_e]
+    itensors = [cells._N_b, cells._N_f, cells._N_h]
     for tens in ftensors + itensors:
         torch.testing.assert_close(tens[from_idxs], tens[to_idxs])
 
@@ -412,14 +412,14 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     proteins = cells.proteins.clone()
     molecules = cells.molecules.clone()
 
-    v_max = cells.v_max.clone()
-    k_f = cells.k_f.clone()
-    k_b = cells.k_b.clone()
-    k_r = cells.k_r.clone()
-    N_f = cells.N_f.clone()
-    N_b = cells.N_b.clone()
-    N_h = cells.N_h.clone()
-    N_e = cells.N_e.clone()
+    v_max = cells._v_max.clone()
+    k_f = cells._k_f.clone()
+    k_b = cells._k_b.clone()
+    k_r = cells._k_r.clone()
+    N_f = cells._N_f.clone()
+    N_b = cells._N_b.clone()
+    N_h = cells._N_h.clone()
+    N_e = cells._N_e.clone()
 
     # save state
     cells.save_state(statedir=statedir)
@@ -442,11 +442,11 @@ def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
     assert (cells.molecules == molecules).all()
 
     # check kinetics parameters
-    assert (cells.v_max == v_max).all()
-    assert (cells.k_f == k_f).all()
-    assert (cells.k_b == k_b).all()
-    assert (cells.k_r == k_r).all()
-    assert (cells.N_f == N_f).all()
-    assert (cells.N_b == N_b).all()
-    assert (cells.N_h == N_h).all()
-    assert (cells.N_e == N_e).all()
+    assert (cells._v_max == v_max).all()
+    assert (cells._k_f == k_f).all()
+    assert (cells._k_b == k_b).all()
+    assert (cells._k_r == k_r).all()
+    assert (cells._N_f == N_f).all()
+    assert (cells._N_b == N_b).all()
+    assert (cells._N_h == N_h).all()
+    assert (cells._N_e == N_e).all()

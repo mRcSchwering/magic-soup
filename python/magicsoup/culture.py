@@ -6,16 +6,13 @@ import torch
 from magicsoup.chemistry import Chemistry
 from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs
 
-# TODO: add docstrings to all attributes (below attribute)
 
-
-class MooreNeighborhood(TensorClass):
-    """
-    Describe Moore neighborhood on periodic N x N grid
+class _MooreNeighborhood(TensorClass):
+    """Describe Moore neighborhood on periodic N x N grid
 
     Arguments:
         N: side length of grid
-        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
+        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.core.tensorclass.TensorClass]
     """
 
     def __init__(self, N: int, tensor_kwargs: TensorKwargs | None = None) -> None:
@@ -60,13 +57,12 @@ class CultureKwargs(TypedDict, total=False):
 
 
 class Culture(TensorClass):
-    r"""
-    Represents a cell culture on a periodic 2D map.
+    """Represents a cell culture on a periodic 2D map.
 
     Arguments:
-        chemistry: Simulation [Chemistry][magicsoup.containers.Chemistry]
+        chemistry: Simulation [Chemistry][magicsoup.chemistry.Chemistry]
         map_size: Number of voxels along one side of the square map
-        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.util.TensorClass]
+        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.core.tensorclass.TensorClass]
 
     The cell culture is a periodic (torus wrap) 2D grid of voxels represented by tensors.
     Each voxel can contain molecules and it can contain at most one cell.
@@ -78,7 +74,7 @@ class Culture(TensorClass):
     All empty voxels in this map have value -1.
 
     Molecule concentrations are managed on `molecule_map` which is a (m, N, N) float tensor, `m` representing molecule species.
-    Molecule species are ordered as in [Chemistry][magicsoup.containers.Chemistry].
+    Molecule species are ordered as in [Chemistry][magicsoup.chemistry.Chemistry].
     _E.g._ `molecule_map[1]` is the concentration field of `chemistry.molecules[1]`.
     Molecules can diffuse across the molecule map.
 
@@ -100,27 +96,31 @@ class Culture(TensorClass):
     ):
         super().__init__(**(tensor_kwargs or {}))
         N = map_size
+
         self.N2: int = N**2
+        """Total number of voxels"""
+
         self.map_size: int = N
+        """Number of voxels along one side of the square map"""
 
-        m = len(chemistry.molecules)
-        self.n_molecules: int = m
-
-        # all possible voxel positions (row, col)
+        # all possible voxel coordinates (row, col)
         self.all_positions: T = self._get_all_positions()  # (N², 2)
+        """All voxel coordinates (row, column) as (N², 2) index tensor"""
 
         # all N x N voxels with cell idxs, -1 for empty voxels (N, N)
         self.cell_map: T = self.idxfull(N, N, value=-1)
+        """Map as (N, N) index tensor with cell indexes and empty voxels -1."""
 
         # all N x N voxels with molecule concentrations (m, N, N)
+        m = len(chemistry.molecules)
         self.molecule_map: T = self.fzeros(m, N, N)
+        """Molecule concentrations on map as (m, N, N) float tensor."""
 
         # manage Moore Neighborhoods
-        self._nbh = MooreNeighborhood(N=N, tensor_kwargs=tensor_kwargs)
+        self._nbh = _MooreNeighborhood(N=N, tensor_kwargs=tensor_kwargs)
 
     def get_cell_neighbor_pairs(self) -> T:
-        """
-        Get all unique pairs of neighbouring cells.
+        """Get all unique pairs of neighbouring cells.
 
         Returns:
             (k, 2) cell index tensor of all k unique cell neighbors
@@ -151,8 +151,7 @@ class Culture(TensorClass):
         return torch.stack((src[mask], nb_voxels[mask]), dim=1)  # (k, 2)
 
     def get_cell_coords(self) -> T:
-        """
-        Get current coordinates of all cells on cell map.
+        """Get current coordinates of all cells on cell map.
 
         Returns:
             (N², 2) index coordinates tensor encoding all cells with row and column (<= N)
@@ -174,8 +173,7 @@ class Culture(TensorClass):
         return pos[: self.N2]  # (N², 2) remove dummy row
 
     def get_random_free_voxels(self, mask: T | None = None) -> T:
-        """
-        Get unoccupied random voxels
+        """Get unoccupied random voxels
 
         Arguments:
             mask: (c,) bool tensor of slots to get free voxels for;
@@ -211,8 +209,7 @@ class Culture(TensorClass):
         return voxels
 
     def update_cell_map(self, idx_map: T) -> None:
-        """
-        Update indices of existing cells on the cell map
+        """Update indices of existing cells on the cell map
 
         Arguments:
             idx_map: (c,) index tensor mapping each old cell index to its new index,
@@ -223,11 +220,10 @@ class Culture(TensorClass):
         flat_cell_map[:] = torch.where(flat_cell_map >= 0, tmp_map, flat_cell_map)
 
     def place_cells(self, voxels: T) -> None:
-        """
-        Place cells on the cell map
+        """Place cells on the cell map
 
         Arguments:
-            `voxels`: (c,) index tensor (c <= N²) containing `voxel[i]` for cell `i`, -1 for unused.
+            voxels: (c,) index tensor (c <= N²) containing `voxel[i]` for cell `i`, -1 for unused.
 
         This method doesn't guarantee that a cell or voxel will be in use twice.
         """
@@ -235,8 +231,7 @@ class Culture(TensorClass):
         flat_cell_map[:] = self.idxmap_scatter(tgt=flat_cell_map, src=voxels)
 
     def migrate_cells_randomly(self, mask: T, n_rounds: int = 3) -> T:
-        """
-        Let cells migrate randomly around their Moore neighbourhood
+        """Let cells migrate randomly around their Moore neighbourhood
 
         Arguments:
             mask: (c,) bool tensor, which cells attempt to migrate (c <= N²)
@@ -280,8 +275,7 @@ class Culture(TensorClass):
         return mask & ~still  # (c,) successfully migrated
 
     def divide_cells(self, mask: T, n_rounds: int = 3) -> tuple[T, T]:
-        """
-        Resolve free-voxel contention for dividing cells.
+        """Resolve free-voxel contention for dividing cells.
 
         Arguments:
             mask: (c,) bool tensor, which cells attempt to divide (c <= N²)
@@ -335,8 +329,7 @@ class Culture(TensorClass):
         return torch.where(has_cell, coords[..., 0] * n, 0) + coords[..., 1]
 
     def save_state(self, statedir: Path) -> None:
-        """
-        Save current state
+        """Save current state
 
         Arguments:
             statedir: Directory to store files in
@@ -349,12 +342,12 @@ class Culture(TensorClass):
         torch.save(self.molecule_map, statedir / "molecule_map.pt")
 
     def load_state(self, statedir: Path) -> None:
-        """
-        Load a saved state.
-        The state had to be saved with [save_state()][.save_state] previously.
+        """Load a saved state.
 
         Arguments:
             statedir: Directory that contains all files of that state
+
+        The state had to be saved with [save_state()][magicsoup.culture.Culture.save_state] previously.
         """
         statedir = statedir / type(self).__name__
         self.cell_map[:] = torch.load(statedir / "cell_map.pt", map_location=self.device)

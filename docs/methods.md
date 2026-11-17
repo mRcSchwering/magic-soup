@@ -2,7 +2,7 @@
 
 ## Diffusion
 
-As mentioned in [Mechanics > Physics](./mechanics.md#physics) the world map is seen as a square periodic 2D grid of $N^2$ voxels.
+As mentioned in [Mechanics > World Map](./mechanics.md#world-map) the world map is seen as a square periodic 2D grid of $N^2$ voxels.
 Each voxel is a cube of side length $\Delta x$.
 Molecule concentrations are modelled as well-mixed voxels in a [finite difference system](https://en.wikipedia.org/wiki/Finite_difference_method).
 Flux from voxel $i$ to an adjacent voxel $j$ is
@@ -57,7 +57,7 @@ Additionally, the concentrations are guaranteed to not become negative.
 
 ## Permeation
 
-As mentioned in [Mechanics > Physics](./mechanics.md#physics) a cell is approximated as a sphere swimming in a voxel of medium.
+As mentioned in [Mechanics > World Map](./mechanics.md#world-map) a cell is approximated as a sphere swimming in a voxel of medium.
 With [permeability coefficient](https://en.wikipedia.org/wiki/Permeability_(porous_media)) $P$ if the intracellular concentration of a molecule is $c_i$ and the extracellular concentration is $c_e$ then the flux
 $J_{e \rightarrow i} = P (c_e - c_i)$
 creates

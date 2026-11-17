@@ -11,7 +11,7 @@ def _run_simulation(reactions: list[ms.Reaction], label: str, n_seconds=1000) ->
     chemistry = ms.Chemistry(molecules=MOLECULES, reactions=reactions)
     E = torch.tensor([d.energy for d in chemistry.molecules], dtype=torch.double)
     world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 10})
-    world.degradation.decay[:] = 1.0  # degradation would overshadow reactions
+    world.degradation._decay[:] = 1.0  # degradation would overshadow reactions
     world.culture.molecule_map[:] = 10.0
     N = world.culture.map_size
 

@@ -19,14 +19,14 @@ def _plot_distributions_continuous():
     N = world.culture.map_size
     genomes = [ms.random_genome() for _ in range(N)]
     idxs = world.spawn_cells(genomes=genomes)
-    is_prot = (world.cells.N_e[idxs] != 0).any(dim=2)
-    k_e = world.cells.k_b[idxs] / world.cells.k_f[idxs]
+    is_prot = (world.cells._N_e[idxs] != 0).any(dim=2)
+    k_e = world.cells._k_b[idxs] / world.cells._k_f[idxs]
 
     df = pd.DataFrame(
         {
             "Ke": k_e[is_prot].flatten(),
-            "Vmax [mM/s]": world.cells.v_max[idxs][is_prot].flatten(),
-            "Km [mM]": world.cells.k_f[idxs][is_prot].flatten(),
+            "Vmax [mM/s]": world.cells._v_max[idxs][is_prot].flatten(),
+            "Km [mM]": world.cells._k_f[idxs][is_prot].flatten(),
         }
     )
     stats = df.describe(percentiles=[0.1, 0.5, 0.9])
@@ -60,10 +60,10 @@ def _plot_distributions_discrete():
     N = world.culture.map_size
     genomes = [ms.random_genome() for _ in range(N**2)]
     idxs = world.spawn_cells(genomes=genomes)
-    is_prot = (world.cells.N_e[idxs] != 0).any(dim=2)
-    N_e = world.cells.N_b[idxs][is_prot] - world.cells.N_f[idxs][is_prot]
+    is_prot = (world.cells._N_e[idxs] != 0).any(dim=2)
+    N_e = world.cells._N_b[idxs][is_prot] - world.cells._N_f[idxs][is_prot]
     N_e = N_e[N_e != 0].flatten()
-    H = world.cells.N_h[idxs][is_prot]
+    H = world.cells._N_h[idxs][is_prot]
     H = H[H != 0].flatten()
 
     df = pd.DataFrame(

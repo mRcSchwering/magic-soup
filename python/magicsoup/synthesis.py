@@ -7,108 +7,100 @@ from magicsoup.world import World
 
 
 class CatalyticDomainSynthesizer:
-    """
-    Factory for generating nucleotide sequences with [CatalyticDomains][magicsoup.biology.CatalyticDomain].
+    """Factory for generating nucleotide sequences with [CatalyticDomains][magicsoup.biology.CatalyticDomain].
 
     Arguments:
-        reaction: Tuple of `(substrates, products)` from [Chemistry][magicsoup.biology.Chemistry]
-            where both `substrates` and `products` are lists of [Molecules][magicsoup.biology.Molecule].
-
-    For stoichiometric coefficients > 1, list the molecule species multiple times.
-    E.g. for `2A + B <-> C` use `reaction=([A, A, B], [C])`
-    when `A,B,C` are molecule A, B, C instances.
+        reaction: Reaction to catalyze
     """
 
     def __init__(self, reaction: Reaction):
-        self.reaction = reaction
+        self._reaction = reaction
 
     def validate(self, world: World):
         """Validate this domain factory's attributes"""
-        if self.reaction not in world.chemistry.reactions:
+        if self._reaction not in world.chemistry.reactions:
             raise ValueError(
-                f"CatalyticDomainFact has this reaction defined: {self.reaction}."
+                f"CatalyticDomainSynthesizer has this reaction defined: {self._reaction}."
                 " But this world's chemistry doesn't define this reaction."
             )
 
     def gen_coding_sequence(self, world: World, rng: random.Random = DEFAULT_RNG) -> str:  # pylint: disable=W0613
         """Generate a nucleotide sequence for this domain"""
-        react_2_tokens = world.cells.proteomics.reaction_map.react_2_tokens
+        react_2_tokens = world.cells.proteomics._reaction_map.react_2_tokens  # pylint: disable=W0212
         return world.cells.genomics.generate_domain_seq(
-            domain_type=DomainType.CATALYTIC, tokens=react_2_tokens[self.reaction]
+            domain_type=DomainType.CATALYTIC, tokens=react_2_tokens[self._reaction]
         )
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.reaction})"
+        return f"{type(self).__name__}({self._reaction})"
 
     def __str__(self) -> str:
-        return str(self.reaction)
+        return str(self._reaction)
 
 
 class TransporterDomainSynthesizer:
-    """
-    Factory for generating nucleotide sequences with [TransporterDomains][magicsoup.biology.TransporterDomain].
+    """Factory for generating nucleotide sequences with [TransporterDomains][magicsoup.biology.TransporterDomain].
 
     Arguments:
-        molecule: [Molecules][magicsoup.biology.Molecule] which can be transported into or out of the cell by this domain.
+        molecule: Molecule which can be transported by this domain.
     """
 
     def __init__(self, molecule: Molecule):
-        self.molecule = molecule
+        self._molecule = molecule
 
     def validate(self, world: World):
         """Validate this domain factory's attributes"""
-        if self.molecule not in world.chemistry.molecules:
+        if self._molecule not in world.chemistry.molecules:
             raise ValueError(
-                f"TransporterDomainFact has this molecule defined: {self.molecule}."
+                f"TransporterDomainSynthesizer has this molecule defined: {self._molecule}."
                 " This world's chemistry doesn't define this molecule species."
             )
 
     def gen_coding_sequence(self, world: World, rng: random.Random = DEFAULT_RNG) -> str:  # pylint: disable=W0613
         """Generate a nucleotide sequence for this domain"""
-        mol_2_tokens = world.cells.proteomics.transport_map.mol_2_tokens
+        mol_2_tokens = world.cells.proteomics._transport_map.mol_2_tokens  # pylint: disable=W0212
         return world.cells.genomics.generate_domain_seq(
-            domain_type=DomainType.TRANSPORTER, tokens=mol_2_tokens[self.molecule]
+            domain_type=DomainType.TRANSPORTER, tokens=mol_2_tokens[self._molecule]
         )
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.molecule})"
+        return f"{type(self).__name__}({self._molecule})"
 
     def __str__(self) -> str:
-        return f"{self.molecule} transporter"
+        return f"{self._molecule} transporter"
 
 
 class RegulatoryDomainSynthesizer:
-    """
-    Factory for generating nucleotide sequences with [RegulatoryDomains][magicsoup.biology.RegulatoryDomain].
+    """Factory for generating nucleotide sequences with [RegulatoryDomains][magicsoup.biology.RegulatoryDomain].
 
     Arguments:
-        effector: Effector [Molecules][magicsoup.biology.Molecule]
+        effector: Effector molecule
     """
 
     def __init__(self, effector: Molecule):
-        self.effector = effector
+        self._effector = effector
 
     def validate(self, world: World):
         """Validate this domain factory's attributes"""
-        if self.effector not in world.chemistry.molecules:
+        if self._effector not in world.chemistry.molecules:
             raise ValueError(
-                f"RegulatoryDomainFact has this effector defined: {self.effector}."
+                f"RegulatoryDomainSynthesizer has this effector defined: {self._effector}."
                 " This world's chemistry doesn't define this molecule species."
             )
 
     def gen_coding_sequence(self, world: World, rng: random.Random = DEFAULT_RNG) -> str:
         """Generate a nucleotide sequence for this domain"""
-        eff_2_tokens = world.cells.proteomics.effector_map.eff_2_tokens
+        eff_2_tokens = world.cells.proteomics._effector_map.eff_2_tokens  # pylint: disable=W0212
         return world.cells.genomics.generate_domain_seq(
             domain_type=DomainType.REGULATORY,
-            tokens=eff_2_tokens[(self.effector, rng.choice([True, False]))],
+            tokens=eff_2_tokens[(self._effector, rng.choice([True, False]))],
         )
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.effector})"
+        return f"{type(self).__name__}({self._effector})"
 
     def __str__(self) -> str:
-        return f"{self.effector} receptor"
+        return f"{self._effector} receptor"
 
 
 type DomainSynthesizer = (
@@ -117,6 +109,14 @@ type DomainSynthesizer = (
 
 
 class ProteinSynthesizer:
+    """Factory for generating proteins with the specified attributes
+
+    Arguments:
+        catalyzed_reactions: Reactions for which to include catalytic domains
+        transported_molecules: Molecules for which to include transporter domains
+        allosteric_effectors: Molecule for which to include regulatory domains
+    """
+
     def __init__(
         self,
         catalyzed_reactions: list[Reaction] | None = None,
@@ -124,6 +124,7 @@ class ProteinSynthesizer:
         allosteric_effectors: list[Molecule] | None = None,
     ) -> None:
         self.domains: list[DomainSynthesizer] = []
+        """Domains of proteins generated by this synthesizer"""
 
         for react in catalyzed_reactions or []:
             self.domains.append(CatalyticDomainSynthesizer(reaction=react))
@@ -144,24 +145,23 @@ class ProteinSynthesizer:
 
 
 class GenomeSynthesizer:
-    """
-    Factory for generating genomes that translate into a desired proteome.
+    """Factory for generating genomes that translate into a desired proteome.
 
     Arguments:
-        world: [World][magicsoup.world.World] object in which the genome will be used
-        proteins: Desired proteins as a list of [ProteinSynthesizers][..ProteinSynthesizer].
-            Each list of domain factories represents a protein.
+        world: world in which the genome will be used
+        proteins: Desired proteins as a list of [ProteinSynthesizers][magicsoup.synthesis.ProteinSynthesizer].
         target_size: Optional target size of generated genome.
             Smallest possible genome size will be generated if `None`.
             If supplied, domains and proteins are padded with random sequences.
+        rng: Random number generator to seed sampling.
 
     The desired proteome is given as a list of proteins where each protein
     is represented by a list of domain factories.
-    As domain factories [CatalyticDomainFact][..CatalyticDomainFact],
-    [TransporterDomainFact][..TransporterDomainFact],
-    [RegulatoryDomainFact][..RegulatoryDomainFact] can be used.
+    As domain factories [CatalyticDomainSynthesizer][magicsoup.synthesis.CatalyticDomainSynthesizer],
+    [TransporterDomainSynthesizer][magicsoup.synthesis.TransporterDomainSynthesizer],
+    [RegulatoryDomainSynthesizer][magicsoup.synthesis.RegulatoryDomainSynthesizer] can be used.
 
-    Use [generate()][.generate] to sample and generate a genome.
+    Use [generate()][magicsoup.synthesis.GenomeSynthesizer.generate] to sample and generate a genome.
     There are always multiple base pair sequences which can encode the same proteome.
     Thus each generated genome might be different.
     While the generated genome will always have at least the desired domains and proteins
@@ -175,17 +175,17 @@ class GenomeSynthesizer:
         target_size: int | None = None,
         rng: random.Random = DEFAULT_RNG,
     ) -> None:
-        self.world = world
-        self.proteins = proteins
-        self.rng = rng
+        self._world = world
+        self._proteins = proteins
+        self._rng = rng
 
         for prot in proteins:
             for dom in prot.domains:
                 dom.validate(world=world)
 
         self.req_nts = sum(
-            self.world.cells.genomics.dom_size_nt * len(d.domains) + 2 * CODON_SIZE
-            for d in self.proteins
+            self._world.cells.genomics.dom_size_nt * len(d.domains) + 2 * CODON_SIZE
+            for d in self._proteins
         )
         self.target_size = self.req_nts if target_size is None else target_size
         if self.req_nts > self.target_size:
@@ -197,11 +197,11 @@ class GenomeSynthesizer:
 
     def generate(self) -> str:
         """Generate a genome with the desired proteome"""
-        return self.world.cells.genomics.generate_genome(
+        return self._world.cells.genomics.generate_genome(
             cdss=[
-                [d.gen_coding_sequence(world=self.world, rng=self.rng) for d in p.domains]
-                for p in self.proteins
+                [d.gen_coding_sequence(world=self._world, rng=self._rng) for d in p.domains]
+                for p in self._proteins
             ],
             n_pad_nts=self.target_size - self.req_nts,
-            rng=self.rng,
+            rng=self._rng,
         )
