@@ -3,12 +3,12 @@ from pathlib import Path
 import magicsoup as ms
 import pandas as pd
 import torch
-from magicsoup.examples.wood_ljungdahl import MOLECULES, REACTIONS
+from magicsoup.examples.wood_ljungdahl import molecules, reactions
 from plotnine import *  # pylint: disable=W0614,W0401
 
 
 def _run_simulation(reactions: list[ms.Reaction], label: str, n_seconds=1000) -> pd.DataFrame:
-    chemistry = ms.Chemistry(molecules=MOLECULES, reactions=reactions)
+    chemistry = ms.Chemistry(molecules=molecules, reactions=reactions)
     E = torch.tensor([d.energy for d in chemistry.molecules], dtype=torch.double)
     world = ms.World(chemistry=chemistry, culture_kwargs={"map_size": 10})
     world.degradation._decay[:] = 1.0  # degradation would overshadow reactions
@@ -37,7 +37,7 @@ def _run_simulation(reactions: list[ms.Reaction], label: str, n_seconds=1000) ->
 
 def _plot_energy():
     df0 = _run_simulation(reactions=[], label="without reactions")
-    df1 = _run_simulation(reactions=REACTIONS, label="with reactions")
+    df1 = _run_simulation(reactions=reactions, label="with reactions")
     df = pd.concat([df0, df1], ignore_index=True)
     return (
         ggplot(df, aes(x="t", y="e", color="l"))

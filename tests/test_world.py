@@ -8,7 +8,7 @@ from magicsoup.cells import Cells
 from magicsoup.core.strarray import StrArray
 from magicsoup.core.util import random_genome
 from magicsoup.culture import Culture
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup.examples.wood_ljungdahl import chemistry
 from magicsoup.mutations import Mutator
 from magicsoup.world import World
 
@@ -20,9 +20,9 @@ _RTOL = 1e-4
 
 @pytest.fixture
 def world() -> World:
-    culture = Culture(chemistry=CHEMISTRY, map_size=10)
+    culture = Culture(chemistry=chemistry, map_size=10)
     culture.molecule_map[:] = 10.0
-    return World(chemistry=CHEMISTRY, culture=culture)
+    return World(chemistry=chemistry, culture=culture)
 
 
 def _spawn_cells(world: World, n: int, x: float = 10.0, g: int = 500) -> World:
@@ -813,7 +813,7 @@ def test_saving_loading_state(world: World, tmp_path: Path) -> None:
 
 def test_saving_loading_obj(tmp_path: Path) -> None:
     world = World(
-        chemistry=CHEMISTRY,
+        chemistry=chemistry,
         kinetics_kwargs={"eps": 1e-3},
         diffusion_kwargs={"dx": 0.5},
         permeation_kwargs={"a_cell": 9},

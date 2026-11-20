@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import torch
 from magicsoup.culture import Culture
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup.examples.wood_ljungdahl import chemistry
 
 from tests.util import (
     fzeros,
@@ -38,7 +38,7 @@ def _gen_rand_cell_map(N: int, confl: float) -> torch.Tensor:
     ],
 )
 def test_get_random_free_voxels(occ: list[int], c: int | None, req: list[int]) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=3)
+    culture = Culture(chemistry=chemistry, map_size=3)
 
     # occupy cell map
     flat = culture.cell_map.view(-1)
@@ -78,7 +78,7 @@ def test_get_random_free_voxels(occ: list[int], c: int | None, req: list[int]) -
     ],
 )
 def test_place_cells(voxels: list[int]) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=3)
+    culture = Culture(chemistry=chemistry, map_size=3)
 
     # pre-occupy cell map
     i2v = {0: 0, 1: 4, 2: 7}
@@ -108,14 +108,14 @@ def test_place_cells(voxels: list[int]) -> None:
     ],
 )
 def test_update_cell_map(bfr: list, o2n: list, exp: list) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=2)
+    culture = Culture(chemistry=chemistry, map_size=2)
     culture.cell_map[:] = idxtensor(bfr)
     culture.update_cell_map(idxtensor(o2n))
     assert (culture.cell_map == idxtensor(exp)).all()
 
 
 def test_maps() -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=3)
+    culture = Culture(chemistry=chemistry, map_size=3)
 
     # should be mutable on both 2D and 1D
     culture.cell_map[0, 0] = 0
@@ -133,7 +133,7 @@ def test_maps() -> None:
         ]
     )
     exp_cell_map_flat = idxtensor([0, -1, 1, -1, 2, -1, -1, -1, 9])
-    exp_mol_map = fzeros(len(CHEMISTRY.molecules), 3, 3)
+    exp_mol_map = fzeros(len(chemistry.molecules), 3, 3)
 
     # check expectations
     torch.testing.assert_close(culture.all_positions, exp_coords)
@@ -172,7 +172,7 @@ def test_maps() -> None:
     ],
 )
 def test_get_cell_coords(cell_map: list, exp_pos: list) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
+    culture = Culture(chemistry=chemistry, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
     coords = culture.get_cell_coords()
     torch.testing.assert_close(coords, idxtensor(exp_pos))
@@ -221,7 +221,7 @@ def test_get_cell_coords(cell_map: list, exp_pos: list) -> None:
     ],
 )
 def test_get_cell_neighbor_pairs(cell_map: list, exp_pairs: list) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
+    culture = Culture(chemistry=chemistry, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
     pairs = culture.get_cell_neighbor_pairs()
     exp = idxtensor(exp_pairs) if exp_pairs else idxzeros(0, 2)
@@ -316,7 +316,7 @@ def test_get_cell_neighbor_pairs(cell_map: list, exp_pairs: list) -> None:
     ],
 )
 def test_divide_cells(cell_map: list, parents: list[int], n_exp: int) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
+    culture = Culture(chemistry=chemistry, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
 
     # which cell slots want to divide (mask over all possible slots)
@@ -360,7 +360,7 @@ def test_divide_cells(cell_map: list, parents: list[int], n_exp: int) -> None:
 def test_divide_cells_randomly(rng: random.Random) -> None:
     N = 100
     for _ in range(100):
-        culture = Culture(chemistry=CHEMISTRY, map_size=N)
+        culture = Culture(chemistry=chemistry, map_size=N)
 
         # genrate cell map
         culture.cell_map[:] = _gen_rand_cell_map(N=N, confl=0.7)
@@ -472,7 +472,7 @@ def test_divide_cells_randomly(rng: random.Random) -> None:
     ],
 )
 def test_migrate_cells_randomly(cell_map: list, idxs: list[int], exp_n: int) -> None:
-    culture = Culture(chemistry=CHEMISTRY, map_size=len(cell_map))
+    culture = Culture(chemistry=chemistry, map_size=len(cell_map))
     culture.cell_map[:] = idxtensor(cell_map)
 
     # which cell slots want to migrate (mask over all possible slots)
@@ -517,7 +517,7 @@ def test_migrate_cells_randomly(cell_map: list, idxs: list[int], exp_n: int) -> 
 def test_randomly_migrate_cells_randomly(rng: random.Random) -> None:
     N = 100
     for _ in range(100):
-        culture = Culture(chemistry=CHEMISTRY, map_size=N)
+        culture = Culture(chemistry=chemistry, map_size=N)
 
         # genrate cell map
         culture.cell_map[:] = _gen_rand_cell_map(N=N, confl=0.7)
@@ -567,7 +567,7 @@ def test_saving_loading(tmp_path: Path) -> None:
     statedir = tmp_path / "culture_state"
 
     # create culture with 70% confluency
-    culture = Culture(chemistry=CHEMISTRY)
+    culture = Culture(chemistry=chemistry)
     culture.molecule_map[:] = torch.rand_like(culture.molecule_map)
     culture.cell_map[:] = _gen_rand_cell_map(N=culture.map_size, confl=0.7)
 

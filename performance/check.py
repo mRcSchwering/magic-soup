@@ -8,7 +8,7 @@ import time
 
 import magicsoup as ms
 import torch
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup.examples.wood_ljungdahl import chemistry
 
 
 def _summary(tds: list[float]) -> str:
@@ -25,7 +25,7 @@ def _gen_genomes(n: int, s: int, d=0.1) -> list[str]:
 def spawn_cells(device: str, n: int, s: int, n_rep: int):
     tds = []
     for _ in range(n_rep):
-        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
+        world = ms.World(chemistry=chemistry, device=device)
         genomes = _gen_genomes(n=n, s=s)
         t0 = time.time()
         world.spawn_cells(genomes=genomes)
@@ -36,7 +36,7 @@ def spawn_cells(device: str, n: int, s: int, n_rep: int):
 def replicate_cells(device: str, n: int, s: int, n_rep: int):
     tds = []
     for _ in range(n_rep):
-        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
+        world = ms.World(chemistry=chemistry, device=device)
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()
@@ -48,7 +48,7 @@ def replicate_cells(device: str, n: int, s: int, n_rep: int):
 def advance_time(device: str, n: int, s: int, n_rep: int):
     tds = []
     for _ in range(n_rep):
-        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
+        world = ms.World(chemistry=chemistry, device=device)
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()
@@ -58,12 +58,12 @@ def advance_time(device: str, n: int, s: int, n_rep: int):
 
 
 def mutations(device: str, n: int, s: int, n_rep: int):
-    world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
+    world = ms.World(chemistry=chemistry, device=device)
     genomes = _gen_genomes(n=n, s=s)
     world.spawn_cells(genomes=genomes)
     tds = []
     for _ in range(n_rep):
-        world = ms.World(chemistry=CHEMISTRY, tensor_kwargs={"device": device})
+        world = ms.World(chemistry=chemistry, device=device)
         genomes = _gen_genomes(n=n, s=s)
         world.spawn_cells(genomes=genomes)
         t0 = time.time()

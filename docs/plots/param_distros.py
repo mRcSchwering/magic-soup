@@ -4,7 +4,7 @@ import magicsoup as ms
 import matplotlib.patheffects as path_effects
 import numpy as np
 import pandas as pd
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup.examples.wood_ljungdahl import chemistry
 from mizani.formatters import percent_format
 from plotnine import *  # pylint: disable=W0614,W0401
 
@@ -15,7 +15,7 @@ PE_WHITE_OUTLINE = [
 
 
 def _plot_distributions_continuous():
-    world = ms.World(chemistry=CHEMISTRY)
+    world = ms.World(chemistry=chemistry)
     N = world.culture.map_size
     genomes = [ms.random_genome() for _ in range(N)]
     idxs = world.spawn_cells(genomes=genomes)
@@ -56,7 +56,7 @@ def _plot_distributions_continuous():
 
 
 def _plot_distributions_discrete():
-    world = ms.World(chemistry=CHEMISTRY)
+    world = ms.World(chemistry=chemistry)
     N = world.culture.map_size
     genomes = [ms.random_genome() for _ in range(N**2)]
     idxs = world.spawn_cells(genomes=genomes)

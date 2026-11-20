@@ -26,3 +26,5 @@
 
 ::: magicsoup.core.strarray
 
+::: magicsoup.core.util
+

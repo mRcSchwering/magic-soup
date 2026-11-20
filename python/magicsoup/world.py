@@ -9,9 +9,9 @@ import torch
 from magicsoup.biology import Cell
 from magicsoup.cells import Cells, CellsKwargs
 from magicsoup.chemistry import Chemistry
-from magicsoup.core.config import DEFAULT_RNG
+from magicsoup.core.config import DEFAULT_DEVICE, DEFAULT_RNG
 from magicsoup.core.strarray import StrArray
-from magicsoup.core.tensorclass import T, TensorClass, TensorKwargs, iter_tensorclasses
+from magicsoup.core.tensorclass import T, TensorClass, iter_tensorclasses
 from magicsoup.core.util import CPU_Unpickler, randstr
 from magicsoup.culture import Culture, CultureKwargs
 from magicsoup.genomics import Genomics, GenomicsKwargs
@@ -34,6 +34,10 @@ class World(TensorClass):
 
     Arguments:
         chemistry: [Chemistry][magicsoup.chemistry.Chemistry] definition
+        time_step: minimum time step in s (seconds)
+        v_cell: volume of a cell in µm³ (cubic micro meter)
+        v_voxel: volume of a cell [Culture][magicsoup.culture.Culture] voxel in µm³ (cubic micro meter)
+        device: PyTorch [device](https://docs.pytorch.org/docs/main/accelerator/device.html)
         genomics: [Genomics][magicsoup.genomics.Genomics] mechanisms
         mutator: default [Mutator][magicsoup.mutations.Mutator]
         proteomics: [Proteomics][magicsoup.proteomics.Proteomics] mechanisms
@@ -43,9 +47,6 @@ class World(TensorClass):
         degradation: molecule [Degradation][magicsoup.physics.Degradation] mechanism
         culture: cell [Culture][magicsoup.culture.Culture]
         cells: [Cells][magicsoup.cells.Cells] representation
-        time_step: minimum time step in s (seconds)
-        v_cell: volume of a cell in µm³ (cubic micro meter)
-        v_voxel: volume of a cell [Culture][magicsoup.culture.Culture] voxel in µm³ (cubic micro meter)
         kinetics_kwargs: Kwargs passed to [Kinetics][magicsoup.kinetics.Kinetics] if it wasn't provided.
         diffusion_kwargs: Kwargs passed to [Diffusion][magicsoup.physics.Diffusion] it it wasn't provided.
         permeation_kwargs: Kwargs passed to [Permeation][magicsoup.physics.Permeation] it it wasn't provided.
@@ -54,20 +55,45 @@ class World(TensorClass):
         genomics_kwargs: Kwargs passed to [Genomics][magicsoup.genomics.Genomics] if it wasn't provided.
         mutator_kwargs: Kwargs passed to [Mutator][magicsoup.mutations.Mutator] if it wasn't provided.
         proteomics_kwargs: Kwargs passed to [Proteomics][magicsoup.proteomics.Proteomics] if it wasn't provided.
-        tensor_kwargs: Kwargs passed to [TensorClass][magicsoup.core.tensorclass.TensorClass]
         rng: Random number generator to seed sampling.
 
+    All heavily parallel processing is done on [PyTorch tensors](https://docs.pytorch.org/tutorials/beginner/introyt/tensors_deeper_tutorial.html).
+    They can be defined on a GPU by controlling their [device](https://docs.pytorch.org/docs/main/accelerator/device.html).
+    Here, either use the `device` argument or have environment variable `DEVICE` set.
 
-    methods during simulations (performant)
+    Use [spawn_cells()][magicsoup.world.World.spawn_cells] or [add_cells()][magicsoup.world.World.add_cells]
+    to add cells and then run the simulation using [resuspend_cells()][magicsoup.world.World.resuspend_cells],
+    [migrate_cells()][magicsoup.world.World.migrate_cells], [divide_cells()][magicsoup.world.World.divide_cells],
+    [kill_cells()][magicsoup.world.World.kill_cells], [mutate_cells()][magicsoup.world.World.mutate_cells],
+    or [advance_time()][magicsoup.world.World.advance_time]. These methods are performance optimized.
+    To manipulate culture medium use `world.culture` (see [Culture](magicsoup.culture.Culture)).
+    To read cell parameters such as generation, age, intracellular molecule concentrations use
+    the attributes on `world.cells` (see [Cells][magicsoup.cells.Cells]). When handling tensors
+    make sure to avoid [host synchronization](https://docs.nvidia.com/dl-cuda-graph/1.0/torch-cuda-graph/sync-free-code.html).
 
-    handles during simulation (cells, culture)
+    When cells grow the underlying tensors grow as well (with hysteresis).
+    These tensors don't automatically shrink when cells die.
+    This avoids frequent re-sizing but also means a lot of unnecessary computation.
+    You can use [compact()][magicsoup.world.World.compact] to shrink tensors again.
+    This re-creates all tensors and forces host synchronization.
+    So, it shouldn't be called in a simulation hot path.
+    Ideally, it is called after actions from which you know, tensors will have shrunk (e.g. after passaging cells).
 
-    tensors, change device, use device when loading world onto another device
+    When initializing `World` initially save it once with [save()][magicsoup.world.World.save].
+    This pickles the entire object and all related objects.
+    Later it can be loaded again with [from_file()][magicsoup.world.World.from_file].
+    For checkpointing during the simulation use the faster [save_state()][magicsoup.world.World.save_state].
+    It only saves the simulation state (all parts that change during the simulation).
+    A particular state can be loaded later with [load_state()][magicsoup.world.World.load_state].
     """
 
     def __init__(
         self,
         chemistry: Chemistry,
+        time_step: float = 1.0,
+        v_cell: float = 1.0,
+        v_voxel: float = 1000.0,
+        device: str = DEFAULT_DEVICE,
         genomics: Genomics | None = None,
         mutator: Mutator | None = None,
         proteomics: Proteomics | None = None,
@@ -77,9 +103,6 @@ class World(TensorClass):
         degradation: Degradation | None = None,
         culture: Culture | None = None,
         cells: Cells | None = None,
-        time_step: float = 1.0,
-        v_cell: float = 1.0,
-        v_voxel: float = 1000.0,
         kinetics_kwargs: KineticsKwargs | None = None,
         diffusion_kwargs: DiffusionKwargs | None = None,
         permeation_kwargs: PermeationKwargs | None = None,
@@ -88,10 +111,9 @@ class World(TensorClass):
         genomics_kwargs: GenomicsKwargs | None = None,
         mutator_kwargs: MutatorKwargs | None = None,
         proteomics_kwargs: ProteomicsKwargs | None = None,
-        tensor_kwargs: TensorKwargs | None = None,
         rng: random.Random = DEFAULT_RNG,
     ):
-        super().__init__(**(tensor_kwargs or {}))
+        super().__init__(device=device)
 
         self._dt = time_step
         self._v_cell = v_cell
@@ -108,7 +130,7 @@ class World(TensorClass):
             Culture(
                 **(culture_kwargs or {}),
                 chemistry=chemistry,
-                tensor_kwargs=tensor_kwargs,
+                tensor_kwargs={"device": device},
             )
         )
         """Cell culture with cell and molecule map"""
@@ -121,7 +143,7 @@ class World(TensorClass):
             proteomics=proteomics,
             genomics_kwargs=genomics_kwargs,
             proteomics_kwargs=proteomics_kwargs,
-            tensor_kwargs=tensor_kwargs,
+            tensor_kwargs={"device": device},
             rng=rng,
         )
         """Describes all cells"""
@@ -129,7 +151,7 @@ class World(TensorClass):
         self.kinetics = kinetics or Kinetics(
             **(kinetics_kwargs or {}),
             dt=time_step,
-            tensor_kwargs=tensor_kwargs,
+            tensor_kwargs={"device": device},
         )
         """Kinetics solver"""
 
@@ -138,7 +160,7 @@ class World(TensorClass):
             diff_coeffs=[d.diffusivity for d in chemistry.molecules],
             N=self.culture.map_size,
             dt=time_step,
-            tensor_kwargs=tensor_kwargs,
+            tensor_kwargs={"device": device},
         )
         """Molecule diffusion mechanics"""
 
@@ -148,14 +170,14 @@ class World(TensorClass):
             v_cell=v_cell,
             v_vox=v_voxel,
             dt=time_step,
-            tensor_kwargs=tensor_kwargs,
+            tensor_kwargs={"device": device},
         )
         """Molecule permeation mechanics"""
 
         self.degradation = degradation or Degradation(
             half_lifes=[d.half_life for d in chemistry.molecules],
             dt=time_step,
-            tensor_kwargs=tensor_kwargs,
+            tensor_kwargs={"device": device},
         )
         """Molecule degradation mechanics"""
 

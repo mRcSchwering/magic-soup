@@ -3,7 +3,7 @@ import random
 
 import pytest
 import torch
-from magicsoup.examples.wood_ljungdahl import MOLECULES
+from magicsoup.examples.wood_ljungdahl import molecules
 from magicsoup.physics import Degradation, Diffusion, Permeation
 
 from tests.util import frand, ftensor, fzeros
@@ -80,7 +80,7 @@ def test_diffusion():
 def test_diffusion_randomly(rng: random.Random) -> None:
     N = 10
     m = 100
-    coeffs = [d.diffusivity for d in MOLECULES]
+    coeffs = [d.diffusivity for d in molecules]
     coeffs.extend([rng.uniform(0, 10) for _ in range(m - len(coeffs))])
 
     diffusion = Diffusion(diff_coeffs=coeffs, N=N)
@@ -134,7 +134,7 @@ def test_permeation(cellmols: list, expmols: list):
 @pytest.mark.slow
 def test_permeation_randomly(rng: random.Random) -> None:
     m = 100
-    coeffs = [d.permeability for d in MOLECULES]
+    coeffs = [d.permeability for d in molecules]
     coeffs.extend([rng.uniform(0, 1) for _ in range(m - len(coeffs))])
 
     permeation = Permeation(perm_coeffs=coeffs)
@@ -239,7 +239,7 @@ def test_degradation(x_: list, exp_: list) -> None:
 @pytest.mark.slow
 def test_degradation_randomly(rng: random.Random) -> None:
     m = 100
-    hfs = [d.half_life for d in MOLECULES]
+    hfs = [d.half_life for d in molecules]
     hfs.extend([rng.uniform(0, 1) for _ in range(m - len(hfs))])
 
     degradation = Degradation(half_lifes=hfs)

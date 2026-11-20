@@ -3,7 +3,7 @@ from pathlib import Path
 import magicsoup as ms
 import pandas as pd
 from magicsoup.biology import CatalyticDomain, RegulatoryDomain, TransporterDomain
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup.examples.wood_ljungdahl import chemistry
 from plotnine import *  # pylint: disable=W0614,W0401
 
 
@@ -95,7 +95,7 @@ def _plot_genome_transcripts(cell_idx: int, world: ms.World, w=14, h=0.2, gw=5, 
 
 
 def create_plots(imgs_dir: Path, transparent: bool):
-    world = ms.World(chemistry=CHEMISTRY)
+    world = ms.World(chemistry=chemistry)
     world.spawn_cells(genomes=[ms.random_genome(s=1000) for _ in range(10)])
 
     for idx in range(3):

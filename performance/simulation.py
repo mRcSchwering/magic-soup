@@ -7,16 +7,16 @@ import time
 
 import magicsoup as ms
 import torch
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup.examples.wood_ljungdahl import chemistry
 
 
 @torch.inference_mode()
 def main(map_size: int, n_steps: int, init_genome_size: int, device: str, **_):
     world = ms.World(
-        chemistry=CHEMISTRY,
+        chemistry=chemistry,
         time_step=1,  # 1s
         culture_kwargs={"map_size": map_size},
-        tensor_kwargs={"device": device},
+        device=device,
     )
     m2i = world.chemistry.molname_2_idx
     i_atp = m2i["ATP"]

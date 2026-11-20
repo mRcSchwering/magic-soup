@@ -8,9 +8,9 @@ from magicsoup.biology import (
 from magicsoup.chemistry import Molecule, Reaction
 from magicsoup.examples.wood_ljungdahl import (
     ATP,
-    CHEMISTRY,
     NADP,
     NADPH,
+    chemistry,
     co2,
     formiat,
     formylFH4,
@@ -27,7 +27,7 @@ from magicsoup.world import World
 
 @pytest.fixture
 def world() -> World:
-    return World(chemistry=CHEMISTRY)
+    return World(chemistry=chemistry)
 
 
 def _is_correct(act: Protein, exp: ProteinSynthesizer) -> bool:

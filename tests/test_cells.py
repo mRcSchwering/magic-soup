@@ -6,7 +6,7 @@ import torch
 from magicsoup.cells import Cells
 from magicsoup.core.strarray import StrArray
 from magicsoup.core.util import random_genome
-from magicsoup.examples.wood_ljungdahl import CHEMISTRY
+from magicsoup.examples.wood_ljungdahl import chemistry
 from magicsoup.genomics import Genomics
 from magicsoup.proteomics import Proteomics
 
@@ -17,8 +17,8 @@ from tests.util import ftensor, idxfull, idxtensor
 @pytest.fixture
 def cells() -> Cells:
     genomics = Genomics()
-    proteomics = Proteomics(chemistry=CHEMISTRY)
-    return Cells(chemistry=CHEMISTRY, genomics=genomics, proteomics=proteomics)
+    proteomics = Proteomics(chemistry=chemistry)
+    return Cells(chemistry=chemistry, genomics=genomics, proteomics=proteomics)
 
 
 def _assert_empty_values(cells: Cells) -> None:

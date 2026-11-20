@@ -111,7 +111,7 @@ HSCoA = Molecule("HS-CoA", 51, half_life=0.4, diffusivity=3.5e-6, permeability=0
 acetylCoA = Molecule("acetyl-CoA", 200, half_life=42, diffusivity=3.5e-6, permeability=0)
 
 
-MOLECULES = [
+molecules = [
     NADPH,
     NADP,
     ATP,
@@ -128,7 +128,7 @@ MOLECULES = [
     acetylCoA,
 ]
 
-REACTIONS = [
+reactions = [
     Reaction([co2, NADPH], [formiat, NADP]),
     Reaction([formiat, FH4, ATP], [formylFH4, ADP]),
     Reaction([formylFH4, NADPH], [methylenFH4, NADP]),
@@ -137,4 +137,4 @@ REACTIONS = [
     Reaction([methylNiACS, co2, HSCoA], [NiACS, acetylCoA]),
 ]
 
-CHEMISTRY = Chemistry(molecules=MOLECULES, reactions=REACTIONS)
+chemistry = Chemistry(molecules=molecules, reactions=reactions)

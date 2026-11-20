@@ -236,20 +236,3 @@ Energy density in J/L shown over time for a simulation that includes reactions
 in its chemistry (red) and one that doesn't (blue)._
 
 <br/>
-
-## 9. Passaging
-
-![](./img/supporting/random_splits.png)
-
-_**9.1. Selection by random passaging over time.**
-Simulated cell growth of 4 cell lines with different growth rates.
-Gray areas describe overall cell number at each step,
-colored bars describe a passage with colors indicating relative cell line abundances
-before the passage.
-At each step a cell can divide or die depending on molecule concentration x
-with probabilities $p_{divide} = x^5 / (x^5 + 15^5)$ and $p_{die} = 1^7 / (x^7 + 1^7)$ respectively.
-Cell lines differ in their intracellular x concentrations as indicated by colors.
-Passaging is always done randomly when total cell number reaches 7000.
-Rows show different passaging ratios._
-
-<br/>

@@ -17,7 +17,6 @@ from docs.plots.molecule_physics import create_plots as plot_molecule_physics
 from docs.plots.mutations import create_plots as plot_mutations
 from docs.plots.param_distros import create_plots as plot_param_distros
 from docs.plots.reaction_kinetics import create_plots as plot_reaction_kinetics
-from docs.plots.survival_replication import create_plots as plot_survival_replication
 from docs.plots.transcriptomes import create_plots as plot_transcriptomes
 
 _SUPPORTING_PLOTS: dict[str, Callable] = {
@@ -29,7 +28,6 @@ _SUPPORTING_PLOTS: dict[str, Callable] = {
     "reaction-kinetics": plot_reaction_kinetics,
     "biochemical-patterns": plot_biochemical_patterns,
     "free-energy": plot_free_energy,
-    "survival-replication": plot_survival_replication,
 }
 
 
