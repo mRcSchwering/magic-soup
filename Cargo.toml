@@ -1,14 +1,17 @@
 [package]
-name = "magicsoup"  # pyproject.toml has precedence
+name = "magicsoup" # pyproject.toml has precedence
 version = "1.0.0"  # pyproject.toml has precedence
+edition = "2021"
 
 [lib]
-name = "_lib"  # private module to be nested into Python package
+name = "_lib"           # private module to be nested into Python package
 crate-type = ["cdylib"]
 path = "rust/lib.rs"
 
 [dependencies]
-rand_distr = { version = "*" }
+rand = { version = "0.9" }
+rand_distr = { version = "0.5" }
 rayon = { version = "*" }
-rand = { version = "*" }
-pyo3 = { version = "0.20.0", features = ["extension-module"] }
+memchr = { version = "*" }
+pyo3 = { version = "0.30", features = ["extension-module", "abi3-py39"] }
+numpy = { version = "0.30" }

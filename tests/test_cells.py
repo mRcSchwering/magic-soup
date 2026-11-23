@@ -1,0 +1,452 @@
+import random
+from pathlib import Path
+
+import pytest
+import torch
+from magicsoup.cells import Cells
+from magicsoup.core.strarray import StrArray
+from magicsoup.core.util import random_genome
+from magicsoup.examples.wood_ljungdahl import chemistry
+from magicsoup.genomics import Genomics
+from magicsoup.proteomics import Proteomics
+
+from tests.config import FTYPE, IDXTYPE, ITYPE
+from tests.util import ftensor, idxfull, idxtensor
+
+
+@pytest.fixture
+def cells() -> Cells:
+    genomics = Genomics()
+    proteomics = Proteomics(chemistry=chemistry)
+    return Cells(chemistry=chemistry, genomics=genomics, proteomics=proteomics)
+
+
+def _assert_empty_values(cells: Cells) -> None:
+    # test empty values of cell parameters
+    assert all(d == "" for d in cells.genomes)
+    assert all(d == "" for d in cells.lineages)
+    assert (cells.alive == False).all()
+    assert (cells.ages == 0.0).all()
+    assert (cells.generations == 0).all()
+    assert (cells.proteins == 0).all()
+    assert (cells.molecules == 0.0).all()
+
+    # test empty value of kinetics parameters
+    assert (cells._v_max == 0.0).all()
+    assert (cells._k_f == 0.0).all()
+    assert (cells._k_b == 0.0).all()
+    assert (cells._k_r == 0.0).all()
+    assert (cells._N_f == 0).all()
+    assert (cells._N_b == 0).all()
+    assert (cells._N_h == 0).all()
+    assert (cells._N_e == 0).all()
+
+
+def _assert_shapes(cells: Cells) -> None:
+    # check exact shape of cell parameters
+    assert cells.genomes.shape == (cells.c,)
+    assert cells.lineages.shape == (cells.c,)
+    assert cells.alive.shape == (cells.c,)
+    assert cells.ages.shape == (cells.c,)
+    assert cells.generations.shape == (cells.c,)
+    assert cells.proteins.shape == (cells.c,)
+    assert cells.molecules.shape == (cells.c, cells.m)
+
+    # check exact shape of kinetics parameters
+    assert cells._v_max.shape == (cells.c, cells.p)
+    assert cells._k_f.shape == (cells.c, cells.p)
+    assert cells._k_b.shape == (cells.c, cells.p)
+    assert cells._k_r.shape == (cells.c, cells.p)
+    assert cells._N_f.shape == (cells.c, cells.p, 2 * cells.m)
+    assert cells._N_b.shape == (cells.c, cells.p, 2 * cells.m)
+    assert cells._N_h.shape == (cells.c, cells.p, 2 * cells.m)
+    assert cells._N_e.shape == (cells.c, cells.p, 2 * cells.m)
+
+
+def _asser_dtypes(cells: Cells) -> None:
+    # check exact shape of cell parameters
+    assert isinstance(cells.genomes, StrArray)
+    assert isinstance(cells.lineages, StrArray)
+    assert cells.alive.dtype == torch.bool
+    assert cells.ages.dtype == FTYPE
+    assert cells.generations.dtype == IDXTYPE
+    assert cells.proteins.dtype == IDXTYPE
+    assert cells.molecules.dtype == FTYPE
+
+    # check exact shape of kinetics parameters
+    assert cells._v_max.dtype == FTYPE
+    assert cells._k_f.dtype == FTYPE
+    assert cells._k_b.dtype == FTYPE
+    assert cells._k_r.dtype == FTYPE
+    assert cells._N_f.dtype == ITYPE
+    assert cells._N_b.dtype == ITYPE
+    assert cells._N_h.dtype == ITYPE
+    assert cells._N_e.dtype == FTYPE
+
+
+@pytest.mark.parametrize(
+    "c_req, c_exp",
+    [
+        (100, 100),  # stays at 100
+        (101, 122),  # grows including margin (20% of 101)
+        (800, 960),  # grows including margin (20% of 800)
+        (900, 1000),  # grow limited to 1000 (max)
+        (1000, 1000),  # stays at 1000 (max)
+        (83, 100),  # no shrink: stays at 100
+        (82, 100),  # no shrink: stays at 100
+        (40, 100),  # no shrink: stays at 100
+        (1, 100),  # no shrink: stays at 100
+        (0, 100),  # no shrink: stays at 100
+    ],
+)
+def test_update_c(cells: Cells, c_req: int, c_exp: int) -> None:
+    cells.dim_scaling = 0.2
+    cells.c_max = 1000
+    cells.update_c(c_req=83)  # leaves exactly c=100
+    c = cells.update_c(c_req=c_req)
+
+    # check c (update_c only grows)
+    assert cells.c == c_exp
+    assert c == cells.c
+    _assert_shapes(cells)
+    _assert_empty_values(cells=cells)
+
+
+@pytest.mark.parametrize(
+    "p_req, p_exp",
+    [
+        (100, 100),  # stays at 100
+        (101, 122),  # grows including margin (20% of 101)
+        (800, 960),  # grows including margin (20% of 800)
+        (900, 1000),  # grow limited to 1000 (max)
+        (1000, 1000),  # stays at 1000 (max)
+        (83, 100),  # no shrink: stays at 100
+        (82, 100),  # no shrink: stays at 100
+        (40, 100),  # no shrink: stays at 100
+        (1, 100),  # no shrink: stays at 100
+        (0, 100),  # no shrink: stays at 100
+    ],
+)
+def test_update_p(cells: Cells, p_req: int, p_exp: int) -> None:
+    cells.dim_scaling = 0.2
+    cells.p_max = 1000
+    cells.update_p(p_req=83)  # leaves exactly p=100
+    p = cells.update_p(p_req=p_req)
+
+    # check p (update_p only grows)
+    assert cells.p == p_exp
+    assert cells.p == p
+    _assert_shapes(cells)
+    _assert_empty_values(cells=cells)
+
+
+def test_compact_keeps_living_cells(cells: Cells) -> None:
+    cells.dim_scaling = 0.2
+    cells.c_max = 1000
+    cells.update_c(c_req=83)  # leaves exactly c=100
+
+    # simulate 50 interspersed living cells
+    idxs = list(range(0, 100, 2))
+    cells.alive[idxs] = True
+    assert cells.alive.sum() == 50
+    alive_old = cells.alive.clone()
+
+    new_idx = cells.compact()
+
+    # shrinks to 50 living + 20% hysteresis, keeping all living cells
+    assert cells.c == 60
+    assert cells.alive.sum() == 50
+
+    # old -> new map: 100 old slots, 60 kept, 40 dropped
+    assert new_idx.shape == (100,)
+    assert (new_idx == -1).sum() == 40
+
+    # living cells get distinct, valid new indices that point to living slots
+    living_new = new_idx[alive_old]
+    assert (living_new >= 0).all()
+    assert living_new.unique().numel() == 50
+    assert cells.alive[living_new].all()
+
+    _assert_shapes(cells)
+
+
+def test_get_utilization(cells: Cells) -> None:
+    cells.dim_scaling = 0.2
+    cells.c_max = 1000
+    cells.p_max = 1000
+
+    # nothing allocated -> fully utilized
+    assert cells.get_utilization() == 1.0
+
+    # fill 100 living cells with real proteomes
+    cells.update_c(c_req=100)
+    idxs = idxtensor(list(range(100)))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(100)])
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+    cells.alive[idxs] = True
+    u_full = cells.get_utilization()
+    assert 0.0 < u_full <= 1.0
+
+    # "kill" 90 cells (fewer alive, params zeroed) lowers utilization
+    dead = idxtensor(list(range(90)))
+    cells.alive[dead] = False
+    cells._v_max[dead] = 0.0
+    cells._k_r[dead] = 0.0
+    u_sparse = cells.get_utilization()
+    assert u_sparse < u_full
+
+    # compacting reclaims the slack and restores utilization
+    cells.compact()
+    assert cells.get_utilization() > u_sparse
+
+
+def test_update_empty_genome(cells: Cells) -> None:
+    idxs = idxtensor([0])
+    genomes = StrArray.from_strings([random_genome(s=0) for _ in range(1)])
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+    _asser_dtypes(cells)
+
+
+def test_proteome_parameter_distros(cells: Cells) -> None:
+    n = 1000
+    cells.update_c(c_req=n)
+    idxs = idxtensor(list(range(n)))
+    genomes = StrArray.from_strings([random_genome() for _ in range(n)])
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+
+    k_e = (cells._k_b / cells._k_f)[cells._v_max != 0.0]
+    k_m = (cells._k_f * cells._k_b).sqrt()[cells._v_max != 0.0]
+    v_max = cells._v_max[cells._v_max != 0.0]
+    n_h = cells._N_h[cells._N_h != 0].abs().float()
+    q = ftensor([0.05, 0.1, 0.5, 0.9, 0.95])
+
+    # Ke: median 1, 80% range (1e-5, 1e5), 90% range (1e-10, 1e10)
+    k_e_q = torch.quantile(k_e, q)
+    assert k_e_q[0] >= 1e-10 and k_e_q[4] <= 1e10
+    assert k_e_q[1] >= 1e-5 and k_e_q[3] <= 1e5
+    assert (k_e_q[2] - 1).abs() < 1
+
+    # Km: median 0.1, 90% range (1e-3, 10)
+    k_m_q = torch.quantile(k_m, q)
+    assert k_m_q[0] >= 1e-4 and k_m_q[4] <= 100
+    assert (k_m_q[2] - 0.1).abs() < 1
+
+    # Vmax: median 1e-2, 90% range (1e-5, 10)
+    v_max_q = torch.quantile(v_max, q)
+    assert v_max_q[0] >= 1e-6 and v_max_q[4] <= 100
+    assert (v_max_q[2] - 1e-2).abs() < 1
+
+    # Nh: mean 1.5, 95% <= 3
+    n_h_q = torch.quantile(n_h, q)
+    assert n_h_q[4] <= 3
+    assert (n_h.mean() - 1.5).abs() < 0.5
+
+
+@pytest.mark.slow
+def test_update_genomes_randomly(rng: random.Random, cells: Cells) -> None:
+    c = 100
+    cells.update_c(c_req=c)
+    p_init = cells.p
+
+    for _ in range(100):
+        n = rng.randint(10, c)
+        idxs = idxtensor(rng.sample(range(c), n))
+        genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
+        cells.update_genomes(genomes=genomes, idxs=idxs)
+
+        _asser_dtypes(cells)
+
+        # check genomes set
+        assert cells.genomes[idxs.cpu().numpy()].tolist() == genomes.tolist()
+
+        # check at least some non-placeholder values
+        denstensors = [cells._v_max, cells._k_b, cells._k_f, cells._N_f, cells._N_b]
+        for tens in denstensors:
+            per_cell = (tens[idxs] != 0).sum(tuple(range(1, tens.ndim)))
+            assert (per_cell > 0).sum() / n > 0.8  # a few empty proteomes possible
+
+        # check protein counts
+        prot_exp = ((cells._v_max != 0.0) | (cells._k_r != 0)).sum(dim=1).to(IDXTYPE)
+        torch.testing.assert_close(cells.proteins, prot_exp)
+
+    assert cells.p > p_init
+
+
+@pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
+def test_allocate_children(rng: random.Random, cells: Cells, c: int, n: int) -> None:
+    cells.update_c(c_req=c)
+
+    idxs = idxtensor(rng.sample(range(c), n))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
+    cells.update_genomes(genomes=genomes, idxs=idxs)
+    cells.alive[idxs] = True
+
+    mask = idxfull(cells.c, value=0).bool()
+    mask[idxs] = True
+
+    children = cells.allocate_children(divided=mask)
+
+    # all non-parent indices should be -1
+    assert (children >= 0).sum() == n
+
+    allocated_children = set()
+    allocated_parents = set((children >= 0).nonzero(as_tuple=True)[0].tolist())
+    for parent in idxs.tolist():
+        # child is allocated once
+        child = int(children[parent])
+        assert child not in allocated_children
+        allocated_children.add(child)
+
+        # parent should only be allocated once
+        assert parent in allocated_parents
+        allocated_parents.remove(parent)
+
+    # all children were allocated
+    assert len(allocated_parents) == 0
+    assert len(allocated_children) == n
+
+
+@pytest.mark.parametrize(
+    "c, n",
+    [
+        (10, 5),
+        (10, 0),
+        (10, 1),
+        (50, 10),
+        (50, 25),
+    ],
+)
+def test_update_descendants(rng: random.Random, cells: Cells, c: int, n: int) -> None:
+    cells.update_c(c_req=c)
+
+    from_idxs = idxtensor(rng.sample(range(c), n))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
+    cells.update_genomes(genomes=genomes, idxs=from_idxs)
+    cells.alive[from_idxs] = True
+    cells.ages[from_idxs] = 1.0
+    molecules_t0 = cells.molecules[from_idxs].clone()
+
+    idxs_left = list(set(range(c)) - set(from_idxs.tolist()))
+    to_idxs = idxtensor(rng.sample(idxs_left, n))
+
+    parent_of = idxfull(cells.c, value=-1)
+    parent_of[to_idxs] = from_idxs
+    desc = cells.update_descendants(parent_of=parent_of)
+
+    # check types
+    _asser_dtypes(cells)
+
+    # all alive
+    desc_idxs = torch.cat([from_idxs, to_idxs])
+    assert cells.alive[desc_idxs].all()
+
+    # descendants correct
+    desc_exp = torch.zeros_like(cells.alive).bool()
+    desc_exp[desc_idxs] = True
+    assert torch.equal(desc, desc_exp)
+
+    # genomes, lineages, ages copied
+    assert (
+        cells.genomes[from_idxs.cpu().numpy()].tolist()
+        == cells.genomes[to_idxs.cpu().numpy()].tolist()
+    )
+    assert (
+        cells.lineages[from_idxs.cpu().numpy()].tolist()
+        == cells.lineages[to_idxs.cpu().numpy()].tolist()
+    )
+    assert cells.proteins[from_idxs].tolist() == cells.proteins[to_idxs].tolist()
+
+    # ages reset
+    assert (cells.ages[desc_idxs] == 0).all()
+
+    # generations incremented
+    assert (cells.generations[desc_idxs] == 1).all()
+
+    # molecules were shared
+    assert (cells.molecules[from_idxs] == cells.molecules[to_idxs]).all()
+    torch.testing.assert_close(cells.molecules[to_idxs], molecules_t0 / 2)
+
+
+@pytest.mark.parametrize("c, n", [(10, 5), (10, 0), (10, 1), (50, 10), (50, 25)])
+def test_copy_proteomes(rng: random.Random, cells: Cells, c: int, n: int) -> None:
+    cells.update_c(c_req=c)
+
+    from_idxs = idxtensor(rng.sample(range(c), n))
+    genomes = StrArray.from_strings([random_genome(s=500) for _ in range(n)])
+    cells.update_genomes(genomes=genomes, idxs=from_idxs)
+
+    idxs_left = list(set(range(c)) - set(from_idxs.tolist()))
+    to_idxs = idxtensor(rng.sample(idxs_left, n))
+
+    parent_of = idxfull(cells.c, value=-1)
+    parent_of[to_idxs] = from_idxs
+    cells.copy_proteomes(idx_map=parent_of)
+
+    # check types
+    _asser_dtypes(cells)
+
+    # values were copied
+    ftensors = [cells._v_max, cells._k_b, cells._k_f, cells._k_r, cells._N_e]
+    itensors = [cells._N_b, cells._N_f, cells._N_h]
+    for tens in ftensors + itensors:
+        torch.testing.assert_close(tens[from_idxs], tens[to_idxs])
+
+
+def test_saving_loading(cells: Cells, tmp_path: Path) -> None:
+    statedir = tmp_path / "cells_state"
+
+    # create interspersed cells
+    c = 60
+    cells.update_c(c_req=c)
+    idxs = idxtensor(list(range(0, c, 2)))
+    genomes_ = StrArray.from_strings([random_genome() for _ in range(idxs.numel())])
+    cells.update_genomes(genomes=genomes_, idxs=idxs)
+    cells.alive[idxs] = True
+
+    # keep original state for comparison
+    genomes = cells.genomes.copy()
+    lineages = cells.lineages.copy()
+    alive = cells.alive.clone()
+    ages = cells.ages.clone()
+    generations = cells.generations.clone()
+    proteins = cells.proteins.clone()
+    molecules = cells.molecules.clone()
+
+    v_max = cells._v_max.clone()
+    k_f = cells._k_f.clone()
+    k_b = cells._k_b.clone()
+    k_r = cells._k_r.clone()
+    N_f = cells._N_f.clone()
+    N_b = cells._N_b.clone()
+    N_h = cells._N_h.clone()
+    N_e = cells._N_e.clone()
+
+    # save state
+    cells.save_state(statedir=statedir)
+
+    # clear cells
+    cells.alive[:] = False
+    cells.update_p(p_req=0)
+    cells.update_c(c_req=0)
+
+    # load state
+    cells.load_state(statedir=statedir)
+
+    # check that the loaded state matches the original state
+    assert cells.genomes.tolist() == genomes.tolist()
+    assert cells.lineages.tolist() == lineages.tolist()
+    assert (cells.alive == alive).all()
+    assert (cells.ages == ages).all()
+    assert (cells.generations == generations).all()
+    assert (cells.proteins == proteins).all()
+    assert (cells.molecules == molecules).all()
+
+    # check kinetics parameters
+    assert (cells._v_max == v_max).all()
+    assert (cells._k_f == k_f).all()
+    assert (cells._k_b == k_b).all()
+    assert (cells._k_r == k_r).all()
+    assert (cells._N_f == N_f).all()
+    assert (cells._N_b == N_b).all()
+    assert (cells._N_h == N_h).all()
+    assert (cells._N_e == N_e).all()

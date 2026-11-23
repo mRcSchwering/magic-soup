@@ -1,8 +1,5 @@
 {
   "python.envFile": "${workspaceFolder}/vscode.env",
-  "terminal.integrated.env.linux": {
-    "PYTHONPATH": "${workspaceFolder}/python"
-  },
   "jupyter.notebookFileRoot": "${workspaceFolder}/python",
   "pylint.args": [
     "--init-hook",
@@ -22,6 +19,5 @@
     "editor.tabSize": 4,
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "rust-lang.rust-analyzer"
-  },
-  "ruff.lint.args": ["--ignore=E501"]
+  }
 }

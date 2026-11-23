@@ -5,7 +5,6 @@
 #
 # bash scripts/version-docs.sh 1.0.0
 #
-
 set -e
 
 if [ $# -eq 0 ]; then

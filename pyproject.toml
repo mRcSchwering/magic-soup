@@ -3,16 +3,12 @@ requires = ["maturin>=1,<2"]
 build-backend = "maturin"
 
 [project]
-name = "magicsoup"
-version = "1.0.6"
+name = "magicsoup" # as shown on PyPI (https://pypi.org/project/magicsoup/)
+version = "2.0.0"
 authors = [{ name = "Marc", email = "schweringmarc01@gmail.com" }]
 description = "Simulation for cell metabolic and transduction pathway evolution"
 readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-  "numpy>=1.24.0,<1.27.0",
-  "torch>=2.0.0,<2.2.0",   # also noted in "Installation" docs
-]
+requires-python = ">=3.12"
 classifiers = [
   "Environment :: Console",
   "Environment :: GPU",
@@ -26,16 +22,69 @@ classifiers = [
   "Topic :: Scientific/Engineering",
   "Typing :: Typed",
 ]
+dependencies = [
+  "torch>=2.11,<3", # CPU/GPUprocessing
+  "numpy>=2,<3",    # str arrays, rust data exchange format
+]
 
-[project.urls]
-"Documentation" = "https://magic-soup.readthedocs.io/"
-"Homepage" = "https://github.com/mRcSchwering/magic-soup"
-"Bug Tracker" = "https://github.com/mRcSchwering/magic-soup/issues"
+[dependency-groups]
+dev = [
+  "maturin>=1,<2",   # build and test python-rust packages
+  "pytest>=9,<10",   # testing
+  "mypy>=2,<3",      # static type checking
+  "ruff>=0,<1",      # linting
+  "pylint>=4,<5",    # linting
+  "plotnine>=0,<1",  # plotting
+  "edlib>=1,<2",     # Needleman-Wunsch using Levenshtein distance
+  "z3-solver>=5,<6", # estimating molecule energies
+]
+docs = [
+  "mkdocs>=1,<2",               # make documentation
+  "python-markdown-math>=0,<1", # math in markdown
+  "mkdocstrings[python]>=1,<2", # make documentation from docstrings
+  "mkdocs-exclude>=1,<2",       # exclude files from documentation
+]
 
 [tool.maturin]
-python-source = "python"                 # python source
-module-name = "magicsoup._lib"           # python module name
-sdist-include = ["LICENSE", "README.md"] # source distro files
+module-name = "magicsoup._lib"           # extension as imported from python
+python-source = "python"                 # source directory for python package
+features = ["pyo3/extension-module"]     # build as python extension module
+sdist-include = ["LICENSE", "README.md"] # include license and readme in sdist
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "**/*.rs" },
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+pythonpath = [
+  "./python", # Needed to resolve python package
+]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+
+[tool.pylint.main]
+init-hook = 'import sys; sys.path.append("python")'
+extension-pkg-allow-list = "magicsoup._lib"
+
+[tool.pylint.messages_control]
+disable = ["C", "R"]
+
+[tool.mypy]
+mypy_path = [
+  "./python", # Needed to resolve python package
+]
+namespace_packages = false
+disable_error_code = "import-untyped"
+
+[tool.ruff]
+line-length = 100

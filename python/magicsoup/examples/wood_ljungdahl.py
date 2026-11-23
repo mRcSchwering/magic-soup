@@ -1,38 +1,43 @@
 """
-using https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2646786/
+Wood-Ljungdahl Pathway
+
+Using  https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2646786/
 
 Methyl (Eastern) Branch:
-formate dehydrogenase (1.2.1.43): CO2 + NADPH -> formiat + NADP (- 21.5 kJ/mol)
-formate-tetrahydrofolate ligase (6.3.4.3): formiat + FH4 + ATP -> formyl-FH4 + ADP + Pi (-8.4 kJ/mol)
-methenyltetrahydrofolate cyclohydrolase (3.5.4.9): formyl-FH4 + NADPH -> methylen-FH4 + NADP (-40.2 kJ/mol)
-methylenetetrahydrofolate reductase (1.1.99.15): methylen-FH4 + NADPH -> methyl-FH4 + NADP (-39.2 kJ/mol)
+- formate dehydrogenase (1.2.1.43): CO2 + NADPH -> formiat + NADP (15 kJ/mol)
+- formate-tetrahydrofolate ligase (6.3.4.3): formiat + FH4 + ATP -> formyl-FH4 + ADP + Pi (-5 kJ/mol)
+- methenyltetrahydrofolate cyclohydrolase (3.5.4.9): formyl-FH4 + NADPH -> methylen-FH4 + NADP (-5 kJ/mol)
+- methylenetetrahydrofolate reductase (1.1.99.15): methylen-FH4 + NADPH -> methyl-FH4 + NADP (-20 kJ/mol)
 
 Carbonyl (Western) Branch:
-CFeSP methyltransferase (2.1.1.X): methyl-FH4 + Ni-ACS -> FH4 + methyl-Ni-ACS
-CO dehydrogenase / acetyl-CoA synthetase: CO2 + HS-CoA + methyl-Ni-ACS -> Ni-ACS + acetyl-CoA
-(skipped Co step)
+- CFeSP methyltransferase (2.1.1.X): methyl-FH4 + Ni-ACS -> FH4 + methyl-Ni-ACS (-10 kJ/mol)
+- CO dehydrogenase / acetyl-CoA synthetase: CO2 + HS-CoA + methyl-Ni-ACS -> Ni-ACS + acetyl-CoA (-40 kJ/mol)
+- (skipped Co step)
+
+Molecule energies were solved by solving for reaction energies exactly.
 """
-from magicsoup.containers import Molecule, Chemistry
 
-NADPH = Molecule("NADPH", 200.0 * 1e3)
-NADP = Molecule("NADP", 100.0 * 1e3)
-ATP = Molecule("ATP", 100.0 * 1e3)
-ADP = Molecule("ADP", 70.0 * 1e3)
+from magicsoup.chemistry import Chemistry, Molecule, Reaction
 
-methylFH4 = Molecule("methyl-FH4", 360.0 * 1e3)
-methylenFH4 = Molecule("methylen-FH4", 300.0 * 1e3)
-formylFH4 = Molecule("formyl-FH4", 240.0 * 1e3)
-FH4 = Molecule("FH4", 200.0 * 1e3)
-formiat = Molecule("formiat", 20.0 * 1e3)
-co2 = Molecule("CO2", 10.0 * 1e3, diffusivity=1.0, permeability=1.0)
+NADPH = Molecule("NADPH", 62, half_life=3, diffusivity=4e-6, permeability=0)
+NADP = Molecule("NADP", 2, half_life=60, diffusivity=4e-6, permeability=0)
+ATP = Molecule("ATP", 33, half_life=210, diffusivity=2.5e-6, permeability=0)
+ADP = Molecule("ADP", 3, half_life=500, diffusivity=2.5e-6, permeability=0)
 
-NiACS = Molecule("Ni-ACS", 200.0 * 1e3)
-methylNiACS = Molecule("methyl-Ni-ACS", 300.0 * 1e3)
-HSCoA = Molecule("HS-CoA", 200.0 * 1e3)
-acetylCoA = Molecule("acetyl-CoA", 260.0 * 1e3)
+methylFH4 = Molecule("methyl-FH4", 199, half_life=0.5, diffusivity=3e-6, permeability=1e-9)
+methylenFH4 = Molecule("methylen-FH4", 159, half_life=0.1, diffusivity=3e-6, permeability=1e-9)
+formylFH4 = Molecule("formyl-FH4", 104, half_life=0.02, diffusivity=3e-6, permeability=1e-9)
+FH4 = Molecule("FH4", 2, half_life=0.02, diffusivity=3e-6, permeability=1e-9)
+formiat = Molecule("formiat", 77, half_life=-1, diffusivity=1.5e-5, permeability=1e-6)
+co2 = Molecule("CO2", 10, half_life=-1, diffusivity=2e-5, permeability=1)
+
+NiACS = Molecule("Ni-ACS", 2, half_life=0.001, diffusivity=6e-7, permeability=0)
+methylNiACS = Molecule("methyl-Ni-ACS", 189, half_life=0.001, diffusivity=6e-7, permeability=0)
+HSCoA = Molecule("HS-CoA", 51, half_life=0.4, diffusivity=3.5e-6, permeability=0)
+acetylCoA = Molecule("acetyl-CoA", 200, half_life=42, diffusivity=3.5e-6, permeability=0)
 
 
-MOLECULES = [
+molecules = [
     NADPH,
     NADP,
     ATP,
@@ -49,13 +54,13 @@ MOLECULES = [
     acetylCoA,
 ]
 
-REACTIONS = [
-    ([co2, NADPH], [formiat, NADP]),  # -90k
-    ([formiat, FH4, ATP], [formylFH4, ADP]),  # -10k
-    ([formylFH4, NADPH], [methylenFH4, NADP]),  # -40k
-    ([methylenFH4, NADPH], [methylFH4, NADP]),  # -40k
-    ([methylFH4, NiACS], [FH4, methylNiACS]),  # -60k
-    ([methylNiACS, co2, HSCoA], [NiACS, acetylCoA]),  # -50k
+reactions = [
+    Reaction([co2, NADPH], [formiat, NADP]),
+    Reaction([formiat, FH4, ATP], [formylFH4, ADP]),
+    Reaction([formylFH4, NADPH], [methylenFH4, NADP]),
+    Reaction([methylenFH4, NADPH], [methylFH4, NADP]),
+    Reaction([methylFH4, NiACS], [FH4, methylNiACS]),
+    Reaction([methylNiACS, co2, HSCoA], [NiACS, acetylCoA]),
 ]
 
-CHEMISTRY = Chemistry(molecules=MOLECULES, reactions=REACTIONS)
+chemistry = Chemistry(molecules=molecules, reactions=reactions)
