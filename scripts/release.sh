@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # 
 # Builds and releases the simulation with the current version.
-# Update __init__.py before running.
 #
 # Use:
 #
