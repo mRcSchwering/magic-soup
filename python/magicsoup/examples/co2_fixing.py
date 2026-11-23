@@ -127,17 +127,6 @@ fixed carbon: acetyl-CoA
 chemical energy: ATP
 reducing power: NADPH
 seed: acetyl-CoA
-
-## Common Reaction
-
-ATP -> ADP (-30 kJ/mol)
-ADP -> AMP (-20 kJ/mol)
-
-Energetic relations:
-
-- ATP > ADP, ADP > AMP, PPi > Pi
-- NADPH > NADP, FADH2 > FAD, QH2 > Q, Fe-red > Fe-ox, Fd-red > Fd-ox
-- acetyl-CoA > HS-CoA, Ru5P > RuBP, citramalyl-CoA > acetyl-CoA, methyl-FH4 > FH4, acetoacetyl-CoA > acetyl-CoA
 """
 
 from magicsoup.chemistry import Chemistry, Molecule, Reaction
