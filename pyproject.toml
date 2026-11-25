@@ -7,7 +7,7 @@ magicsoup = ["py.typed"]
 
 [project]
 name = "magicsoup" # as shown on PyPI (https://pypi.org/project/magicsoup/)
-version = "2.0.0"
+version = "2.0.1"
 authors = [{ name = "Marc", email = "schweringmarc01@gmail.com" }]
 description = "Simulation for cell metabolic and transduction pathway evolution"
 readme = "README.md"
